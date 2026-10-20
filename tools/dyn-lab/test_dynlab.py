@@ -32,10 +32,10 @@ class GainComputer(unittest.TestCase):
         self.assertAlmostEqual(dynlab.gain_computer(-5, soft), -16.25, places=9)
 
     def test_infinite_ratio_is_flat_above_the_knee(self):
-        limit = dynlab.Settings(threshold=-20, ratio=math.inf, knee=10)
-        self.assertAlmostEqual(dynlab.gain_computer(-20, limit), -21.25, places=9)
+        infinite = dynlab.Settings(threshold=-20, ratio=math.inf, knee=10)
+        self.assertAlmostEqual(dynlab.gain_computer(-20, infinite), -21.25, places=9)
         for level in (-15, -10, 0, 12):
-            self.assertAlmostEqual(dynlab.gain_computer(level, limit), -20, places=9)
+            self.assertAlmostEqual(dynlab.gain_computer(level, infinite), -20, places=9)
         hard = dynlab.Settings(threshold=-20, ratio=math.inf, knee=0)
         self.assertAlmostEqual(dynlab.gain_computer(0, hard), -20, places=9)
 
@@ -48,17 +48,17 @@ class StepResponse(unittest.TestCase):
         self.assertLessEqual(abs(measured_ms - expected_ms), 1000 / fs, f"at {fs} Hz")
 
     def test_attack_and_release_reach_63_percent_in_one_time_constant(self):
-        for fs in (44100, 48000, 96000):
+        for fs in dynlab.SAMPLE_RATES:
             for attack, release in ((10, 100), (0.5, 5), (250, 5000)):
                 step = dynlab.step_response(dynlab.Settings(attack=attack, release=release, hold=0), fs)
                 self.assertWithinOneSample(step.attack_63, attack, fs)
-                self.assertWithinOneSample(step.attack_90, attack * 2.302585093, fs)
+                self.assertWithinOneSample(step.attack_90, attack * math.log(10), fs)
                 self.assertWithinOneSample(step.release_63, release, fs)
-                self.assertWithinOneSample(step.release_90, release * 2.302585093, fs)
+                self.assertWithinOneSample(step.release_90, release * math.log(10), fs)
                 self.assertEqual(step.hold, 0)
 
     def test_release_begins_after_hold(self):
-        for fs in (44100, 48000, 96000):
+        for fs in dynlab.SAMPLE_RATES:
             for hold in (0.01, 1, 50, 500):
                 step = dynlab.step_response(dynlab.Settings(attack=10, release=100, hold=hold), fs)
                 self.assertWithinOneSample(step.hold, hold, fs)
@@ -86,6 +86,24 @@ class CommandLine(unittest.TestCase):
                 result = subprocess.run(example, shell=True, cwd=ROOT, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertTrue(result.stdout.strip())
+
+    def test_the_usage_doc_table_shows_each_range_and_default_the_lab_uses(self):
+        def number(text):
+            text = text.replace("−", "-").split()[0]
+            return math.inf if text == "∞" else float(text)
+
+        with open(os.path.join(LAB, "USAGE.md")) as doc:
+            rows = {cells[0]: cells[1:] for cells in
+                    ([cell.strip() for cell in line.strip().strip("|").split("|")] for line in doc)
+                    if cells[0].lower() in dynlab.PARAMETERS}
+        self.assertEqual(set(rows), {name.capitalize() for name in dynlab.PARAMETERS})
+        defaults = dynlab.Settings()
+        for name, ((low, high), _) in dynlab.PARAMETERS.items():
+            with self.subTest(name):
+                shown_range, shown_default = rows[name.capitalize()]
+                shown_low, shown_high = shown_range.split(" to ")
+                self.assertEqual((number(shown_low), number(shown_high)), (low, high))
+                self.assertEqual(number(shown_default), getattr(defaults, name))
 
     def test_out_of_range_settings_exit_non_zero_naming_the_parameter_and_its_range(self):
         for args, named in ((("step", "--attack", "300"), ("Attack", "0.005", "250")),
