@@ -1,6 +1,6 @@
 # plugkit: two modules, copied from eq1 until eq1 ships
 
-comp1 shares eq1's infrastructure through `plugkit`, a library in its own repo, so comp1 never holds a private copy of eq1's code. It mirrors eq1's own split: `plugkit-dsp` is plain C++ with no JUCE (the Smoother and 16-sample run grid, matched filter designs, Placement), and `plugkit-ui` is the JUCE UI kit (Staple, the spectrum and display layers, meter ballistics, EqDisplay, the Output Meter, the editor test harness). CI scripts and the check harness come with it.
+comp1 shares eq1's infrastructure through `plugkit`, a library in its own repo, so comp1 never holds a private copy of eq1's code. It mirrors eq1's own split: `plugkit-dsp` is plain C++ with no JUCE (the Smoother and 16-sample run grid, matched filter designs, Placement), and `plugkit-ui` is the JUCE layer both plugins share: the UI kit (Staple, the spectrum and display layers, meter ballistics, EqDisplay, the Output Meter, the editor test harness) and the Plugin Shell's Presets, A/B Compare and edit history (undo and redo). CI scripts and the check harness come with it.
 
 eq1 does not change until it ships. Until then, everything in `plugkit` is a copy of eq1's code. Each copied piece, and every eq1 fix ported to `plugkit` by hand, is listed in eq1's migration ticket. After eq1 ships, it migrates onto `plugkit` in that one gated ticket, and its null check must stay `exact`.
 
