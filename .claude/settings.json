@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git merge-base *)",
+      "Bash(gh run watch *)",
+      "Bash(sysctl -n *)",
+      "Bash(gh label list *)",
+      "Bash(git ls-tree *)",
+      "Bash(gh issue edit *)",
+      "Bash(gh issue comment *)",
+      "Bash(gh issue close *)",
+      "Bash(git fetch -q)",
+      "Bash(git fetch -q origin)",
+      "Bash(auval -a)",
+      "Bash(git fetch -q --prune)",
+      "Bash(git fetch)"
+    ]
+  }
+}
