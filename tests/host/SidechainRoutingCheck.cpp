@@ -1,7 +1,7 @@
 // Loads a built comp1 the way a host does, through its format wrapper (VST3 or AU), and checks every main layout
 // with every Sidechain: mono and stereo main, each with no, a mono or a stereo Sidechain. Each layout must load and
-// play its main input with Output Gain applied, the Sidechain unheard in the output. Run by plugkit's check
-// harness (validate).
+// play its main input with Output Gain applied, the Sidechain unheard in the output; through AU, no Sidechain is
+// not applicable (see main()). Run by plugkit's check harness (validate).
 //
 //   comp1_sidechain_routing_check <path to comp1.vst3>
 //   comp1_sidechain_routing_check AU   (the AU must be installed and registered)
@@ -148,9 +148,16 @@ int main (int argc, char* argv[])
                                      + (sidechain.isDisabled() ? juce::String ("no Sidechain") : sidechain.getDescription() + " Sidechain");
             if (! plugin->setBusesLayout (layout))
             {
-                // Some wrappers can't switch a bus off; then there's nothing more to check for this layout.
-                std::cout << (sidechain.isDisabled() ? "  skip  " : "  FAIL  ") << description << ": layout refused\n";
-                failures += sidechain.isDisabled() ? 0 : 1;
+                // An AU has no disabled bus: its input elements are fixed in number and each always has a stream
+                // format of one channel or more, so JUCE's AU wrapper enables every bus and refuses a 0-channel
+                // format on the Sidechain's element. A host leaves the element unconnected instead, and the wrapper
+                // hands the plugin silence on it: the "main input alone" checks with a mono or stereo Sidechain
+                // cover that. So no Sidechain is not applicable through AU, and counts as neither a pass nor a
+                // failure. Any other format must take the layout.
+                const bool notApplicable = sidechain.isDisabled() && plugin->getPluginDescription().pluginFormatName == "AudioUnit";
+                std::cout << (notApplicable ? "  n/a   " : "  FAIL  ") << description
+                          << (notApplicable ? ": AU has no disabled bus\n" : ": layout refused\n");
+                failures += notApplicable ? 0 : 1;
                 continue;
             }
             plugin->prepareToPlay (sampleRate, blockSize);
