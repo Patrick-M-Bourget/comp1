@@ -190,6 +190,7 @@ struct Engine::Impl
             return;
         if (latest != nullptr)
             settings = *latest;
+        detection.setSource (settings.detectionSource);
         compressor.setSettings (settings, snapToSettings);
         autoGain.setTargetDb (settings.autoGain ? clean::autoGainDb (curveOf (settings)) : 0.0, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);

@@ -26,17 +26,22 @@ inline Channels noise (int numChannels, int numSamples, std::uint32_t seed = 1)
     return channels;
 }
 
-// Runs audio through engine in place, cut into blocks of the sizes given, in turn and repeating.
-inline void processInBlocks (Engine& engine, Channels& audio, const std::vector<int>& blockSizes)
+// Runs audio through engine in place, cut into blocks of the sizes given, in turn and repeating, with the samples of
+// sidechainSamples, as long as audio, on the Sidechain when it isn't null.
+inline void processInBlocks (Engine& engine, Channels& audio, const std::vector<int>& blockSizes, const Channels* sidechainSamples = nullptr)
 {
     const int numSamples = static_cast<int> (audio.front().size());
     std::vector<float*> main (audio.size());
+    std::vector<const float*> sidechain (sidechainSamples != nullptr ? sidechainSamples->size() : 0);
     for (int start = 0, block = 0; start < numSamples; ++block)
     {
         const int count = std::min (blockSizes[static_cast<std::size_t> (block) % blockSizes.size()], numSamples - start);
         for (std::size_t ch = 0; ch < audio.size(); ++ch)
             main[ch] = audio[ch].data() + start;
-        engine.process ({ main.data(), static_cast<int> (main.size()), count });
+        for (std::size_t ch = 0; ch < sidechain.size(); ++ch)
+            sidechain[ch] = (*sidechainSamples)[ch].data() + start;
+        const ConstAudioBlock sidechainBlock { sidechain.data(), static_cast<int> (sidechain.size()), count };
+        engine.process ({ main.data(), static_cast<int> (main.size()), count }, sidechainSamples != nullptr ? &sidechainBlock : nullptr);
         start += count;
     }
 }

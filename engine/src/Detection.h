@@ -31,41 +31,60 @@ struct DetectionSignal
 // and returns the detection signal. It applies no gain. The Internal signal is whatever the caller passes: today the
 // main input as the compressor receives it.
 //
-// With Detection Source Internal, the only one so far, there is one detection channel per main channel, carrying the
-// Internal signal sample for sample, and each main channel follows its own. The Sidechain is accepted and unused until
-// Detection Source External (#13).
+// With Detection Source Internal there is one detection channel per main channel, carrying the Internal signal sample
+// for sample, and each main channel follows its own; the Sidechain changes nothing. With External the detection
+// channels are the Sidechain's: each main channel follows the Sidechain channel of its own index, and a mono Sidechain
+// is followed by every main channel, so a mono key, like a kick, ducks the whole track.
 class DetectionStage
 {
 public:
-    // Allocates for up to numMainChannels channels of up to maxSamples samples a piece.
+    // Allocates for up to numMainChannels channels of up to maxSamples samples a piece, and a stereo Sidechain.
     void prepare (int numMainChannels, int maxSamples)
     {
-        const auto channels = static_cast<std::size_t> (std::max (numMainChannels, 0));
+        const auto mainChannels = static_cast<std::size_t> (std::max (numMainChannels, 0));
+        const auto channels = std::max (mainChannels, maxSidechainChannels);
         storage.assign (channels, std::vector<float> (static_cast<std::size_t> (std::max (maxSamples, 0))));
         pointers.assign (channels, nullptr);
         for (std::size_t ch = 0; ch < channels; ++ch)
             pointers[ch] = storage[ch].data();
-        followedBy.assign (channels, 0);
+        followedBy.assign (mainChannels, 0);
     }
 
-    // internal holds at most the prepared channels and samples. Never allocates.
-    DetectionSignal process (ConstAudioBlock internal, const ConstAudioBlock* /*sidechain*/)
+    void setSource (DetectionSource newSource) { source = newSource; }
+
+    // internal holds at most the prepared channels and samples, and sidechain, when there is one, as many samples and
+    // at most two channels. Never allocates.
+    DetectionSignal process (ConstAudioBlock internal, const ConstAudioBlock* sidechain)
     {
-        assert (internal.numChannels <= static_cast<int> (storage.size()));
+        assert (internal.numChannels <= static_cast<int> (followedBy.size()));
         assert (internal.numChannels == 0 || internal.numSamples <= static_cast<int> (storage[0].size()));
+        if (source == DetectionSource::External && sidechain != nullptr)
+        {
+            assert (sidechain->numChannels <= static_cast<int> (maxSidechainChannels) && sidechain->numSamples == internal.numSamples);
+            for (int ch = 0; ch < sidechain->numChannels; ++ch)
+                std::copy_n (sidechain->channels[ch], internal.numSamples, storage[static_cast<std::size_t> (ch)].begin());
+            for (int ch = 0; ch < internal.numChannels; ++ch)
+                followedBy[static_cast<std::size_t> (ch)] = std::min (ch, sidechain->numChannels - 1);
+            return signal (sidechain->numChannels, internal.numSamples);
+        }
         for (int ch = 0; ch < internal.numChannels; ++ch)
         {
             const auto c = static_cast<std::size_t> (ch);
             std::copy_n (internal.channels[ch], internal.numSamples, storage[c].begin());
             followedBy[c] = ch;
         }
-        return { .channels = pointers.data(),
-                 .numChannels = internal.numChannels,
-                 .numSamples = internal.numSamples,
-                 .followedBy = followedBy.data() };
+        return signal (internal.numChannels, internal.numSamples);
     }
 
 private:
+    static constexpr std::size_t maxSidechainChannels = 2;
+
+    DetectionSignal signal (int numChannels, int numSamples) const
+    {
+        return { .channels = pointers.data(), .numChannels = numChannels, .numSamples = numSamples, .followedBy = followedBy.data() };
+    }
+
+    DetectionSource source = DetectionSource::Internal;
     std::vector<std::vector<float>> storage; // per detection channel
     std::vector<const float*> pointers;      // per detection channel, into storage
     std::vector<int> followedBy;             // per main channel

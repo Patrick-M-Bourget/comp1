@@ -29,6 +29,14 @@ inline constexpr ParameterRange range { 0.0, 60.0 };        // dB; comp1's own: 
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own
 } // namespace parameterRanges
 
+// What the compressor's detection listens to: the main input (Internal), or the Sidechain (External). Saved by index,
+// so the order is frozen.
+enum class DetectionSource
+{
+    Internal,
+    External,
+};
+
 // Everything the Engine plays, in one value: the Plugin Shell builds it from the host parameters and hands it over
 // whole (Engine::setSettings). A default Settings holds every host parameter's default.
 struct Settings
@@ -46,6 +54,9 @@ struct Settings
 
     // Output Gain, in dB: applied to the whole output after Dry and Wet are summed, before the Limiter.
     double outputGainDb = 0.0;
+
+    // Detection Source: what the detection stage feeds the compressor's detector.
+    DetectionSource detectionSource = DetectionSource::Internal;
 
 #if defined(__GNUC__)
     #pragma GCC diagnostic push

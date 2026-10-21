@@ -7,9 +7,8 @@
 
 using namespace comp1;
 
-// The detection stage's contract with Detection Source Internal, the only source there is so far: one detection channel
-// per main channel, each main channel following its own, carrying the Internal signal sample for sample. The Sidechain
-// is accepted and changes nothing.
+// The detection stage's contract with Detection Source Internal: one detection channel per main channel, each main
+// channel following its own, carrying the Internal signal sample for sample. The Sidechain changes nothing.
 TEST_CASE ("With Internal, each main channel follows a detection channel of its own, carrying the Internal signal")
 {
     const int numChannels = GENERATE (1, 2);
