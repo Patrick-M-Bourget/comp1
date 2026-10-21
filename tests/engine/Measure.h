@@ -690,4 +690,52 @@ inline const std::vector<LimiterSignal>& limiterSignals()
     return all;
 }
 
+
+// --- The performance scenes: seeded noise bursts, and the settings the CPU budget and the render scenes share -----
+
+// Noise bursts, the CPU budget's input and the render scenes': loud for the first burstLoudSeconds of every
+// burstPeriodSeconds and burstQuietDb under that for the rest, so the compressor, the Gate and the Limiter keep moving.
+inline constexpr double burstPeriodSeconds = 0.2;
+inline constexpr double burstLoudSeconds = 0.1;
+inline constexpr double burstQuietDb = -34.0;
+
+// The bursts' gain at a time in seconds: 1 while loud, burstQuietDb under it while quiet.
+inline double burstGain (double seconds)
+{
+    return std::fmod (seconds, burstPeriodSeconds) < burstLoudSeconds ? 1.0 : gainOf (burstQuietDb);
+}
+
+// numSamples of seeded full-scale noise bursts on each channel at sampleRate (noise() doubled, -1 to 1), offsetSeconds
+// into the bursts' period: the same for the same seed on every platform.
+inline Channels bursts (int numChannels, int numSamples, double sampleRate, std::uint32_t seed = 1, double offsetSeconds = 0.0)
+{
+    auto audio = noise (numChannels, numSamples, seed);
+    for (auto& channel : audio)
+        for (std::size_t i = 0; i < channel.size(); ++i)
+            channel[i] = static_cast<float> (2.0 * channel[i] * burstGain (static_cast<double> (i) / sampleRate + offsetSeconds));
+    return audio;
+}
+
+// The worst case: every stage on, at its most costly. FET with its full Colour, High Quality at 8x Oversampling (the
+// cap at each rate: 4x at 96 kHz) with the most Lookahead, Saturation on, the Gate on and closing on the bursts' quiet
+// part (its Threshold over burstQuietDb), Dry and Wet both at 0 dB, and the Limiter on and limiting, Output Gain driving
+// the bursts' loud part well over its Ceiling, so its true-peak estimator and gain both work on every run.
+inline Settings worstCaseSettings()
+{
+    Settings settings;
+    settings.gate.on = true;
+    settings.gate.thresholdDb = -20.0;
+    settings.character = Character::FET;
+    settings.colour = parameterRanges::colour.high;
+    settings.saturation = true;
+    settings.dryDb = 0.0;
+    settings.wetDb = 0.0;
+    settings.outputGainDb = 12.0;
+    settings.limiter = true;
+    settings.processingMode = ProcessingMode::HighQuality;
+    settings.lookaheadMs = parameterRanges::lookahead.high;
+    settings.oversampling = Oversampling::x8;
+    return settings;
+}
+
 } // namespace comp1::test
