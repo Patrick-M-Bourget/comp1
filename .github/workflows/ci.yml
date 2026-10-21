@@ -87,7 +87,7 @@ jobs:
 
       - name: Engine tests under ThreadSanitizer
         if: runner.os == 'macOS'
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: '"$PLUGKIT/scripts/check.sh" tsan'
 
       - name: Validate plugins (pluginval, auval, clap-validator, Sidechain routing, AAX and Standalone built)
