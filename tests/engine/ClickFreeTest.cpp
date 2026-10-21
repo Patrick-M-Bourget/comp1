@@ -111,6 +111,7 @@ const std::vector<Jump>& jumps()
         { "Knee", [] (Settings& s, bool b) { s.kneeDb = b ? 72.0 : 0.0; } },
         { "Attack", [] (Settings& s, bool b) { s.attackMs = b ? 250.0 : 1.0; } },
         { "Release", [] (Settings& s, bool b) { s.releaseMs = b ? 5000.0 : 20.0; } },
+        { "Auto Release", [] (Settings& s, bool b) { s.autoRelease = b; } },
         { "Hold", [] (Settings& s, bool b) { s.holdMs = b ? 500.0 : 0.0; } },
         { "Range", [] (Settings& s, bool b) { s.rangeDb = b ? 60.0 : 0.0; } },
         { "Auto Gain", [] (Settings& s, bool b) { s.autoGain = b; } },
@@ -182,13 +183,21 @@ const std::vector<MidRelease>& midReleaseJumps()
     static const std::vector<MidRelease> all {
         // From the longest Release to the shortest as the gain starts coming back, and back once it has.
         { "Release", [] (Settings& s, bool midRelease, bool) { s.releaseMs = midRelease ? 5.0 : 5000.0; } },
+        // Auto Release on, then off, in turn, as the gain starts coming back: from Release to up to 5 times it, and
+        // back.
+        { "Auto Release",
+          [] (Settings& s, bool, bool began) {
+              s.releaseMs = 20.0;
+              if (began)
+                  s.autoRelease = ! s.autoRelease;
+          } },
     };
     return all;
 }
 
 } // namespace
 
-TEST_CASE ("Jumps in Release mid-release do not click")
+TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
 {
     const auto& jump = GENERATE (from_range (midReleaseJumps()));
     const auto host = anyHost();

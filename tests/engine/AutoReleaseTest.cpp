@@ -215,3 +215,27 @@ TEST_CASE ("With Auto Release on, a step down from steady state matches dyn-lab'
     CHECK (std::abs (c.held * sampleMs - rate.holdMs) <= sampleMs);
     checkWithinOneSample ({ (*c.sixtyThree - c.held) * sampleMs, (*c.ninety - c.held) * sampleMs }, rate.release, rate.sampleRate);
 }
+
+TEST_CASE ("With Auto Release on, the output is the same however the audio is cut into blocks")
+{
+    // Noise loud enough to be compressed, then quiet enough to be released: the sustain state charges, then the release
+    // pole moves every run as it discharges.
+    auto input = test::noise (2, 12000);
+    for (auto& channel : input)
+        for (std::size_t i = 6000; i < channel.size(); ++i)
+            channel[i] *= 0.01f;
+    const auto play = [&input] (const std::vector<int>& cut) {
+        auto audio = input;
+        Engine engine;
+        engine.prepare (48000.0, 4096, 2);
+        engine.setSettings ({ .attackMs = 1.0, .releaseMs = 20.0, .autoRelease = true });
+        test::processInBlocks (engine, audio, cut);
+        return audio;
+    };
+    const auto whole = play ({ 4096 });
+    for (const auto& cut : test::blockCuts())
+    {
+        CAPTURE (cut);
+        CHECK (play (cut) == whole);
+    }
+}
