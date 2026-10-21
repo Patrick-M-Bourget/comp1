@@ -49,7 +49,7 @@ inline constexpr ParameterRange detectionQ { 0.025, 40.0 };           // comp1's
 } // namespace parameterRanges
 
 // The Characters: the four Styles that carry DSP (ADR 0002), in Style's order, Style's first four, so frozen with it
-// (ADR 0003). The Engine always plays a Character, never a Style: the Plugin Shell maps Style to one (#24).
+// (ADR 0003). The Engine always plays a Character, never a Style: the Plugin Shell maps Style to one (comp1/Style.h).
 enum class Character
 {
     Clean,
@@ -185,7 +185,8 @@ struct Settings
     };
     Gate gate;
 
-    // The compressor's Character: how it detects, and its Colour. Not a host parameter: Style sets it (#24).
+    // The compressor's Character: how it detects, and its Colour. Not a host parameter: the Style host parameter sets
+    // it (comp1/Style.h).
     Character character = Character::Clean;
     // The compressor, in parameterRanges' units, with dyn-lab's defaults.
     double thresholdDb = -18.0;
