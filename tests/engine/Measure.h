@@ -171,6 +171,10 @@ inline Channels constantLevel (int numChannels, int numSamples, double levelDb)
 // stands for, and a level read off its output is this far over the square wave's.
 inline constexpr double sineCalibrationDb = 3.0102999566398120;
 
+// How far a Character's steady test signal sits from the level it stands for, in dB: VCA's a square wave
+// sineCalibrationDb under it, Clean's at it.
+inline double steadyLevelOffsetDb (Character character) { return character == Character::VCA ? -sineCalibrationDb : 0.0; }
+
 // The Gain Reduction in dB the Engine gave each sample: how far the output is under the input.
 inline std::vector<double> gainReductionDb (const std::vector<float>& input, const std::vector<float>& output)
 {
@@ -187,10 +191,12 @@ inline constexpr double ninetyPercent = 0.9;
 // As dyn-lab measures a step: the samples taken, from the first one at the new level (reduction[from]), for the Gain
 // Reduction to move each fraction of the way from start to end, and the samples before it first moved at all. The
 // output is float, so a Gain Reduction read off it carries up to about 1e-6 dB of rounding, which differs between
-// input levels: a sample held at the new level can read a hair off a start read at the old one. So it has moved once
-// it is more than heldWithin of the way, far under the first step of any Release the tests measure (1e-5 of the
-// way at 500 ms and 192 kHz).
-inline constexpr double heldWithin = 3.0e-6;
+// input levels: a sample held at the new level can read a hair off a start read at the old one (under 2e-7 of the way
+// on the smallest step the tests measure, 6 dB). So it has moved once it is more than heldWithin of the way, under the
+// first step of any Clean Release (1.04e-6 of the way at 5000 ms and 192 kHz). dyn-lab counts the same way
+// (MOVED_WITHIN), so VCA, whose Gain Reduction leaves its level slowly as its RMS level falls, reads the same Hold in
+// both.
+inline constexpr double heldWithin = 1.0e-6;
 
 struct Crossings
 {
