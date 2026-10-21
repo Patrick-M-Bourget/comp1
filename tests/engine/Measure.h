@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <random>
@@ -149,13 +150,9 @@ inline std::vector<double> heardGainReduction (const Settings& settings, double 
     engine.prepare (sampleRate, 512, 1);
     engine.setSettings (settings);
     processInBlocks (engine, audio, { 512 });
-    std::vector<double> reduction;
-    for (auto i = static_cast<std::size_t> (length); i < input.size(); ++i)
-    {
-        const auto carried = static_cast<double> (input[i - static_cast<std::size_t> (latency)]);
-        reduction.push_back (-20.0 * std::log10 (static_cast<double> (audio.front()[i]) / carried));
-    }
-    return reduction;
+    const auto from = static_cast<std::ptrdiff_t> (length);
+    const std::vector<float> carried (input.begin() + from - latency, input.end() - latency);
+    return gainReductionDb (carried, { audio.front().begin() + from, audio.front().end() });
 }
 
 // --- Delay -------------------------------------------------------------------------------------------------------

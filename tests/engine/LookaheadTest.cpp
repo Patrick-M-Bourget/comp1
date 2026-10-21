@@ -6,7 +6,7 @@
 #include <catch2/generators/catch_generators_range.hpp>
 
 #include <cmath>
-#include <optional>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -59,33 +59,6 @@ const std::vector<Response>& responses()
 }
 
 constexpr double stepDb = 20.0;
-constexpr double oneTimeConstant = 1.0 - 0.36787944117144233; // 1 - 1/e
-constexpr double ninetyPercent = 0.9;
-
-// As dyn-lab counts a step's samples, sample 1 being the one at origin in reduction: the samples taken for the Gain
-// Reduction to move each fraction of the way from start to end, and the samples before it first moved at all. Both
-// can be 0 or less, when the Gain Reduction moves before origin.
-struct Crossings
-{
-    std::optional<int> sixtyThree, ninety, moved;
-};
-
-Crossings crossings (const std::vector<double>& reduction, int origin, double start, double end)
-{
-    Crossings c;
-    for (int i = 0; i < static_cast<int> (reduction.size()) && ! c.ninety; ++i)
-    {
-        const int n = i - origin + 1;
-        const double moved = (reduction[static_cast<std::size_t> (i)] - start) / (end - start);
-        if (! c.moved && moved > 0.0)
-            c.moved = n - 1;
-        if (! c.sixtyThree && moved >= oneTimeConstant)
-            c.sixtyThree = n;
-        if (! c.ninety && moved >= ninetyPercent)
-            c.ninety = n;
-    }
-    return c;
-}
 
 } // namespace
 
@@ -99,20 +72,25 @@ TEST_CASE ("In High Quality, Lookahead's step response matches dyn-lab's within 
     const double quiet = settings.thresholdDb - stepDb, loud = settings.thresholdDb + stepDb;
     const int latency = latencySamples (highQuality, rate.sampleRate);
 
-    // Up, for Attack, from the step the listener hears.
-    const auto attack = crossings (test::heardGainReduction (settings, rate.sampleRate, quiet, loud, 1.0, latency), latency, 0.0, response.gainReductionDb);
+    // Up, for Attack, from the step the listener hears, at index latency: counted from the Lookahead budget before it,
+    // so a Gain Reduction that starts before the step is measured too, then moved to count from the step.
+    const int budget = lookaheadBudgetSamples (rate.sampleRate);
+    const auto attack = test::crossings (test::heardGainReduction (settings, rate.sampleRate, quiet, loud, 1.0, latency),
+                                         0.0,
+                                         response.gainReductionDb,
+                                         static_cast<std::size_t> (latency - budget));
     REQUIRE (attack.ninety);
-    CHECK (std::abs (*attack.sixtyThree * sampleMs - rate.step.attack63) <= sampleMs);
-    CHECK (std::abs (*attack.ninety * sampleMs - rate.step.attack90) <= sampleMs);
+    CHECK (std::abs ((*attack.sixtyThree - budget) * sampleMs - rate.step.attack63) <= sampleMs);
+    CHECK (std::abs ((*attack.ninety - budget) * sampleMs - rate.step.attack90) <= sampleMs);
 
     // And down, for Hold and Release, from when the detector meets the step: Lookahead before the listener does.
     const int detectorMeetsIt = latency - static_cast<int> (std::lround (settings.lookaheadMs * rate.sampleRate / 1000.0));
-    const auto release = crossings (test::heardGainReduction (settings, rate.sampleRate, loud, quiet, 2.0, latency),
-                                    detectorMeetsIt,
-                                    response.gainReductionDb,
-                                    0.0);
+    const auto release = test::crossings (test::heardGainReduction (settings, rate.sampleRate, loud, quiet, 2.0, latency),
+                                          response.gainReductionDb,
+                                          0.0,
+                                          static_cast<std::size_t> (detectorMeetsIt));
     REQUIRE (release.ninety);
-    CHECK (std::abs (*release.moved * sampleMs - rate.step.hold) <= sampleMs);
-    CHECK (std::abs ((*release.sixtyThree - *release.moved) * sampleMs - rate.step.release63) <= sampleMs);
-    CHECK (std::abs ((*release.ninety - *release.moved) * sampleMs - rate.step.release90) <= sampleMs);
+    CHECK (std::abs (release.held * sampleMs - rate.step.hold) <= sampleMs);
+    CHECK (std::abs ((*release.sixtyThree - release.held) * sampleMs - rate.step.release63) <= sampleMs);
+    CHECK (std::abs ((*release.ninety - release.held) * sampleMs - rate.step.release90) <= sampleMs);
 }
