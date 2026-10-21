@@ -62,14 +62,17 @@ if(COMP1_BUILD_PLUGIN)
         plugin/LatencyReportTest.cpp
         plugin/PluginShellTest.cpp
         plugin/SaturationParameterTest.cpp
+        plugin/SessionTest.cpp
         plugin/StateTest.cpp
         plugin/StereoParametersTest.cpp
     )
-    # tests/engine for Measure.h, the test helpers both targets share.
+    # tests/engine for Measure.h, the test helpers both targets share. plugkit-ui's headers, not its sources, which
+    # compile into the plugin target alone.
     target_include_directories(comp1_plugin_tests PRIVATE
         ${PROJECT_SOURCE_DIR}/plugin
         ${CMAKE_CURRENT_SOURCE_DIR}/engine
-        $<TARGET_PROPERTY:comp1,INCLUDE_DIRECTORIES>)
+        $<TARGET_PROPERTY:comp1,INCLUDE_DIRECTORIES>
+        $<TARGET_PROPERTY:plugkit-ui,INTERFACE_INCLUDE_DIRECTORIES>)
     target_compile_definitions(comp1_plugin_tests PRIVATE $<TARGET_PROPERTY:comp1,COMPILE_DEFINITIONS>)
     target_link_libraries(comp1_plugin_tests PRIVATE comp1 comp1::engine Catch2::Catch2WithMain)
     # The tests compare samples and values exactly, on purpose. Set on the sources, whose options come after the

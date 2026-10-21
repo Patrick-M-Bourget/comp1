@@ -14,8 +14,8 @@ TEST_CASE ("Saved state carries the state version")
     comp1::PluginProcessor processor;
     const auto xml = host::savedXml (processor);
     REQUIRE (xml != nullptr);
-    CHECK (xml->getIntAttribute ("version", -1) == 1);
-    CHECK (comp1::PluginProcessor::stateVersion == 1);
+    CHECK (xml->getIntAttribute ("version", -1) == 2);
+    CHECK (comp1::PluginProcessor::stateVersion == 2);
 }
 
 TEST_CASE ("Save, load and save again gives the same bytes")

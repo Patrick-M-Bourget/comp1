@@ -41,6 +41,17 @@ if(APPLE AND DEFINED FETCHCONTENT_BASE_DIR)
     endif()
 endif()
 
+# JUCE, the Plugin Shell's, is fetched before plugkit, so that plugkit-ui links comp1's pin (plugkit's README.md,
+# "Linking plugkit-ui"). An Engine-only build fetches no JUCE, and plugkit defines no plugkit::ui.
+if(COMP1_BUILD_PLUGIN)
+    FetchContent_Declare(JUCE
+        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+        GIT_TAG 9.0.3
+        GIT_SHALLOW TRUE
+        SYSTEM)
+    FetchContent_MakeAvailable(JUCE)
+endif()
+
 # plugkit, at the one tag plugkit.conf pins (ADR 0007): CI clones the same tag for the check harness, so the two
 # can't drift. A changed pin reconfigures.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/plugkit.conf")
