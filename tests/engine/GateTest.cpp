@@ -110,7 +110,7 @@ std::vector<double> gateReductionAfterStep (const Settings::Gate& gate, double s
 
 } // namespace
 
-TEST_CASE ("Gate Attack, Gate Release and the delay before Gate Release begins match dyn-lab's gate within one sample, at every sample rate")
+TEST_CASE ("Gate Attack, Gate Release and the delay before Gate Release begins match dyn-lab's gate within one sample, at every sample rate", "[sweep]")
 {
     const auto& response = GENERATE (from_range (gateResponses()));
     const auto& rate = GENERATE_REF (from_range (response.rates));
@@ -135,7 +135,7 @@ TEST_CASE ("Gate Attack, Gate Release and the delay before Gate Release begins m
     CHECK (std::abs (*opening.ninety * sampleMs - rate.step.attack90) <= sampleMs);
 }
 
-TEST_CASE ("With the Gate off, its settings change nothing, bit for bit, in both Processing Modes")
+TEST_CASE ("With the Gate off, its settings change nothing, bit for bit, in both Processing Modes", "[sweep]")
 {
     const auto mode = GENERATE (zeroLatency, highQuality);
     const double sampleRate = GENERATE (44100.0, 192000.0);
