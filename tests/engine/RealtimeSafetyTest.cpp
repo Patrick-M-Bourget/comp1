@@ -24,8 +24,21 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
     for (int block = 0; block < 64; ++block)
     {
         // Every setting moving every block, Output Gain back to 0 dB every few, Auto Release and Auto Gain on and off,
-        // Detection Source and Detection Audition moving every few; blocks cutting the grid's runs; the Sidechain
+        // Detection Source and Detection Audition moving every few, every Detection EQ setting moving every block and
+        // each band switching on and off, and changing Shape or Slope; blocks cutting the grid's runs; the Sidechain
         // coming and going, and changing between mono and stereo.
+        DetectionEq eq;
+        eq.highPass.on = block % 4 != 1;
+        eq.highPass.filter.frequency = 20.0 + 97.0 * block;
+        eq.highPass.filter.slope = 6.0 * (1 + block % 16);
+        eq.lowPass.on = block % 3 != 2;
+        eq.lowPass.filter.frequency = 20000.0 - 150.0 * block;
+        eq.lowPass.filter.slope = 6.0 * (1 + (block * 5) % 16);
+        eq.band.on = block % 5 != 3;
+        eq.band.filter.shape = shapeOf (static_cast<DetectionBandShape> (block % 3));
+        eq.band.filter.frequency = 30.0 + 211.0 * block;
+        eq.band.filter.gain = -30.0 + block % 61;
+        eq.band.filter.q = 0.025 + 0.6 * block;
         engine.setSettings ({ .thresholdDb = -6.0 * (block % 10),
                               .ratio = block % 5 == 4 ? std::numeric_limits<double>::infinity() : 1.0 + block % 5,
                               .kneeDb = 8.0 * (block % 9),
@@ -37,6 +50,7 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
                               .autoGain = block % 2 == 0,
                               .outputGainDb = block % 4 == 3 ? 0.0 : 6.0 * (block % 7) - 18.0,
                               .detectionSource = block % 6 < 3 ? DetectionSource::External : DetectionSource::Internal,
+                              .detectionEq = eq,
                               .detectionAudition = block % 5 < 2 });
         const int count = block % 3 == 0 ? blockSize : 1 + (block * 37) % blockSize;
         engine.process ({ main, 2, count }, sidechains[(block / 2) % 3]);
