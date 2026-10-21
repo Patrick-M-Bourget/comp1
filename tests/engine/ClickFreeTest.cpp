@@ -105,6 +105,10 @@ const std::vector<Jump>& jumps()
         { "Hold", [] (Settings& s, bool b) { s.holdMs = b ? 500.0 : 0.0; } },
         { "Range", [] (Settings& s, bool b) { s.rangeDb = b ? 60.0 : 0.0; } },
         { "Auto Gain", [] (Settings& s, bool b) { s.autoGain = b; } },
+        { "Lookahead", [] (Settings& s, bool b) {
+             s.processingMode = ProcessingMode::HighQuality; // Zero Latency doesn't read it
+             s.lookaheadMs = b ? 5.0 : 0.0;
+         } },
     };
     return all;
 }
