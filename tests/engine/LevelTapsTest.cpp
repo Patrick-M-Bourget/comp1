@@ -467,3 +467,30 @@ TEST_CASE ("The level taps can be read while the host prepares the Engine again 
     reader.join();
     CHECK (engine.outputLevelChannels() == 2);
 }
+
+namespace
+{
+
+// The Gate on at gate's settings, with Ratio 1:1, so the compressor applies no Gain Reduction.
+Settings gated (Settings::Gate gate = {})
+{
+    gate.on = true;
+    return { .gate = gate, .ratio = 1.0 };
+}
+
+} // namespace
+
+TEST_CASE ("Settled closed, the Gate's Gain Reduction is Gate Range, and settled open, exactly none")
+{
+    // dyn-lab's gate: closed and settled, the depth is Gate Range, 20 dB at the defaults; open, none. A steady level
+    // 20 dB under Gate Threshold closes it, and one 20 dB over it keeps it open. A Gate Release of 10 ms settles well
+    // within the half second played.
+    const double rangeDb = GENERATE (20.0, 45.0);
+    CAPTURE (rangeDb);
+    const auto settings = gated ({ .rangeDb = rangeDb, .releaseMs = 10.0 });
+    const auto closed = steadyRecords (settings, { -60.0 });
+    CHECK_THAT (closed.back().gateGainReductionDb, WithinAbs (rangeDb, 0.01));
+    const auto open = steadyRecords (settings, { -20.0 });
+    for (const auto& record : open)
+        REQUIRE (record.gateGainReductionDb == 0.0);
+}

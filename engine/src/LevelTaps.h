@@ -40,12 +40,16 @@ public:
         mostGainReductionDb = std::max (mostGainReductionDb, gainReductionDb);
     }
 
+    // One sample's gain from the Gate, which puts one gain on every channel: 1 for none.
+    void noteGateGain (double gain) { smallestGateGain = std::min (smallestGateGain, gain); }
+
     LevelRecord take()
     {
         const LevelRecord record { .inputDb = levelDb (inputPeak),
                                    .outputDb = levelDb (outputPeak),
                                    .gainReductionDb = mostGainReductionDb,
-                                   .detectionLevelDb = atLeastFloor (loudestDetectionDb) };
+                                   .detectionLevelDb = atLeastFloor (loudestDetectionDb),
+                                   .gateGainReductionDb = reductionOf (smallestGateGain) };
         *this = {};
         return record;
     }
@@ -64,8 +68,12 @@ private:
 
     static double levelDb (float peak) { return atLeastFloor (plugkit::gainToDecibels (static_cast<double> (peak))); }
 
+    // A run's smallest gain as its most Gain Reduction in dB: exactly 0 for a gain of 1.
+    static double reductionOf (double gain) { return gain < 1.0 ? -plugkit::gainToDecibels (gain) : 0.0; }
+
     float inputPeak = 0.0f, outputPeak = 0.0f;
     double loudestDetectionDb = plugkit::levelFloorDb, mostGainReductionDb = 0.0;
+    double smallestGateGain = 1.0;
 };
 
 // The level history: a single-producer single-consumer ring of LevelRecords. The audio thread pushes a record per

@@ -17,6 +17,7 @@
 #include "Clean.h"
 #include "Detection.h"
 #include "Glide.h"
+#include "LevelTaps.h"
 #include "comp1/Engine.h"
 
 #include <plugkit/RunGrid.h>
@@ -140,8 +141,9 @@ public:
     }
 
     // Gates main, a piece of the scrubbed input of at most a run, in place, keyed from it and the Sidechain's piece
-    // (or none). It is fed every piece in order, on or off, so its Detection EQ stays on the run grid.
-    void process (AudioBlock main, const ConstAudioBlock* sidechain)
+    // (or none). It is fed every piece in order, on or off, so its Detection EQ stays on the run grid. It notes the
+    // gain it applies at each sample, its on/off share included, in levels.
+    void process (AudioBlock main, const ConstAudioBlock* sidechain, RunLevels& levels)
     {
         const auto key = detection.process ({ main.channels, main.numChannels, main.numSamples }, sidechain);
         const bool noKey = source == DetectionSource::External && sidechain == nullptr;
@@ -155,6 +157,7 @@ public:
             if (const double applied = on * reductionDb; applied > 0.0)
             {
                 const double gain = plugkit::decibelsToGain (-applied);
+                levels.noteGateGain (gain);
                 for (int ch = 0; ch < main.numChannels; ++ch)
                     main.channels[ch][i] = static_cast<float> (gain * main.channels[ch][i]);
             }

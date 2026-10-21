@@ -34,6 +34,8 @@ struct LevelRecord
     double outputDb = plugkit::levelFloorDb;         // the Output Level's sample peak, the louder channel's
     double gainReductionDb = 0.0;                    // the compressor's most Gain Reduction, the larger channel's
     double detectionLevelDb = plugkit::levelFloorDb; // the loudest Detection Level, the louder channel's
+    double gateGainReductionDb = 0.0;                // the Gate's most Gain Reduction
+    double limiterGainReductionDb = 0.0;             // the Limiter's most Gain Reduction
 };
 
 // The DSP Engine: plain C++, with no JUCE. prepare() may allocate; setSettings() and process() never allocate,
