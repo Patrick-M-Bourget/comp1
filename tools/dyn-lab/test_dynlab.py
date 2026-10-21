@@ -1,5 +1,5 @@
-"""Tests for dyn-lab, at its five seams: the gain computer, the step response, Auto Release, Auto Gain and the
-command line.
+"""Tests for dyn-lab, at its seams: the gain computer, the step response, Auto Release, Auto Gain, Saturation, its
+aliasing and the command line.
 
     python3 tools/dyn-lab/test_dynlab.py
 """
@@ -208,6 +208,113 @@ class AutoGain(unittest.TestCase):
         self.assertLess(dynlab.level_difference(defaults, auto_gain_db=0), -dynlab.AUTO_GAIN_TOLERANCE)
 
 
+class Saturation(unittest.TestCase):
+    def test_the_shape_is_the_line_up_to_the_knee_and_saturates_toward_2(self):
+        for u in (-1, -0.5, 0, 0.25, 1):
+            self.assertEqual(dynlab.shape(u), u)
+            self.assertEqual(dynlab.residual(u), 0)
+            self.assertEqual(dynlab.residual_antiderivative(u), 0)
+        # 1 + tanh(1) at u = 2, and odd.
+        self.assertAlmostEqual(dynlab.shape(2), 1.7615941559557649, places=12)
+        self.assertAlmostEqual(dynlab.shape(-2), -1.7615941559557649, places=12)
+        self.assertAlmostEqual(dynlab.residual(-2), 0.2384058440442351, places=12)
+        self.assertAlmostEqual(dynlab.shape(40), 2, places=12)
+
+    def test_the_shape_leaves_the_line_with_its_slope_and_curvature(self):
+        # C²: past the knee, the first difference starts at the line's slope and the second at its curvature, 0.
+        h = 1e-4
+        for side in (1, -1):
+            with self.subTest(side=side):
+                at = [dynlab.shape(side * (1 + i * h)) for i in range(3)]
+                self.assertAlmostEqual((at[1] - at[0]) / (side * h), 1, delta=1e-6)
+                self.assertAlmostEqual((at[2] - 2 * at[1] + at[0]) / h ** 2, 0, delta=1e-3)
+
+    def test_the_antiderivative_integrates_the_residual(self):
+        # A midpoint sum of r over each span, against R's difference.
+        for a, b in ((0.5, 3), (-3, 2), (2, 15), (-1.5, 0.2), (-16, -2)):
+            n = 20000
+            area = sum(dynlab.residual(a + (b - a) * (i + 0.5) / n) for i in range(n)) * (b - a) / n
+            with self.subTest(a=a, b=b):
+                self.assertAlmostEqual(dynlab.residual_antiderivative(b) - dynlab.residual_antiderivative(a), area, places=6)
+
+    def test_adaa_averages_the_residual_and_falls_back_to_the_midpoint_for_a_near_equal_pair(self):
+        adaa = dynlab.AntiAliased()
+        adaa(0.5)
+        # The average of r from 0.5 to 3, worked from the antiderivative: (ln cosh 2 - 2) / 2.5.
+        self.assertAlmostEqual(adaa(3), (math.log(math.cosh(2)) - 2) / 2.5, places=12)
+        out = adaa(3 + 1e-9)
+        self.assertEqual(out, dynlab.residual(3 + 0.5e-9))
+
+    def test_below_the_knee_the_stage_is_the_input_exactly(self):
+        x = [0.9 * math.sin(n / 3) for n in range(200)]
+        self.assertEqual(dynlab.driven(x, 0.0, dynlab.AntiAliased()), x)
+        quiet = [s / 4 for s in x]  # under -12 dB, so under the knee at Drive 6 dB
+        self.assertEqual(dynlab.driven(quiet, 6.0, dynlab.AntiAliased()), quiet)
+
+    def test_the_static_curve_is_level_compensated(self):
+        # Below the knee, the line; at full scale and Drive 12 dB (g about 3.98), (1 + tanh(g - 1)) / g.
+        self.assertAlmostEqual(dynlab.static_curve_db(-20, 12), -20, places=12)
+        g = 10 ** (12 / 20)
+        self.assertAlmostEqual(dynlab.static_curve_db(0, 12), 20 * math.log10((1 + math.tanh(g - 1)) / g), places=12)
+
+    def test_before_the_compressor_hears_the_saturated_signal_after_it_hears_the_input(self):
+        settings = dynlab.Settings()
+        off = dynlab.chain(12, settings, dynlab.Saturation())
+        before = dynlab.chain(12, settings, dynlab.Saturation(True, 12.0, "before"))
+        after = dynlab.chain(12, settings, dynlab.Saturation(True, 12.0, "after"))
+        self.assertEqual(after.gain_reduction, off.gain_reduction)
+        self.assertAlmostEqual(before.gain_reduction, dynlab.gain_reduction(dynlab.static_curve_db(12, 12), settings), places=12)
+        self.assertLess(before.gain_reduction, off.gain_reduction)
+        self.assertAlmostEqual(after.output, dynlab.static_curve_db(off.output, 12), places=12)
+        self.assertLess(after.output, off.output)
+        self.assertGreater(abs(before.output - after.output), 1)
+
+
+class Aliasing(unittest.TestCase):
+    def test_the_fft_finds_a_bin_centred_sine_in_its_bin(self):
+        n = 64
+        spectrum = dynlab.fft([0.5 * math.sin(2 * math.pi * 5 * i / n) for i in range(n)])
+        self.assertAlmostEqual(abs(spectrum[5]) * 2 / n, 0.5, places=12)
+        self.assertAlmostEqual(max(abs(c) for b, c in enumerate(spectrum[: n // 2]) if b != 5), 0, places=12)
+
+    def test_every_reference_condition_is_within_the_tolerance(self):
+        rows = dynlab.aliases()
+        self.assertEqual(len(rows), len(dynlab.ALIAS_RATES) * len(dynlab.ALIAS_FREQUENCIES) * len(dynlab.ALIAS_DRIVES))
+        self.assertEqual(sum(row.hardest for row in rows), len(dynlab.ALIAS_RATES))
+        for row in rows:
+            with self.subTest(fs=row.fs, frequency=row.frequency, drive=row.drive):
+                self.assertTrue(row.within)
+                # ADAA is better than the naive shaper everywhere.
+                self.assertLess(row.adaa, row.naive)
+
+    def test_the_naive_shaper_is_over_the_ceiling_at_the_hardest_condition(self):
+        # The tolerance can fail: without anti-aliasing, the hardest condition's worst alias is over the ceiling.
+        for row in dynlab.aliases(frequencies=(10000,), drives=(24.0,)):
+            self.assertGreater(row.naive, dynlab.ALIASING_TOLERANCE.ceiling)
+
+    def test_at_the_knee_nothing_aliases(self):
+        # At -6 dBFS and Drive 6 dB, the peak just reaches the knee: the output is the tone.
+        (row,) = dynlab.aliases(rates=(48000,), frequencies=(5000,), drives=(6.0,), level_db=-6.0)
+        self.assertLess(row.adaa, -200)
+
+    def test_the_in_band_harmonics_are_within_the_tolerance_of_the_ideal(self):
+        rows = dynlab.harmonics()
+        compared = [row for row in rows if row.compared]
+        self.assertEqual({row.harmonic for row in compared}, {3, 5})
+        self.assertEqual({row.harmonic for row in rows if not row.compared}, {2, 4})
+        for row in compared:
+            with self.subTest(fs=row.fs, frequency=row.frequency, drive=row.drive, harmonic=row.harmonic):
+                self.assertTrue(row.within)
+                self.assertLess(row.harmonic * row.frequency, row.fs / 2)
+
+    def test_the_droop_at_15_khz_is_about_a_one_sample_average(self):
+        # The 5 kHz tone's 3rd harmonic at 44.1 kHz and Drive 24 dB droops about as a one-sample average does at
+        # 15 kHz, sin(x) / x with x = pi f / fs: 1.7 dB.
+        (row,) = [row for row in dynlab.harmonics(rates=(44100,), frequencies=(5000,), drives=(24.0,)) if row.harmonic == 3]
+        x = math.pi * row.harmonic * row.frequency / row.fs
+        self.assertAlmostEqual(row.adaa - row.ideal, 20 * math.log10(math.sin(x) / x), delta=0.25)
+
+
 LAB = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(LAB))
 
@@ -237,8 +344,8 @@ class CommandLine(unittest.TestCase):
         with open(os.path.join(LAB, "USAGE.md")) as doc:
             rows = {cells[0]: cells[1:] for cells in
                     ([cell.strip() for cell in line.strip().strip("|").split("|")] for line in doc)
-                    if cells[0].lower() in dynlab.PARAMETERS}
-        self.assertEqual(set(rows), {name.capitalize() for name in dynlab.PARAMETERS})
+                    if cells[0].lower() in dynlab.PARAMETERS or cells[0] == "Drive"}
+        self.assertEqual(set(rows), {name.capitalize() for name in dynlab.PARAMETERS} | {"Drive"})
         defaults = dynlab.Settings()
         for name, ((low, high), _) in dynlab.PARAMETERS.items():
             with self.subTest(name):
@@ -246,6 +353,9 @@ class CommandLine(unittest.TestCase):
                 shown_low, shown_high = shown_range.split(" to ")
                 self.assertEqual((number(shown_low), number(shown_high)), (low, high))
                 self.assertEqual(number(shown_default), getattr(defaults, name))
+        shown_low, shown_high = rows["Drive"][0].split(" to ")
+        self.assertEqual((number(shown_low), number(shown_high)), dynlab.DRIVE_RANGE)
+        self.assertEqual(number(rows["Drive"][1]), dynlab.Saturation().drive)
 
     def test_out_of_range_settings_exit_non_zero_naming_the_parameter_and_its_range(self):
         for args, named in ((("step", "--attack", "300"), ("Attack", "0.005", "250")),
@@ -255,7 +365,9 @@ class CommandLine(unittest.TestCase):
                             (("transfer", "--ratio", "0.5"), ("Ratio", "1", "∞")),
                             (("transfer", "--knee", "80"), ("Knee", "0", "72")),
                             (("step", "--range", "61"), ("Range", "0", "60")),
-                            (("autogain", "--range", "-1"), ("Range", "0", "60"))):
+                            (("autogain", "--range", "-1"), ("Range", "0", "60")),
+                            (("saturation", "--drive", "25"), ("Drive", "0", "24")),
+                            (("aliasing", "--drive", "-1"), ("Drive", "0", "24"))):
             with self.subTest(args):
                 result = run(*args)
                 self.assertNotEqual(result.returncode, 0)
@@ -265,6 +377,13 @@ class CommandLine(unittest.TestCase):
     def test_autogain_exits_non_zero_when_the_level_moves_past_the_tolerance(self):
         # Threshold -60 dB at Ratio inf asks for more than the estimate can keep level (USAGE.md says why).
         result = run("autogain", "--threshold", "-60", "--ratio", "inf")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("outside", result.stdout)
+
+    def test_aliasing_exits_non_zero_when_a_row_is_outside_the_tolerance(self):
+        # At 96 kHz a 10 kHz tone is a smaller fraction of the rate, and its naive aliases are lower, so ADAA's
+        # improvement over them at Drive 24 dB is under the minimum.
+        result = run("aliasing", "--drive", "24", "--rates", "96000")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("outside", result.stdout)
 

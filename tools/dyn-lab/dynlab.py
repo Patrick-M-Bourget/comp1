@@ -345,6 +345,368 @@ def level_difference(settings, auto_gain_db=None):
     return sum(differences) / len(differences)
 
 
+# --- Saturation -----------------------------------------------------------------------------------
+
+# ADR 0008 (as amended): Drive is comp1's own. At 0 dB a full-scale signal just reaches the shape's knee.
+DRIVE_RANGE = (0, 24)
+
+
+@dataclass
+class Saturation:
+    """The Saturation stage's controls: on or off, Drive in dB, and Saturation Position, before or after the
+    compressor."""
+    on: bool = False
+    drive: float = 6.0
+    position: str = "after"
+
+
+def check_drive(drive):
+    """Raises ValueError when Drive is outside its range, naming the range."""
+    low, high = DRIVE_RANGE
+    if not low <= drive <= high:
+        raise ValueError(f"Drive {drive:g} dB is outside its range, {low:g} to {high:g} dB")
+
+
+def _log_cosh(t):
+    """ln cosh t for t >= 0, without overflow: t + ln(1 + e^-2t) - ln 2."""
+    return t + math.log1p(math.exp(-2 * t)) - math.log(2)
+
+
+def shape(u):
+    """The soft-clip shape, f(u): exactly u for |u| <= 1; above it, 1 + tanh(|u| - 1) with u's sign, which leaves the
+    line with the same slope (1) and curvature (0), so it is C²-smooth, and saturates toward 2."""
+    t = abs(u) - 1
+    if t <= 0:
+        return u
+    return math.copysign(1 + math.tanh(t), u)
+
+
+def residual(u):
+    """The shape's nonlinear residual, r(u) = f(u) - u: exactly 0 for |u| <= 1, then tanh(t) - t with u's sign, where
+    t = |u| - 1."""
+    t = abs(u) - 1
+    if t <= 0:
+        return 0.0
+    return -math.copysign(t - math.tanh(t), u)
+
+
+def residual_antiderivative(u):
+    """R(u), the residual's antiderivative, in closed form: 0 for |u| <= 1, then ln cosh t - t²/2 (even, as r is
+    odd), with t = |u| - 1. It is continuous at the knee, where both pieces are 0."""
+    t = abs(u) - 1
+    if t <= 0:
+        return 0.0
+    return _log_cosh(t) - t * t / 2
+
+
+def driven(x, drive_db, residual_of):
+    """Level-compensated Drive: x + r(g x) / g, with g = 10^(Drive/20), for each sample of x, with the residual
+    worked out by residual_of (one call per driven sample, in order). Below the knee, the output is x exactly."""
+    g = 10 ** (drive_db / 20)
+    return [s + residual_of(g * s) / g for s in x]
+
+
+# Two driven samples closer than this count as equal: the quotient falls back to the residual at their midpoint.
+# Far above where the quotient's rounding matters, far below where the midpoint's error does (it is second order in
+# the gap: under 1e-13 of the residual's curvature).
+ADAA_EQUAL_WITHIN = 1e-6
+
+
+class AntiAliased:
+    """First-order antiderivative anti-aliasing (ADAA) of the residual only (ADR 0005): each driven sample's
+    residual is the average of r over the line from the last driven sample to this one,
+    (R(u[n]) - R(u[n-1])) / (u[n] - u[n-1]). The linear part passes sample-aligned, outside it. One per channel."""
+
+    def __init__(self):
+        self.previous = 0.0
+        self.previous_antiderivative = 0.0
+
+    def __call__(self, u):
+        antiderivative = residual_antiderivative(u)
+        if abs(u - self.previous) < ADAA_EQUAL_WITHIN:
+            out = residual((u + self.previous) / 2)
+        else:
+            out = (antiderivative - self.previous_antiderivative) / (u - self.previous)
+        self.previous, self.previous_antiderivative = u, antiderivative
+        return out
+
+
+def static_curve_db(level_db, drive_db):
+    """The static curve: the output level in dB for a steady input of level_db (a constant sample value whose
+    magnitude reads level_db, so ADAA's two samples are equal and it gives the residual itself)."""
+    g = 10 ** (drive_db / 20)
+    return 20 * math.log10(shape(g * 10 ** (level_db / 20)) / g)
+
+
+@dataclass
+class Chain:
+    """The steady output level in dB of the compressor and Saturation for a steady input, and the Gain Reduction the
+    compressor applies in it."""
+    output: float
+    gain_reduction: float
+
+
+def chain(level_db, settings, saturation):
+    """The steady compressor-plus-Saturation chain for a steady input of level_db. Before, the compressor hears the
+    saturated signal (the Internal detection signal is its input); After, it hears the input, as with Saturation off,
+    and Saturation shapes its output."""
+    if not saturation.on:
+        reduction = gain_reduction(level_db, settings)
+        return Chain(level_db - reduction, reduction)
+    if saturation.position == "before":
+        saturated = static_curve_db(level_db, saturation.drive)
+        reduction = gain_reduction(saturated, settings)
+        return Chain(saturated - reduction, reduction)
+    reduction = gain_reduction(level_db, settings)
+    return Chain(static_curve_db(level_db - reduction, saturation.drive), reduction)
+
+
+# The static curve's grid, in dB: from STATIC_LOWEST to STATIC_HIGHEST, STATIC_SPACING apart, with the onset.
+STATIC_LOWEST, STATIC_HIGHEST, STATIC_SPACING = -36.0, 6.0, 3.0
+
+
+def saturation_options(parser):
+    transfer_options(parser)
+    parser.add_argument("--drive", type=float, default=Saturation().drive, metavar="dB")
+    parser.add_argument("--level", type=float, default=0.0, metavar="dB")
+
+
+@command("saturation", options=saturation_options)
+def run_saturation(args):
+    check_drive(args.drive)
+    report_saturation(settings_from(args), args.drive, args.level)
+
+
+def report_saturation(settings, drive_db, level_db):
+    """The static curve at drive_db, then the compressor-plus-Saturation chain at level_db, Before and After."""
+    onset = -drive_db
+    print(f"Saturation static curve, Drive {drive_db:g} dB: steady input; the shape leaves the line at {onset:g} dB")
+    print(f"{'input dB':>9} {'output dB':>10}  region")
+    count = round((STATIC_HIGHEST - STATIC_LOWEST) / STATIC_SPACING)
+    grid = sorted({round(STATIC_LOWEST + i * STATIC_SPACING, 6) for i in range(count + 1)} | {onset})
+    for level in grid:
+        print(f"{level:9.2f} {static_curve_db(level, drive_db):10.2f}  {'linear' if level <= onset else 'saturating'}")
+    print(f"ceiling {20 * math.log10(2 / 10 ** (drive_db / 20)):.2f} dB: the shape saturates toward 2, over Drive")
+    print(f"Compressor and Saturation, steady input {level_db:g} dB, Drive {drive_db:g} dB, {_transfer_heading(settings)}")
+    print(f"{'position':>9} {'output dB':>10} {'reduction':>10}")
+    for name, saturation in (("off", Saturation()),
+                             ("before", Saturation(True, drive_db, "before")),
+                             ("after", Saturation(True, drive_db, "after"))):
+        steady = chain(level_db, settings, saturation)
+        print(f"{name:>9} {steady.output:10.2f} {steady.gain_reduction:10.2f}")
+
+
+# --- Saturation: aliasing -------------------------------------------------------------------------
+
+def fft(samples):
+    """The discrete Fourier transform of a power-of-two count of real samples: iterative radix-2."""
+    n = len(samples)
+    bits = n.bit_length() - 1
+    out = [complex(samples[int(f"{i:0{bits}b}"[::-1], 2)]) for i in range(n)] if bits else [complex(samples[0])]
+    size = 2
+    while size <= n:
+        half = size // 2
+        twiddles = [complex(math.cos(2 * math.pi * k / size), -math.sin(2 * math.pi * k / size)) for k in range(half)]
+        for start in range(0, n, size):
+            for k in range(half):
+                a, b = out[start + k], out[start + k + half] * twiddles[k]
+                out[start + k], out[start + k + half] = a + b, a - b
+        size *= 2
+    return out
+
+
+# Each measurement's length: a power of two, so a tone of a whole number of cycles over it is bin-centred and the
+# window can be rectangular, with no leakage.
+ALIAS_SAMPLES = 4096
+
+
+def tone_bin(frequency, fs):
+    """The bin of the tone nearest frequency at fs: an odd one, so, the shape being odd, no alias of a harmonic lands
+    on a harmonic's own bin."""
+    k = round(frequency * ALIAS_SAMPLES / fs)
+    return k if k % 2 else k + 1
+
+
+def tone(k, level_db):
+    """A sine of k whole cycles over ALIAS_SAMPLES, its peak at level_db, two lengths long: the first lets ADAA's
+    state settle, the second is measured. It starts at 0, as ADAA's state does."""
+    a = 10 ** (level_db / 20)
+    return [a * math.sin(2 * math.pi * k * n / ALIAS_SAMPLES) for n in range(2 * ALIAS_SAMPLES)]
+
+
+def spectrum(output):
+    """Each bin's peak amplitude, from DC to Nyquist, over output's second length."""
+    scale = 2 / ALIAS_SAMPLES
+    return [abs(c) * scale for c in fft(output[ALIAS_SAMPLES:])[:ALIAS_SAMPLES // 2 + 1]]
+
+
+def worst_alias_db(amplitudes, k):
+    """The worst alias in dB relative to the fundamental: the loudest bin that holds no in-band harmonic."""
+    harmonics = set(range(k, ALIAS_SAMPLES // 2 + 1, k))
+    worst = max(a for b, a in enumerate(amplitudes) if b not in harmonics)
+    return 20 * math.log10(max(worst, 1e-300) / amplitudes[k])
+
+
+def shaped(k, level_db, drive_db, residual_of):
+    """The spectrum of the bin-centred tone k at level_db through the Saturation stage at drive_db."""
+    return spectrum(driven(tone(k, level_db), drive_db, residual_of))
+
+
+# The reference conditions: each rate, tone and Drive, at one level, full scale. Drive is level-compensated, so the
+# shape sees only the level plus the Drive, and every figure relative to the fundamental depends on that sum: a
+# quieter level is a lower Drive. Full scale gives each Drive its hardest case.
+ALIAS_RATES = (44100, 48000)
+ALIAS_FREQUENCIES = (1000, 3000, 5000, 10000)
+ALIAS_DRIVES = (6.0, 12.0, 18.0, 24.0)
+ALIAS_LEVEL = 0.0
+
+
+# The hardest reference condition: the highest tone at the top of Drive's range, at each rate.
+HARDEST = (max(ALIAS_FREQUENCIES), DRIVE_RANGE[1])
+
+
+@dataclass
+class AliasingTolerance:
+    """ADAA's worst alias in dB relative to the fundamental is at most ceiling at every reference condition, and at
+    the hardest (HARDEST) at least improvement dB under the naive shaper's. USAGE.md gives the reasons."""
+    ceiling: float
+    improvement: float
+
+
+ALIASING_TOLERANCE = AliasingTolerance(ceiling=-24.0, improvement=15.0)
+
+
+@dataclass
+class Alias:
+    """The worst alias at one condition, in dB relative to the fundamental: the naive shaper's and ADAA's."""
+    fs: float
+    frequency: float  # the tone's, bin-centred
+    drive: float
+    naive: float
+    adaa: float
+    hardest: bool = False
+
+    @property
+    def within(self):
+        return (self.adaa <= ALIASING_TOLERANCE.ceiling
+                and (not self.hardest or self.naive - self.adaa >= ALIASING_TOLERANCE.improvement))
+
+
+def aliases(rates=ALIAS_RATES, frequencies=ALIAS_FREQUENCIES, drives=ALIAS_DRIVES, level_db=ALIAS_LEVEL):
+    """The worst alias at each condition, the hardest marked."""
+    rows = []
+    for fs in rates:
+        for frequency in frequencies:
+            k = tone_bin(frequency, fs)
+            for drive in drives:
+                naive = worst_alias_db(shaped(k, level_db, drive, residual), k)
+                adaa = worst_alias_db(shaped(k, level_db, drive, AntiAliased()), k)
+                hardest = (frequency, drive) == HARDEST
+                rows.append(Alias(fs, k * fs / ALIAS_SAMPLES, drive, naive, adaa, hardest))
+    return rows
+
+
+# --- Saturation: the residual's half-sample offset ------------------------------------------------
+
+# The ideal reference: the shaper run at IDEAL_POINTS points a cycle (at least 80 times oversampled at the reference
+# tones), then band-limited to the rate's Nyquist, so its harmonics are the shape's own, with no aliases and no
+# ADAA averaging.
+IDEAL_POINTS = 4096
+# The tones whose in-band harmonics are compared: the reference tones with a harmonic below Nyquist.
+HARMONIC_FREQUENCIES = (1000, 3000, 5000)
+HARMONICS = (2, 3, 4, 5)
+# ADAA's in-band harmonics are within this many dB of the ideal reference's (USAGE.md gives the reasons).
+HARMONIC_TOLERANCE_DB = 4.0
+# The shape is odd, so its even harmonics are absent: under this, in dB, a harmonic isn't compared.
+ABSENT_DB = -200.0
+
+
+def ideal_harmonic_db(harmonic, level_db, drive_db):
+    """The ideal reference's harmonic, its peak amplitude in dB: the shaper's output over one cycle of a sine at
+    level_db, at IDEAL_POINTS points, correlated with the harmonic."""
+    g, a = 10 ** (drive_db / 20), 10 ** (level_db / 20)
+    total = 0j
+    for i in range(IDEAL_POINTS):
+        phase = 2 * math.pi * i / IDEAL_POINTS
+        total += shape(g * a * math.sin(phase)) / g * complex(math.cos(harmonic * phase), -math.sin(harmonic * phase))
+    return 20 * math.log10(max(abs(total) * 2 / IDEAL_POINTS, 1e-300))
+
+
+@dataclass
+class Harmonic:
+    """One in-band harmonic of a reference tone through ADAA, and the ideal reference's, peak amplitudes in dB."""
+    fs: float
+    frequency: float  # the tone's, bin-centred
+    drive: float
+    harmonic: int
+    ideal: float
+    adaa: float
+
+    @property
+    def compared(self):
+        return self.ideal > ABSENT_DB
+
+    @property
+    def within(self):
+        return not self.compared or abs(self.adaa - self.ideal) <= HARMONIC_TOLERANCE_DB
+
+
+def harmonics(rates=ALIAS_RATES, frequencies=HARMONIC_FREQUENCIES, drives=ALIAS_DRIVES, level_db=ALIAS_LEVEL):
+    """Each in-band harmonic, 2nd to 5th, of each reference tone through ADAA, beside the ideal reference's."""
+    rows = []
+    for fs in rates:
+        for frequency in frequencies:
+            k = tone_bin(frequency, fs)
+            for drive in drives:
+                amplitudes = shaped(k, level_db, drive, AntiAliased())
+                for h in HARMONICS:
+                    if h * k < ALIAS_SAMPLES // 2:
+                        adaa = 20 * math.log10(max(amplitudes[h * k], 1e-300))
+                        rows.append(Harmonic(fs, k * fs / ALIAS_SAMPLES, drive, h, ideal_harmonic_db(h, level_db, drive), adaa))
+    return rows
+
+
+def aliasing_options(parser):
+    parser.add_argument("--drive", type=float, nargs="+", default=list(ALIAS_DRIVES), metavar="dB")
+    parser.add_argument("--rates", type=float, nargs="+", default=list(ALIAS_RATES), metavar="Hz")
+
+
+@command("aliasing", options=aliasing_options)
+def run_aliasing(args):
+    for drive in args.drive:
+        check_drive(drive)
+    _check_rates(args.rates)
+    if not report_aliasing(args.rates, args.drive):
+        raise SystemExit(1)
+
+
+def report_aliasing(rates=ALIAS_RATES, drives=ALIAS_DRIVES):
+    """The worst alias at each reference condition, naive and ADAA, then ADAA's in-band harmonics beside the ideal
+    reference's. True when every row is within its tolerance."""
+    tolerance = ALIASING_TOLERANCE
+    print(f"Saturation aliasing, bin-centred tones at {ALIAS_LEVEL:g} dBFS over {ALIAS_SAMPLES} samples: the worst "
+          f"alias in dB relative to the fundamental")
+    print(f"tolerance: ADAA at most {tolerance.ceiling:g} dB, and at the hardest condition (*) at least "
+          f"{tolerance.improvement:g} dB under naive")
+    print(f"{'rate Hz':>8} {'tone Hz':>8} {'drive dB':>9} {'naive':>8} {'ADAA':>8} {'better':>8}  check")
+    rows = aliases(rates, ALIAS_FREQUENCIES, drives)
+    for row in rows:
+        print(f"{row.fs:8g} {row.frequency:8.1f} {row.drive:9g} {row.naive:8.2f} {row.adaa:8.2f} "
+              f"{row.naive - row.adaa:8.2f}  {'within' if row.within else 'outside'}{' *' if row.hardest else ''}")
+    print(f"In-band harmonics through ADAA against the ideal reference (the shaper {IDEAL_POINTS} points a cycle, "
+          f"band-limited), peak dB; tolerance ±{HARMONIC_TOLERANCE_DB:g} dB")
+    print(f"{'rate Hz':>8} {'tone Hz':>8} {'drive dB':>9} {'harmonic':>9} {'at Hz':>8} {'ideal':>8} {'ADAA':>8} "
+          f"{'diff':>7}  check")
+    bands = harmonics(rates, HARMONIC_FREQUENCIES, drives)
+    for row in bands:
+        if row.compared:
+            print(f"{row.fs:8g} {row.frequency:8.1f} {row.drive:9g} {row.harmonic:9d} "
+                  f"{row.harmonic * row.frequency:8.1f} {row.ideal:8.2f} {row.adaa:8.2f} {row.adaa - row.ideal:7.2f}  "
+                  f"{'within' if row.within else 'outside'}")
+    print(f"the even harmonics are absent from both, under {ABSENT_DB:g} dB: the shape is odd")
+    return all(row.within for row in rows) and all(row.within for row in bands)
+
+
 # --- Commands -------------------------------------------------------------------------------------
 
 def _ratio(text):

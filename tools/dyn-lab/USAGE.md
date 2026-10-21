@@ -2,7 +2,7 @@
 
 A Python model of comp1's Characters. It prints the figures the Engine's tests check, so a ticket brief can cite a command and its output exactly. It needs only the standard library: no installs, no numpy. Run it from the repo root.
 
-It models only the Clean Character so far. Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
+It models the Clean Character, and the Saturation stage (see [Saturation](#saturation)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
 
 Hold freezes the Gain Reduction for Hold ms whenever it stops rising, mid-Attack included, before Release begins. Any rise restarts the count.
 
@@ -10,7 +10,7 @@ Auto Release, when on, lengthens Release after sustained compression and leaves 
 
 Range caps the Gain Reduction the gain computer asks for, before the detector smooths it. So the Transfer Curve rises with the input again, Range below it, once the Gain Reduction reaches Range, and Attack, Release and Hold take the same times over a smaller step. At 60 dB, its top, Range sets no limit (ADR 0008).
 
-Every option has a default, and a setting outside its range exits with an error that names the range. The ranges are named once in `dynlab.py` (`THRESHOLD_RANGE`, `RATIO_RANGE` and so on), each with its source: Pro-C 3's documentation, or ADR 0008 for Threshold, Release and Range. The check harness's `docs` stage fails when one differs from the plugin's, `engine/include/comp1/Settings.h`'s `parameterRanges` (`LAB_RANGES` in `plugkit.conf`).
+Every option has a default, and a setting outside its range exits with an error that names the range. The ranges are named once in `dynlab.py` (`THRESHOLD_RANGE`, `RATIO_RANGE` and so on), each with its source: Pro-C 3's documentation, or ADR 0008 for Threshold, Release, Range and Drive. The check harness's `docs` stage fails when one differs from the plugin's, `engine/include/comp1/Settings.h`'s `parameterRanges` (`LAB_RANGES` in `plugkit.conf`).
 
 | Setting | Range | Default |
 |---|---|---|
@@ -21,6 +21,7 @@ Every option has a default, and a setting outside its range exits with an error 
 | Release | 5 to 5000 ms | 100 ms |
 | Hold | 0 to 500 ms | 0 ms |
 | Range | 0 to 60 dB | 60 dB |
+| Drive | 0 to 24 dB | 6 dB |
 | Auto Release | off or on (`--auto-release`) | off |
 
 ## `transfer`
@@ -72,6 +73,51 @@ These are the settings the check covers, the Engine's tests too:
     python3 tools/dyn-lab/dynlab.py autogain --threshold -30
     python3 tools/dyn-lab/dynlab.py autogain --threshold -30 --ratio inf
     python3 tools/dyn-lab/dynlab.py autogain --threshold -6 --ratio 2
+
+## Saturation
+
+The Saturation stage is one soft-clip shape, f(u), with level-compensated Drive. The shape is exactly linear for |u| ≤ 1. Above that it is 1 + tanh(|u| − 1), with u's sign, so it leaves the line with the same slope (1) and curvature (0): it is C²-smooth, and it saturates toward 2. Its nonlinear residual is r(u) = f(u) − u, which is 0 for |u| ≤ 1 and tanh(t) − t, with u's sign, above it, where t = |u| − 1. The residual's antiderivative is R(u) = ln cosh t − t²/2 above the knee, and 0 below it. Drive, in dB, gives g = 10^(Drive/20), and the stage's output is x + r(g·x)/g. So below the knee the output is the input exactly, and the knee sits at full scale at Drive 0 dB and Drive dB under it above that. The output saturates toward 2/g.
+
+Only the residual is anti-aliased (ADR 0005), with first-order antiderivative anti-aliasing (ADAA): each driven sample's residual is (R(uₙ) − R(uₙ₋₁)) / (uₙ − uₙ₋₁), the average of r along the line between the two samples. When the two are within 10⁻⁶ of each other (`ADAA_EQUAL_WITHIN`), it is the residual at their midpoint instead. That is far above where the quotient's rounding matters, and the midpoint's error, second order in the gap, is far below anything measurable. The linear part, x, passes sample-aligned.
+
+### `saturation`
+
+Prints the static curve at a Drive (6 dB by default): the output level for each steady input level, from −36 to +6 dB in 3 dB steps, plus the level where the shape leaves the line. A steady input is a constant sample value whose magnitude reads its level, so ADAA's two samples are equal and it gives the residual itself. Then it prints the steady output level and the Gain Reduction of the compressor with Saturation, at a steady input level (`--level`, 0 dB by default), for Saturation off, Before and After:
+
+- **Before:** the compressor hears the saturated signal (the Internal detection signal is its input).
+- **After:** the compressor hears the input, as with Saturation off, so its Gain Reduction is the same, and Saturation shapes its output.
+
+The compressor options are `transfer`'s.
+
+    python3 tools/dyn-lab/dynlab.py saturation
+    python3 tools/dyn-lab/dynlab.py saturation --drive 12
+    python3 tools/dyn-lab/dynlab.py saturation --drive 24
+    python3 tools/dyn-lab/dynlab.py saturation --drive 12 --level 12
+
+The last is the Engine's Before and After test. At the defaults the compressor's output is under the knee at Drive 12 dB until the input passes +6 dB, so a +12 dB input makes After saturate as well: Before −14.99 dB, After −10.52 dB, and Saturation off −10.50 dB.
+
+### `aliasing`
+
+Prints the worst alias at each reference condition, for the naive shaper and for ADAA, and checks it against `ALIASING_TOLERANCE`. Then it prints ADAA's in-band harmonics beside an ideal reference's, and checks them against `HARMONIC_TOLERANCE_DB`. It exits non-zero when a row fails.
+
+**The reference conditions** are each rate (44.1 and 48 kHz by default, `--rates`), tone (1, 3, 5 and 10 kHz) and Drive (6, 12, 18 and 24 dB, `--drive`), at 0 dBFS. Each tone is a sine with an odd whole number of cycles over 4096 samples (`ALIAS_SAMPLES`), so it is bin-centred: a rectangular window has no leakage, and no alias of a harmonic lands on a harmonic's own bin, since the shape is odd. It runs for two lengths, and the second is measured, after ADAA's state has settled. The worst alias is the loudest bin holding no in-band harmonic, in dB relative to the fundamental. There is one level, full scale: Drive is level-compensated, so every figure relative to the fundamental depends only on the level plus the Drive, and a quieter level is the same as a lower Drive. Full scale gives each Drive its hardest case.
+
+**`ALIASING_TOLERANCE`** has two parts:
+
+- **The ceiling, −24 dB:** ADAA's worst alias is at most 24 dB under the fundamental at every reference condition. The worst is −25.5 dB (10 kHz at Drive 18 dB, at 48 kHz). Below 10 kHz, ADAA's aliases are all at least 24 dB down, and below 5 kHz at least 30 dB. First-order ADAA alone at the base rate can't do much better on a tone this high this hard driven: a tighter ceiling needs Oversampling (#10), whose rows extend the table.
+- **The improvement, 15 dB:** at the hardest condition, the highest tone at the top of Drive's range (10 kHz at 24 dB, `HARDEST`), ADAA's worst alias is at least 15 dB under the naive shaper's. The naive shaper's is −9.8 dB there, ADAA's −32.6 dB at 44.1 kHz and −29.5 dB at 48 kHz, so it improves by 22.8 and 19.7 dB. 15 dB leaves room for small changes to the shape, and fails at once if the residual isn't anti-aliased. The tolerance is for the base rates it names: at 96 kHz a 10 kHz tone is a milder case, its naive aliases are already lower, and ADAA improves on them by only 11.5 dB, so `--rates 96000` fails it.
+
+Lower tones gain less: 4.5 to 9 dB at 1 kHz, where the aliases are already 50 dB or more down, and 5 to 13 dB at 3 and 5 kHz.
+
+**The residual's half-sample offset (ADR 0005):** ADAA averages the residual over a sample, so it delays it by half a sample and droops it toward Nyquist, while the linear part passes sample-aligned. The harmonics are the residual's alone (the linear part is a pure sine), so the in-band harmonics, 2nd to 5th, of the 1, 3 and 5 kHz tones show it, up to 15 kHz. The ideal reference is the shaper run at 4096 points a cycle (at least 80 times oversampled), then band-limited to Nyquist: the shape's own harmonics, with no aliasing and no averaging. The even harmonics are absent from both, as the shape is odd.
+
+**`HARMONIC_TOLERANCE_DB`, ±4 dB:** ADAA's in-band harmonics are within 4 dB of the ideal's. The droop grows with the harmonic's frequency and at low Drive. At 15 kHz at 44.1 kHz it is 1.8 dB at Drive 24 dB, close to a half-sample average's sinc response (1.7 dB). At Drive 6 dB it is 3.8 dB, the worst: there the residual is only the tips of the peaks, where the averaging's straight line between samples cuts the peak's curve the most. Below 10 kHz the harmonics are within 1.3 dB. A harmonic past 15 kHz, at the 7 kHz tone's 21 kHz, would droop up to 8.4 dB: that is beyond the band the tolerance covers.
+
+The offset moves the fundamental too, since the residual cancels part of it as the shape saturates: at 5 kHz at Drive 24 dB, ADAA's fundamental is 7.6 dB louder than the ideal's at 44.1 kHz, so a high tone is flattened less than a low one. Only the harmonics are checked.
+
+    python3 tools/dyn-lab/dynlab.py aliasing
+    python3 tools/dyn-lab/dynlab.py aliasing --drive 12
+    python3 tools/dyn-lab/dynlab.py aliasing --drive 6 24 --rates 44100
 
 ## Auto Release
 
