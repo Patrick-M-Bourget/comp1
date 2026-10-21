@@ -39,7 +39,7 @@ TEST_CASE ("At 0 dB Output Gain the output is the input, bit for bit, at every s
     auto output = input;
     Engine engine;
     engine.prepare (sampleRate, 4096, numChannels);
-    engine.setSettings ({ .outputGainDb = 0.0 });
+    engine.setSettings ({ .ratio = 1.0, .outputGainDb = 0.0 });
     test::processInBlocks (engine, output, cut);
 
     CHECK (output == input);
@@ -52,7 +52,7 @@ TEST_CASE ("Output Gain set before the first block applies from the first sample
     auto output = input;
     Engine engine;
     engine.prepare (48000.0, 512, numChannels);
-    engine.setSettings ({ .outputGainDb = -6.0 });
+    engine.setSettings ({ .ratio = 1.0, .outputGainDb = -6.0 });
     test::processInBlocks (engine, output, { 512 });
 
     for (std::size_t ch = 0; ch < input.size(); ++ch)
@@ -71,12 +71,12 @@ TEST_CASE ("A jump in Output Gain glides, with no step larger than the Smoother 
     // A steady 1 in, so the output is the gain applied.
     Engine engine;
     engine.prepare (sampleRate, 512, 1);
-    engine.setSettings ({ .outputGainDb = fromDb });
+    engine.setSettings ({ .ratio = 1.0, .outputGainDb = fromDb });
     test::Channels before { std::vector<float> (512, 1.0f) };
     test::processInBlocks (engine, before, { 512 });
     const double fromGain = before[0].back();
 
-    engine.setSettings ({ .outputGainDb = toDb });
+    engine.setSettings ({ .ratio = 1.0, .outputGainDb = toDb });
     test::Channels audio { std::vector<float> (static_cast<std::size_t> (0.2 * sampleRate), 1.0f) };
     test::processInBlocks (engine, audio, { 512 });
 
@@ -107,10 +107,10 @@ TEST_CASE ("While Output Gain glides, the output is the same however the audio i
     {
         Engine engine;
         engine.prepare (48000.0, 4096, 2);
-        engine.setSettings ({ .outputGainDb = 0.0 });
+        engine.setSettings ({ .ratio = 1.0, .outputGainDb = 0.0 });
         auto lead = test::noise (2, 100, 9);
         test::processInBlocks (engine, lead, { 100 });
-        engine.setSettings ({ .outputGainDb = -24.0 });
+        engine.setSettings ({ .ratio = 1.0, .outputGainDb = -24.0 });
         test::processInBlocks (engine, *audio, audio == &whole ? wholeCut : cut);
     }
     CHECK (cutUp == whole);

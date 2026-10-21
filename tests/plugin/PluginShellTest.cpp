@@ -190,3 +190,28 @@ TEST_CASE ("Output Gain set by the host applies to the main output")
         for (int i = 0; i < input.getNumSamples(); ++i)
             REQUIRE (output.getSample (ch, i) == static_cast<float> (expectedGain * input.getSample (ch, i)));
 }
+
+TEST_CASE ("The compressor's host parameters reach the Engine")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    comp1::PluginProcessor processor;
+    REQUIRE (processor.setBusesLayout (host::layout (stereo, none)));
+    // A steady -6 dB, half a second of it, on both channels: dyn-lab's Transfer Curve gives -15 dB at the defaults
+    // (python3 tools/dyn-lab/dynlab.py transfer) and Threshold itself, -18 dB, at Ratio ∞:1.
+    const auto [ratio, expectedDb] = GENERATE (table<float, double> ({ { 4.0f, -15.0 }, { infinity, -18.0 } }));
+    CAPTURE (ratio);
+    host::set (processor, "ratio", ratio);
+    constexpr int blockSize = 512, blocks = 47;
+    processor.prepareToPlay (48000.0, blockSize);
+    const auto steady = comp1::test::steadyLevel (2, blockSize, -6.0);
+    juce::AudioBuffer<float> buffer (2, blockSize);
+    juce::MidiBuffer midi;
+    for (int b = 0; b < blocks; ++b)
+    {
+        for (int ch = 0; ch < 2; ++ch)
+            buffer.copyFrom (ch, 0, steady[static_cast<std::size_t> (ch)].data(), blockSize);
+        processor.processBlock (buffer, midi);
+    }
+    for (int ch = 0; ch < 2; ++ch)
+        CHECK (juce::Decibels::gainToDecibels (std::abs (buffer.getSample (ch, blockSize - 1))) == Catch::Approx (expectedDb).margin (0.01));
+}

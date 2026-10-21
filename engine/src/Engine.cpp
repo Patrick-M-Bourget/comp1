@@ -1,5 +1,7 @@
 #include "comp1/Engine.h"
 
+#include "Clean.h"
+
 #include <plugkit/LatestValue.h>
 #include <plugkit/NoSubnormals.h>
 #include <plugkit/RunGrid.h>
@@ -7,6 +9,7 @@
 #include <plugkit/Units.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <vector>
 
@@ -15,6 +18,36 @@ namespace comp1
 
 namespace
 {
+
+// The compressor: the Clean Character's gain computer on every sample of every channel, each channel on its own.
+class Compressor
+{
+public:
+    void setSettings (const Settings& settings)
+    {
+        curve = { .thresholdDb = settings.thresholdDb,
+                  .inverseRatio = 1.0 / settings.ratio,
+                  .kneeDb = settings.kneeDb,
+                  .rangeDb = settings.rangeDb };
+    }
+
+    void process (AudioBlock block) const
+    {
+        for (int ch = 0; ch < block.numChannels; ++ch)
+            for (int i = 0; i < block.numSamples; ++i)
+            {
+                float& sample = block.channels[ch][i];
+                // The Detection Level: the main input's own peak level, in dB where a full-scale sine reads 0.
+                const double levelDb = plugkit::gainToDecibels (std::abs (static_cast<double> (sample)));
+                const double reduction = clean::gainReduction (levelDb, curve);
+                if (reduction > 0.0)
+                    sample = static_cast<float> (plugkit::decibelsToGain (-reduction) * sample);
+            }
+    }
+
+private:
+    clean::Curve curve;
+};
 
 // Output Gain, applied to every channel. Its gain glides to each new target with plugkit's Smoother, so a change,
 // Host Automation included, is click-free.
@@ -76,6 +109,7 @@ struct Engine::Impl
     int gridPosition = 0;
     std::vector<float*> subBlock; // per channel
 
+    Compressor compressor;
     OutputGain outputGain;
 
     void applySettings()
@@ -85,6 +119,7 @@ struct Engine::Impl
             return;
         if (latest != nullptr)
             settings = *latest;
+        compressor.setSettings (settings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
         snapToSettings = false;
     }
@@ -120,6 +155,7 @@ void Engine::process (AudioBlock main, const ConstAudioBlock*)
         for (int ch = 0; ch < channels; ++ch)
             impl->subBlock[static_cast<std::size_t> (ch)] = main.channels[ch] + start;
 
+        impl->compressor.process ({ impl->subBlock.data(), channels, count });
         // The grid cuts the block into pieces, but Output Gain glides a sample at a time with next(), not a step per
         // run, so where the pieces fall changes nothing: from the sample a new setting is taken (the start of the
         // host's block, so the host decides when a change lands), the gain is the same sample for sample however

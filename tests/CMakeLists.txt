@@ -23,6 +23,7 @@ add_executable(comp1_engine_tests
     engine/RealtimeSafetyTest.cpp
     engine/SettingsHandoffTest.cpp
     engine/SubnormalsTest.cpp
+    engine/TransferCurveTest.cpp
 )
 # plugkit::test_support's AllocationGuard replaces operator new and delete in this executable.
 target_link_libraries(comp1_engine_tests PRIVATE comp1::engine plugkit::test_support Catch2::Catch2WithMain)
