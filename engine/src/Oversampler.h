@@ -5,6 +5,7 @@
 // with the same design. Only a nonlinear stage's residual passes through them (ADR 0009), so their passband edge sits
 // at 0.8 of the host's Nyquist.
 
+#include "Bessel.h"
 #include "comp1/Latency.h"
 #include "comp1/Settings.h"
 
@@ -32,27 +33,12 @@ inline constexpr double kaiserBeta = 0.1102 * (100.0 - 8.7);
 // How many 2x stages oversampling cascades.
 inline constexpr int stagesOf (Oversampling oversampling) { return static_cast<int> (oversampling); }
 
-namespace detail
-{
-// The modified Bessel function of the first kind, order 0, by its power series, as dyn-lab works it out.
-inline double besselI0 (double x)
-{
-    double total = 1.0, term = 1.0;
-    for (int k = 1; term > 1.0e-17 * total; ++k)
-    {
-        term *= (x / (2.0 * k)) * (x / (2.0 * k));
-        total += term;
-    }
-    return total;
-}
-} // namespace detail
-
 // A Kaiser-windowed half-band lowpass of length taps (4m - 1), its gain 1 at DC: the centre tap 1/2, every other tap
 // on each side exactly 0, the rest the ideal half-band's sin(πn/2)/(πn), windowed.
 inline std::vector<double> halfBand (int length)
 {
     const int centre = (length - 1) / 2;
-    const double window = detail::besselI0 (kaiserBeta);
+    const double window = besselI0 (kaiserBeta);
     std::vector<double> taps (static_cast<std::size_t> (length), 0.0);
     for (int n = 0; n < length; ++n)
     {
@@ -63,7 +49,7 @@ inline std::vector<double> halfBand (int length)
         {
             const double ratio = static_cast<double> (offset) / centre;
             taps[static_cast<std::size_t> (n)] = std::sin (std::numbers::pi * offset / 2.0) / (std::numbers::pi * offset)
-                                                 * detail::besselI0 (kaiserBeta * std::sqrt (1.0 - ratio * ratio)) / window;
+                                                 * besselI0 (kaiserBeta * std::sqrt (1.0 - ratio * ratio)) / window;
         }
     }
     return taps;

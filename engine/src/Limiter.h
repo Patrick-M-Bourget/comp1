@@ -18,10 +18,13 @@
 // Gain Reduction settles on exactly none, and the audio passes bit for bit. Each sample moves the same however the
 // audio is cut. When a Processing Mode's path starts playing again, its Limiter starts afresh.
 
+#include "Bessel.h"
+#include "Glide.h"
 #include "comp1/Engine.h"
 #include "comp1/Latency.h"
 
 #include <plugkit/Smoother.h>
+#include <plugkit/Units.h>
 
 #include <algorithm>
 #include <array>
@@ -52,7 +55,7 @@ public:
     static constexpr double ceilingGlides = 4.0;
 
     Limiter()
-        : headroomGain (std::pow (10.0, -truePeakHeadroomDb / 20.0))
+        : headroomGain (plugkit::decibelsToGain (-truePeakHeadroomDb))
     {
         designEstimator();
     }
@@ -87,22 +90,9 @@ public:
     }
 
     // With snap, each takes effect at once instead of gliding.
-    void setOn (bool on, bool snap)
-    {
-        if (snap)
-            onShare.reset (on ? 1.0 : 0.0);
-        else
-            onShare.setTarget (on ? 1.0 : 0.0);
-    }
+    void setOn (bool on, bool snap) { glideTo (onShare, on ? 1.0 : 0.0, snap); }
 
-    void setCeiling (double ceilingDb, bool snap)
-    {
-        const double gain = std::pow (10.0, ceilingDb / 20.0);
-        if (snap)
-            ceiling.reset (gain);
-        else
-            ceiling.setTarget (gain);
-    }
+    void setCeiling (double ceilingDb, bool snap) { glideTo (ceiling, plugkit::decibelsToGain (ceilingDb), snap); }
 
     // Limits block in place, on path: High Quality's delays it by the Limiter reserve.
     void process (AudioBlock block, ProcessingMode path)
@@ -246,11 +236,11 @@ private:
     // --- Both ---
 
     // The Gain Reduction in dB that brings peak to ceilingGain: 0 when it is under it.
-    static double overDb (double peak, double ceilingGain) { return peak > ceilingGain ? 20.0 * std::log10 (peak / ceilingGain) : 0.0; }
+    static double overDb (double peak, double ceilingGain) { return peak > ceilingGain ? plugkit::gainToDecibels (peak / ceilingGain) : 0.0; }
 
     static double settled (double reductionDb) { return reductionDb < settledDb ? 0.0 : reductionDb; }
 
-    static double gainOf (double reductionDb) { return reductionDb > 0.0 ? std::pow (10.0, -reductionDb / 20.0) : 1.0; }
+    static double gainOf (double reductionDb) { return reductionDb > 0.0 ? plugkit::decibelsToGain (-reductionDb) : 1.0; }
 
     // path starts afresh, with no Gain Reduction; High Quality's estimator hears silence for the stale samples.
     void startPath (ProcessingMode path)
@@ -278,15 +268,6 @@ private:
     // Each phase between samples: a Kaiser-windowed sinc, its cutoff the host's Nyquist, normalised to unity at DC.
     void designEstimator()
     {
-        const auto besselI0 = [] (double x) {
-            double total = 1.0, term = 1.0;
-            for (int k = 1; term > 1.0e-17 * total; ++k)
-            {
-                term *= (x / (2.0 * k)) * (x / (2.0 * k));
-                total += term;
-            }
-            return total;
-        };
         constexpr int half = estimatorTaps / 2;
         for (int p = 1; p < estimatorFactor; ++p)
         {
