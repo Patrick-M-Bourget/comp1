@@ -156,6 +156,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 // Hold starts at 0 ms, which a log range can't reach; 50 ms sits at its centre.
                 floatParameter (holdId, "Hold", skewedRange (parameterRanges::hold, 50.0f), defaults.holdMs, withText (1, "ms")),
                 floatParameter (rangeId, "Range", linearRange (parameterRanges::range), defaults.rangeDb, withText (2, "dB")),
+                // Colour, the Character's own distortion, which Clean doesn't have; the Character itself is Style's to
+                // set (#24), not a host parameter.
+                floatParameter (colourId, "Colour", linearRange (parameterRanges::colour), defaults.colour, withText (1, "%")),
                 std::make_unique<juce::AudioParameterBool> (juce::ParameterID { autoGainId, 1 }, "Auto Gain", defaults.autoGain));
     // Saturation Position's choices are SaturationPosition's, stored in sessions by index, so their order never
     // changes (ADR 0003).
@@ -188,6 +191,7 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       autoRelease (parameters.getRawParameterValue (autoReleaseId)),
       hold (parameters.getRawParameterValue (holdId)),
       range (parameters.getRawParameterValue (rangeId)),
+      colour (parameters.getRawParameterValue (colourId)),
       autoGain (parameters.getRawParameterValue (autoGainId)),
       saturation (parameters.getRawParameterValue (saturationId)),
       drive (parameters.getRawParameterValue (driveId)),
@@ -242,6 +246,7 @@ Settings SettingsReader::read() const
              .autoRelease = on (autoRelease),
              .holdMs = plain (hold),
              .rangeDb = plain (range),
+             .colour = plain (colour),
              .autoGain = on (autoGain),
              .saturation = on (saturation),
              .driveDb = plain (drive),
