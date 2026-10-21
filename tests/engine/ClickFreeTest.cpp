@@ -350,6 +350,23 @@ TEST_CASE ("Jumps in each Detection EQ setting do not click in Detection Auditio
     CHECK (discontinuity (output, host.sampleRate) < threshold);
 }
 
+TEST_CASE ("Jumps in Stereo Placement do not click in Detection Audition")
+{
+    const auto& jump = GENERATE (filter ([] (const Jump& j) { return j.setting.starts_with ("Stereo Placement"); }, from_range (jumps())));
+    const auto host = anyHost();
+    CAPTURE (jump.setting, host.sampleRate, host.blockSize);
+    const auto output = playTone (
+        host,
+        [&jump] (double time, Settings& s) {
+            s.detectionAudition = true;
+            jump.set (s, alternating (time));
+        },
+        [] (double) { return toneAmplitude; },
+        toneSeconds,
+        jump.numChannels);
+    CHECK (discontinuity (output, host.sampleRate) < threshold);
+}
+
 TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
 {
     const auto& jump = GENERATE (from_range (midReleaseJumps()));
