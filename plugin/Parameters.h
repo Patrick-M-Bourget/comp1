@@ -19,6 +19,9 @@ inline const juce::String autoReleaseId { "auto_release" };
 inline const juce::String holdId { "hold" };
 inline const juce::String rangeId { "range" };
 inline const juce::String autoGainId { "auto_gain" };
+inline const juce::String saturationId { "saturation" };
+inline const juce::String driveId { "drive" };
+inline const juce::String saturationPositionId { "saturation_position" };
 inline const juce::String outputGainId { "output_gain" };
 inline const juce::String detectionSourceId { "detection_source" };
 inline const juce::String detectionHighPassOnId { "detection_high_pass_on" };
@@ -36,7 +39,7 @@ inline const juce::String processingModeId { "processing_mode" };
 inline const juce::String lookaheadId { "lookahead" };
 
 // Every host parameter, in the order hosts list them: Detection Source and the Detection EQ, then the compressor's, then
-// Output Gain, as the signal meets them; then the whole plugin's, Processing Mode and Lookahead.
+// Saturation's, then Output Gain, as the signal meets them; then the whole plugin's, Processing Mode and Lookahead.
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
 // The host parameters as Settings, each resolved once. Reads from any thread, with no allocation or lock.
@@ -57,6 +60,9 @@ private:
     std::atomic<float>* hold;
     std::atomic<float>* range;
     std::atomic<float>* autoGain;
+    std::atomic<float>* saturation;
+    std::atomic<float>* drive;
+    std::atomic<float>* saturationPosition;
     std::atomic<float>* outputGain;
     std::atomic<float>* detectionSource;
     std::atomic<float>* highPassOn;

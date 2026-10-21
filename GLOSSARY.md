@@ -93,6 +93,10 @@ _Avoid_: Colour, drive stage, distortion
 How hard the signal is pushed into Saturation, in dB.
 _Avoid_: Saturation amount, input gain
 
+**Saturation Position**:
+Where Saturation sits on the Wet path: Before the compressor, which then reacts to the saturated signal, or After it, before Auto Gain.
+_Avoid_: Saturation order, pre/post
+
 **Limiter**:
 The last stage, which never lets the output pass the Ceiling.
 _Avoid_: Clipper, maximizer

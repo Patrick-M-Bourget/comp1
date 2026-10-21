@@ -29,6 +29,7 @@ inline constexpr ParameterRange attack { 0.005, 250.0 };    // ms
 inline constexpr ParameterRange release { 5.0, 5000.0 };    // ms; comp1's own
 inline constexpr ParameterRange hold { 0.0, 500.0 };        // ms
 inline constexpr ParameterRange range { 0.0, 60.0 };        // dB; comp1's own: its top sets no limit
+inline constexpr ParameterRange drive { 0.0, 24.0 };        // dB; comp1's own
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own
 inline constexpr ParameterRange lookahead { 0.0, 5.0 };     // ms; ADR 0001's budget for it
 // The Detection EQ's, which dyn-lab doesn't model. Pro-C 3's manual gives its side chain filters' Slopes up to
@@ -38,6 +39,14 @@ inline constexpr ParameterRange detectionSlope { 6.0, 96.0 };         // dB/oct,
 inline constexpr ParameterRange detectionGain { -30.0, 30.0 };        // dB; comp1's own: plugkit's designs go no further
 inline constexpr ParameterRange detectionQ { 0.025, 40.0 };           // comp1's own: from a wide tilt to a narrow peak
 } // namespace parameterRanges
+
+// Where the Saturation stage sits on the Wet path. Hosts store it as a choice by index, so the order is frozen
+// (ADR 0003): a new position goes at the end.
+enum class SaturationPosition
+{
+    Before, // ahead of the compressor and its detection: the compressor reacts to the saturated signal
+    After,  // after the compressor, before Auto Gain: the compressor reacts to the unsaturated signal
+};
 
 // What the compressor's detection listens to: the main input (Internal), or the Sidechain (External). Saved by index,
 // so the order is frozen.
@@ -127,6 +136,11 @@ struct Settings
     double rangeDb = 60.0; // the most Gain Reduction the compressor applies
     // Auto Gain, on the Wet path after the compressor: estimated from Threshold, Ratio, Knee and Range.
     bool autoGain = false;
+    // Saturation, on the Wet path: one soft-clip shape, Drive dB into it, level-compensated, so below the shape's knee
+    // (full scale at Drive 0 dB) it passes the signal through bit for bit (dyn-lab's USAGE.md, "Saturation").
+    bool saturation = false;
+    double driveDb = 6.0;
+    SaturationPosition saturationPosition = SaturationPosition::After;
 
     // Output Gain, in dB: applied to the whole output after Dry and Wet are summed, before the Limiter.
     double outputGainDb = 0.0;
