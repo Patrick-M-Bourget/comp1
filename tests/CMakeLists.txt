@@ -27,6 +27,7 @@ add_executable(comp1_engine_tests
     engine/DetectionSourceTest.cpp
     engine/DetectionStageTest.cpp
     engine/LatencyTest.cpp
+    engine/LevelTapsTest.cpp
     engine/LookaheadTest.cpp
     engine/NonFiniteInputTest.cpp
     engine/OutputGainTest.cpp

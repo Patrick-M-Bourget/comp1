@@ -3,6 +3,7 @@
 #include "Clean.h"
 #include "DelayLine.h"
 #include "Detection.h"
+#include "LevelTaps.h"
 #include "Lookahead.h"
 #include "ModeFade.h"
 #include "SaturationStage.h"
@@ -10,6 +11,7 @@
 
 #include <plugkit/LatestValue.h>
 #include <plugkit/NoSubnormals.h>
+#include <plugkit/OutputLevelTap.h>
 #include <plugkit/Placement.h>
 #include <plugkit/RunGrid.h>
 #include <plugkit/Smoother.h>
@@ -17,6 +19,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -77,6 +80,7 @@ public:
             voice.gains.assign (voice.detectors.size(), 1.0);
         }
         reductions.assign (voices[0].detectors.size(), 0.0);
+        channelDb.assign (reductions.size(), 0.0);
         for (auto& setting : glides)
             setting.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         stereoLink.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
@@ -140,21 +144,23 @@ public:
     }
 
     // Applies gain to audio, sample for sample, from the detection signal of the same samples: each main channel's
-    // Detection Level comes from what it follows, or the Mid or the Side, never from the audio.
-    void process (const DetectionSignal& detection, AudioBlock audio)
+    // Detection Level comes from what it follows, or the Mid or the Side, never from the audio. Each sample's
+    // Detection Level and Gain Reduction, as the Placement heard applies it (after Stereo Link), go to levels, taken
+    // where the detector reads them, so they follow whatever it hears.
+    void process (const DetectionSignal& detection, AudioBlock audio, RunLevels& levels)
     {
         auto& heard = voices[playing];
         for (int i = 0; i < audio.numSamples; ++i)
         {
             const double link = stereoLink.isSettled() ? stereoLink.value() : stereoLink.next();
-            askGains (heard, detection, audio.numChannels, i, link);
+            askGains (heard, detection, audio.numChannels, i, link, &levels);
             if (! fading)
             {
                 applyGains (heard, audio, i);
                 continue;
             }
             auto& leaving = voices[1 - playing];
-            askGains (leaving, detection, audio.numChannels, i, link);
+            askGains (leaving, detection, audio.numChannels, i, link, nullptr);
             const double in = fade.next();
             if (fade.isSettled())
                 fading = false;
@@ -186,8 +192,8 @@ private:
     // Stereo Link, after each channel's detector: each channel's Gain Reduction is its own plus Stereo Link times the
     // larger of the two less its own, worked out as (1 - Stereo Link) times its own plus Stereo Link times the larger,
     // so that 0% is exactly each channel's own and 100% exactly the larger, the same on both. A mono track has nothing
-    // to link.
-    void askGains (Voice& voice, const DetectionSignal& detection, int numChannels, int i, double link)
+    // to link. With levels, each Detection Level the voice reads and the Gain Reduction it applies for it go there.
+    void askGains (Voice& voice, const DetectionSignal& detection, int numChannels, int i, double link, RunLevels* levels)
     {
         const auto gainOf = [] (double reduction) { return reduction > 0.0 ? plugkit::decibelsToGain (-reduction) : 1.0; };
         // The Detection Level: the detection signal's peak level, in dB where a full-scale sine reads 0.
@@ -195,18 +201,28 @@ private:
         if (voice.placement != plugkit::StereoPlacement::Stereo)
         {
             const float* detected = voice.placement == plugkit::StereoPlacement::Mid ? detection.mid : detection.side;
-            voice.gains[0] = gainOf (voice.detectors[0].process (clean::gainReduction (levelDb (detected[i]), curve), timing));
+            const double partDb = levelDb (detected[i]);
+            const double reduction = voice.detectors[0].process (clean::gainReduction (partDb, curve), timing);
+            if (levels != nullptr)
+                levels->noteDetection (partDb, reduction);
+            voice.gains[0] = gainOf (reduction);
             return;
         }
         double largest = 0.0;
         for (int ch = 0; ch < numChannels; ++ch)
         {
             const auto c = static_cast<std::size_t> (ch);
-            reductions[c] = voice.detectors[c].process (clean::gainReduction (levelDb (detection.channelFollowedBy (ch)[i]), curve), timing);
+            channelDb[c] = levelDb (detection.channelFollowedBy (ch)[i]);
+            reductions[c] = voice.detectors[c].process (clean::gainReduction (channelDb[c], curve), timing);
             largest = std::max (largest, reductions[c]);
         }
         for (std::size_t c = 0; c < reductions.size(); ++c)
-            voice.gains[c] = gainOf (numChannels > 1 ? (1.0 - link) * reductions[c] + link * largest : reductions[c]);
+        {
+            const double reduction = numChannels > 1 ? (1.0 - link) * reductions[c] + link * largest : reductions[c];
+            if (levels != nullptr)
+                levels->noteDetection (channelDb[c], reduction);
+            voice.gains[c] = gainOf (reduction);
+        }
     }
 
     // Applies the gains voice asks for to sample i, alone. Stereo scales each channel. Mid and Side, on a stereo track,
@@ -273,6 +289,7 @@ private:
     plugkit::Smoother fade;  // the share of the voice playing, while the other fades out
     bool fading = false;
     std::vector<double> reductions; // per channel, each detector's Gain Reduction at the sample
+    std::vector<double> channelDb;  // per channel, the Detection Level at the sample
 };
 
 // A gain applied to every channel, in dB: Auto Gain, and Output Gain. It glides to each new target with plugkit's
@@ -424,6 +441,13 @@ struct Engine::Impl
     ModeFade modeFade;
     Audition audition;
 
+    // The Output Level, per channel. Fixed in size, so a reader never meets a tap a prepare() has moved.
+    static constexpr int maxOutputLevelChannels = 2;
+    std::array<plugkit::OutputLevelTap, maxOutputLevelChannels> outputLevels;
+    std::atomic<int> outputLevelChannels { 0 };
+    RunLevels runLevels;
+    LevelHistory levelHistory;
+
     void applySettings()
     {
         const auto* latest = handoff.takeLatest();
@@ -464,6 +488,12 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->limiterPadding.prepare (numChannels, limiterReserveSamples (sampleRate));
     impl->modeFade.prepare (sampleRate);
     impl->audition.prepare (sampleRate, numChannels);
+    const int outputLevelChannels = std::clamp (numChannels, 0, Impl::maxOutputLevelChannels);
+    for (int ch = 0; ch < outputLevelChannels; ++ch)
+        impl->outputLevels[static_cast<std::size_t> (ch)].prepare (sampleRate);
+    impl->outputLevelChannels.store (outputLevelChannels, std::memory_order_release);
+    impl->runLevels = {};
+    impl->levelHistory.prepare (sampleRate);
     impl->snapToSettings = true;
 }
 
@@ -497,6 +527,7 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
             // it would hold forever: it plays as silence.
             for (int i = 0; i < count; ++i)
                 samples[i] = std::isfinite (samples[i]) ? samples[i] : 0.0f;
+            impl->runLevels.noteInput (samples, count);
         }
         for (int ch = 0; ch < sidechainChannels; ++ch)
             sidechainPiece[static_cast<std::size_t> (ch)] = sidechain->channels[ch] + start;
@@ -525,7 +556,7 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         // compressor meets the audio Lookahead early; then the Oversampling padding before the Dry/Wet sum, and the
         // Limiter padding. Last, the mode fade, which swaps the paths in silence.
         const bool highQuality = path == ProcessingMode::HighQuality;
-        impl->compressor.process (impl->lookahead.process (detected, wet, highQuality), wet);
+        impl->compressor.process (impl->lookahead.process (detected, wet, highQuality), wet, impl->runLevels);
         impl->saturation.process (SaturationPosition::After, wet);
         impl->autoGain.process (wet);
         if (highQuality)
@@ -535,11 +566,43 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         if (highQuality)
             impl->limiterPadding.process (wet);
         impl->modeFade.process (wet);
+        for (int ch = 0; ch < std::min (channels, Impl::maxOutputLevelChannels); ++ch)
+            impl->outputLevels[static_cast<std::size_t> (ch)].process (wet.channels[ch], count);
+        for (int ch = 0; ch < channels; ++ch)
+            impl->runLevels.noteOutput (wet.channels[ch], count);
 
         impl->gridPosition += count;
         if (impl->gridPosition == plugkit::runSamples)
+        {
             impl->gridPosition = 0;
+            impl->levelHistory.push (impl->runLevels.take());
+        }
     }
+}
+
+int Engine::outputLevelChannels() const
+{
+    return impl->outputLevelChannels.load (std::memory_order_acquire);
+}
+
+plugkit::OutputLevel Engine::readOutputLevel (int channel)
+{
+    return channel >= 0 && channel < outputLevelChannels() ? impl->outputLevels[static_cast<std::size_t> (channel)].read() : plugkit::OutputLevel {};
+}
+
+int Engine::readLevels (LevelRecord* destination, int maxRecords)
+{
+    return impl->levelHistory.pop (destination, maxRecords);
+}
+
+void Engine::skipLevels()
+{
+    impl->levelHistory.skip();
+}
+
+int Engine::levelHistoryCapacity() const
+{
+    return impl->levelHistory.capacity();
 }
 
 } // namespace comp1
