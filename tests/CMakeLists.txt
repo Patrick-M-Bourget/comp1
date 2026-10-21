@@ -19,13 +19,13 @@ include(Catch)
 
 # One source per line, sorted, so tickets adding tests in parallel merge cleanly.
 add_executable(comp1_engine_tests
-    engine/AllocationGuard.cpp
     engine/OutputGainTest.cpp
     engine/RealtimeSafetyTest.cpp
     engine/SettingsHandoffTest.cpp
     engine/SubnormalsTest.cpp
 )
-target_link_libraries(comp1_engine_tests PRIVATE comp1::engine Catch2::Catch2WithMain)
+# plugkit::test_support's AllocationGuard replaces operator new and delete in this executable.
+target_link_libraries(comp1_engine_tests PRIVATE comp1::engine plugkit::test_support Catch2::Catch2WithMain)
 catch_discover_tests(comp1_engine_tests ADD_TAGS_AS_LABELS)
 
 # The Engine is plain C++: no source of it includes JUCE, and its target links nothing of JUCE's.

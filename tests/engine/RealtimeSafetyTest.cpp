@@ -1,7 +1,7 @@
-#include "AllocationGuard.h"
 #include "Measure.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <plugkit/test/AllocationGuard.h>
 
 #include <vector>
 
@@ -18,7 +18,7 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
     const float* sidechain[] = { sidechainSamples.data() };
     const ConstAudioBlock sidechainBlock { sidechain, 1, blockSize };
 
-    test::AllocationGuard guard;
+    plugkit::test::AllocationGuard guard;
     for (int block = 0; block < 64; ++block)
     {
         // Output Gain moving every block, back to 0 dB every few; blocks cutting the grid's runs; the Sidechain
