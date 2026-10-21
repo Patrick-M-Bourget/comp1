@@ -25,7 +25,8 @@ struct Estimate
 constexpr double infinity = std::numeric_limits<double>::infinity();
 
 // The settings tools/dyn-lab/USAGE.md lists for the Auto Gain check, each with the estimate its command prints, with
-// Auto Gain on. Each command with --character vca prints the same estimate, the Transfer Curve's, and checks it on VCA.
+// Auto Gain on. Each command with --character vca or fet prints the same estimate, the Transfer Curve's, and checks it
+// on that Character.
 const std::vector<Estimate>& estimates()
 {
     static const std::vector<Estimate> all {
@@ -81,10 +82,10 @@ std::vector<std::vector<float>> referenceSegments()
 
 } // namespace
 
-TEST_CASE ("Auto Gain adds dyn-lab's estimate within 0.01 dB, worked out from the settings, on Clean and VCA")
+TEST_CASE ("Auto Gain adds dyn-lab's estimate within 0.01 dB, worked out from the settings, on Clean, VCA and FET")
 {
     const auto& estimate = GENERATE (from_range (estimates()));
-    const auto character = GENERATE (Character::Clean, Character::VCA);
+    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET);
     CAPTURE (estimate.command, static_cast<int> (character));
     auto settings = estimate.settings;
     settings.character = character;
@@ -93,10 +94,10 @@ TEST_CASE ("Auto Gain adds dyn-lab's estimate within 0.01 dB, worked out from th
     CHECK (std::abs (gainDb - estimate.autoGainDb) <= 0.01);
 }
 
-TEST_CASE ("With Auto Gain on, the reference signal keeps its level within dyn-lab's tolerance, on Clean and VCA", "[sweep]")
+TEST_CASE ("With Auto Gain on, the reference signal keeps its level within dyn-lab's tolerance, on Clean, VCA and FET", "[sweep]")
 {
     const auto& estimate = GENERATE (from_range (estimates()));
-    const auto character = GENERATE (Character::Clean, Character::VCA);
+    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET);
     CAPTURE (estimate.command, static_cast<int> (character));
     auto settings = estimate.settings;
     settings.character = character;

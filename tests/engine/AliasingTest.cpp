@@ -292,19 +292,20 @@ TEST_CASE ("At the base rate, the in-band harmonics are within dyn-lab's toleran
 namespace
 {
 
-// One of dyn-lab's Colour conditions: a bin-centred tone through VCA at Colour 100%, at the level whose Gain Reduction
-// it is, that Gain Reduction held steady, and the worst alias dyn-lab gives for it with ADAA.
+// One of dyn-lab's Colour conditions: a bin-centred tone through a Character at Colour 100%, at the level whose Gain
+// Reduction it is, that Gain Reduction held steady, and the worst alias dyn-lab gives for it with ADAA.
 struct ColourCondition
 {
     double sampleRate;
     double frequency; // nominal: the tone is the bin-centred one nearest it
     double reductionDb;
     double labDb;
+    Character character = Character::VCA;
 };
 
-// The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca` prints, copied as printed. Only the
-// ceiling is checked: the improvement over the naive shaper doesn't hold for Colour at 20 and 30 dB of Gain Reduction
-// (tools/dyn-lab/USAGE.md, "colour").
+// The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca` and `--character fet` print, copied as
+// printed. Only the ceiling is checked: the improvement over the naive shaper doesn't hold for Colour at 20 and 30 dB of
+// Gain Reduction (tools/dyn-lab/USAGE.md, "colour").
 const std::vector<ColourCondition>& colourConditions()
 {
     static const std::vector<ColourCondition> all {
@@ -316,6 +317,20 @@ const std::vector<ColourCondition>& colourConditions()
         { 48000.0, 3000.0, 10.0, -88.55 },  { 48000.0, 3000.0, 20.0, -71.18 },  { 48000.0, 3000.0, 30.0, -72.84 },
         { 48000.0, 5000.0, 10.0, -68.06 },  { 48000.0, 5000.0, 20.0, -57.61 },  { 48000.0, 5000.0, 30.0, -51.12 },
         { 48000.0, 10000.0, 10.0, -70.40 }, { 48000.0, 10000.0, 20.0, -49.00 }, { 48000.0, 10000.0, 30.0, -47.36 },
+        // `python3 tools/dyn-lab/dynlab.py colour --character fet`: FET's steeper Colour aliases more, still under the
+        // ceiling.
+        { 44100.0, 1000.0, 10.0, -112.08, Character::FET }, { 44100.0, 1000.0, 20.0, -91.97, Character::FET },
+        { 44100.0, 1000.0, 30.0, -92.21, Character::FET },  { 44100.0, 3000.0, 10.0, -88.30, Character::FET },
+        { 44100.0, 3000.0, 20.0, -65.11, Character::FET },  { 44100.0, 3000.0, 30.0, -66.09, Character::FET },
+        { 44100.0, 5000.0, 10.0, -61.62, Character::FET },  { 44100.0, 5000.0, 20.0, -50.64, Character::FET },
+        { 44100.0, 5000.0, 30.0, -44.48, Character::FET },  { 44100.0, 10000.0, 10.0, -65.16, Character::FET },
+        { 44100.0, 10000.0, 20.0, -45.22, Character::FET }, { 44100.0, 10000.0, 30.0, -42.84, Character::FET },
+        { 48000.0, 1000.0, 10.0, -111.10, Character::FET }, { 48000.0, 1000.0, 20.0, -100.28, Character::FET },
+        { 48000.0, 1000.0, 30.0, -91.03, Character::FET },  { 48000.0, 3000.0, 10.0, -86.02, Character::FET },
+        { 48000.0, 3000.0, 20.0, -64.01, Character::FET },  { 48000.0, 3000.0, 30.0, -64.64, Character::FET },
+        { 48000.0, 5000.0, 10.0, -60.64, Character::FET },  { 48000.0, 5000.0, 20.0, -49.23, Character::FET },
+        { 48000.0, 5000.0, 30.0, -43.30, Character::FET },  { 48000.0, 10000.0, 10.0, -56.08, Character::FET },
+        { 48000.0, 10000.0, 20.0, -41.41, Character::FET }, { 48000.0, 10000.0, 30.0, -39.84, Character::FET },
     };
     return all;
 }
@@ -326,13 +341,13 @@ constexpr double colourComparedOverDb = -100.0;
 
 } // namespace
 
-TEST_CASE ("At the base rate, VCA's worst alias at Colour 100% at each of dyn-lab's Colour conditions is under the ceiling", "[sweep]")
+TEST_CASE ("At the base rate, VCA's and FET's worst alias at Colour 100% at each of dyn-lab's Colour conditions is under the ceiling", "[sweep]")
 {
     const auto& condition = GENERATE (from_range (colourConditions()));
     const auto mode = atBaseRate();
-    CAPTURE (condition.sampleRate, condition.frequency, condition.reductionDb, static_cast<int> (mode));
+    CAPTURE (condition.sampleRate, condition.frequency, condition.reductionDb, static_cast<int> (condition.character), static_cast<int> (mode));
     const int bin = test::toneBin (condition.frequency, condition.sampleRate);
-    const auto output = test::steadilyCompressedTone ({ .character = Character::VCA, .processingMode = mode },
+    const auto output = test::steadilyCompressedTone ({ .character = condition.character, .processingMode = mode },
                                                       condition.sampleRate,
                                                       bin,
                                                       test::levelForReductionDb (condition.reductionDb),

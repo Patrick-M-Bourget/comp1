@@ -182,3 +182,99 @@ TEST_CASE ("With External, a stereo Sidechain and a mono main, the main is compr
     const auto sidechainSamples = steadySidechain (levelsDb, sampleRate);
     CHECK (gainsDb (settings, sampleRate, 1, &sidechainSamples)[0] == Catch::Approx (-18.0).margin (0.1));
 }
+
+// --- FET, feedforward from the Sidechain ---------------------------------------------------------------------------
+
+TEST_CASE ("On FET with External, the Sidechain alone sets the Gain Reduction: scaling the main input never changes it")
+{
+    // A steady Sidechain 9 dB over Threshold, under a main input of noise loud enough to compress on its own: fed back,
+    // the main's level would move the Gain Reduction.
+    constexpr double sampleRate = 48000.0;
+    const auto main = test::noise (2, 9600);
+    auto louder = main;
+    for (auto& channel : louder)
+        for (auto& sample : channel)
+            sample *= 4.0f;
+    const auto sidechainSamples = steadySidechain ({ -9.0 }, sampleRate, 0.2);
+    const Settings settings { .character = Character::FET, .detectionSource = DetectionSource::External };
+    const auto gainReductions = [&] (const test::Channels& audio) {
+        std::vector<double> reductions;
+        Engine engine;
+        engine.prepare (sampleRate, 512, 2);
+        engine.setSettings (settings);
+        auto output = audio;
+        std::vector<LevelRecord> records (static_cast<std::size_t> (engine.levelHistoryCapacity()));
+        for (int start = 0; start < 9600; start += 480)
+        {
+            std::vector<float*> mainPieces { output[0].data() + start, output[1].data() + start };
+            std::vector<const float*> sidechainPieces { sidechainSamples[0].data() + start };
+            const ConstAudioBlock sidechain { sidechainPieces.data(), 1, 480 };
+            engine.process ({ mainPieces.data(), 2, 480 }, &sidechain);
+            const int read = engine.readLevels (records.data(), static_cast<int> (records.size()));
+            for (int r = 0; r < read; ++r)
+                reductions.push_back (records[static_cast<std::size_t> (r)].gainReductionDb);
+        }
+        return reductions;
+    };
+    const auto once = gainReductions (main);
+    REQUIRE (once.back() > 6.0); // compressing: 6.75 dB at 9 dB over Threshold
+    CHECK (gainReductions (louder) == once);
+}
+
+TEST_CASE ("On FET with External at Colour 0%, doubling the main input doubles the output bit for bit")
+{
+    constexpr double sampleRate = 48000.0;
+    const auto main = test::noise (2, 9600);
+    auto doubled = main;
+    for (auto& channel : doubled)
+        for (auto& sample : channel)
+            sample *= 2.0f;
+    const auto sidechainSamples = steadySidechain ({ -9.0 }, sampleRate, 0.2);
+    const Settings settings { .character = Character::FET, .colour = 0.0, .detectionSource = DetectionSource::External };
+    const auto once = test::played (settings, sampleRate, main, { 512 }, &sidechainSamples);
+    const auto twice = test::played (settings, sampleRate, doubled, { 512 }, &sidechainSamples);
+    REQUIRE (once != main);
+    bool exact = true;
+    for (std::size_t ch = 0; ch < once.size(); ++ch)
+        for (std::size_t i = 0; i < once[ch].size(); ++i)
+            exact = exact && twice[ch][i] == 2.0f * once[ch][i];
+    CHECK (exact);
+}
+
+TEST_CASE ("On FET with External, a step of the Sidechain matches dyn-lab's step --external within one sample", "[sweep]")
+{
+    // python3 tools/dyn-lab/dynlab.py step --character fet --external: feedforward, so Clean's times. Attack 63% and
+    // 90%, Release 63% and 90%, in ms; Hold is 0.
+    struct Rate
+    {
+        double sampleRate, attack63, attack90, release63, release90;
+    };
+    const auto rate = GENERATE (Rate { 44100, 10.0000, 23.0385, 100.0227, 230.2721 },
+                                Rate { 48000, 10.0208, 23.0417, 100.0208, 230.2708 },
+                                Rate { 96000, 10.0104, 23.0312, 100.0104, 230.2604 });
+    CAPTURE (rate.sampleRate);
+    // Within one sample, and the table's rounding to 0.0001 ms: at 44.1 kHz Release's time constant is exactly 4410
+    // samples, so its 63% falls on a sample, where the float output's rounding decides which side it reads.
+    const double sampleMs = 1000.0 / rate.sampleRate, withinMs = sampleMs + 0.00005;
+    const int length = static_cast<int> (0.5 * rate.sampleRate);
+    // The main stays steady under Threshold; the Sidechain steps from 20 dB under it to 20 dB over and back.
+    const Settings settings { .character = Character::FET, .colour = 0.0, .detectionSource = DetectionSource::External };
+    const auto stepped = [&] (double fromDb, double toDb) {
+        auto sidechainSamples = test::steadyLevel (1, length, fromDb);
+        const auto after = test::steadyLevel (1, length, toDb);
+        sidechainSamples[0].insert (sidechainSamples[0].end(), after[0].begin(), after[0].end());
+        const auto main = test::steadyLevel (1, 2 * length, mainDb);
+        const auto output = test::played (settings, rate.sampleRate, main, { 512 }, &sidechainSamples);
+        const auto reduction = test::gainReductionDb (main[0], output[0]);
+        return std::vector<double> (reduction.begin() + length, reduction.end());
+    };
+    const auto attack = test::crossings (stepped (-38.0, 2.0), 0.0, 15.0);
+    REQUIRE (attack.ninety);
+    CHECK (std::abs (*attack.sixtyThree * sampleMs - rate.attack63) <= withinMs);
+    CHECK (std::abs (*attack.ninety * sampleMs - rate.attack90) <= withinMs);
+    const auto release = test::crossings (stepped (2.0, -38.0), 15.0, 0.0);
+    REQUIRE (release.ninety);
+    CHECK (release.held == 0);
+    CHECK (std::abs (*release.sixtyThree * sampleMs - rate.release63) <= withinMs);
+    CHECK (std::abs (*release.ninety * sampleMs - rate.release90) <= withinMs);
+}

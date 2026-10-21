@@ -93,6 +93,15 @@ public:
     // Takes the Gain Reduction asked for, in dB, and returns the one to apply.
     double process (double wantedDb, const Timing& t)
     {
+        return process (wantedDb, t, [wantedDb] (double previousDb, double k) { return k * previousDb + (1.0 - k) * wantedDb; });
+    }
+
+    // The same, with each step that moves the Gain Reduction worked out by step (previous Gain Reduction in dB, pole)
+    // in place of the one pole: a Character whose detector is fed back (FET) steps by its loop, branching here as
+    // Clean does.
+    template <typename Step>
+    double process (double wantedDb, const Timing& t, Step&& step)
+    {
         autoRelease.hear (wantedDb > 0.0);
         double k = autoRelease.release (t.releasePole);
         if (wantedDb > gainReductionDb)
@@ -105,7 +114,7 @@ public:
             ++held;
             return gainReductionDb;
         }
-        gainReductionDb = k * gainReductionDb + (1.0 - k) * wantedDb;
+        gainReductionDb = step (gainReductionDb, k);
         return gainReductionDb;
     }
 

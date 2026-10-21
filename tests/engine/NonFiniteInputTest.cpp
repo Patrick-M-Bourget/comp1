@@ -12,7 +12,7 @@ using namespace comp1;
 TEST_CASE ("A non-finite input sample never reaches the output, which plays on as if it were silence")
 {
     const bool autoGain = GENERATE (false, true);
-    const auto character = GENERATE (Character::Clean, Character::VCA);
+    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET);
     // The Limiter on, at a Ceiling the noise passes: a non-finite sample never reaches its gain computer either.
     const bool limiter = GENERATE (false, true);
     // The Gate on, closing on the noise (its peaks, 0.5, are under the closing level, 6 dB under 0 dB): its key, from
@@ -49,7 +49,7 @@ TEST_CASE ("A non-finite Sidechain sample never reaches the output, nor sticks i
 {
     const int sidechainChannels = GENERATE (1, 2);
     const int mainChannels = GENERATE (1, 2);
-    const auto character = GENERATE (Character::Clean, Character::VCA);
+    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET);
     CAPTURE (sidechainChannels, mainChannels, static_cast<int> (character));
     const Settings settings { .character = character, .detectionSource = DetectionSource::External };
     const auto input = test::noise (mainChannels, 4096);
