@@ -1,4 +1,4 @@
-#include "Signals.h"
+#include "Measure.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -15,8 +15,8 @@ TEST_CASE ("Settings set on another thread while audio runs reach the output")
     Engine engine;
     engine.prepare (48000.0, blockSize, 1);
 
-    // The writer alternates between two Output Gains; every block plays one of them, and the
-    // last one set plays once the writer stops.
+    // The writer alternates between two Output Gains, then settles on one: while it writes, every sample plays a
+    // gain between the two, and once it has stopped, the last one set plays.
     std::atomic<bool> done { false };
     std::thread writer ([&] {
         for (int i = 0; i < 20000; ++i)
@@ -25,18 +25,21 @@ TEST_CASE ("Settings set on another thread while audio runs reach the output")
         done = true;
     });
 
-    constexpr float half = 0.501187233627272f; // 10^(-6/20), as the Engine rounds it for an input of 1
+    const auto half = static_cast<float> (test::minus6DbGain);
     std::vector<float> samples (blockSize);
     float* channels[] = { samples.data() };
-    bool lastWasHalf = false;
-    for (bool writing = true; writing;)
-    {
-        writing = ! done.load();
+    const auto playBlock = [&] {
         std::fill (samples.begin(), samples.end(), 1.0f);
         engine.process ({ channels, 1, blockSize });
-        REQUIRE ((samples.front() == 1.0f || samples.front() == half));
-        lastWasHalf = samples.front() == half;
+    };
+    while (! done.load())
+    {
+        playBlock();
+        for (const float sample : samples)
+            REQUIRE ((sample >= half && sample <= 1.0f));
     }
     writer.join();
-    CHECK (lastWasHalf);
+    for (int block = 0; block < 300; ++block) // 400 ms, for the glide to settle
+        playBlock();
+    CHECK (samples.back() == half);
 }

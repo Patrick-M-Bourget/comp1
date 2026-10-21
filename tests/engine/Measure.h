@@ -26,23 +26,29 @@ inline Channels noise (int numChannels, int numSamples, std::uint32_t seed = 1)
 }
 
 // Runs audio through engine in place, cut into blocks of the sizes given, in turn and repeating.
-inline void processInBlocks (Engine& engine, Channels& audio, const std::vector<int>& blockSizes, const Channels* sidechain = nullptr)
+inline void processInBlocks (Engine& engine, Channels& audio, const std::vector<int>& blockSizes)
 {
     const int numSamples = static_cast<int> (audio.front().size());
     std::vector<float*> main (audio.size());
-    std::vector<const float*> key (sidechain != nullptr ? sidechain->size() : 0);
     for (int start = 0, block = 0; start < numSamples; ++block)
     {
         const int count = std::min (blockSizes[static_cast<std::size_t> (block) % blockSizes.size()], numSamples - start);
         for (std::size_t ch = 0; ch < audio.size(); ++ch)
             main[ch] = audio[ch].data() + start;
-        for (std::size_t ch = 0; ch < key.size(); ++ch)
-            key[ch] = (*sidechain)[ch].data() + start;
-        const ConstAudioBlock keyBlock { key.data(), static_cast<int> (key.size()), count };
-        engine.process ({ main.data(), static_cast<int> (main.size()), count }, sidechain != nullptr ? &keyBlock : nullptr);
+        engine.process ({ main.data(), static_cast<int> (main.size()), count });
         start += count;
     }
 }
+
+// Every sample rate comp1 supports (plugkit.conf's SAMPLE_RATES, which pluginval runs at).
+inline const std::vector<double>& sampleRates()
+{
+    static const std::vector<double> rates { 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0 };
+    return rates;
+}
+
+// The gain of -6 dB, 10^(-6/20), worked out independently of the Engine.
+inline constexpr double minus6DbGain = 0.501187233627272;
 
 // Host block sizes, from a sample at a time to large, with odd sizes that cut the Engine's 16-sample runs.
 inline const std::vector<std::vector<int>>& blockCuts()
