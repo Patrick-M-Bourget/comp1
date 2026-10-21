@@ -29,6 +29,7 @@ inline constexpr ParameterRange attack { 0.005, 250.0 };    // ms
 inline constexpr ParameterRange release { 5.0, 5000.0 };    // ms; comp1's own
 inline constexpr ParameterRange hold { 0.0, 500.0 };        // ms
 inline constexpr ParameterRange range { 0.0, 60.0 };        // dB; comp1's own: its top sets no limit
+inline constexpr ParameterRange colour { 0.0, 100.0 };      // %; comp1's own: none to the Character's tuned amount
 inline constexpr ParameterRange drive { 0.0, 24.0 };        // dB; comp1's own
 // Dry and Wet, each from Off (-inf) up. Pro-C 3's help ("Time controls") names its Dry Gain and Wet Gain knobs but
 // gives no range, so these are comp1's own (ADR 0008): +12 dB of boost over unity, enough to bring a quiet parallel
@@ -46,6 +47,17 @@ inline constexpr ParameterRange detectionSlope { 6.0, 96.0 };         // dB/oct,
 inline constexpr ParameterRange detectionGain { -30.0, 30.0 };        // dB; comp1's own: plugkit's designs go no further
 inline constexpr ParameterRange detectionQ { 0.025, 40.0 };           // comp1's own: from a wide tilt to a narrow peak
 } // namespace parameterRanges
+
+// The Characters: the four Styles that carry DSP (ADR 0002), in Style's order, Style's first four, so frozen with it
+// (ADR 0003). The Engine always plays a Character, never a Style: the Plugin Shell maps Style to one (#24). FET and
+// Opto play as Clean until they bring their own DSP (#20, #21).
+enum class Character
+{
+    Clean,
+    VCA,
+    FET,
+    Opto,
+};
 
 // Where the Saturation stage sits on the Wet path. Hosts store it as a choice by index, so the order is frozen
 // (ADR 0003): a new position goes at the end.
@@ -163,7 +175,9 @@ struct Settings
     };
     Gate gate;
 
-    // The compressor, the Clean Character, in parameterRanges' units, with dyn-lab's defaults.
+    // The compressor's Character: how it detects, and its Colour. Not a host parameter: Style sets it (#24).
+    Character character = Character::Clean;
+    // The compressor, in parameterRanges' units, with dyn-lab's defaults.
     double thresholdDb = -18.0;
     double ratio = 4.0; // parameterRanges::inf for ∞:1
     double kneeDb = 6.0;
@@ -174,6 +188,9 @@ struct Settings
     bool autoRelease = false;
     double holdMs = 0.0;
     double rangeDb = 60.0; // the most Gain Reduction the compressor applies
+    // Colour, in % (0 to 100): how much of its Character's own distortion, which grows with the Gain Reduction, the
+    // compressor adds (dyn-lab's USAGE.md, "Colour"). Clean has none, at any Colour.
+    double colour = 100.0;
     // Auto Gain, on the Wet path after the compressor: estimated from Threshold, Ratio, Knee and Range.
     bool autoGain = false;
     // Saturation, on the Wet path: one soft-clip shape, Drive dB into it, level-compensated, so below the shape's knee

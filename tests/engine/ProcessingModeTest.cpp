@@ -43,7 +43,7 @@ TEST_CASE ("An impulse comes out delayed by the latency each Processing Mode rep
     CHECK (test::impulseDelaySamples (settings, sampleRate) == latencySamples (mode, sampleRate));
 }
 
-TEST_CASE ("High Quality at Ratio 1:1 is the input delayed by the reported latency, bit for bit, at any Lookahead")
+TEST_CASE ("High Quality at Ratio 1:1 is the input delayed by the reported latency, bit for bit, at any Lookahead", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
@@ -126,7 +126,7 @@ const std::vector<Scene>& detectionScenes()
 
 } // namespace
 
-TEST_CASE ("High Quality at any Lookahead is Zero Latency fed the input Lookahead early as its Sidechain, delayed by the latency less Lookahead, bit for bit")
+TEST_CASE ("High Quality at any Lookahead is Zero Latency fed the input Lookahead early as its Sidechain, delayed by the latency less Lookahead, bit for bit", "[sweep]")
 {
     // In High Quality the compressor meets the audio delayed by the Lookahead budget and the detection signal by
     // Lookahead less: as Zero Latency does the audio delayed by Lookahead with the input itself on the Sidechain. The
@@ -148,7 +148,7 @@ TEST_CASE ("High Quality at any Lookahead is Zero Latency fed the input Lookahea
     CHECK (play (input, sampleRate, cut, highQualitySettings) == test::delayed (zeroLatencyOutput, latencySamples (highQuality, sampleRate) - lookahead));
 }
 
-TEST_CASE ("In Zero Latency, Lookahead changes nothing, at every sample rate and block size")
+TEST_CASE ("In Zero Latency, Lookahead changes nothing, at every sample rate and block size", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE_REF (from_range (test::blockCuts()));

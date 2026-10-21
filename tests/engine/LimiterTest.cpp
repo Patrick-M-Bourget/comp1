@@ -79,7 +79,7 @@ double samplePeak (const test::Channels& audio)
 
 } // namespace
 
-TEST_CASE ("Zero Latency's Limiter never lets a sample past the Ceiling, at any Output Gain, sample rate and block size")
+TEST_CASE ("Zero Latency's Limiter never lets a sample past the Ceiling, at any Output Gain, sample rate and block size", "[sweep]")
 {
     const auto& host = GENERATE (from_range (hosts()));
     const double ceilingDb = GENERATE (from_range (ceilings()));
@@ -98,7 +98,7 @@ TEST_CASE ("Zero Latency's Limiter never lets a sample past the Ceiling, at any 
     }
 }
 
-TEST_CASE ("High Quality's Limiter never lets the true peak past the Ceiling, at any Output Gain, sample rate and block size")
+TEST_CASE ("High Quality's Limiter never lets the true peak past the Ceiling, at any Output Gain, sample rate and block size", "[sweep]")
 {
     const auto& host = GENERATE (from_range (hosts()));
     const double ceilingDb = GENERATE (from_range (ceilings()));
@@ -152,7 +152,7 @@ TEST_CASE ("With the Limiter off, the output is its input, delayed in High Quali
     CHECK (samplePeak (out) > 1.0);
 }
 
-TEST_CASE ("Below the Ceiling, once the release has settled, the Limiter on is bit for bit the Limiter off")
+TEST_CASE ("Below the Ceiling, once the release has settled, the Limiter on is bit for bit the Limiter off", "[sweep]")
 {
     const auto mode = GENERATE (zeroLatency, highQuality);
     const auto& host = GENERATE (from_range (hosts()));

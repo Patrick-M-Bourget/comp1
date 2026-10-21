@@ -70,7 +70,7 @@ const std::vector<Curve>& curves()
 
 } // namespace
 
-TEST_CASE ("At a steady level the output follows dyn-lab's Transfer Curve within 0.01 dB")
+TEST_CASE ("At a steady level the output follows dyn-lab's Transfer Curve within 0.01 dB", "[sweep]")
 {
     const auto& curve = GENERATE (from_range (curves()));
     const int numChannels = GENERATE (1, 2);
@@ -80,5 +80,25 @@ TEST_CASE ("At a steady level the output follows dyn-lab's Transfer Curve within
         CAPTURE (row.inputDb);
         // Half a second at the level, for the Gain Reduction to settle (Attack is 10 ms in every table).
         CHECK (std::abs (test::steadyOutputDb (curve.settings, row.inputDb, 48000.0, numChannels) - row.outputDb) <= 0.01);
+    }
+}
+
+TEST_CASE ("On VCA, at a steady level the output follows dyn-lab's Transfer Curve within 0.01 dB", "[sweep]")
+{
+    // `python3 tools/dyn-lab/dynlab.py transfer --character vca`, with each table's other options, prints the tables
+    // above as they are: VCA's Transfer Curve is Clean's, on its RMS Detection Level. The lab's steady test signal for
+    // VCA is a square wave sineCalibrationDb under each level (tools/dyn-lab/USAGE.md, "VCA"), so the output level is
+    // read sineCalibrationDb over the square wave's. Clean, reading the square wave's peak, would read each level
+    // sineCalibrationDb low. Mono: each channel's detection is Clean's, which the test above runs on stereo. 0.2 s at
+    // each level is 20 of Attack's time constants, and the RMS level settles in 5 ms.
+    const auto& curve = GENERATE (from_range (curves()));
+    CAPTURE (curve.command);
+    auto settings = curve.settings;
+    settings.character = Character::VCA;
+    for (const auto& row : curve.rows)
+    {
+        CAPTURE (row.inputDb);
+        const double outputDb = test::steadyOutputDb (settings, row.inputDb - test::sineCalibrationDb, 48000.0, 1, 0.2) + test::sineCalibrationDb;
+        CHECK (std::abs (outputDb - row.outputDb) <= 0.01);
     }
 }

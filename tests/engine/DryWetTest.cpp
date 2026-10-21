@@ -20,8 +20,7 @@ constexpr auto zeroLatency = ProcessingMode::ZeroLatency;
 constexpr auto highQuality = ProcessingMode::HighQuality;
 constexpr double off = -std::numeric_limits<double>::infinity();
 
-// The settings the null must hold under, one row each. Oversampling (#10) adds a row per factor, Colour (#19) a row
-// per Colour.
+// The settings the null must hold under, one row each. Oversampling (#10) adds a row per factor.
 const std::vector<test::NullRow>& nullRows()
 {
     static const std::vector<test::NullRow> rows {
@@ -32,6 +31,8 @@ const std::vector<test::NullRow>& nullRows()
               s.gate.on = true;
               s.gate.thresholdDb = parameterRanges::threshold.low;
           } },
+        // With no Gain Reduction, Colour's weight is exactly 0, at any Colour (ADR 0005): at its top, 100%, too.
+        { "VCA at Colour 100%", [] (Settings& s) { s.character = Character::VCA; } },
     };
     return rows;
 }
@@ -59,7 +60,7 @@ const std::vector<Levels>& nullLevels()
 
 } // namespace
 
-TEST_CASE ("With no compression, Dry plus Wet nulls against the input delayed by the reported latency")
+TEST_CASE ("With no compression, Dry plus Wet nulls against the input delayed by the reported latency", "[sweep]")
 {
     const auto& row = GENERATE (from_range (nullRows()));
     const auto& levels = GENERATE (from_range (nullLevels()));

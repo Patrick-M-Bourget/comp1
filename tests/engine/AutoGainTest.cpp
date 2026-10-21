@@ -25,7 +25,7 @@ struct Estimate
 constexpr double infinity = std::numeric_limits<double>::infinity();
 
 // The settings tools/dyn-lab/USAGE.md lists for the Auto Gain check, each with the estimate its command prints, with
-// Auto Gain on.
+// Auto Gain on. Each command with --character vca prints the same estimate, the Transfer Curve's, and checks it on VCA.
 const std::vector<Estimate>& estimates()
 {
     static const std::vector<Estimate> all {
@@ -81,23 +81,31 @@ std::vector<std::vector<float>> referenceSegments()
 
 } // namespace
 
-TEST_CASE ("Auto Gain adds dyn-lab's estimate within 0.01 dB, worked out from the settings")
+TEST_CASE ("Auto Gain adds dyn-lab's estimate within 0.01 dB, worked out from the settings, on Clean and VCA")
 {
     const auto& estimate = GENERATE (from_range (estimates()));
-    CAPTURE (estimate.command);
+    const auto character = GENERATE (Character::Clean, Character::VCA);
+    CAPTURE (estimate.command, static_cast<int> (character));
+    auto settings = estimate.settings;
+    settings.character = character;
     // At -120 dB nothing is compressed (the lowest Knee here starts at -54 dB), so the output level is Auto Gain's.
-    const double gainDb = test::steadyOutputDb (estimate.settings, -120.0, 48000.0) + 120.0;
+    const double gainDb = test::steadyOutputDb (settings, -120.0, 48000.0) + 120.0;
     CHECK (std::abs (gainDb - estimate.autoGainDb) <= 0.01);
 }
 
-TEST_CASE ("With Auto Gain on, the reference signal keeps its level within dyn-lab's tolerance")
+TEST_CASE ("With Auto Gain on, the reference signal keeps its level within dyn-lab's tolerance, on Clean and VCA", "[sweep]")
 {
     const auto& estimate = GENERATE (from_range (estimates()));
-    CAPTURE (estimate.command);
+    const auto character = GENERATE (Character::Clean, Character::VCA);
+    CAPTURE (estimate.command, static_cast<int> (character));
+    auto settings = estimate.settings;
+    settings.character = character;
+    // The lab's check runs without Colour, which Auto Gain doesn't compensate.
+    settings.colour = 0.0;
     const auto segments = referenceSegments();
     Engine engine;
     engine.prepare (referenceRate, 512, 1);
-    engine.setSettings (estimate.settings);
+    engine.setSettings (settings);
     // Each segment's level difference, output minus input, averaged in dB over the segments, as dyn-lab measures it.
     double sumDb = 0.0;
     for (const auto& segment : segments)

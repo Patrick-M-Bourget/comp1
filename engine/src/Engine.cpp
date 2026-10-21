@@ -1,5 +1,6 @@
 #include "comp1/Engine.h"
 
+#include "Character.h"
 #include "Clean.h"
 #include "Crossfade.h"
 #include "DelayLine.h"
@@ -57,7 +58,8 @@ plugkit::StereoPlacement routed (StereoPlacement placement)
     return plugkit::StereoPlacement::Stereo;
 }
 
-// The compressor: the Clean Character's gain computer and detector on the part of the signal Stereo Placement picks.
+// The compressor: its Character's gain computer and detector (Character.h) on the part of the signal Stereo Placement
+// picks, then its Character's Colour on that part.
 // With Stereo, on every channel, each main channel detected from what it follows in the detection signal, with Stereo
 // Link between the two channels of a stereo track; with Mid or Side, on that part alone, detected from the detection
 // signal's own Mid or Side. A mono track is compressed as Stereo, whatever Placement is stored.
@@ -66,11 +68,14 @@ plugkit::StereoPlacement routed (StereoPlacement placement)
 // included, is click-free and glides the same at every host block size; the gain computer and detector read the
 // settings as they stand for the run. Ratio glides as 1/Ratio, so ∞:1 (0) is reached; Attack and Release glide in
 // log time, as their host parameters move. Stereo Link glides as a fraction, 0 to 1, a sample at a time: it moves the
-// Gain Reduction itself, after the detectors, where a step a run would put a corner in the gain every run.
+// Gain Reduction itself, after the detectors, where a step a run would put a corner in the gain every run. Colour glides
+// as a fraction, 0 to 1, a sample at a time too, as it shapes the waveform.
 //
-// A change of Placement never jumps. At the start of a run, the new Placement starts with detectors of its own and
-// fades in over the glide time as the old one fades out, its detectors still running; a change asked for during a fade
-// starts once the fade is over.
+// A voice is a Placement and a Character, and a change of either never jumps. At the start of a run, the new voice
+// starts with detectors and Colour of its own and fades in over the glide time as the old one fades out, its detectors
+// still running, so the applied gain and Colour crossfade; a change asked for during a fade starts once the fade is
+// over. A new Placement's detectors start from no Gain Reduction, as they hear another part. A new Character's, on the
+// same Placement, start from the outgoing ones' state, so from the Gain Reduction the outgoing Character was producing.
 class Compressor
 {
 public:
@@ -80,18 +85,21 @@ public:
         stereoTrack = numChannels == 2;
         for (auto& voice : voices)
         {
-            voice.detectors.assign (static_cast<std::size_t> (std::max (numChannels, 0)), {});
+            voice.detectors.assign (static_cast<std::size_t> (std::max (numChannels, 0)), CharacterDetector {});
             for (auto& detector : voice.detectors)
                 detector.prepare (sampleRate);
             voice.levelsDb.assign (voice.detectors.size(), plugkit::levelFloorDb);
             voice.reductionsDb.assign (voice.detectors.size(), 0.0);
             voice.gains.assign (voice.detectors.size(), 1.0);
+            voice.colours.assign (voice.detectors.size(), ColourStage {});
+            voice.colourChanges.assign (voice.detectors.size(), 0.0);
         }
         reductions.assign (voices[0].detectors.size(), 0.0);
         channelDb.assign (reductions.size(), 0.0);
         for (auto& setting : glides)
             setting.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         stereoLink.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
+        colourShare.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         fade.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         fade.reset (1.0);
         fading = false;
@@ -107,18 +115,21 @@ public:
         glideTo (glides[logRelease], std::log (settings.releaseMs), snap);
         glideTo (glides[hold], settings.holdMs, snap);
         glideTo (stereoLink, settings.stereoLink / 100.0, snap);
+        glideTo (colourShare, settings.colour / 100.0, snap);
         placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
+        character = played (settings.character);
         if (snap)
         {
             update();
             voices[playing].placement = placement;
+            voices[playing].character = character;
         }
         // Auto Release switches without a glide: the switch changes only how fast the gain comes back, not where it is.
         autoRelease = settings.autoRelease;
     }
 
     // At the start of each run: the settings move on by a run, and the gain computer and detector take them. Then a
-    // change of Placement starts its fade.
+    // change of voice, a Placement or a Character, starts its fade.
     void startRun()
     {
         bool moving = false;
@@ -130,12 +141,21 @@ public:
             }
         if (moving)
             update();
-        if (! fading && placement != voices[playing].placement)
+        if (! fading && (placement != voices[playing].placement || character != voices[playing].character))
         {
+            const auto& leaving = voices[playing];
+            auto& starting = voices[1 - playing];
+            if (placement == leaving.placement)
+                std::copy (leaving.detectors.begin(), leaving.detectors.end(), starting.detectors.begin());
+            else
+                for (auto& detector : starting.detectors)
+                    detector.reset();
+            starting.placement = placement;
+            starting.character = character;
+            for (auto& colour : starting.colours)
+                colour.reset();
+            std::fill (starting.colourChanges.begin(), starting.colourChanges.end(), 0.0);
             playing = 1 - playing;
-            voices[playing].placement = placement;
-            for (auto& detector : voices[playing].detectors)
-                detector.reset();
             fade.reset (0.0);
             fade.setTarget (1.0);
             fading = true;
@@ -145,8 +165,8 @@ public:
     // Applies gain to audio, sample for sample, from the detection signal of the same samples: each main channel's
     // Detection Level comes from what it follows, or the Mid or the Side, never from the audio. Each sample's
     // Detection Level, as the Placement heard reads it, and Gain Reduction, as the gain applied (after Stereo Link),
-    // go to levels, taken where the detector reads them, so they follow whatever it hears. During a Placement's fade
-    // the gain applied is each Placement's gain weighted by its share, exactly so where both compress the same part.
+    // go to levels, taken where the detector reads them, so they follow whatever it hears. During a voice's fade the
+    // gain applied is each voice's gain weighted by its share, exactly so where both compress the same part.
     //
     // At each start of a run of the detection signal's own grid, which High Quality's delay moves off the audio's, each
     // detector heard's Auto Release moves on by the run just heard, so Auto Release runs on the samples the detector
@@ -159,7 +179,9 @@ public:
             if ((detection.runPosition + i) % plugkit::runSamples == 0)
                 startDetectorRuns();
             const double link = stereoLink.isSettled() ? stereoLink.value() : stereoLink.next();
+            const double colour = colourShare.isSettled() ? colourShare.value() : colourShare.next();
             askGains (heard, detection, audio.numChannels, i, link);
+            colourParts (heard, audio, i, colour);
             if (! fading)
             {
                 for (std::size_t c = 0; c < partsOf (heard); ++c)
@@ -169,6 +191,7 @@ public:
             }
             auto& leaving = voices[1 - playing];
             askGains (leaving, detection, audio.numChannels, i, link);
+            colourParts (leaving, audio, i, colour);
             const double in = fade.next();
             if (fade.isSettled())
                 fading = false;
@@ -177,7 +200,7 @@ public:
                 const double gain = in * gainOn (heard, ch) + (1.0 - in) * gainOn (leaving, ch);
                 levels.noteDetection (heard.levelsDb[partOf (heard, ch)], gain < 1.0 ? -plugkit::gainToDecibels (gain) : 0.0);
             }
-            // Each Placement's change to the sample, weighted by its share of the fade.
+            // Each voice's change to the sample, its gain and Colour, weighted by its share of the fade.
             const float left = audio.channels[0][i];
             const float right = audio.numChannels > 1 ? audio.channels[1][i] : left;
             for (int ch = 0; ch < audio.numChannels; ++ch)
@@ -199,13 +222,16 @@ private:
                     detector.startRun (releaseMs, autoRelease);
     }
 
-    // One Placement, with detectors of its own (per channel under Stereo, the first for Mid or Side), and at the sample
-    // the Detection Levels they read, the Gain Reductions it asks for and the gains they make (likewise).
+    // One Placement, with detectors and Colour of its own (per channel under Stereo, the first for Mid or Side), and at
+    // the sample the Detection Levels they read, the Gain Reductions it asks for, the gains they make and what Colour
+    // adds to each part once compressed (likewise).
     struct Voice
     {
         plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo;
-        std::vector<clean::Detector> detectors;
-        std::vector<double> levelsDb, reductionsDb, gains;
+        Character character = Character::Clean;
+        std::vector<CharacterDetector> detectors;
+        std::vector<ColourStage> colours;
+        std::vector<double> levelsDb, reductionsDb, gains, colourChanges;
     };
 
     // How many parts voice compresses: each channel under Stereo, or the one part, Mid or Side.
@@ -233,12 +259,11 @@ private:
     void askGains (Voice& voice, const DetectionSignal& detection, int numChannels, int i, double link)
     {
         const auto gainOf = [] (double reduction) { return reduction > 0.0 ? plugkit::decibelsToGain (-reduction) : 1.0; };
-        // The Detection Level: the detection signal's peak level, in dB where a full-scale sine reads 0.
-        const auto levelDb = [] (float sample) { return plugkit::gainToDecibels (std::abs (static_cast<double> (sample))); };
         if (voice.placement != plugkit::StereoPlacement::Stereo)
         {
-            voice.levelsDb[0] = levelDb (detection.partFollowedBy (voice.placement)[i]);
-            voice.reductionsDb[0] = voice.detectors[0].process (clean::gainReduction (voice.levelsDb[0], curve), timing);
+            auto& detector = voice.detectors[0];
+            voice.reductionsDb[0] = detector.process (voice.character, detection.partFollowedBy (voice.placement)[i], curve, timing);
+            voice.levelsDb[0] = detector.detectionLevelDb();
             voice.gains[0] = gainOf (voice.reductionsDb[0]);
             return;
         }
@@ -246,8 +271,8 @@ private:
         for (int ch = 0; ch < numChannels; ++ch)
         {
             const auto c = static_cast<std::size_t> (ch);
-            channelDb[c] = levelDb (detection.channelFollowedBy (ch)[i]);
-            reductions[c] = voice.detectors[c].process (clean::gainReduction (channelDb[c], curve), timing);
+            reductions[c] = voice.detectors[c].process (voice.character, detection.channelFollowedBy (ch)[i], curve, timing);
+            channelDb[c] = voice.detectors[c].detectionLevelDb();
             largest = std::max (largest, reductions[c]);
         }
         for (std::size_t c = 0; c < reductions.size(); ++c)
@@ -258,19 +283,50 @@ private:
         }
     }
 
+    // Colour on each part voice compresses, at sample i, before the gains are applied: what it adds to the part once
+    // compressed (colourChanges), from the Character's mapping of the Gain Reduction applied to the part, after Stereo
+    // Link, with the weight scaled by colour. Under Mid or Side only that part is coloured, and the other passes. A
+    // Character with no Colour (Clean) does no work, and its changes stay exactly 0.
+    static void colourParts (Voice& voice, AudioBlock audio, int i, double colour)
+    {
+        if (! hasColour (voice.character))
+            return;
+        const bool stereo = voice.placement == plugkit::StereoPlacement::Stereo;
+        const auto parts = stereo ? static_cast<std::size_t> (audio.numChannels) : 1;
+        for (std::size_t p = 0; p < parts; ++p)
+        {
+            double part = 0.0;
+            if (stereo)
+                part = audio.channels[p][i];
+            else
+                part = voice.placement == plugkit::StereoPlacement::Mid ? plugkit::encodeMid (audio.channels[0][i], audio.channels[1][i])
+                                                                        : plugkit::encodeSide (audio.channels[0][i], audio.channels[1][i]);
+            auto at = colourOf (voice.character, voice.reductionsDb[p]);
+            at.weight *= colour;
+            voice.colourChanges[p] = voice.colours[p].change (voice.gains[p] * part, at);
+        }
+    }
+
     // Applies the gains voice asks for to sample i, alone. Stereo scales each channel. Mid and Side, on a stereo track,
     // go on as a change to Left and Right (changeTo), never an encode then a decode, which float doesn't round-trip: the
-    // other part passes. With no Gain Reduction the sample is left as it is, bit for bit.
+    // other part passes. Colour's change goes on with the gain. With no Gain Reduction the sample is left as it is, bit
+    // for bit.
     static void applyGains (const Voice& voice, AudioBlock audio, int i)
     {
         if (voice.placement == plugkit::StereoPlacement::Stereo)
         {
             for (int ch = 0; ch < audio.numChannels; ++ch)
-                if (const double gain = voice.gains[static_cast<std::size_t> (ch)]; gain != 1.0)
-                    audio.channels[ch][i] = static_cast<float> (gain * audio.channels[ch][i]);
+            {
+                const auto c = static_cast<std::size_t> (ch);
+                float& sample = audio.channels[ch][i];
+                if (voice.colourChanges[c] != 0.0)
+                    sample = static_cast<float> (voice.gains[c] * sample + voice.colourChanges[c]);
+                else if (voice.gains[c] != 1.0)
+                    sample = static_cast<float> (voice.gains[c] * sample);
+            }
             return;
         }
-        if (voice.gains[0] == 1.0)
+        if (voice.gains[0] == 1.0 && voice.colourChanges[0] == 0.0)
             return;
         const float left = audio.channels[0][i], right = audio.channels[1][i];
         for (int ch = 0; ch < 2; ++ch)
@@ -278,8 +334,9 @@ private:
     }
 
     // What the gains voice asks for add to channel ch of a sample whose Left and Right are left and right: (g - 1) times
-    // what channel ch carries of the part it compresses, as plugkit places a part (placedSample). Under Stereo, the
-    // channel itself; under Mid, the Mid, on Left and on Right; under Side, the Side, added to Left and taken from Right.
+    // what channel ch carries of the part it compresses, as plugkit places a part (placedSample), and Colour's change to
+    // the part, placed the same way. Under Stereo, the channel itself; under Mid, the Mid, on Left and on Right; under
+    // Side, the Side, added to Left and taken from Right.
     static double changeTo (const Voice& voice, int ch, float left, float right)
     {
         const float carried = plugkit::placedSample (voice.placement, 2, ch, [&] (int part) {
@@ -287,7 +344,11 @@ private:
                 return part == 0 ? left : right;
             return voice.placement == plugkit::StereoPlacement::Mid ? plugkit::encodeMid (left, right) : plugkit::encodeSide (left, right);
         });
-        return (gainOn (voice, ch) - 1.0) * carried;
+        const double change = (gainOn (voice, ch) - 1.0) * carried;
+        if (! hasColour (voice.character))
+            return change;
+        const float placed = plugkit::placedSample (voice.placement, 2, ch, [] (int) { return 1.0f; });
+        return change + placed * voice.colourChanges[partOf (voice, ch)];
     }
 
     enum Glide : std::size_t { threshold, inverseRatio, knee, range, logAttack, logRelease, hold, count };
@@ -308,13 +369,15 @@ private:
 
     double sampleRate = 44100.0;
     plugkit::Smoother glides[count];
-    plugkit::Smoother stereoLink; // 0 to 1
+    plugkit::Smoother stereoLink;  // 0 to 1
+    plugkit::Smoother colourShare; // Colour, 0 to 1
     clean::Curve curve;
     clean::Timing timing;
     double releaseMs = 100.0;
     bool autoRelease = false;
     bool stereoTrack = false;
     plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo; // the Placement asked for
+    Character character = Character::Clean;                                // the Character asked for, as it plays
     std::array<Voice, 2> voices;
     std::size_t playing = 0; // the voice heard, or fading in
     plugkit::Smoother fade;  // the share of the voice playing, while the other fades out

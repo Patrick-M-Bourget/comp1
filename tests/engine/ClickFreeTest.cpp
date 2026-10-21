@@ -165,6 +165,11 @@ void freeBandAtTone (Settings& s)
     s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = 1.0 };
 }
 
+// Colour is heard where the compressed tone comes within its drive of full scale (tools/dyn-lab/USAGE.md, "Colour"):
+// the tone at +12 dB, 30 dB over Threshold, compressed by 22.5 dB to -10.5 dB and driven 23.7 dB, 13 dB into the shape.
+double colourful (double) { return 4.0; }
+
+void onVca (Settings& s) { s.character = Character::VCA; }
 // The Limiter on, the tone (-12 dB) pushed 24 dB by Output Gain, 12 dB over the Ceiling's top, in mode.
 void limitingTone (Settings& s, ProcessingMode mode)
 {
@@ -394,6 +399,25 @@ const std::vector<Jump>& jumps()
         placementJump (StereoPlacement::Stereo, StereoPlacement::Mid, "Stereo Placement, Stereo and Mid"),
         placementJump (StereoPlacement::Mid, StereoPlacement::Side, "Stereo Placement, Mid and Side"),
         placementJump (StereoPlacement::Side, StereoPlacement::Stereo, "Stereo Placement, Side and Stereo"),
+        // Against the steady tone at each end: Colour's harmonics sharpen the tone's corners past a sine's.
+        { "Colour",
+          [] (Settings& s, bool b) {
+              onVca (s);
+              s.colour = b ? 100.0 : 0.0;
+          },
+          { onVca,
+            [] (Settings& s) {
+                onVca (s);
+                s.colour = 0.0;
+            } },
+          1,
+          colourful },
+        // Mid-compression, at Colour 100%: Clean's gain and VCA's gain and Colour crossfade.
+        { "Character, Clean and VCA",
+          [] (Settings& s, bool b) { s.character = b ? Character::VCA : Character::Clean; },
+          { onVca, [] (Settings&) {} },
+          1,
+          colourful },
         // Dry and Wet, each from Off and from far below unity, with the other at 0 dB, so the two paths sum.
         { "Dry, Off and 0 dB", [] (Settings& s, bool b) { s.dryDb = b ? 0.0 : -infinity; } },
         { "Dry, -24 and +12 dB", [] (Settings& s, bool b) { s.dryDb = b ? 12.0 : -24.0; } },
@@ -423,7 +447,7 @@ std::vector<Jump> detectionEqJumps()
 
 } // namespace
 
-TEST_CASE ("Jumps in each compressor setting do not click")
+TEST_CASE ("Jumps in each compressor setting do not click", "[sweep]")
 {
     const auto& jump = GENERATE (from_range (jumps()));
     const auto host = anyHost();
@@ -506,7 +530,7 @@ const std::vector<MidRelease>& midReleaseJumps()
 
 } // namespace
 
-TEST_CASE ("Jumps in each Detection EQ setting do not click in Detection Audition")
+TEST_CASE ("Jumps in each Detection EQ setting do not click in Detection Audition", "[sweep]")
 {
     const auto& jump = GENERATE (from_range (detectionEqJumps()));
     const auto host = anyHost();
@@ -518,7 +542,7 @@ TEST_CASE ("Jumps in each Detection EQ setting do not click in Detection Auditio
     CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }
 
-TEST_CASE ("Jumps in Stereo Placement do not click in Detection Audition")
+TEST_CASE ("Jumps in Stereo Placement do not click in Detection Audition", "[sweep]")
 {
     const auto& jump = GENERATE (filter ([] (const Jump& j) { return j.setting.starts_with ("Stereo Placement"); }, from_range (jumps())));
     const auto host = anyHost();
@@ -535,7 +559,7 @@ TEST_CASE ("Jumps in Stereo Placement do not click in Detection Audition")
     CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }
 
-TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
+TEST_CASE ("Jumps in Release and Auto Release mid-release do not click", "[sweep]")
 {
     const auto& jump = GENERATE (from_range (midReleaseJumps()));
     const auto host = anyHost();
@@ -557,7 +581,7 @@ TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
     CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }
 
-TEST_CASE ("While a compressor setting glides, the output is the same however the audio is cut into blocks")
+TEST_CASE ("While a compressor setting glides, the output is the same however the audio is cut into blocks", "[sweep]")
 {
     const auto& jump = GENERATE (from_range (jumps()));
     // The reference plays the audio in blocks of 4096; that cut is left out, as it would equal the reference by

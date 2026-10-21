@@ -72,6 +72,25 @@ const std::vector<Bursts>& allBursts()
             { 96000, 100, { 50.0104, 115.1354 }, { 68.5312, 156.8646 } },
             { 96000, 1000, { 50.0104, 115.1354 }, { 169.9583, 377.2604 } },
             { 96000, 3000, { 50.0104, 115.1354 }, { 227.6979, 497.2188 } } } },
+        // VCA, on the lab's steady test signal for it, a square wave sineCalibrationDb under each level. Colour is 0%,
+        // so the output's gain is the compressor's alone.
+        { "python3 tools/dyn-lab/dynlab.py bursts --character vca",
+          { .character = Character::VCA, .colour = 0.0 },
+          { { 44100, 1, { 100.0227, 230.2948 }, { 106.6893, 245.1247 } },
+            { 44100, 10, { 100.0227, 230.2948 }, { 113.6281, 260.4989 } },
+            { 44100, 100, { 111.7914, 242.0635 }, { 157.5510, 343.1973 } },
+            { 44100, 1000, { 111.7914, 242.0635 }, { 349.0703, 737.4603 } },
+            { 44100, 3000, { 111.7914, 242.0635 }, { 454.3991, 938.8889 } },
+            { 48000, 1, { 100.0208, 230.2708 }, { 106.7083, 245.1458 } },
+            { 48000, 10, { 100.0208, 230.2917 }, { 113.6250, 260.4792 } },
+            { 48000, 100, { 111.7917, 242.0625 }, { 157.5417, 343.1875 } },
+            { 48000, 1000, { 111.7917, 242.0625 }, { 349.0833, 737.4583 } },
+            { 48000, 3000, { 111.7917, 242.0625 }, { 454.3958, 938.8958 } },
+            { 96000, 1, { 100.0104, 230.2708 }, { 106.6875, 245.1250 } },
+            { 96000, 10, { 100.0104, 230.2708 }, { 113.6146, 260.4792 } },
+            { 96000, 100, { 111.7812, 242.0417 }, { 157.5417, 343.1875 } },
+            { 96000, 1000, { 111.7812, 242.0417 }, { 349.0625, 737.4375 } },
+            { 96000, 3000, { 111.7812, 242.0417 }, { 454.3750, 938.8646 } } } },
     };
     return all;
 }
@@ -89,8 +108,9 @@ constexpr double transientMargin = 0.01;
 // reports earlier.
 std::vector<double> gainReductionOverBurst (const Settings& settings, double sampleRate, int loudSamples, int quietSamples)
 {
-    auto loud = test::steadyLevel (1, loudSamples, settings.thresholdDb + stepDb).front();
-    const auto quiet = test::steadyLevel (1, quietSamples, settings.thresholdDb - stepDb).front();
+    const double offset = test::steadyLevelOffsetDb (settings.character);
+    auto loud = test::steadyLevel (1, loudSamples, settings.thresholdDb + stepDb + offset).front();
+    const auto quiet = test::steadyLevel (1, quietSamples, settings.thresholdDb - stepDb + offset).front();
     loud.insert (loud.end(), quiet.begin(), quiet.end());
     const int latency = latencySamples (settings.processingMode, sampleRate);
     loud.resize (loud.size() + static_cast<std::size_t> (latency), loud.back());
@@ -124,7 +144,7 @@ void checkWithinOneSample (const Release& measured, const Release& expected, dou
 
 } // namespace
 
-TEST_CASE ("After each burst, Release matches dyn-lab's bursts within one sample, Auto Release off and on")
+TEST_CASE ("After each burst, Release matches dyn-lab's bursts within one sample, Auto Release off and on", "[sweep]")
 {
     const auto& bursts = GENERATE (from_range (allBursts()));
     const auto& burst = GENERATE_REF (from_range (bursts.rows));
@@ -137,7 +157,7 @@ TEST_CASE ("After each burst, Release matches dyn-lab's bursts within one sample
     checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, 2.0), burst.on, burst.sampleRate);
 }
 
-TEST_CASE ("In High Quality too, after each burst, Release matches dyn-lab's bursts within one sample, Auto Release off and on")
+TEST_CASE ("In High Quality too, after each burst, Release matches dyn-lab's bursts within one sample, Auto Release off and on", "[sweep]")
 {
     const auto& bursts = GENERATE (from_range (allBursts()));
     const auto& burst = GENERATE_REF (from_range (bursts.rows));
@@ -155,6 +175,10 @@ TEST_CASE ("With Auto Release on, Release stays short after a transient and leng
 {
     for (const auto& bursts : allBursts())
     {
+        // The transient margin is Clean's: VCA's RMS level holds a transient up for a little longer, so its 1 ms burst
+        // releases 6.7% past Release (tools/dyn-lab/USAGE.md, "VCA"), which its rows above pin.
+        if (bursts.settings.character != Character::Clean)
+            continue;
         CAPTURE (bursts.command);
         const double releaseMs = bursts.settings.releaseMs;
         for (const double sampleRate : { 44100.0, 48000.0, 96000.0 })
@@ -216,7 +240,7 @@ constexpr double sustainedSeconds = 20.0;
 
 } // namespace
 
-TEST_CASE ("With Auto Release on, a step down from steady state matches dyn-lab's step within one sample")
+TEST_CASE ("With Auto Release on, a step down from steady state matches dyn-lab's step within one sample", "[sweep]")
 {
     const auto& steps = GENERATE (from_range (allSteps()));
     const auto& rate = GENERATE_REF (from_range (steps.rates));
