@@ -168,7 +168,7 @@ TEST_CASE ("Attack, Release and Hold match dyn-lab's step response within one sa
     CHECK (std::abs ((*release.ninety - release.held) * sampleMs - rate.step.release90) <= sampleMs);
 }
 
-TEST_CASE ("FET's loop stays stable at the fastest Attack and Ratio ∞, on a step and on full-scale noise, at every rate", "[sweep]")
+TEST_CASE ("FET's loop stays stable at the fastest Attack and an infinite Ratio, on a step and on full-scale noise, at every rate", "[sweep]")
 {
     // A loop that heard its gain a sample late would overshoot here, its Gain Reduction swinging from sample to
     // sample. Solved within the sample, it rises straight to its steady state and stays there.

@@ -158,9 +158,9 @@ struct ColourCondition
     Character character = Character::VCA;
 };
 
-// The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca` and `--character fet` print, copied as printed. Only the
-// ceiling is checked: the improvement over the naive shaper doesn't hold for Colour at 20 and 30 dB of Gain Reduction
-// (tools/dyn-lab/USAGE.md, "colour"). Oversampling (#10) adds its rows.
+// The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca` and `--character fet` print, copied as
+// printed. Only the ceiling is checked: the improvement over the naive shaper doesn't hold for Colour at 20 and 30 dB of
+// Gain Reduction (tools/dyn-lab/USAGE.md, "colour"). Oversampling (#10) adds its rows.
 const std::vector<ColourCondition>& colourConditions()
 {
     static const std::vector<ColourCondition> all {
