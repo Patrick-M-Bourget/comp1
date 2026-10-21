@@ -70,7 +70,7 @@ const std::vector<Curve>& curves()
 
 } // namespace
 
-TEST_CASE ("At a steady level the output follows dyn-lab's Transfer Curve within 0.01 dB")
+TEST_CASE ("At a steady level the output follows dyn-lab's Transfer Curve within 0.01 dB", "[sweep]")
 {
     const auto& curve = GENERATE (from_range (curves()));
     const int numChannels = GENERATE (1, 2);
@@ -83,7 +83,7 @@ TEST_CASE ("At a steady level the output follows dyn-lab's Transfer Curve within
     }
 }
 
-TEST_CASE ("On VCA, at a steady level the output follows dyn-lab's Transfer Curve within 0.01 dB")
+TEST_CASE ("On VCA, at a steady level the output follows dyn-lab's Transfer Curve within 0.01 dB", "[sweep]")
 {
     // `python3 tools/dyn-lab/dynlab.py transfer --character vca`, with each table's other options, prints the tables
     // above as they are: VCA's Transfer Curve is Clean's, on its RMS Detection Level. The lab's steady test signal for

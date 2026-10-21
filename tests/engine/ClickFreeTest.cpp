@@ -369,7 +369,7 @@ std::vector<Jump> detectionEqJumps()
 
 } // namespace
 
-TEST_CASE ("Jumps in each compressor setting do not click")
+TEST_CASE ("Jumps in each compressor setting do not click", "[sweep]")
 {
     const auto& jump = GENERATE (from_range (jumps()));
     const auto host = anyHost();
@@ -452,7 +452,7 @@ const std::vector<MidRelease>& midReleaseJumps()
 
 } // namespace
 
-TEST_CASE ("Jumps in each Detection EQ setting do not click in Detection Audition")
+TEST_CASE ("Jumps in each Detection EQ setting do not click in Detection Audition", "[sweep]")
 {
     const auto& jump = GENERATE (from_range (detectionEqJumps()));
     const auto host = anyHost();
@@ -464,7 +464,7 @@ TEST_CASE ("Jumps in each Detection EQ setting do not click in Detection Auditio
     CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }
 
-TEST_CASE ("Jumps in Stereo Placement do not click in Detection Audition")
+TEST_CASE ("Jumps in Stereo Placement do not click in Detection Audition", "[sweep]")
 {
     const auto& jump = GENERATE (filter ([] (const Jump& j) { return j.setting.starts_with ("Stereo Placement"); }, from_range (jumps())));
     const auto host = anyHost();
@@ -481,7 +481,7 @@ TEST_CASE ("Jumps in Stereo Placement do not click in Detection Audition")
     CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }
 
-TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
+TEST_CASE ("Jumps in Release and Auto Release mid-release do not click", "[sweep]")
 {
     const auto& jump = GENERATE (from_range (midReleaseJumps()));
     const auto host = anyHost();
@@ -503,7 +503,7 @@ TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
     CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }
 
-TEST_CASE ("While a compressor setting glides, the output is the same however the audio is cut into blocks")
+TEST_CASE ("While a compressor setting glides, the output is the same however the audio is cut into blocks", "[sweep]")
 {
     const auto& jump = GENERATE (from_range (jumps()));
     // The reference plays the audio in blocks of 4096; that cut is left out, as it would equal the reference by

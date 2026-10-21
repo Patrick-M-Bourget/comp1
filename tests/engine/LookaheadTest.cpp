@@ -62,7 +62,7 @@ constexpr double stepDb = 20.0;
 
 } // namespace
 
-TEST_CASE ("In High Quality, Lookahead's step response matches dyn-lab's within one sample, against the delayed audio")
+TEST_CASE ("In High Quality, Lookahead's step response matches dyn-lab's within one sample, against the delayed audio", "[sweep]")
 {
     const auto& response = GENERATE (from_range (responses()));
     const auto& rate = GENERATE_REF (from_range (response.rates));
