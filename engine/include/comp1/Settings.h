@@ -179,6 +179,10 @@ struct Settings
     // Whole-plugin: the Processing Mode, and Lookahead in ms, which High Quality alone reads.
     ProcessingMode processingMode = ProcessingMode::ZeroLatency;
     double lookaheadMs = 0.0;
+    // Global Bypass: on, the output crossfades to the input, delayed by the latency of the Processing Mode playing
+    // (comp1/Latency.h), over the Smoother's glide time; off, back to the processed output. The Engine processes
+    // underneath while it is on. Separate from the host's own bypass, which the Plugin Shell plays through it.
+    bool globalBypass = false;
 
 #if defined(__GNUC__)
     #pragma GCC diagnostic push

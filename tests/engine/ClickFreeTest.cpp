@@ -75,30 +75,14 @@ test::Channels playTone (Host host,
     return output;
 }
 
-// How much sharper the sharpest corner of the output is, from the onset on, than a pure sine of toneFrequency at
-// the output's peak level allows: a sine A sin(wn) has a second difference of at most A w^2. Clicks show up far
-// above 1. The onset is skipped: the tone itself starts abruptly, and the compressor's first Attack moves with it. On
-// two channels, the worse of the two, each against its own peak.
+// The output's discontinuity (Measure.h) from the onset on: the tone itself starts abruptly, and the compressor's
+// first Attack moves with it.
 double discontinuity (const test::Channels& output, double sampleRate)
 {
-    double worst = 0.0;
-    for (const auto& channel : output)
-    {
-        double peak = 0.0, sharpest = 0.0;
-        const auto from = static_cast<std::size_t> (onsetSeconds * sampleRate);
-        for (auto i = std::max (from, std::size_t { 2 }); i < channel.size(); ++i)
-        {
-            peak = std::max (peak, static_cast<double> (std::abs (channel[i])));
-            sharpest = std::max (sharpest, std::abs (static_cast<double> (channel[i]) - 2.0 * channel[i - 1] + channel[i - 2]));
-        }
-        const double w = 2.0 * std::numbers::pi * toneFrequency / sampleRate;
-        worst = std::max (worst, sharpest / (peak * w * w));
-    }
-    return worst;
+    return test::discontinuity (output, toneFrequency, sampleRate, static_cast<std::size_t> (onsetSeconds * sampleRate));
 }
 
-// A discontinuity() at or over this is a click.
-constexpr double clickLimit = 2.0;
+using test::clickLimit;
 
 // False until the onset has passed, then flips every 50 ms.
 bool alternating (double seconds) { return seconds >= onsetSeconds && static_cast<int> ((seconds - onsetSeconds) / 0.05) % 2 == 0; }
@@ -259,6 +243,16 @@ const std::vector<Jump>& jumps()
             saturating } },
         // Held, the uncompressed input plays in place of the compressed one.
         { "Detection Audition", [] (Settings& s, bool b) { s.detectionAudition = b; } },
+        // On, the input plays in place of the compressed tone at Output Gain +12 dB, in each Processing Mode.
+        { "Global Bypass", [] (Settings& s, bool b) {
+             s.outputGainDb = 12.0;
+             s.globalBypass = b;
+         } },
+        { "Global Bypass in High Quality", [] (Settings& s, bool b) {
+             s.processingMode = ProcessingMode::HighQuality;
+             s.outputGainDb = 12.0;
+             s.globalBypass = b;
+         } },
         { "Lookahead",
           [] (Settings& s, bool b) {
               lookingAhead (s);
