@@ -65,8 +65,9 @@ public:
     // from call to call. The output doesn't depend on how the host cuts the audio into blocks, sample for sample: the
     // Engine moves on a grid of 16-sample runs that starts at prepare() and carries across calls. While Detection
     // Audition isn't held, with no Gain Reduction (Ratio 1:1, Range 0 dB, or a level below the Knee), Auto Gain off,
-    // Saturation off (or the level below its knee: full scale at Drive 0 dB) and 0 dB Output Gain, the output is the
-    // input, bit for bit; a non-finite input sample plays as silence.
+    // Saturation off (or the level below its knee: full scale at Drive 0 dB, between samples too when Oversampling
+    // rebuilds them) and 0 dB Output Gain, the output is the input, bit for bit; a non-finite input sample plays as
+    // silence.
     //
     // The Sidechain is heard only by the detector, with Detection Source External: each main channel detects from the
     // Sidechain channel of its own index, a mono Sidechain is detected from by every main channel, and a mono main
