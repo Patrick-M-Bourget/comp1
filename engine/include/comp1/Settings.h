@@ -140,6 +140,29 @@ enum class StereoPlacement
 // whole (Engine::setSettings). A default Settings holds every host parameter's default.
 struct Settings
 {
+    // The Gate, first in the chain, on the main input before the Dry/Wet split: on or off, Gate Threshold and Gate
+    // Range in dB, Gate Attack, Gate Release and Gate Hold in ms, in the compressor's ranges of the same names
+    // (parameterRanges), with dyn-lab's defaults (its Gate). It keys from the Detection Source after the Detection EQ.
+    struct Gate
+    {
+        bool on = false;
+        double thresholdDb = -40.0;
+        double rangeDb = 20.0;
+        double attackMs = 1.0;
+        double releaseMs = 100.0;
+        double holdMs = 20.0;
+
+#if defined(__GNUC__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wfloat-equal" // exactly equal: settings that changed nothing are skipped
+#endif
+        bool operator== (const Gate&) const = default;
+#if defined(__GNUC__)
+    #pragma GCC diagnostic pop
+#endif
+    };
+    Gate gate;
+
     // The compressor, the Clean Character, in parameterRanges' units, with dyn-lab's defaults.
     double thresholdDb = -18.0;
     double ratio = 4.0; // parameterRanges::inf for ∞:1

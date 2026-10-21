@@ -28,6 +28,7 @@ add_executable(comp1_engine_tests
     engine/DetectionSourceTest.cpp
     engine/DetectionStageTest.cpp
     engine/DryWetTest.cpp
+    engine/GateTest.cpp
     engine/GlobalBypassTest.cpp
     engine/LatencyTest.cpp
     engine/LevelTapsTest.cpp

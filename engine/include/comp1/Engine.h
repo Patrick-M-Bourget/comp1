@@ -69,12 +69,17 @@ public:
     // input times the Dry and Wet levels summed: bit for bit the input at Wet 0 dB and Dry Off, or at Dry 0 dB and Wet
     // Off, and twice it at both 0 dB. A non-finite input sample plays as silence, on both paths.
     //
-    // The Dry path is the input split off before anything else, delayed to meet the Wet path at the Dry/Wet sum, and
-    // summed at its level with the Wet path, after Auto Gain, which is the Wet path's alone, and before Output Gain.
+    // The Gate comes first, on the main input before the Dry/Wet split, so it lowers the Dry and the Wet path alike: it
+    // keys from the Detection Source after the Detection EQ, never from its own output, and puts one gain on every
+    // channel. With External and no Sidechain connected it is open. Off, or open, it changes nothing, bit for bit.
     //
-    // The Sidechain is heard only by the detector, with Detection Source External: each main channel detects from the
-    // Sidechain channel of its own index, a mono Sidechain is detected from by every main channel, and a mono main
-    // detects from the louder of a stereo Sidechain's two channels at each sample. A Sidechain contributes its first
+    // The Dry path is the gated input, split off before the Wet path touches it, delayed to meet the Wet path at the
+    // Dry/Wet sum, and summed at its level with the Wet path, after Auto Gain, which is the Wet path's alone, and
+    // before Output Gain.
+    //
+    // The Sidechain is heard only by the detector and the Gate, with Detection Source External: each main channel
+    // detects from the Sidechain channel of its own index, a mono Sidechain is detected from by every main channel,
+    // and a mono main detects from the louder of a stereo Sidechain's two channels at each sample. A Sidechain contributes its first
     // two channels. A null one, one with no channels, or one with fewer samples than main counts as none connected,
     // and the detector then hears silence. A non-finite Sidechain sample is heard as silence too.
     //

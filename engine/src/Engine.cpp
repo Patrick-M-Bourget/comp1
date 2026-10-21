@@ -5,6 +5,7 @@
 #include "DelayLine.h"
 #include "Detection.h"
 #include "DryWet.h"
+#include "Gate.h"
 #include "Glide.h"
 #include "LevelTaps.h"
 #include "Limiter.h"
@@ -530,6 +531,7 @@ struct Engine::Impl
     int gridPosition = 0;
     std::vector<float*> subBlock; // per channel
 
+    GateStage gate;
     DetectionStage detection;
     Compressor compressor;
     SaturationStage saturation;
@@ -558,6 +560,7 @@ struct Engine::Impl
             return;
         if (latest != nullptr)
             settings = *latest;
+        gate.setSettings (settings, snapToSettings);
         detection.setSource (settings.detectionSource);
         detection.setDetectionEq (settings.detectionEq, snapToSettings);
         compressor.setSettings (settings, snapToSettings);
@@ -591,7 +594,7 @@ struct Engine::Impl
         return { subBlock.data(), channels, count };
     }
 
-    // The Wet path, on a piece of a run, in place, with the Sidechain's piece (or none), on path: Saturation Before,
+    // The Wet path, on a piece of a run, in place, gated, with the Sidechain's piece (or none), on path: Saturation Before,
     // the detection stage, fed the compressor's input as the Internal signal, then the compressor, Saturation After
     // and Auto Gain; then the Dry/Wet sum, Detection Audition and Output Gain. Saturation runs at one of its two
     // positions. The compressor's
@@ -603,12 +606,11 @@ struct Engine::Impl
     //
     // In High Quality the audio is delayed by the Lookahead budget and the detection signal by less, so the compressor
     // meets the audio Lookahead early; then the Oversampling padding before the Dry/Wet sum. After Output Gain, the
-    // Limiter, on the path playing. Then Global Bypass, which crossfades to the input as it came in, delayed to match;
-    // it takes precedence over Detection Audition, and everything before it runs on while it is on, so turning it off
-    // has no restart transient. Last, the mode fade, which swaps the paths in silence.
+    // Limiter, on the path playing. Then Global Bypass, which crossfades to the input as it came in, before the Gate,
+    // delayed to match; it takes precedence over Detection Audition, and everything before it runs on while it is on,
+    // so turning it off has no restart transient. Last, the mode fade, which swaps the paths in silence.
     void wetPath (AudioBlock wet, const ConstAudioBlock* sidechainPiece, ProcessingMode path)
     {
-        globalBypass.takeInput ({ wet.channels, wet.numChannels, wet.numSamples }, path);
         if (gridPosition == 0)
             saturation.startRun();
         saturation.process (SaturationPosition::Before, wet);
@@ -650,6 +652,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->numChannels = numChannels;
     impl->gridPosition = 0;
     impl->subBlock.assign (static_cast<std::size_t> (std::max (numChannels, 0)), nullptr);
+    impl->gate.prepare (sampleRate, numChannels);
     impl->detection.prepare (sampleRate, numChannels, plugkit::runSamples);
     impl->compressor.prepare (sampleRate, numChannels);
     impl->saturation.prepare (sampleRate, numChannels);
@@ -694,13 +697,19 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         const auto path = impl->modeFade.startPiece();
         count = std::min ({ plugkit::runSamples - impl->gridPosition, main.numSamples - start, impl->modeFade.pieceLimit() });
         const auto wet = impl->sanitisedInput (main, channels, start, count);
-        // The split: the input, scrubbed of non-finite samples, is copied as the Dry path before the Wet path touches
-        // it. The Gate (#17) will sit ahead of it, so it gates both paths.
-        impl->dryWet.split ({ wet.channels, wet.numChannels, wet.numSamples }, path);
         for (int ch = 0; ch < sidechainChannels; ++ch)
             sidechainPiece[static_cast<std::size_t> (ch)] = sidechain->channels[ch] + start;
         const ConstAudioBlock sidechainBlock { sidechainPiece.data(), sidechainChannels, count };
-        impl->wetPath (wet, sidechainConnected ? &sidechainBlock : nullptr, path);
+        const auto* sidechainPieceOrNone = sidechainConnected ? &sidechainBlock : nullptr;
+        // Global Bypass's reference is the input scrubbed of non-finite samples, before anything processes it.
+        impl->globalBypass.takeInput ({ wet.channels, wet.numChannels, wet.numSamples }, path);
+        // The Gate, ahead of the split, so it lowers the Dry and the Wet path alike.
+        if (impl->gridPosition == 0)
+            impl->gate.startRun();
+        impl->gate.process (wet, sidechainPieceOrNone);
+        // The split: the gated input is copied as the Dry path before the Wet path touches it.
+        impl->dryWet.split ({ wet.channels, wet.numChannels, wet.numSamples }, path);
+        impl->wetPath (wet, sidechainPieceOrNone, path);
         impl->noteOutputLevels (wet);
 
         impl->gridPosition += count;
