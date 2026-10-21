@@ -13,9 +13,9 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
     Engine engine;
     engine.prepare (48000.0, blockSize, 2);
 
-    std::vector<float> left (blockSize, 0.5f), right (blockSize, -0.5f), key (blockSize, 0.25f);
+    std::vector<float> left (blockSize, 0.5f), right (blockSize, -0.5f), sidechainSamples (blockSize, 0.25f);
     float* main[] = { left.data(), right.data() };
-    const float* sidechain[] = { key.data() };
+    const float* sidechain[] = { sidechainSamples.data() };
     const ConstAudioBlock sidechainBlock { sidechain, 1, blockSize };
 
     test::AllocationGuard guard;
