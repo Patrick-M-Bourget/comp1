@@ -82,11 +82,11 @@ _Avoid_: Linked, Link, Comp Link
 ## Gate, Saturation and Limiter
 
 **Gate**:
-The downward expander before the compressor, which lowers the signal while its Detection Level is below Gate Threshold. Its controls are Gate Threshold, Gate Range, Gate Attack, Gate Release and Gate Hold.
+The downward expander before the compressor, which lowers the signal once its Held Level has fallen well below Gate Threshold, and passes it again when the Held Level reaches Gate Threshold. Its controls are Gate Threshold, Gate Range, Gate Attack, Gate Release and Gate Hold.
 _Avoid_: Expander, noise gate; Threshold, Range, Attack, Release or Hold (unqualified) for the Gate's
 
 **Gate Threshold**:
-The Detection Level at which the Gate opens.
+The Held Level at which the Gate opens. The Gate closes only once the Held Level falls a fixed hysteresis under it, so a level wavering about Gate Threshold doesn't flip it to and fro.
 _Avoid_: Gate level, open level
 
 **Gate Range**:
@@ -94,13 +94,13 @@ How far the Gate lowers the signal while closed, in dB.
 _Avoid_: Gate depth, floor
 
 **Gate Attack**:
-How quickly the Gate opens once the Detection Level reaches Gate Threshold.
+How quickly the Gate opens once the Held Level reaches Gate Threshold.
 
 **Gate Release**:
-How quickly the Gate closes once the Detection Level falls below Gate Threshold.
+How quickly the Gate closes once Gate Hold has run out, after the Held Level fell the hysteresis under Gate Threshold.
 
 **Gate Hold**:
-How long the Gate stays open before Gate Release begins.
+How long the Gate stays open after the Held Level falls the hysteresis under Gate Threshold, before Gate Release begins.
 
 **Held Level**:
 The loudest Detection Level the Gate has heard over a short window ending now, which the Gate compares with Gate Threshold, so a low tone's zero crossings don't close it.
