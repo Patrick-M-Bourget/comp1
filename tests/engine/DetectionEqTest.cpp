@@ -5,6 +5,7 @@
 #include <catch2/generators/catch_generators_range.hpp>
 #include <plugkit/ShapeDesign.h>
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <numbers>
@@ -16,30 +17,26 @@ using namespace comp1;
 namespace
 {
 
-constexpr double toneAmplitude = 0.5;
-
-// The detection signal's level in dB, against the input's, for a steady sine at frequency through an Engine with
-// settings and Detection Audition held from the start: least squares fits a sine and a cosine at frequency to the
-// last measureSeconds, once settleSeconds have let every filter settle. The fit is exact for a pure tone however many
-// periods the window holds.
-double auditionedGainDb (Settings settings, double sampleRate, double frequency)
+// A steady sine of amplitude at frequency, seconds long.
+std::vector<float> tone (double amplitude, double frequency, double sampleRate, double seconds)
 {
-    constexpr double settleSeconds = 1.0, measureSeconds = 0.25;
-    settings.detectionAudition = true;
-    const int settle = static_cast<int> (settleSeconds * sampleRate), measure = static_cast<int> (measureSeconds * sampleRate);
-    test::Channels audio (1, std::vector<float> (static_cast<std::size_t> (settle + measure)));
+    std::vector<float> samples (static_cast<std::size_t> (seconds * sampleRate));
     const double w = 2.0 * std::numbers::pi * frequency / sampleRate;
-    for (std::size_t n = 0; n < audio[0].size(); ++n)
-        audio[0][n] = static_cast<float> (toneAmplitude * std::sin (w * static_cast<double> (n)));
-    Engine engine;
-    engine.prepare (sampleRate, 512, 1);
-    engine.setSettings (settings);
-    test::processInBlocks (engine, audio, { 512 });
+    for (std::size_t n = 0; n < samples.size(); ++n)
+        samples[n] = static_cast<float> (amplitude * std::sin (w * static_cast<double> (n)));
+    return samples;
+}
 
+// The amplitude of the sine at frequency in the samples from `from` on: least squares fits a sine and a cosine at
+// frequency to them, which is exact for a pure tone however many periods they hold.
+double fittedAmplitude (const std::vector<float>& samples, double frequency, double sampleRate, std::size_t from)
+{
+    const double w = 2.0 * std::numbers::pi * frequency / sampleRate;
     double ss = 0.0, sc = 0.0, cc = 0.0, ys = 0.0, yc = 0.0;
-    for (int n = settle; n < settle + measure; ++n)
+    for (std::size_t n = from; n < samples.size(); ++n)
     {
-        const double s = std::sin (w * n), c = std::cos (w * n), y = audio[0][static_cast<std::size_t> (n)];
+        const double s = std::sin (w * static_cast<double> (n)), c = std::cos (w * static_cast<double> (n));
+        const double y = samples[n];
         ss += s * s;
         sc += s * c;
         cc += c * c;
@@ -47,8 +44,25 @@ double auditionedGainDb (Settings settings, double sampleRate, double frequency)
         yc += y * c;
     }
     const double det = ss * cc - sc * sc;
-    const double a = (ys * cc - yc * sc) / det, b = (yc * ss - ys * sc) / det;
-    return 20.0 * std::log10 (std::hypot (a, b) / toneAmplitude);
+    return std::hypot ((ys * cc - yc * sc) / det, (yc * ss - ys * sc) / det);
+}
+
+constexpr double toneAmplitude = 0.5;
+
+// The detection signal's level in dB, against the input's, for a steady sine at frequency through an Engine with
+// settings and Detection Audition held from the start, measured over the last measureSeconds, once settleSeconds have
+// let every filter settle.
+double auditionedGainDb (Settings settings, double sampleRate, double frequency)
+{
+    constexpr double settleSeconds = 1.0, measureSeconds = 0.25;
+    settings.detectionAudition = true;
+    test::Channels audio { tone (toneAmplitude, frequency, sampleRate, settleSeconds + measureSeconds) };
+    Engine engine;
+    engine.prepare (sampleRate, 512, 1);
+    engine.setSettings (settings);
+    test::processInBlocks (engine, audio, { 512 });
+    const auto from = static_cast<std::size_t> (settleSeconds * sampleRate);
+    return 20.0 * std::log10 (fittedAmplitude (audio[0], frequency, sampleRate, from) / toneAmplitude);
 }
 
 // The product of plugkit's design responses over the bands that are on, in dB.
@@ -154,4 +168,100 @@ TEST_CASE ("Through Detection Audition, the detection signal's response is plugk
         else
             CHECK (measured < floorDb + toleranceDb);
     }
+}
+
+namespace
+{
+
+// Every band on, each away from its defaults: a Detection EQ that changes the detection signal throughout.
+DetectionEq everyBandOn()
+{
+    auto eq = freeBand (DetectionBandShape::HighShelf, 1500.0, 12.0, 3.0);
+    eq.highPass = highPass (400.0, 30.0).highPass;
+    eq.lowPass = lowPass (3000.0, 6.0).lowPass;
+    return eq;
+}
+
+// The output of a stereo Engine at 48 kHz given settings from the start, for noise on the main input and, when
+// withSidechain, other noise on a stereo Sidechain.
+test::Channels play (const Settings& settings, bool withSidechain)
+{
+    auto audio = test::noise (2, 24000);
+    const auto sidechainSamples = test::noise (2, 24000, 3);
+    Engine engine;
+    engine.prepare (48000.0, 512, 2);
+    engine.setSettings (settings);
+    test::processInBlocks (engine, audio, { 512 }, withSidechain ? &sidechainSamples : nullptr);
+    return audio;
+}
+
+} // namespace
+
+TEST_CASE ("With every band off, the output and Detection Audition are those of no Detection EQ, whatever the bands hold")
+{
+    const auto source = GENERATE (DetectionSource::Internal, DetectionSource::External);
+    const bool audition = GENERATE (false, true);
+    CAPTURE (static_cast<int> (source), audition);
+    const Settings plain { .thresholdDb = -30.0, .ratio = 8.0, .detectionSource = source, .detectionAudition = audition };
+    auto off = plain;
+    off.detectionEq = everyBandOn();
+    off.detectionEq.highPass.on = off.detectionEq.lowPass.on = off.detectionEq.band.on = false;
+    CHECK (play (off, true) == play (plain, true));
+    // The bands on change it: the test can tell.
+    auto on = off;
+    on.detectionEq = everyBandOn();
+    CHECK (play (on, true) != play (plain, true));
+}
+
+TEST_CASE ("With no Gain Reduction, the output is the input, bit for bit, at every Detection EQ setting")
+{
+    const auto source = GENERATE (DetectionSource::Internal, DetectionSource::External);
+    const bool ratioOne = GENERATE (true, false);
+    const int bandsOn = GENERATE (range (0, 8)); // a bit per band
+    CAPTURE (static_cast<int> (source), ratioOne, bandsOn);
+    Settings settings { .thresholdDb = -60.0, .detectionSource = source };
+    if (ratioOne)
+        settings.ratio = 1.0;
+    else
+        settings.rangeDb = 0.0;
+    settings.detectionEq = everyBandOn();
+    settings.detectionEq.highPass.on = (bandsOn & 1) != 0;
+    settings.detectionEq.lowPass.on = (bandsOn & 2) != 0;
+    settings.detectionEq.band.on = (bandsOn & 4) != 0;
+    CHECK (play (settings, true) == test::noise (2, 24000));
+}
+
+TEST_CASE ("A high-pass over a loud low tone stops the compressor reacting to it")
+{
+    // A full-scale 50 Hz sine: the Detection Level reads 0 dB. The detector holds its peak: Attack at its fastest,
+    // Hold longer than the tone's period, Release at its slowest. dyn-lab's Transfer Curve at Threshold -18, Ratio 4:1
+    // and Knee 0 takes off 3/4 of the level over Threshold, nothing below it (python3 tools/dyn-lab/dynlab.py transfer
+    // --threshold -18 --ratio 4 --knee 0): 13.5 dB at 0 dB.
+    constexpr double sampleRate = 48000.0, frequency = 50.0, seconds = 1.5;
+    const auto transferReductionDb = [] (double levelDb) { return std::max (0.0, 0.75 * (levelDb + 18.0)); };
+    Settings settings { .thresholdDb = -18.0, .ratio = 4.0, .kneeDb = 0.0, .attackMs = 0.005, .releaseMs = 5000.0, .holdMs = 500.0 };
+    // Off, then at 200 Hz: 12 dB/oct takes the tone under Threshold, 6 dB/oct only part of the way.
+    const double slope = GENERATE (0.0, 12.0, 6.0);
+    CAPTURE (slope);
+    if (slope > 0.0)
+        settings.detectionEq = highPass (200.0, slope);
+    const double filteredDb = designedGainDb (settings.detectionEq, sampleRate, frequency);
+    const double expected = transferReductionDb (filteredDb);
+    CAPTURE (filteredDb, expected);
+    if (slope == 0.0)
+        REQUIRE (expected == 13.5);
+    if (slope == 12.0)
+        REQUIRE (expected == 0.0);
+    if (slope == 6.0)
+        REQUIRE ((expected > 1.0 && expected < 13.0));
+
+    const auto input = tone (1.0, frequency, sampleRate, seconds);
+    test::Channels audio { input };
+    Engine engine;
+    engine.prepare (sampleRate, 512, 1);
+    engine.setSettings (settings);
+    test::processInBlocks (engine, audio, { 512 });
+    const auto from = static_cast<std::size_t> (1.0 * sampleRate);
+    const double reductionDb = -20.0 * std::log10 (fittedAmplitude (audio[0], frequency, sampleRate, from));
+    CHECK (std::abs (reductionDb - expected) < 0.05);
 }
