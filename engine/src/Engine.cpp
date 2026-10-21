@@ -439,7 +439,7 @@ public:
         else
             delay.write ({ heard.channels, heard.numChannels, heard.numSamples });
 
-        // Let go and settled: the Wet path plays, bit for bit.
+        // The Wet path fades toward the detection signal as heard; let go and settled, it plays bit for bit.
         crossfade (auditionShare, audio, { heard.channels, heard.numChannels, heard.numSamples });
     }
 
