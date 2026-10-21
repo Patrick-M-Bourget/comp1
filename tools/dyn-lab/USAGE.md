@@ -56,7 +56,7 @@ At Ratio 1:1 or Range 0 dB there is no Gain Reduction to measure, and the row sa
 
 With `--auto-release`, the step down follows steady compression, so the sustain state starts full and Release starts at its longest, 5 times Release, shortening as the sustain state discharges. Attack and Hold are unchanged.
 
-With `--external`, the step is the key's on an External Detection Source, while the main stays steady, so the Gain Reduction never reaches what the detector hears. Clean and VCA are feedforward either way, so their times are unchanged; FET's are Clean's (see [FET](#fet)).
+With `--external`, the step is the Sidechain's on an External Detection Source, while the main stays steady, so the Gain Reduction never reaches what the detector hears. Clean and VCA are feedforward either way, so their times are unchanged; FET's are Clean's (see [FET](#fet)).
 
 `--lookahead ms` (0 by default) models High Quality's Lookahead: the detector meets each step that many ms before the listener hears it in the delayed audio. Attack's times count from the step the listener hears, so they come Lookahead earlier, and the 63% time is negative when Lookahead is longer than Attack: the Gain Reduction starts before the step. Hold and Release are durations, counted from when the detector meets the step down as before, so Lookahead doesn't move them.
 
@@ -194,7 +194,7 @@ Past 4:1 the cap holds the speed-up at 3.8 to 3.9×: the step starts far over Th
 
 **The sub-millisecond attack:** at the reference Attack, `FET_REFERENCE_ATTACK_MS`, 0.02 ms, 90% of the step takes at most 0.045 ms at every rate, a sample or two: FET can catch a transient's first peak. At Attack 0.005 ms, Range's bottom, and ∞:1 the loop reaches its steady state within the first sample, and stays there.
 
-**An External Detection Source** feeds FET's gain computer and detector from the key, which the gain applied never reaches, so there is no feedback: it is feedforward, as Clean is, with the same times as Clean's at the same settings. `step --character fet --external` prints them. FET's Colour still follows the Gain Reduction.
+**An External Detection Source** feeds FET's gain computer and detector from the Sidechain, which the gain applied never reaches, so there is no feedback: it is feedforward, as Clean is, with the same times as Clean's at the same settings. `step --character fet --external` prints them. FET's Colour still follows the Gain Reduction.
 
 **With Lookahead** the loop reads the detection signal Lookahead early, times the gain it applies in that sample, so it acts ahead of the delayed audio, as Clean does: `step --lookahead` reports Attack's times against the delayed audio.
 
@@ -380,30 +380,30 @@ Prints the Limiter's figures at a Ceiling (`--ceiling dB`, 0 dBFS by default) an
 
 ## Gate
 
-The Gate is a hard gate on the main input, before the Dry/Wet split, so it lowers the Dry and the Wet path alike. Its key is the Detection Source after the Detection EQ, and one Gate gain goes on every main channel, from the louder channel's key. Each sample:
+The Gate is a hard gate on the main input, before the Dry/Wet split, so it lowers the Dry and the Wet path alike. It listens to the Detection Source after the Detection EQ, and one Gate gain goes on every main channel, from the louder channel's Detection Level. Each sample:
 
-- **The key level** is the loudest Detection Level of the key over the sample and the `GATE_KEY_HOLD_MS` before it, in dB where a full-scale sine reads 0.
-- **Open or closed:** the Gate opens when the key level reaches Gate Threshold, and closes once it is `GATE_HYSTERESIS_DB` under it. In between it stays as it is.
-- **Gate Hold** keeps it open for Gate Hold ms after it would close, before Gate Release begins. A key level back above the closing level restarts the count.
+- **The held level** is the loudest Detection Level over the sample and the `GATE_LEVEL_HOLD_MS` before it, in dB where a full-scale sine reads 0.
+- **Open or closed:** the Gate opens when the held level reaches Gate Threshold, and closes once it is `GATE_HYSTERESIS_DB` under it. In between it stays as it is.
+- **Gate Hold** keeps it open for Gate Hold ms after it would close, before Gate Release begins. A held level back above the closing level restarts the count.
 - **The Gain Reduction:** open, it asks for none; closed, exactly Gate Range. Gate Attack is how fast it opens and Gate Release how fast it closes, each one pole in dB covering 1 − 1/e of the move in its time, as the compressor's detector does. Under `GATE_SETTLED_DB` (10⁻⁷ dB, the Limiter's `LIMITER_SETTLED_DB`) it counts as none, so an open Gate passes the audio bit for bit.
-- **No key** (External with no Sidechain connected) leaves it open.
+- **No Sidechain** (External with no Sidechain connected) leaves it open.
 
 Gate Attack, Gate Release and Gate Hold run on samples. The model holds the settings fixed; the Engine glides them on the 16-sample run grid (`RUN_SAMPLES`), as it does the compressor's.
 
 The constants, named once in `dynlab.py`, from `gate`'s trade-off table:
 
-- **`GATE_KEY_HOLD_MS`, 10 ms:** a low tone's level falls to nothing at each zero crossing, so a key level read sample by sample closes the Gate on every half cycle. Holding the loudest level over a window bridges the crossings, at the cost of starting to close that much later after the key stops. The table's signals are a 20 Hz and a 50 Hz tone, the lowest a key commonly carries, and pink-like noise, each 0.1 dB over Gate Threshold (`GATE_RIPPLE_ABOVE_DB`), with Gate Hold 0 ms, so the key hold and hysteresis alone must hold the Gate open. 10 ms is the shortest key hold at which some hysteresis keeps all three steady: at 5 ms the 20 Hz tone ripples by 1.8 dB or more whatever the hysteresis, up to 8 dB.
-- **`GATE_HYSTERESIS_DB`, 6 dB:** the smallest that keeps the 20 Hz tone steady at that key hold. A 10 ms window on a 20 Hz tone dips to 4.6 dB under the tone's peak at each zero crossing, so a closing level 6 dB down clears it. The key hold costs on a stop, the case a gate is for (a hit ends, the bleed between hits is lowered); the hysteresis costs only on a slow fade, where the Gate closes 6 dB lower, 100 ms later at 60 dB/s (`GATE_FADE_DB_PER_S`), letting a decaying tail go on a little further down rather than chopping it. A longer key hold with less hysteresis (15 ms and 2 dB) fades sooner but stops later.
+- **`GATE_LEVEL_HOLD_MS`, 10 ms:** a low tone's level falls to nothing at each zero crossing, so a held level read sample by sample closes the Gate on every half cycle. Holding the loudest level over a window bridges the crossings, at the cost of starting to close that much later after the detection signal stops. The table's signals are a 20 Hz and a 50 Hz tone, the lowest a detection signal commonly carries, and pink-like noise, each 0.1 dB over Gate Threshold (`GATE_RIPPLE_ABOVE_DB`), with Gate Hold 0 ms, so the level hold and hysteresis alone must hold the Gate open. 10 ms is the shortest level hold at which some hysteresis keeps all three steady: at 5 ms the 20 Hz tone ripples by 1.8 dB or more whatever the hysteresis, up to 8 dB.
+- **`GATE_HYSTERESIS_DB`, 6 dB:** the smallest that keeps the 20 Hz tone steady at that level hold. A 10 ms window on a 20 Hz tone dips to 4.6 dB under the tone's peak at each zero crossing, so a closing level 6 dB down clears it. The level hold costs on a stop, the case a gate is for (a hit ends, the bleed between hits is lowered); the hysteresis costs only on a slow fade, where the Gate closes 6 dB lower, 100 ms later at 60 dB/s (`GATE_FADE_DB_PER_S`), letting a decaying tail go on a little further down rather than chopping it. A longer level hold with less hysteresis (15 ms and 2 dB) fades sooner but stops later.
 
 ### `gate`
 
-Prints the Gate's step response at each sample rate (44.1, 48 and 96 kHz by default). The key steps from 20 dB above Gate Threshold to 20 dB below it and back, each from steady state. For each rate it reports:
+Prints the Gate's step response at each sample rate (44.1, 48 and 96 kHz by default). The detection signal steps from 20 dB above Gate Threshold to 20 dB below it and back, each from steady state. For each rate it reports:
 
-- the closing: when Gate Release begins (Gate Hold plus the key hold), and Gate Release's 63% and 90% times from then;
+- the closing: when Gate Release begins (Gate Hold plus the level hold), and Gate Release's 63% and 90% times from then;
 - the opening: Gate Attack's 63% and 90% times;
 - the closed depth, settled, which equals Gate Range.
 
-At Gate Range 0 dB there is nothing to measure, and the row says so. Then it prints the key hold's and hysteresis's trade-off at 48 kHz, at the Gate Threshold, Gate Range, Gate Attack and Gate Release given, with Gate Hold 0 ms: for each candidate pair, the Gain Reduction's ripple, peak to peak, on each signal over its second half, and how late the Gate starts closing after a stop (the key hold) and on a key fading at 60 dB/s (the key hold plus the time to fall through the hysteresis), with the chosen pair marked.
+At Gate Range 0 dB there is nothing to measure, and the row says so. Then it prints the level hold's and hysteresis's trade-off at 48 kHz, at the Gate Threshold, Gate Range, Gate Attack and Gate Release given, with Gate Hold 0 ms: for each candidate pair, the Gain Reduction's ripple, peak to peak, on each signal over its second half, and how late the Gate starts closing after a stop (the level hold) and on a detection signal fading at 60 dB/s (the level hold plus the time to fall through the hysteresis), with the chosen pair marked.
 
     python3 tools/dyn-lab/dynlab.py gate
     python3 tools/dyn-lab/dynlab.py gate --rates 44100 48000 88200 96000 176400 192000

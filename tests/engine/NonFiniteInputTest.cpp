@@ -15,8 +15,8 @@ TEST_CASE ("A non-finite input sample never reaches the output, which plays on a
     const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET);
     // The Limiter on, at a Ceiling the noise passes: a non-finite sample never reaches its gain computer either.
     const bool limiter = GENERATE (false, true);
-    // The Gate on, closing on the noise (its peaks, 0.5, are under the closing level, 6 dB under 0 dB): its key, from
-    // a detection stage of its own, hears the scrubbed input too.
+    // The Gate on, closing on the noise (its peaks, 0.5, are under the closing level, 6 dB under 0 dB): its Detection
+    // Level, from a detection stage of its own, comes from the scrubbed input too.
     const bool gate = GENERATE (false, true);
     CAPTURE (autoGain, static_cast<int> (character), limiter, gate);
     const Settings settings { .gate = { .on = gate, .thresholdDb = 0.0, .releaseMs = 5.0, .holdMs = 0.0 },

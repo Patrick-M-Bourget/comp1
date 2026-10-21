@@ -165,7 +165,7 @@ struct Settings
 {
     // The Gate, first in the chain, on the main input before the Dry/Wet split: on or off, Gate Threshold and Gate
     // Range in dB, Gate Attack, Gate Release and Gate Hold in ms, in the compressor's ranges of the same names
-    // (parameterRanges), with dyn-lab's defaults (its Gate). It keys from the Detection Source after the Detection EQ.
+    // (parameterRanges), with dyn-lab's defaults (its Gate). It listens to the Detection Source after the Detection EQ.
     struct Gate
     {
         bool on = false;

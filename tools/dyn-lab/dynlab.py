@@ -323,7 +323,7 @@ class Detector:
     the one pole, so the gain computer reads the Detection Level less the Gain Reduction of the same sample. Attack,
     Release, Hold and Auto Release branch as on Clean, on whether the Transfer Curve asks for more Gain Reduction than
     the detector holds, which is whether the loop's solution rises. With an External Detection Source (external) the
-    gain applied never reaches the key, so FET is feedforward, as Clean is."""
+    gain applied never reaches the Sidechain, so FET is feedforward, as Clean is."""
 
     def __init__(self, settings, fs, gain_reduction=0.0, auto_release=None, level_db=-math.inf, external=False):
         """auto_release is the AutoRelease state to start from: empty by default. The Character's Detection Level
@@ -422,7 +422,7 @@ def step_response(settings, fs, lookahead=LOOKAHEAD_DEFAULT, external=False, qui
     Gain Reduction starts before the step. Hold and Release are durations from when the detector meets the step down,
     so Lookahead doesn't move them.
 
-    With external, the step is the key's, on an External Detection Source, while the main stays steady: the Gain
+    With external, the step is the Sidechain's, on an External Detection Source, while the main stays steady: the Gain
     Reduction never reaches what the detector hears."""
     quiet = settings.threshold - STEP_DB if quiet is None else quiet
     loud = settings.threshold + STEP_DB if loud is None else loud
@@ -1965,11 +1965,11 @@ def run_step(args):
 
 def report_step(settings, sample_rates=SAMPLE_RATES, lookahead=LOOKAHEAD_DEFAULT, external=False):
     """The step response's times at each sample rate, for a level step STEP_DB either side of Threshold: the detection
-    signal's own, or with external, the key's on an External Detection Source while the main stays steady."""
+    signal's own, or with external, the Sidechain's on an External Detection Source while the main stays steady."""
     print(f"Step ±{STEP_DB:g} dB around Threshold, {_transfer_heading(settings)}, {_timing_heading(settings)}, "
           f"Auto Release {'on' if settings.auto_release else 'off'}, Lookahead {lookahead:g} ms")
     if external:
-        print("External Detection Source: the key steps while the main stays steady, so the Gain Reduction never "
+        print("External Detection Source: the Sidechain steps while the main stays steady, so the Gain Reduction never "
               "reaches the detector")
     print("times in ms; Attack counts from the step in the delayed audio the listener hears, which the detector meets "
           "Lookahead earlier; Hold counts from when the detector meets the step down, and Release from when it "
@@ -2226,13 +2226,13 @@ def report_limiter(ceiling_db, sample_rates=SAMPLE_RATES):
 
 # --- Gate -------------------------------------------------------------------------------------------
 
-# The Gate's key level is the Detection Level of its key held over GATE_KEY_HOLD_MS: the loudest of the last
-# GATE_KEY_HOLD_MS of samples and the sample itself, so a low tone's cycle, whose level falls to nothing at each zero
-# crossing, keeps the key up. It opens when the key level reaches Gate Threshold, and closes once it is
-# GATE_HYSTERESIS_DB under it, so a key wavering about Gate Threshold doesn't flip it to and fro. Both chosen from
-# `gate`'s trade-off table: the shortest key hold that keeps every trade-off signal steady with some hysteresis, then
+# The Gate's held level is the Detection Level held over GATE_LEVEL_HOLD_MS: the loudest of the last
+# GATE_LEVEL_HOLD_MS of samples and the sample itself, so a low tone's cycle, whose level falls to nothing at each zero
+# crossing, keeps the held level up. It opens when the held level reaches Gate Threshold, and closes once it is
+# GATE_HYSTERESIS_DB under it, so a Detection Level wavering about Gate Threshold doesn't flip it to and fro. Both
+# chosen from `gate`'s trade-off table: the shortest level hold that keeps every trade-off signal steady with some hysteresis, then
 # the smallest hysteresis that does (USAGE.md gives the reasons).
-GATE_KEY_HOLD_MS = 10.0
+GATE_LEVEL_HOLD_MS = 10.0
 GATE_HYSTERESIS_DB = 6.0
 # Under this many dB, the Gate's Gain Reduction counts as none and the audio passes bit for bit, as the Limiter's
 # does (LIMITER_SETTLED_DB).
@@ -2268,24 +2268,24 @@ def check_gate(gate):
 
 
 class GateDetector:
-    """The Gate on one key: the key level, the Gate's state, open or closed, and its Gain Reduction in dB.
+    """The Gate on one detection signal: the held level, the Gate's state, open or closed, and its Gain Reduction in dB.
 
-    The key level is the loudest Detection Level of the sample and the key_hold_ms before it. The Gate opens when the
-    key level reaches Gate Threshold, and closes once it falls hysteresis_db under it. Open, it asks for no Gain
+    The held level is the loudest Detection Level of the sample and the level_hold_ms before it. The Gate opens when the
+    held level reaches Gate Threshold, and closes once it falls hysteresis_db under it. Open, it asks for no Gain
     Reduction; closed, exactly Gate Range. Gate Hold keeps it open for Gate Hold ms after it would close, before Gate
-    Release begins; a key level back above the closing level restarts the count. Gate Attack is how fast it opens and
+    Release begins; a held level back above the closing level restarts the count. Gate Attack is how fast it opens and
     Gate Release how fast it closes: each one pole in dB, covering 1 - 1/e of the move in its time, as the compressor's
     Detector does. Settings are held fixed here; the Engine glides them a run at a time (RUN_SAMPLES).
 
-    No key at all (External with no Sidechain connected) leaves the Gate open."""
+    External with no Sidechain connected leaves the Gate open."""
 
-    def __init__(self, gate, fs, gain_reduction=0.0, is_open=True, key_hold_ms=GATE_KEY_HOLD_MS,
+    def __init__(self, gate, fs, gain_reduction=0.0, is_open=True, level_hold_ms=GATE_LEVEL_HOLD_MS,
                  hysteresis_db=GATE_HYSTERESIS_DB):
         self.gate = gate
         self.attack = _pole(gate.attack, fs)
         self.release = _pole(gate.release, fs)
         self.hold = round(gate.hold * fs / 1000)
-        self.key_hold = round(key_hold_ms * fs / 1000)
+        self.level_hold = round(level_hold_ms * fs / 1000)
         self.closing_db = gate.threshold - hysteresis_db
         self.window = []  # (sample number, level) pairs, each louder than every later one: their loudest first
         self.n = 0
@@ -2293,26 +2293,26 @@ class GateDetector:
         self.held = 0
         self.gain_reduction = gain_reduction
 
-    def key_level(self, level_db):
-        """The key level after one more sample at level_db: the loudest of it and the key_hold samples before it."""
+    def held_level(self, level_db):
+        """The held level after one more sample at level_db: the loudest of it and the level_hold samples before it."""
         self.n += 1
         while self.window and self.window[-1][1] <= level_db:
             self.window.pop()
         self.window.append((self.n, level_db))
-        if self.window[0][0] < self.n - self.key_hold:
+        if self.window[0][0] < self.n - self.level_hold:
             self.window.pop(0)
         return self.window[0][1]
 
     def process(self, level_db):
-        """Takes one sample's Detection Level of the key in dB, or None for no key, and returns the Gain Reduction in
+        """Takes one sample's Detection Level in dB, or None for no Sidechain, and returns the Gain Reduction in
         dB (0 or more)."""
         if level_db is None:
             self.is_open, self.held = True, 0
         else:
-            key = self.key_level(level_db)
-            if key >= self.gate.threshold:
+            held = self.held_level(level_db)
+            if held >= self.gate.threshold:
                 self.is_open, self.held = True, 0
-            elif key >= self.closing_db:
+            elif held >= self.closing_db:
                 self.held = 0
             elif self.is_open:
                 if self.held < self.hold:
@@ -2327,14 +2327,14 @@ class GateDetector:
         return self.gain_reduction
 
     def hear_steady(self, level_db):
-        """One sample of a steady key level: its Detection Level is the peak level, the level itself."""
+        """One sample of a steady Detection Level: its Detection Level is the peak level, the level itself."""
         return self.process(level_db)
 
 
 @dataclass
 class GateStep:
-    """The Gate's step response's times in ms: when Gate Release begins after the key falls (Gate Hold plus the key
-    hold), Gate Release's 63% and 90% from then, and Gate Attack's 63% and 90% after the key rises; and the closed
+    """The Gate's step response's times in ms: when Gate Release begins after the detection signal falls (Gate Hold plus
+    the level hold), Gate Release's 63% and 90% from then, and Gate Attack's 63% and 90% after it rises; and the closed
     depth in dB."""
     release_begins: float
     release_63: float
@@ -2345,19 +2345,19 @@ class GateStep:
 
 
 def gate_step(gate, fs):
-    """Steps the key from STEP_DB over Gate Threshold to STEP_DB under it, then back, each from steady state, and
-    measures the closing and the opening. None at Gate Range 0 dB, with nothing to measure."""
+    """Steps the detection signal from STEP_DB over Gate Threshold to STEP_DB under it, then back, each from steady
+    state, and measures the closing and the opening. None at Gate Range 0 dB, with nothing to measure."""
     if gate.range <= 0:
         return None
     quiet, loud = gate.threshold - STEP_DB, gate.threshold + STEP_DB
     ms = 1000 / fs
     fractions = (ONE_TIME_CONSTANT, NINETY_PERCENT)
     closing = GateDetector(gate, fs)
-    for _ in range(closing.key_hold + 1):
+    for _ in range(closing.level_hold + 1):
         closing.process(loud)
     (release_63, release_90), held = _times(closing, quiet, 0.0, gate.range, fractions)
     opening = GateDetector(gate, fs, gate.range, is_open=False)
-    for _ in range(opening.key_hold + 1):
+    for _ in range(opening.level_hold + 1):
         opening.process(quiet)
     (attack_63, attack_90), _ = _times(opening, loud, gate.range, 0.0, fractions)
     # Settled: 30 Gate Release time constants leave e^-30 of the move, far under any figure printed.
@@ -2367,21 +2367,21 @@ def gate_step(gate, fs):
                     depth)
 
 
-# --- Gate: the key hold's and the hysteresis's trade-off -------------------------------------------------
+# --- Gate: the level hold's and the hysteresis's trade-off -------------------------------------------------
 
-# The trade-off's candidates, and its signals: 20 Hz and 50 Hz tones, the lowest a key commonly carries, and pink-like
-# noise from the reference signal's seed, each GATE_RIPPLE_ABOVE_DB over Gate Threshold (the noise at the power of a
-# sine whose peak reads that level, as the reference signal's is), at the Gate's defaults with Gate Hold 0, so the key
-# hold and hysteresis alone hold it open. The ripple is the Gain Reduction's peak-to-peak over the second half of
+# The trade-off's candidates, and its signals: 20 Hz and 50 Hz tones, the lowest a detection signal commonly carries,
+# and pink-like noise from the reference signal's seed, each GATE_RIPPLE_ABOVE_DB over Gate Threshold (the noise at
+# the power of a sine whose peak reads that level, as the reference signal's is), at the Gate's defaults with Gate
+# Hold 0, so the level hold and hysteresis alone hold it open. The ripple is the Gain Reduction's peak-to-peak over the second half of
 # GATE_RIPPLE_SECONDS at GATE_TRADE_OFF_RATE: 0 when the Gate stays open throughout.
-GATE_KEY_HOLD_CANDIDATES = (0, 5, 10, 15, 20, 25)
+GATE_LEVEL_HOLD_CANDIDATES = (0, 5, 10, 15, 20, 25)
 GATE_HYSTERESIS_CANDIDATES = (0, 2, 4, 6, 8)
 GATE_RIPPLE_FREQUENCIES = (20, 50)
 GATE_RIPPLE_ABOVE_DB = 0.1
 GATE_RIPPLE_SECONDS = 0.3
 GATE_TRADE_OFF_RATE = 48000
-# How late the Gate starts closing: on a stop, the key hold; on a key level fading out at GATE_FADE_DB_PER_S (a note
-# dying away over a second), the key hold plus the time the fade takes to cross the hysteresis.
+# How late the Gate starts closing: on a stop, the level hold; on a held level fading out at GATE_FADE_DB_PER_S (a note
+# dying away over a second), the level hold plus the time the fade takes to cross the hysteresis.
 GATE_FADE_DB_PER_S = 60.0
 
 
@@ -2405,9 +2405,9 @@ def gate_trade_off_signals(gate, fs=GATE_TRADE_OFF_RATE):
 
 @dataclass
 class GateTradeOff:
-    """One key hold and hysteresis: the ripple in dB on each trade-off signal, and in ms how late the Gate starts
+    """One level hold and hysteresis: the ripple in dB on each trade-off signal, and in ms how late the Gate starts
     closing on a stop and on a fade."""
-    key_hold: float
+    level_hold: float
     hysteresis: float
     ripple: dict
     stop: float
@@ -2418,10 +2418,10 @@ class GateTradeOff:
         return all(r == 0 for r in self.ripple.values())
 
 
-def _closing_late_ms(gate, fs, key_hold_ms, hysteresis_db, levels_db):
+def _closing_late_ms(gate, fs, level_hold_ms, hysteresis_db, levels_db):
     """The ms from the first of levels_db under Gate Threshold until Gate Release begins, from steady state open."""
-    detector = GateDetector(replace(gate, hold=0.0), fs, key_hold_ms=key_hold_ms, hysteresis_db=hysteresis_db)
-    for _ in range(detector.key_hold + 1):
+    detector = GateDetector(replace(gate, hold=0.0), fs, level_hold_ms=level_hold_ms, hysteresis_db=hysteresis_db)
+    for _ in range(detector.level_hold + 1):
         detector.process(gate.threshold + STEP_DB)
     under = next(n for n, level in enumerate(levels_db) if level < gate.threshold)
     for n, level in enumerate(levels_db):
@@ -2431,32 +2431,33 @@ def _closing_late_ms(gate, fs, key_hold_ms, hysteresis_db, levels_db):
 
 
 def gate_trade_off(gate=Gate(), fs=GATE_TRADE_OFF_RATE):
-    """The trade-off at every candidate key hold and hysteresis."""
+    """The trade-off at every candidate level hold and hysteresis."""
     timed = replace(gate, hold=0.0)
     signals = gate_trade_off_signals(gate, fs)
-    fade_seconds = (STEP_DB + max(GATE_HYSTERESIS_CANDIDATES) + 1) / GATE_FADE_DB_PER_S + max(GATE_KEY_HOLD_CANDIDATES) / 500
+    fade_seconds = ((STEP_DB + max(GATE_HYSTERESIS_CANDIDATES) + 1) / GATE_FADE_DB_PER_S
+                    + max(GATE_LEVEL_HOLD_CANDIDATES) / 500)
     fade_samples = round(fade_seconds * fs)
     fade = [gate.threshold + STEP_DB - GATE_FADE_DB_PER_S * n / fs for n in range(fade_samples)]
-    stop = [gate.threshold - STEP_DB] * round(max(GATE_KEY_HOLD_CANDIDATES) * 2 * fs / 1000)
+    stop = [gate.threshold - STEP_DB] * round(max(GATE_LEVEL_HOLD_CANDIDATES) * 2 * fs / 1000)
     rows = []
-    for key_hold in GATE_KEY_HOLD_CANDIDATES:
+    for level_hold in GATE_LEVEL_HOLD_CANDIDATES:
         for hysteresis in GATE_HYSTERESIS_CANDIDATES:
             ripple = {}
             for name, levels in signals:
-                detector = GateDetector(timed, fs, key_hold_ms=key_hold, hysteresis_db=hysteresis)
+                detector = GateDetector(timed, fs, level_hold_ms=level_hold, hysteresis_db=hysteresis)
                 reductions = [detector.process(level) for level in levels][len(levels) // 2:]
                 ripple[name] = max(reductions) - min(reductions)
-            rows.append(GateTradeOff(key_hold, hysteresis, ripple,
-                                     _closing_late_ms(gate, fs, key_hold, hysteresis, stop),
-                                     _closing_late_ms(gate, fs, key_hold, hysteresis, fade)))
+            rows.append(GateTradeOff(level_hold, hysteresis, ripple,
+                                     _closing_late_ms(gate, fs, level_hold, hysteresis, stop),
+                                     _closing_late_ms(gate, fs, level_hold, hysteresis, fade)))
     return rows
 
 
 def chosen_gate_constants(rows):
-    """The shortest key hold at which some hysteresis keeps every signal steady, and the smallest such hysteresis."""
+    """The shortest level hold at which some hysteresis keeps every signal steady, and the smallest such hysteresis."""
     steady = [row for row in rows if row.steady]
-    key_hold = min(row.key_hold for row in steady)
-    return key_hold, min(row.hysteresis for row in steady if row.key_hold == key_hold)
+    level_hold = min(row.level_hold for row in steady)
+    return level_hold, min(row.hysteresis for row in steady if row.level_hold == level_hold)
 
 
 def gate_options(parser):
@@ -2478,13 +2479,14 @@ def run_gate(args):
 
 
 def report_gate(gate, sample_rates=SAMPLE_RATES):
-    """The Gate's step response at each sample rate, then the key hold's and hysteresis's trade-off."""
+    """The Gate's step response at each sample rate, then the level hold's and hysteresis's trade-off."""
     print(f"Gate step ±{STEP_DB:g} dB around Gate Threshold, Gate Threshold {gate.threshold:g} dB, Gate Range "
           f"{gate.range:g} dB, Gate Attack {gate.attack:g} ms, Gate Release {gate.release:g} ms, Gate Hold "
-          f"{gate.hold:g} ms; key hold {GATE_KEY_HOLD_MS:g} ms (GATE_KEY_HOLD_MS), hysteresis "
+          f"{gate.hold:g} ms; level hold {GATE_LEVEL_HOLD_MS:g} ms (GATE_LEVEL_HOLD_MS), hysteresis "
           f"{GATE_HYSTERESIS_DB:g} dB (GATE_HYSTERESIS_DB)")
-    print("times in ms; the closing counts from the key's step down, Gate Release from when it begins, after Gate Hold "
-          "and the key hold; the opening from the key's step up; 63% is 1 - 1/e; depth in dB, closed and settled")
+    print("times in ms; the closing counts from the detection signal's step down, Gate Release from when it begins, "
+          "after Gate Hold and the level hold; the opening from its step up; 63% is 1 - 1/e; depth in dB, closed and "
+          "settled")
     print(f"{'rate Hz':>8} {'release begins':>15} {'release 63%':>12} {'release 90%':>12} {'attack 63%':>11} "
           f"{'attack 90%':>11} {'depth':>8}")
     for fs in sample_rates:
@@ -2495,16 +2497,16 @@ def report_gate(gate, sample_rates=SAMPLE_RATES):
         print(f"{fs:8g} {step.release_begins:15.4f} {step.release_63:12.4f} {step.release_90:12.4f} "
               f"{step.attack_63:11.4f} {step.attack_90:11.4f} {step.depth:8.4f}")
     rows = gate_trade_off(gate)
-    chosen = (GATE_KEY_HOLD_MS, GATE_HYSTERESIS_DB)
-    print(f"key hold and hysteresis trade-off at {GATE_TRADE_OFF_RATE:g} Hz, Gate Hold 0 ms: the Gain Reduction's "
+    chosen = (GATE_LEVEL_HOLD_MS, GATE_HYSTERESIS_DB)
+    print(f"level hold and hysteresis trade-off at {GATE_TRADE_OFF_RATE:g} Hz, Gate Hold 0 ms: the Gain Reduction's "
           f"ripple in dB, peak to peak, on each signal {GATE_RIPPLE_ABOVE_DB:g} dB over Gate Threshold; how late in ms "
           f"the Gate starts closing on a stop and on a fade at {GATE_FADE_DB_PER_S:g} dB/s")
     names = list(rows[0].ripple)
-    print(f"{'key hold ms':>12} {'hysteresis dB':>14} " + " ".join(f"{name:>8}" for name in names)
+    print(f"{'level hold ms':>12} {'hysteresis dB':>14} " + " ".join(f"{name:>8}" for name in names)
           + f" {'stop ms':>8} {'fade ms':>8}")
     for row in rows:
-        mark = "  chosen" if (row.key_hold, row.hysteresis) == chosen else ""
-        print(f"{row.key_hold:12g} {row.hysteresis:14g} " + " ".join(f"{row.ripple[n]:8.3f}" for n in names)
+        mark = "  chosen" if (row.level_hold, row.hysteresis) == chosen else ""
+        print(f"{row.level_hold:12g} {row.hysteresis:14g} " + " ".join(f"{row.ripple[n]:8.3f}" for n in names)
               + f" {row.stop:8.2f} {row.fade:8.2f}{mark}")
 
 

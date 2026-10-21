@@ -102,6 +102,10 @@ How quickly the Gate closes once the Detection Level falls below Gate Threshold.
 **Gate Hold**:
 How long the Gate stays open before Gate Release begins.
 
+**Held Level**:
+The loudest Detection Level the Gate has heard over a short window ending now, which the Gate compares with Gate Threshold, so a low tone's zero crossings don't close it.
+_Avoid_: Key level, key hold
+
 **Saturation**:
 The standalone distortion stage the user drives, placed before or after the compressor.
 _Avoid_: Colour, drive stage, distortion

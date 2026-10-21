@@ -676,7 +676,7 @@ class Aliasing(unittest.TestCase):
 
 
 class Gate(unittest.TestCase):
-    """The Gate: a hard gate on its key level, open at Gate Threshold and closed GATE_HYSTERESIS_DB under it, asking
+    """The Gate: a hard gate on its held level, open at Gate Threshold and closed GATE_HYSTERESIS_DB under it, asking
     for no Gain Reduction open and exactly Gate Range closed, each move one pole in dB."""
 
     def assertWithinOneSample(self, measured_ms, expected_ms, fs):
@@ -690,7 +690,7 @@ class Gate(unittest.TestCase):
         for fs in dynlab.SAMPLE_RATES:
             for hold in (0, 20, 500):
                 step = dynlab.gate_step(dynlab.Gate(hold=hold), fs)
-                self.assertWithinOneSample(step.release_begins, hold + dynlab.GATE_KEY_HOLD_MS, fs)
+                self.assertWithinOneSample(step.release_begins, hold + dynlab.GATE_LEVEL_HOLD_MS, fs)
 
     def test_gate_attack_and_gate_release_reach_63_percent_in_one_time_constant(self):
         # The slowest settings once: settling a 5000 ms Gate Release for the depth is long.
@@ -722,15 +722,15 @@ class Gate(unittest.TestCase):
         gate = dynlab.Gate(hold=20)
         detector = dynlab.GateDetector(gate, fs)
         quiet, between = gate.threshold - 20, gate.threshold - dynlab.GATE_HYSTERESIS_DB / 2
-        key_hold = round(dynlab.GATE_KEY_HOLD_MS * fs / 1000)
-        for _ in range(key_hold + 1):
+        level_hold = round(dynlab.GATE_LEVEL_HOLD_MS * fs / 1000)
+        for _ in range(level_hold + 1):
             detector.process(gate.threshold + 20)
-        # 15 ms under the closing level, past the key hold but within Gate Hold, then one sample back between.
-        for _ in range(key_hold + round(0.015 * fs)):
+        # 15 ms under the closing level, past the level hold but within Gate Hold, then one sample back between.
+        for _ in range(level_hold + round(0.015 * fs)):
             detector.process(quiet)
         detector.process(between)
-        # A whole key hold and Gate Hold again before Gate Release begins.
-        for n in range(key_hold + round(0.020 * fs)):
+        # A whole level hold and Gate Hold again before Gate Release begins.
+        for n in range(level_hold + round(0.020 * fs)):
             self.assertEqual(detector.process(quiet), 0.0, n)
         self.assertGreater(detector.process(quiet), 0.0)
 
@@ -751,13 +751,13 @@ class Gate(unittest.TestCase):
 
     def test_the_constants_are_the_trade_offs_choice_and_keep_every_signal_steady(self):
         rows = dynlab.gate_trade_off()
-        self.assertEqual(dynlab.chosen_gate_constants(rows), (dynlab.GATE_KEY_HOLD_MS, dynlab.GATE_HYSTERESIS_DB))
-        # With no key hold every low signal ripples, and how late a stop closes is the key hold.
+        self.assertEqual(dynlab.chosen_gate_constants(rows), (dynlab.GATE_LEVEL_HOLD_MS, dynlab.GATE_HYSTERESIS_DB))
+        # With no level hold every low signal ripples, and how late a stop closes is the level hold.
         for row in rows:
-            if row.key_hold == 0:
+            if row.level_hold == 0:
                 self.assertFalse(row.steady)
-            self.assertAlmostEqual(row.stop, row.key_hold, delta=1000 / dynlab.GATE_TRADE_OFF_RATE)
-            self.assertAlmostEqual(row.fade, row.key_hold + 1000 * row.hysteresis / dynlab.GATE_FADE_DB_PER_S,
+            self.assertAlmostEqual(row.stop, row.level_hold, delta=1000 / dynlab.GATE_TRADE_OFF_RATE)
+            self.assertAlmostEqual(row.fade, row.level_hold + 1000 * row.hysteresis / dynlab.GATE_FADE_DB_PER_S,
                                    delta=1000 / dynlab.GATE_TRADE_OFF_RATE)
 
 
