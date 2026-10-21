@@ -42,6 +42,7 @@ add_executable(comp1_engine_tests
     engine/OversamplingTest.cpp
     engine/ProcessingModeTest.cpp
     engine/RealtimeSafetyTest.cpp
+    engine/RenderScenesTest.cpp
     engine/SaturationTest.cpp
     engine/SettingsHandoffTest.cpp
     engine/StepResponseTest.cpp
