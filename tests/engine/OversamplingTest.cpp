@@ -36,6 +36,14 @@ Settings at (Settings settings, Oversampling oversampling)
 // Compressed throughout, with Hold, Auto Gain and Output Gain all at work, in High Quality.
 const Settings compressing { .thresholdDb = -30.0, .attackMs = 1.0, .holdMs = 5.0, .autoGain = true, .outputGainDb = -3.0, .processingMode = highQuality };
 
+// settings on character, at Colour 100%, its default: Colour runs in the After section, oversampled with
+// Saturation After (ADR 0009).
+Settings colouring (Settings settings, Character character)
+{
+    settings.character = character;
+    return settings;
+}
+
 // Saturation on at a Drive that works it hard, at position.
 Settings saturating (Settings settings, SaturationPosition position)
 {
@@ -76,26 +84,32 @@ TEST_CASE ("An Oversampling over the sample rate's cap plays the cap", "[sweep]"
 
 // What Dry/Wet's exact null rests on (DryWetTest's nullRows() holds it at each factor): with nothing nonlinear, the Wet path is linear and aligned at every
 // Oversampling (ADR 0009).
-TEST_CASE ("With Saturation off, High Quality at every Oversampling is High Quality at 1x, and at Ratio 1:1 the input delayed by the reported latency, bit for bit", "[sweep]")
+TEST_CASE ("With Saturation off and no Colour, High Quality at every Oversampling is High Quality at 1x, and at Ratio 1:1 the input delayed by the reported latency, bit for bit", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto oversampling = GENERATE (from_range (everyOversampling()));
     const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
-    CAPTURE (sampleRate, factorOf (oversampling), cut);
+    // Clean, which has no Colour, and VCA and FET at Colour 0%, under compression.
+    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET);
+    CAPTURE (sampleRate, factorOf (oversampling), cut, static_cast<int> (character));
+    auto settings = colouring (compressing, character);
+    settings.colour = 0.0;
     const auto input = test::noise (2, 6000);
-    CHECK (test::played (at (compressing, oversampling), sampleRate, input, cut)
-           == test::played (at (compressing, Oversampling::x1), sampleRate, input, cut));
+    CHECK (test::played (at (settings, oversampling), sampleRate, input, cut)
+           == test::played (at (settings, Oversampling::x1), sampleRate, input, cut));
     CHECK (test::played (at ({ .ratio = 1.0, .processingMode = highQuality, .lookaheadMs = 2.0 }, oversampling), sampleRate, input, cut)
            == test::delayed (input, latencySamples (highQuality, sampleRate)));
 }
 
-TEST_CASE ("High Quality at 1x and Lookahead 0 is Zero Latency's output delayed by the reported latency, bit for bit, with Saturation on and off", "[sweep]")
+TEST_CASE ("High Quality at 1x and Lookahead 0 is Zero Latency's output delayed by the reported latency, bit for bit, with Saturation on and off and with Colour", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
     const int saturation = GENERATE (0, 1, 2); // off, Before, After
-    CAPTURE (sampleRate, cut, saturation);
-    auto settings = at (compressing, Oversampling::x1);
+    // Clean, and VCA and FET at Colour 100% under compression, Colour ahead of Saturation After in one section.
+    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET);
+    CAPTURE (sampleRate, cut, saturation, static_cast<int> (character));
+    auto settings = at (colouring (compressing, character), Oversampling::x1);
     if (saturation > 0)
         settings = saturating (settings, saturation == 1 ? SaturationPosition::Before : SaturationPosition::After);
     auto zeroLatencySettings = settings;
@@ -166,17 +180,24 @@ TEST_CASE ("In High Quality, External detection keyed from the input meets the a
     CHECK (test::played (external, sampleRate, input, cut, &input) == test::played (internal, sampleRate, input, cut));
 }
 
-TEST_CASE ("With Saturation off, an Oversampling change leaves the output as it is, bit for bit", "[sweep]")
+TEST_CASE ("With Saturation off and no Colour, an Oversampling change leaves the output as it is, bit for bit", "[sweep]")
 {
     const double sampleRate = GENERATE (44100.0, 96000.0, 192000.0);
     const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
-    CAPTURE (sampleRate, cut);
+    // Clean, VCA at Colour 0%, and VCA at Colour 100% with no Gain Reduction.
+    const int scene = GENERATE (0, 1, 2);
+    CAPTURE (sampleRate, cut, scene);
+    auto settings = scene == 0 ? compressing : colouring (compressing, Character::VCA);
+    if (scene == 1)
+        settings.colour = 0.0;
+    if (scene == 2)
+        settings.ratio = 1.0;
     const auto input = test::noise (2, 8000);
-    const auto reference = test::played (at (compressing, Oversampling::x1), sampleRate, input, cut);
+    const auto reference = test::played (at (settings, Oversampling::x1), sampleRate, input, cut);
     for (const auto [from, to] : { std::pair { Oversampling::x1, Oversampling::x8 }, std::pair { Oversampling::x8, Oversampling::x1 } })
     {
         CAPTURE (factorOf (from), factorOf (to));
-        CHECK (test::played (at (compressing, from), sampleRate, input, cut, nullptr, test::SettingsChange { .at = 3001, .settings = at (compressing, to) })
+        CHECK (test::played (at (settings, from), sampleRate, input, cut, nullptr, test::SettingsChange { .at = 3001, .settings = at (settings, to) })
                == reference);
     }
 }
@@ -184,14 +205,16 @@ TEST_CASE ("With Saturation off, an Oversampling change leaves the output as it 
 TEST_CASE ("An Oversampling change gives the same output at every block size", "[sweep]")
 {
     const auto [from, to] = GENERATE (table<Oversampling, Oversampling> ({ { Oversampling::x1, Oversampling::x8 }, { Oversampling::x8, Oversampling::x1 } }));
-    const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
-    CAPTURE (factorOf (from), factorOf (to), static_cast<int> (position));
+    // Saturation Before and After, and Colour alone, on VCA and FET.
+    const int scene = GENERATE (0, 1, 2, 3);
+    CAPTURE (factorOf (from), factorOf (to), scene);
     auto input = test::noise (2, 8000);
     for (auto& channel : input)
         for (auto& sample : channel)
             sample *= 3.0f;
     // Saturation at Drive 24 dB, so After the compressor it saturates too.
-    auto settings = saturating (compressing, position);
+    auto settings = scene < 2 ? saturating (compressing, scene == 0 ? SaturationPosition::Before : SaturationPosition::After)
+                              : colouring (compressing, scene == 2 ? Character::VCA : Character::FET);
     settings.driveDb = 24.0;
     const test::SettingsChange change { .at = 1000, .settings = at (settings, to) };
     const auto reference = test::played (at (settings, from), 48000.0, input, { 4096 }, nullptr, change);
@@ -235,9 +258,11 @@ TEST_CASE ("The Engine does not allocate at any Oversampling, nor across a chang
     plugkit::test::AllocationGuard guard;
     for (int block = 0; block < 64; ++block)
     {
-        // Oversampling moving every few blocks, some of the time mid-fade, with Saturation on and moving, and the
-        // Processing Mode switching now and then; blocks cutting runs.
-        engine.setSettings ({ .saturation = block % 7 != 3,
+        // Oversampling moving every few blocks, some of the time mid-fade, with Saturation on and moving, Colour on
+        // VCA and FET in turn, under compression, and the Processing Mode switching now and then; blocks cutting runs.
+        engine.setSettings ({ .character = (block / 4) % 2 == 0 ? Character::VCA : Character::FET,
+                              .thresholdDb = -30.0,
+                              .saturation = block % 7 != 3,
                               .driveDb = 18.0,
                               .saturationPosition = (block / 5) % 2 == 0 ? SaturationPosition::Before : SaturationPosition::After,
                               .processingMode = block % 11 == 10 ? zeroLatency : highQuality,

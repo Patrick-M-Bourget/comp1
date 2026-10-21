@@ -500,14 +500,14 @@ inline double worstAliasDb (const std::vector<double>& spectrum, int bin)
 
 // --- Colour, as dyn-lab's `colour` measures it -------------------------------------------------------------------
 
-// dyn-lab's colour_level at Settings' defaults: the input level whose Gain Reduction on the Transfer Curve is
-// reductionDb, above the Knee from 3 dB of Gain Reduction at the defaults (4 dB over Threshold, past the Knee's 3 dB
-// half-width); or for none, 12 dB under the Knee (COLOUR_BELOW_KNEE_DB).
-inline double levelForReductionDb (double reductionDb)
+// dyn-lab's colour_level at Settings' defaults but Threshold: the input level whose Gain Reduction on the Transfer
+// Curve is reductionDb, above the Knee from 3 dB of Gain Reduction at the defaults (4 dB over Threshold, past the
+// Knee's 3 dB half-width); or for none, 12 dB under the Knee (COLOUR_BELOW_KNEE_DB).
+inline double levelForReductionDb (double reductionDb, double thresholdDb = Settings {}.thresholdDb)
 {
     const Settings defaults;
     const double slope = 1.0 - 1.0 / defaults.ratio;
-    return reductionDb > 0.0 ? defaults.thresholdDb + reductionDb / slope : defaults.thresholdDb - defaults.kneeDb / 2.0 - 12.0;
+    return reductionDb > 0.0 ? thresholdDb + reductionDb / slope : thresholdDb - defaults.kneeDb / 2.0 - 12.0;
 }
 
 // The bin-centred tone in bin at levelDb, times scale, for lengths spectrumLengths, through an Engine with settings at

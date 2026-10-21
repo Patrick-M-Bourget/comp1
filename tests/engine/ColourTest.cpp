@@ -1,4 +1,5 @@
 #include "Measure.h"
+#include "comp1/Latency.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -7,6 +8,7 @@
 
 #include <array>
 #include <cmath>
+#include <optional>
 #include <limits>
 #include <string>
 #include <vector>
@@ -40,7 +42,26 @@ struct Table
     Character character;
     double colour;
     std::vector<Row> rows;
+    // In High Quality at this factor, or with x1 at the base rate in both Processing Modes.
+    Oversampling oversampling = Oversampling::x1;
+    double thresholdDb = Settings {}.thresholdDb;
 };
+
+// The rows `colour --character vca --threshold T` prints at T -10 and -50 dB, copied as printed: the same at both.
+std::vector<Row> vcaTracked()
+{
+    return { { 0.0, { absent, absent, absent, absent } },          { 3.0, { absent, absent, absent, absent } },
+             { 6.0, { absent, -112.03, absent, -113.47 } },        { 10.0, { absent, -50.75, absent, -62.96 } },
+             { 20.0, { absent, -38.38, absent, -51.77 } },         { 30.0, { absent, -38.33, absent, -46.24 } } };
+}
+
+// Likewise, `colour --character fet --threshold T`.
+std::vector<Row> fetTracked()
+{
+    return { { 0.0, { absent, absent, absent, absent } },   { 3.0, { absent, absent, absent, absent } },
+             { 6.0, { absent, -68.46, absent, -73.21 } },   { 10.0, { absent, -39.58, absent, -56.60 } },
+             { 20.0, { absent, -30.73, absent, -43.45 } },  { 30.0, { absent, -30.45, absent, -38.32 } } };
+}
 
 // Each table is the output of the dyn-lab command named with it, copied as printed.
 const std::vector<Table>& tables()
@@ -82,6 +103,132 @@ const std::vector<Table>& tables()
             { 10.0, { absent, -45.68, absent, -62.71 } },
             { 20.0, { absent, -37.18, absent, -49.90 } },
             { 30.0, { absent, -37.16, absent, -45.03 } } } },
+        // Oversampled, ADAA's half-sample average droops the harmonics less: High Quality at each factor.
+        { "python3 tools/dyn-lab/dynlab.py colour --character vca --oversampling 2",
+          Character::VCA,
+          100.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -111.61, absent, -113.00 } },
+            { 10.0, { absent, -50.66, absent, -62.83 } },
+            { 20.0, { absent, -38.32, absent, -51.62 } },
+            { 30.0, { absent, -38.28, absent, -46.11 } } },
+          Oversampling::x2 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character vca --oversampling 4",
+          Character::VCA,
+          100.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -111.51, absent, -112.88 } },
+            { 10.0, { absent, -50.64, absent, -62.80 } },
+            { 20.0, { absent, -38.31, absent, -51.58 } },
+            { 30.0, { absent, -38.27, absent, -46.07 } } },
+          Oversampling::x4 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character vca --oversampling 8",
+          Character::VCA,
+          100.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -111.49, absent, -112.85 } },
+            { 10.0, { absent, -50.64, absent, -62.79 } },
+            { 20.0, { absent, -38.31, absent, -51.57 } },
+            { 30.0, { absent, -38.26, absent, -46.07 } } },
+          Oversampling::x8 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character vca --colour 50 --oversampling 2",
+          Character::VCA,
+          50.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -117.63, absent, -119.02 } },
+            { 10.0, { absent, -56.71, absent, -68.87 } },
+            { 20.0, { absent, -44.52, absent, -57.81 } },
+            { 30.0, { absent, -44.59, absent, -52.41 } } },
+          Oversampling::x2 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character vca --colour 50 --oversampling 4",
+          Character::VCA,
+          50.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -117.53, absent, -118.90 } },
+            { 10.0, { absent, -56.68, absent, -68.84 } },
+            { 20.0, { absent, -44.51, absent, -57.78 } },
+            { 30.0, { absent, -44.58, absent, -52.38 } } },
+          Oversampling::x4 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character vca --colour 50 --oversampling 8",
+          Character::VCA,
+          50.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -117.51, absent, -118.87 } },
+            { 10.0, { absent, -56.68, absent, -68.83 } },
+            { 20.0, { absent, -44.50, absent, -57.77 } },
+            { 30.0, { absent, -44.57, absent, -52.37 } } },
+          Oversampling::x8 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet --oversampling 2",
+          Character::FET,
+          100.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -68.31, absent, -73.00 } },
+            { 10.0, { absent, -39.50, absent, -56.49 } },
+            { 20.0, { absent, -30.67, absent, -43.30 } },
+            { 30.0, { absent, -30.39, absent, -38.18 } } },
+          Oversampling::x2 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet --oversampling 4",
+          Character::FET,
+          100.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -68.27, absent, -72.95 } },
+            { 10.0, { absent, -39.48, absent, -56.47 } },
+            { 20.0, { absent, -30.66, absent, -43.26 } },
+            { 30.0, { absent, -30.38, absent, -38.15 } } },
+          Oversampling::x4 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet --oversampling 8",
+          Character::FET,
+          100.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -68.26, absent, -72.94 } },
+            { 10.0, { absent, -39.48, absent, -56.46 } },
+            { 20.0, { absent, -30.65, absent, -43.25 } },
+            { 30.0, { absent, -30.38, absent, -38.14 } } },
+          Oversampling::x8 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50 --oversampling 2",
+          Character::FET,
+          50.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -74.33, absent, -79.02 } },
+            { 10.0, { absent, -45.61, absent, -62.60 } },
+            { 20.0, { absent, -37.12, absent, -49.75 } },
+            { 30.0, { absent, -37.11, absent, -44.90 } } },
+          Oversampling::x2 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50 --oversampling 4",
+          Character::FET,
+          50.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -74.29, absent, -78.97 } },
+            { 10.0, { absent, -45.59, absent, -62.58 } },
+            { 20.0, { absent, -37.11, absent, -49.71 } },
+            { 30.0, { absent, -37.10, absent, -44.87 } } },
+          Oversampling::x4 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50 --oversampling 8",
+          Character::FET,
+          50.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -74.29, absent, -78.96 } },
+            { 10.0, { absent, -45.59, absent, -62.57 } },
+            { 20.0, { absent, -37.11, absent, -49.70 } },
+            { 30.0, { absent, -37.10, absent, -44.86 } } },
+          Oversampling::x8 },
+        // Colour tracks Threshold: at each Threshold, the same Gain Reduction gives the same harmonics.
+        { "python3 tools/dyn-lab/dynlab.py colour --character vca --threshold -10", Character::VCA, 100.0, vcaTracked(), Oversampling::x1, -10.0 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character vca --threshold -50", Character::VCA, 100.0, vcaTracked(), Oversampling::x1, -50.0 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet --threshold -10", Character::FET, 100.0, fetTracked(), Oversampling::x1, -10.0 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet --threshold -50", Character::FET, 100.0, fetTracked(), Oversampling::x1, -50.0 },
     };
     return all;
 }
@@ -92,12 +239,21 @@ constexpr double comparedOverDb = -100.0;
 
 } // namespace
 
-TEST_CASE ("On VCA and FET, Colour follows the Gain Reduction: the harmonics match dyn-lab's colour within its tolerance")
+TEST_CASE ("On VCA and FET, Colour follows the Gain Reduction: the harmonics match dyn-lab's colour within its tolerance, in each Processing Mode and at every Oversampling", "[sweep]")
 {
     const auto& table = GENERATE (from_range (tables()));
     const auto& row = GENERATE_REF (from_range (table.rows));
-    CAPTURE (table.command, row.reductionDb);
-    const auto spectrum = test::amplitudes (colouredTone ({ .character = table.character, .colour = table.colour }, test::levelForReductionDb (row.reductionDb)));
+    const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
+    CAPTURE (table.command, row.reductionDb, static_cast<int> (mode));
+    // An oversampled table is High Quality's alone.
+    if (table.oversampling != Oversampling::x1 && mode == ProcessingMode::ZeroLatency)
+        return;
+    const Settings settings { .character = table.character,
+                              .thresholdDb = table.thresholdDb,
+                              .colour = table.colour,
+                              .processingMode = mode,
+                              .oversampling = table.oversampling };
+    const auto spectrum = test::amplitudes (colouredTone (settings, test::levelForReductionDb (row.reductionDb, table.thresholdDb)));
     const auto bin = static_cast<std::size_t> (test::toneBin (1000.0, sampleRate));
     for (std::size_t h = 0; h < row.harmonicsDb.size(); ++h)
     {
@@ -108,6 +264,20 @@ TEST_CASE ("On VCA and FET, Colour follows the Gain Reduction: the harmonics mat
         else
             CHECK (levelDb < comparedOverDb);
     }
+}
+
+TEST_CASE ("Colour tracks Threshold: on VCA, 10 dB of Gain Reduction gives about 0.3% THD at Threshold -10, -18 and -50 dB")
+{
+    const double thresholdDb = GENERATE (-10.0, -18.0, -50.0);
+    CAPTURE (thresholdDb);
+    const auto spectrum = test::amplitudes (colouredTone ({ .character = Character::VCA, .thresholdDb = thresholdDb },
+                                                          test::levelForReductionDb (10.0, thresholdDb)));
+    const auto bin = static_cast<std::size_t> (test::toneBin (1000.0, sampleRate));
+    double power = 0.0;
+    for (std::size_t h = 2; h <= 5; ++h)
+        power += std::pow (spectrum[h * bin] / spectrum[bin], 2.0);
+    // dyn-lab's colour gives 0.2987% at each.
+    CHECK (std::abs (100.0 * std::sqrt (power) - 0.2987) <= 0.001);
 }
 
 TEST_CASE ("At Colour 0% VCA adds no distortion: doubling the main input doubles the output bit for bit, under compression")
@@ -156,28 +326,34 @@ TEST_CASE ("Clean has no Colour: its output is the same at every Colour, and Opt
     CHECK (test::played ({ .character = Character::Opto, .thresholdDb = -40.0 }, rate, input, cut) == clean);
 }
 
-TEST_CASE ("The detector never hears Colour: VCA's and FET's Gain Reduction is the same at Colour 0% and 100%")
+TEST_CASE ("The detector never hears Colour: VCA's and FET's Gain Reduction is the same at Colour 0% and 100%, in each Processing Mode")
 {
     // FET's loop too: it hears the detection signal times the gain, never the coloured output.
     const auto character = GENERATE (Character::VCA, Character::FET);
-    CAPTURE (static_cast<int> (character));
+    // Zero Latency, and High Quality with Colour oversampled.
+    const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
+    CAPTURE (static_cast<int> (character), static_cast<int> (mode));
     // Noise under deep compression, where Colour is at its most.
     const auto input = test::noise (2, 24000);
-    const auto off = test::levelHistory ({ .character = character, .thresholdDb = -40.0, .colour = 0.0 }, sampleRate, input);
-    const auto full = test::levelHistory ({ .character = character, .thresholdDb = -40.0, .colour = 100.0 }, sampleRate, input);
+    const auto at = [&] (double colour) {
+        return Settings { .character = character, .thresholdDb = -40.0, .colour = colour, .processingMode = mode, .oversampling = Oversampling::x4 };
+    };
+    const auto off = test::levelHistory (at (0.0), sampleRate, input);
+    const auto full = test::levelHistory (at (100.0), sampleRate, input);
     REQUIRE (off.size() == full.size());
     bool same = true;
     for (std::size_t r = 0; r < off.size(); ++r)
         same = same && off[r].gainReductionDb == full[r].gainReductionDb && off[r].detectionLevelDb == full[r].detectionLevelDb;
     CHECK (same);
-    CHECK (test::played ({ .character = character, .thresholdDb = -40.0, .colour = 0.0 }, sampleRate, input)
-           != test::played ({ .character = character, .thresholdDb = -40.0, .colour = 100.0 }, sampleRate, input));
+    CHECK (test::played (at (0.0), sampleRate, input) != test::played (at (100.0), sampleRate, input));
 }
 
-TEST_CASE ("Under Stereo Placement Mid or Side, Colour shapes only the part compressed and the other passes")
+TEST_CASE ("Under Stereo Placement Mid or Side, Colour shapes only the part compressed and the other passes, in Zero Latency and oversampled", "[sweep]")
 {
     const bool midLoud = GENERATE (true, false);
-    CAPTURE (midLoud);
+    // Zero Latency, and High Quality oversampled at 2x and 8x.
+    const auto oversampling = GENERATE (std::optional<Oversampling> {}, std::optional { Oversampling::x2 }, std::optional { Oversampling::x8 });
+    CAPTURE (midLoud, oversampling ? factorOf (*oversampling) : 0);
     // The compressed part: the tone at 20 dB of Gain Reduction, held steady by a mono Sidechain, which drives every
     // Placement; the other part, quiet noise.
     const int bin = test::toneBin (1000.0, sampleRate);
@@ -196,11 +372,17 @@ TEST_CASE ("Under Stereo Placement Mid or Side, Colour shapes only the part comp
     const auto sidechain = test::steadyLevel (1, static_cast<int> (loud.size()), levelDb - test::sineCalibrationDb);
     const Settings settings { .character = Character::VCA,
                               .detectionSource = DetectionSource::External,
-                              .stereoPlacement = midLoud ? StereoPlacement::Mid : StereoPlacement::Side };
-    const auto output = test::played (settings, sampleRate, input, { 512 }, &sidechain);
+                              .stereoPlacement = midLoud ? StereoPlacement::Mid : StereoPlacement::Side,
+                              .processingMode = oversampling ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency,
+                              .oversampling = oversampling.value_or (Oversampling::x1) };
+    // High Quality's output, brought back in line with its input.
+    const int latency = oversampling ? latencySamples (ProcessingMode::HighQuality, sampleRate) : 0;
+    auto output = test::played (settings, sampleRate, input, { 512 }, &sidechain);
+    for (auto& channel : output)
+        channel.erase (channel.begin(), channel.begin() + latency);
     std::vector<float> loudOut;
     double largestChange = 0.0;
-    for (std::size_t i = 0; i < loud.size(); ++i)
+    for (std::size_t i = 0; i + static_cast<std::size_t> (latency) < loud.size(); ++i)
     {
         const auto encode = [midLoud] (const test::Channels& stereo, std::size_t n, bool loudPart) {
             return loudPart == midLoud ? plugkit::encodeMid (stereo[0][n], stereo[1][n]) : plugkit::encodeSide (stereo[0][n], stereo[1][n]);
@@ -212,7 +394,8 @@ TEST_CASE ("Under Stereo Placement Mid or Side, Colour shapes only the part comp
     // a float step there is 2^-22. Colour on Left and Right each, rather than on the part, would move it by its whole
     // change.
     CHECK (largestChange <= 0x1p-21);
-    // The compressed part has Colour's 3rd harmonic, as dyn-lab's colour gives it at 20 dB of Gain Reduction.
+    // The compressed part has Colour's 3rd harmonic, as dyn-lab's colour gives it at 20 dB of Gain Reduction (within
+    // the tolerance at every factor: -38.32 dB at 2x, -38.30 dB at 8x).
     const auto spectrum = test::amplitudes (loudOut);
     const auto b = static_cast<std::size_t> (bin);
     CHECK (std::abs (20.0 * std::log10 (spectrum[3 * b] / spectrum[b]) - -38.38) <= harmonicToleranceDb);

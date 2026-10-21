@@ -123,6 +123,8 @@ TEST_CASE ("Render scenes play every Character, each at a Colour off its default
         CHECK (someScenePlays ([character] (const Settings& s) { return s.character == character && s.colour != Settings {}.colour; }));
     for (const auto placement : test::stereoPlacements())
         CHECK (someScenePlays ([placement] (const Settings& s) { return s.stereoPlacement == placement; }));
+    // Colour tracking Threshold: Colour on at a low Threshold, where it would be inaudible were it not.
+    CHECK (someScenePlays ([] (const Settings& s) { return (s.character == Character::VCA || s.character == Character::FET) && s.colour > 0.0 && s.thresholdDb <= -40.0; }));
 }
 
 TEST_CASE ("Render scenes play the Sidechain, Threshold gliding, Auto Gain and Global Bypass switched on, and the worst case", "[render]")

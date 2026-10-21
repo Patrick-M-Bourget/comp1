@@ -2,6 +2,7 @@
 
 #include "Character.h"
 #include "Clean.h"
+#include "Colour.h"
 #include "Crossfade.h"
 #include "DelayLine.h"
 #include "Detection.h"
@@ -60,7 +61,8 @@ plugkit::StereoPlacement routed (StereoPlacement placement)
 }
 
 // The compressor: its Character's gain computer and detector (Character.h) on the part of the signal Stereo Placement
-// picks, then its Character's Colour on that part.
+// picks, and its Character's Colour controls for that part, which it hands the After section (Colour.h): it applies
+// only the gain.
 // With Stereo, on every channel, each main channel detected from what it follows in the detection signal, with Stereo
 // Link between the two channels of a stereo track; with Mid or Side, on that part alone, detected from the detection
 // signal's own Mid or Side. A mono track is compressed as Stereo, whatever Placement is stored.
@@ -70,13 +72,14 @@ plugkit::StereoPlacement routed (StereoPlacement placement)
 // settings as they stand for the run. Ratio glides as 1/Ratio, so ∞:1 (0) is reached; Attack and Release glide in
 // log time, as their host parameters move. Stereo Link glides as a fraction, 0 to 1, a sample at a time: it moves the
 // Gain Reduction itself, after the detectors, where a step a run would put a corner in the gain every run. Colour glides
-// as a fraction, 0 to 1, a sample at a time too, as it shapes the waveform.
+// as a fraction, 0 to 1, a sample at a time too, as it shapes the waveform, and so does Threshold as Colour tracks it.
 //
 // A voice is a Placement and a Character, and a change of either never jumps. At the start of a run, the new voice
 // starts with detectors and Colour of its own and fades in over the glide time as the old one fades out, its detectors
-// still running, so the applied gain and Colour crossfade; a change asked for during a fade starts once the fade is
-// over. A new Placement's detectors start from no Gain Reduction, as they hear another part. A new Character's, on the
-// same Placement, start from the outgoing ones' state, so from the Gain Reduction the outgoing Character was producing.
+// still running, so the applied gain crossfades, and each voice's Colour weight carries its share; a change asked for
+// during a fade starts once the fade is over. A new Placement's detectors start from no Gain Reduction, as they hear
+// another part. A new Character's, on the same Placement, start from the outgoing ones' state, so from the Gain
+// Reduction the outgoing Character was producing.
 class Compressor
 {
 public:
@@ -92,8 +95,6 @@ public:
             voice.levelsDb.assign (voice.detectors.size(), plugkit::levelFloorDb);
             voice.reductionsDb.assign (voice.detectors.size(), 0.0);
             voice.gains.assign (voice.detectors.size(), 1.0);
-            voice.colours.assign (voice.detectors.size(), ColourStage {});
-            voice.colourChanges.assign (voice.detectors.size(), 0.0);
         }
         reductions.assign (voices[0].detectors.size(), 0.0);
         channelDb.assign (reductions.size(), 0.0);
@@ -101,6 +102,7 @@ public:
             setting.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         stereoLink.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         colourShare.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
+        colourThreshold.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         fade.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         fade.reset (1.0);
         fading = false;
@@ -117,6 +119,7 @@ public:
         glideTo (glides[hold], settings.holdMs, snap);
         glideTo (stereoLink, settings.stereoLink / 100.0, snap);
         glideTo (colourShare, settings.colour / 100.0, snap);
+        glideTo (colourThreshold, settings.thresholdDb, snap);
         placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
         character = played (settings.character);
         source = settings.detectionSource;
@@ -154,9 +157,7 @@ public:
                     detector.reset();
             starting.placement = placement;
             starting.character = character;
-            for (auto& colour : starting.colours)
-                colour.reset();
-            std::fill (starting.colourChanges.begin(), starting.colourChanges.end(), 0.0);
+            starting.colourStarts = true;
             playing = 1 - playing;
             fade.reset (0.0);
             fade.setTarget (1.0);
@@ -168,32 +169,40 @@ public:
     // Detection Level comes from what it follows, or the Mid or the Side, never from the audio. Each sample's
     // Detection Level, as the Placement heard reads it, and Gain Reduction, as the gain applied (after Stereo Link),
     // go to levels, taken where the detector reads them, so they follow whatever it hears. During a voice's fade the
-    // gain applied is each voice's gain weighted by its share, exactly so where both compress the same part.
+    // gain applied is each voice's gain weighted by its share, exactly so where both compress the same part. Each
+    // voice's Colour controls for the samples go to colour, for the After section.
     //
     // At each start of a run of the detection signal's own grid, which High Quality's delay moves off the audio's, each
     // detector heard's Auto Release moves on by the run just heard, so Auto Release runs on the samples the detector
     // hears in every Processing Mode.
-    void process (const DetectionSignal& detection, AudioBlock audio, RunLevels& levels)
+    void process (const DetectionSignal& detection, AudioBlock audio, RunLevels& levels, ColourControls& colour)
     {
         auto& heard = voices[playing];
+        auto& leaving = voices[1 - playing];
+        auto& heardColour = colour.voices[playing];
+        auto& leavingColour = colour.voices[1 - playing];
+        startColour (heard, heardColour, true);
+        startColour (leaving, leavingColour, fading);
         for (int i = 0; i < audio.numSamples; ++i)
         {
             if ((detection.runPosition + i) % plugkit::runSamples == 0)
                 startDetectorRuns();
             const double link = stereoLink.isSettled() ? stereoLink.value() : stereoLink.next();
-            const double colour = colourShare.isSettled() ? colourShare.value() : colourShare.next();
+            const double share = colourShare.isSettled() ? colourShare.value() : colourShare.next();
+            const double thresholdDb = colourThreshold.isSettled() ? colourThreshold.value() : colourThreshold.next();
             askGains (heard, detection, audio.numChannels, i, link);
-            colourParts (heard, audio, i, colour);
             if (! fading)
             {
                 for (std::size_t c = 0; c < partsOf (heard); ++c)
                     levels.noteDetection (heard.levelsDb[c], heard.reductionsDb[c]);
+                colourControls (heard, heardColour, i, share, thresholdDb);
+                // A fade over part-way through the piece: the voice gone adds nothing for the rest of it.
+                if (leavingColour.active)
+                    colourControls (leaving, leavingColour, i, 0.0, thresholdDb);
                 applyGains (heard, audio, i);
                 continue;
             }
-            auto& leaving = voices[1 - playing];
             askGains (leaving, detection, audio.numChannels, i, link);
-            colourParts (leaving, audio, i, colour);
             const double in = fade.next();
             if (fade.isSettled())
                 fading = false;
@@ -202,7 +211,9 @@ public:
                 const double gain = in * gainOn (heard, ch) + (1.0 - in) * gainOn (leaving, ch);
                 levels.noteDetection (heard.levelsDb[partOf (heard, ch)], gain < 1.0 ? -plugkit::gainToDecibels (gain) : 0.0);
             }
-            // Each voice's change to the sample, its gain and Colour, weighted by its share of the fade.
+            colourControls (heard, heardColour, i, in * share, thresholdDb);
+            colourControls (leaving, leavingColour, i, (1.0 - in) * share, thresholdDb);
+            // Each voice's change to the sample, its gain, weighted by its share of the fade.
             const float left = audio.channels[0][i];
             const float right = audio.numChannels > 1 ? audio.channels[1][i] : left;
             for (int ch = 0; ch < audio.numChannels; ++ch)
@@ -224,16 +235,15 @@ private:
                     detector.startRun (releaseMs, autoRelease);
     }
 
-    // One Placement, with detectors and Colour of its own (per channel under Stereo, the first for Mid or Side), and at
-    // the sample the Detection Levels they read, the Gain Reductions it asks for, the gains they make and what Colour
-    // adds to each part once compressed (likewise).
+    // One Placement, with detectors of its own (per channel under Stereo, the first for Mid or Side), and at the sample
+    // the Detection Levels they read, the Gain Reductions it asks for and the gains they make (likewise).
     struct Voice
     {
         plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo;
         Character character = Character::Clean;
         std::vector<CharacterDetector> detectors;
-        std::vector<ColourStage> colours;
-        std::vector<double> levelsDb, reductionsDb, gains, colourChanges;
+        std::vector<double> levelsDb, reductionsDb, gains;
+        bool colourStarts = false; // started at the last run's start, so its Colour starts afresh
     };
 
     // How many parts voice compresses: each channel under Stereo, or the one part, Mid or Side.
@@ -285,50 +295,52 @@ private:
         }
     }
 
-    // Colour on each part voice compresses, at sample i, before the gains are applied: what it adds to the part once
-    // compressed (colourChanges), from the Character's mapping of the Gain Reduction applied to the part, after Stereo
-    // Link, with the weight scaled by colour. Under Mid or Side only that part is coloured, and the other passes. A
-    // Character with no Colour (Clean) does no work, and its changes stay exactly 0.
-    static void colourParts (Voice& voice, AudioBlock audio, int i, double colour)
+    // At a piece's start, voice's Colour controls: its Placement, whether it plays in the piece, and whether it starts
+    // there.
+    static void startColour (Voice& voice, ColourVoice& colour, bool active)
     {
-        if (! hasColour (voice.character))
-            return;
-        const bool stereo = voice.placement == plugkit::StereoPlacement::Stereo;
-        const auto parts = stereo ? static_cast<std::size_t> (audio.numChannels) : 1;
-        for (std::size_t p = 0; p < parts; ++p)
+        colour.placement = voice.placement;
+        colour.active = active;
+        colour.starts = active && voice.colourStarts;
+        colour.heard = false;
+        if (active)
+            voice.colourStarts = false;
+    }
+
+    // voice's Colour controls at sample i, for each part it compresses: from the Character's mapping of the Gain
+    // Reduction applied to the part, after Stereo Link, and of Threshold as Colour tracks it, the weight scaled by share
+    // (the Colour control, and any fade's share), and the drive's gain. Under Mid or Side there is the one part. A
+    // Character with no Colour (Clean) has a weight of exactly 0.
+    static void colourControls (const Voice& voice, ColourVoice& colour, int i, double share, double thresholdDb)
+    {
+        const auto n = static_cast<std::size_t> (i);
+        for (std::size_t p = 0; p < partsOf (voice); ++p)
         {
-            double part = 0.0;
-            if (stereo)
-                part = audio.channels[p][i];
-            else
-                part = voice.placement == plugkit::StereoPlacement::Mid ? plugkit::encodeMid (audio.channels[0][i], audio.channels[1][i])
-                                                                        : plugkit::encodeSide (audio.channels[0][i], audio.channels[1][i]);
-            auto at = colourOf (voice.character, voice.reductionsDb[p]);
-            at.weight *= colour;
-            voice.colourChanges[p] = voice.colours[p].change (voice.gains[p] * part, at);
+            auto at = hasColour (voice.character) ? colourOf (voice.character, voice.reductionsDb[p], thresholdDb) : ColourAt {};
+            at.weight *= share;
+            colour.weights[p][n] = at.weight;
+            colour.gains[p][n] = plugkit::decibelsToGain (at.driveDb);
+            colour.heard = colour.heard || at.weight != 0.0;
         }
     }
 
     // Applies the gains voice asks for to sample i, alone. Stereo scales each channel. Mid and Side, on a stereo track,
     // go on as a change to Left and Right (changeTo), never an encode then a decode, which float doesn't round-trip: the
-    // other part passes. Colour's change goes on with the gain. With no Gain Reduction the sample is left as it is, bit
-    // for bit.
+    // other part passes. With no Gain Reduction the sample is left as it is, bit for bit.
     static void applyGains (const Voice& voice, AudioBlock audio, int i)
     {
         if (voice.placement == plugkit::StereoPlacement::Stereo)
         {
             for (int ch = 0; ch < audio.numChannels; ++ch)
             {
-                const auto c = static_cast<std::size_t> (ch);
                 float& sample = audio.channels[ch][i];
-                if (voice.colourChanges[c] != 0.0)
-                    sample = static_cast<float> (voice.gains[c] * sample + voice.colourChanges[c]);
-                else if (voice.gains[c] != 1.0)
-                    sample = static_cast<float> (voice.gains[c] * sample);
+                const double gain = voice.gains[static_cast<std::size_t> (ch)];
+                if (gain != 1.0)
+                    sample = static_cast<float> (gain * sample);
             }
             return;
         }
-        if (voice.gains[0] == 1.0 && voice.colourChanges[0] == 0.0)
+        if (voice.gains[0] == 1.0)
             return;
         const float left = audio.channels[0][i], right = audio.channels[1][i];
         for (int ch = 0; ch < 2; ++ch)
@@ -336,9 +348,9 @@ private:
     }
 
     // What the gains voice asks for add to channel ch of a sample whose Left and Right are left and right: (g - 1) times
-    // what channel ch carries of the part it compresses, as plugkit places a part (placedSample), and Colour's change to
-    // the part, placed the same way. Under Stereo, the channel itself; under Mid, the Mid, on Left and on Right; under
-    // Side, the Side, added to Left and taken from Right.
+    // what channel ch carries of the part it compresses, as plugkit places a part (placedSample). Under Stereo, the
+    // channel itself; under Mid, the Mid, on Left and on Right; under Side, the Side, added to Left and taken from
+    // Right.
     static double changeTo (const Voice& voice, int ch, float left, float right)
     {
         const float carried = plugkit::placedSample (voice.placement, 2, ch, [&] (int part) {
@@ -346,11 +358,7 @@ private:
                 return part == 0 ? left : right;
             return voice.placement == plugkit::StereoPlacement::Mid ? plugkit::encodeMid (left, right) : plugkit::encodeSide (left, right);
         });
-        const double change = (gainOn (voice, ch) - 1.0) * carried;
-        if (! hasColour (voice.character))
-            return change;
-        const float placed = plugkit::placedSample (voice.placement, 2, ch, [] (int) { return 1.0f; });
-        return change + placed * voice.colourChanges[partOf (voice, ch)];
+        return (gainOn (voice, ch) - 1.0) * carried;
     }
 
     enum Glide : std::size_t { threshold, inverseRatio, knee, range, logAttack, logRelease, hold, count };
@@ -370,6 +378,9 @@ private:
     plugkit::Smoother glides[count];
     plugkit::Smoother stereoLink;  // 0 to 1
     plugkit::Smoother colourShare; // Colour, 0 to 1
+    // Threshold as Colour tracks it, in dB, gliding a sample at a time: it drives the shape, where the gain computer's
+    // step a run would put a corner in the waveform every run.
+    plugkit::Smoother colourThreshold;
     clean::Curve curve;
     clean::Timing timing;
     double releaseMs = 100.0;
@@ -600,12 +611,17 @@ struct Engine::Impl
     GateStage gate;
     DetectionStage detection;
     Compressor compressor;
+    ColourControls colourControls; // the compressor's, for the After section
+    ColourStage colour;
     SaturationStage saturation;
     GlidingGain autoGain, outputGain;
     // High Quality's delays (comp1/Latency.h): the Oversampling sections, Before the detection stage (with the
     // Sidechain's delay, so External detection meets the audio as Internal does) and After the compressor, and the
     // Lookahead budget around the compressor; the Limiter fills the Limiter reserve.
     OversampledSection beforeSection, afterSection;
+    // Zero Latency's After section at the host rate: its input, then its residual, per channel.
+    std::vector<std::vector<double>> hostRate;
+    std::vector<double*> hostRatePointers;
     DelayLine sidechainDelay;
     std::array<std::vector<float>, 2> sidechainStorage; // the Sidechain's piece, delayed, or silence
     std::array<float*, 2> sidechainPointers {};
@@ -671,19 +687,20 @@ struct Engine::Impl
     }
 
     // The Wet path, on a piece of a run, in place, gated, with the Sidechain's piece (or none), on path: Saturation
-    // Before, the detection stage, fed the compressor's input as the Internal signal, then the compressor, Saturation
-    // After and Auto Gain; then the Dry/Wet sum, Detection Audition and Output Gain. Saturation runs at one of its two
-    // positions. The compressor's settings step at the start of each run, wherever the host's blocks fall; Saturation, Auto Gain, Detection
-    // Audition and Output Gain glide a sample at a time with next(), so where the pieces fall changes nothing either.
+    // Before, the detection stage, fed the compressor's input as the Internal signal, then the compressor, Colour and
+    // Saturation After, and Auto Gain; then the Dry/Wet sum, Detection Audition and Output Gain. Saturation runs at one
+    // of its two positions. The compressor's settings step at the start of each run, wherever the host's blocks fall;
+    // Saturation, Auto Gain, Detection Audition and Output Gain glide a sample at a time with next(), so where the
+    // pieces fall changes nothing either.
     // From the sample a new setting is taken (the start of the host's block, so the host decides when a change lands),
     // the output is the same sample for sample however the audio is cut. The detector runs while Detection Audition
     // is held, so letting go doesn't restart compression from zero.
     //
     // In High Quality, Saturation runs in its Oversampling section, Before or After (ADR 0009), each delaying the audio
     // by a section whether Saturation is in it or not, the Sidechain delayed with the Before one. Colour runs in the
-    // compressor, at the host rate. The audio is delayed by the Lookahead budget and the detection signal by
-    // less, so the compressor meets the audio Lookahead early; the two sections and the budget are the Wet path's delay
-    // up to the Dry/Wet sum. After Output Gain, the Limiter, on the path playing. Then Global Bypass, which crossfades
+    // After section too, ahead of Saturation After. The audio is delayed by the Lookahead budget and the detection
+    // signal by less, so the compressor meets the audio Lookahead early; the two sections and the budget are the Wet
+    // path's delay up to the Dry/Wet sum. After Output Gain, the Limiter, on the path playing. Then Global Bypass, which crossfades
     // to the input as it came in, before the Gate, delayed to match; it takes precedence over Detection Audition, and
     // everything before it runs on while it is on, so turning it off has no restart transient. Last, the mode fade,
     // which swaps the paths in silence.
@@ -704,8 +721,8 @@ struct Engine::Impl
             compressor.startRun();
             lookahead.startRun();
         }
-        compressor.process (lookahead.process (detected, wet, highQuality), wet, runLevels);
-        oversampledSaturation (afterSection, SaturationPosition::After, wet, highQuality);
+        compressor.process (lookahead.process (detected, wet, highQuality), wet, runLevels, colourControls);
+        after (wet, highQuality);
         autoGain.process (wet);
         dryWet.sum (wet);
         audition.process (detected, wet, highQuality);
@@ -729,6 +746,66 @@ struct Engine::Impl
         section.process (wet, saturation.heardAt (at), [&] (ConstAudioBlock host, double* const* oversampled, int factor) {
             return saturation.residual (at, host, oversampled, factor);
         });
+    }
+
+    // The After section on wet, the compressed signal: Colour, then Saturation After, which hears the coloured signal,
+    // their residuals summed. In High Quality, in the After section at the Oversampling in force; in Zero Latency the
+    // same residual at the host rate, added in the same way, with the section fed so it holds the latest audio. With
+    // neither adding anything, the section is a plain delay in High Quality, and Zero Latency leaves wet as it is.
+    void after (AudioBlock wet, bool highQuality)
+    {
+        colour.startPiece (colourControls);
+        const bool colourHeard = colourControls.heard();
+        const bool heard = colourHeard || saturation.heardAt (SaturationPosition::After);
+        const auto residual = [this, colourHeard] (ConstAudioBlock host, double* const* oversampled, int factor) {
+            return afterResidual (host, oversampled, factor, colourHeard);
+        };
+        if (highQuality)
+        {
+            afterSection.process (wet, heard, residual);
+            return;
+        }
+        const ConstAudioBlock host { wet.channels, wet.numChannels, wet.numSamples };
+        afterSection.write (host);
+        if (heard)
+            for (int ch = 0; ch < wet.numChannels; ++ch)
+                std::copy_n (wet.channels[ch], wet.numSamples, hostRatePointers[static_cast<std::size_t> (ch)]);
+        if (! residual (host, hostRatePointers.data(), 1))
+            return;
+        // As High Quality's section adds the residual at 1x.
+        for (int ch = 0; ch < wet.numChannels; ++ch)
+            for (int i = 0; i < wet.numSamples; ++i)
+                wet.channels[ch][i] = static_cast<float> (wet.channels[ch][i] + hostRatePointers[static_cast<std::size_t> (ch)][i]);
+    }
+
+    // The After section's residual (OversampledSection::process's), replacing oversampled, host's samples at factor
+    // samples each: Colour's, worked out on oversampled, plus Saturation After's on oversampled with Colour's added,
+    // so it hears the coloured signal. False, oversampled left alone, when neither adds anything; each then follows
+    // host.
+    bool afterResidual (ConstAudioBlock host, double* const* oversampled, int factor, bool colourHeard)
+    {
+        constexpr auto at = SaturationPosition::After;
+        if (! colourHeard)
+        {
+            colour.follow (colourControls, host.channels, host.numChannels, host.numSamples);
+            return saturation.residual (at, host, oversampled, factor);
+        }
+        colour.residual (colourControls, oversampled, host.numChannels, host.numSamples, factor);
+        const double* const* coloured = colour.residuals();
+        const int count = host.numSamples * factor;
+        const auto addColour = [&] {
+            for (int ch = 0; ch < host.numChannels; ++ch)
+                for (int k = 0; k < count; ++k)
+                    oversampled[ch][k] += coloured[ch][k];
+        };
+        if (saturation.heardAt (at))
+            addColour();
+        if (saturation.residual (at, host, oversampled, factor))
+            addColour();
+        else
+            for (int ch = 0; ch < host.numChannels; ++ch)
+                std::copy_n (coloured[ch], count, oversampled[ch]);
+        return true;
     }
 
     // The Sidechain's piece as the detection stage hears it: in High Quality delayed by the Before section's delay,
@@ -773,6 +850,12 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->gate.prepare (sampleRate, numChannels);
     impl->detection.prepare (sampleRate, numChannels, plugkit::runSamples);
     impl->compressor.prepare (sampleRate, numChannels);
+    impl->colourControls.prepare (numChannels, plugkit::runSamples);
+    impl->colour.prepare (numChannels, plugkit::runSamples * factorOf (maxOversampling (sampleRate)));
+    impl->hostRate.assign (static_cast<std::size_t> (std::max (numChannels, 0)), std::vector<double> (static_cast<std::size_t> (plugkit::runSamples)));
+    impl->hostRatePointers.clear();
+    for (auto& channel : impl->hostRate)
+        impl->hostRatePointers.push_back (channel.data());
     impl->saturation.prepare (sampleRate, numChannels);
     impl->autoGain.prepare (sampleRate);
     impl->outputGain.prepare (sampleRate);

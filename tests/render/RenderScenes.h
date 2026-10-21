@@ -60,6 +60,12 @@ inline std::vector<RenderScene> renderScenes()
         { .name = "fet", .settings = with ([] (Settings& s) { s.character = Character::FET; }) },
         { .name = "vca-colour-40", .settings = with ([] (Settings& s) { s.character = Character::VCA; s.colour = 40.0; }) },
         { .name = "fet-colour-40", .settings = with ([] (Settings& s) { s.character = Character::FET; s.colour = 40.0; }) },
+        // Colour tracking Threshold: VCA at full Colour at a low Threshold, where the compressed signal is far under
+        // full scale, and Threshold gliding there from the default.
+        { .name = "vca-threshold-50", .settings = with ([] (Settings& s) { s.character = Character::VCA; s.thresholdDb = -50.0; }) },
+        { .name = "vca-threshold-glide",
+          .settings = with ([] (Settings& s) { s.character = Character::VCA; }),
+          .change = with ([] (Settings& s) { s.character = Character::VCA; s.thresholdDb = -50.0; }) },
         // Saturation, and Dry/Wet.
         { .name = "saturation", .settings = with ([] (Settings& s) { s.saturation = true; }) },
         { .name = "saturation-before-drive-12", .settings = with ([] (Settings& s) {

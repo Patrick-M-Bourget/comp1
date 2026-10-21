@@ -81,14 +81,14 @@ private:
 // Whether a Character has Colour: Clean has none, at any Colour.
 inline bool hasColour (Character character) { return character == Character::VCA || character == Character::FET; }
 
-// A Character's Colour at a Gain Reduction in dB: the residual's weight, before the Colour control scales it, and the
-// drive. Clean has none: a weight of exactly 0.
-inline ColourAt colourOf (Character character, double gainReductionDb)
+// A Character's Colour at a Gain Reduction and a Threshold, in dB: the residual's weight, before the Colour control
+// scales it, and the drive, which tracks Threshold (colourAt). Clean has none: a weight of exactly 0.
+inline ColourAt colourOf (Character character, double gainReductionDb, double thresholdDb)
 {
     switch (character)
     {
-        case Character::VCA: return colourAt (vca::colour, gainReductionDb);
-        case Character::FET: return colourAt (fet::colour, gainReductionDb);
+        case Character::VCA: return colourAt (vca::colour, gainReductionDb, thresholdDb);
+        case Character::FET: return colourAt (fet::colour, gainReductionDb, thresholdDb);
         case Character::Clean:
         case Character::Opto: break;
     }

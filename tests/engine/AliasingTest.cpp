@@ -347,7 +347,7 @@ TEST_CASE ("At the base rate, VCA's and FET's worst alias at Colour 100% at each
     const auto mode = atBaseRate();
     CAPTURE (condition.sampleRate, condition.frequency, condition.reductionDb, static_cast<int> (condition.character), static_cast<int> (mode));
     const int bin = test::toneBin (condition.frequency, condition.sampleRate);
-    const auto output = test::steadilyCompressedTone ({ .character = condition.character, .processingMode = mode },
+    const auto output = test::steadilyCompressedTone ({ .character = condition.character, .processingMode = mode, .oversampling = Oversampling::x1 },
                                                       condition.sampleRate,
                                                       bin,
                                                       test::levelForReductionDb (condition.reductionDb),
@@ -356,4 +356,153 @@ TEST_CASE ("At the base rate, VCA's and FET's worst alias at Colour 100% at each
     CHECK (worst <= ceilingDb);
     if (condition.labDb > colourComparedOverDb)
         CHECK (std::abs (worst - condition.labDb) <= labWithinDb);
+}
+
+namespace
+{
+
+// One of dyn-lab's Colour conditions oversampled: the worst alias dyn-lab gives for it anywhere, and below the
+// passband edge.
+struct OversampledColour
+{
+    double sampleRate;
+    double frequency; // nominal
+    double reductionDb;
+    double labDb;
+    double passbandDb;
+    Character character = Character::VCA;
+};
+
+// The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca --oversampling N` and `--character fet`
+// print, copied as printed: each factor's worst alias anywhere and below the passband edge (1x's column is
+// colourConditions()'s).
+const std::vector<OversampledColour>& oversampledColourRows (Oversampling oversampling)
+{
+    static const std::vector<OversampledColour> x2 {
+        { 44100.0, 1000.0, 10.0, -131.45, -170.07 }, { 44100.0, 1000.0, 20.0, -110.75, -149.44 },
+        { 44100.0, 1000.0, 30.0, -118.96, -140.45 }, { 44100.0, 3000.0, 10.0, -131.06, -141.62 },
+        { 44100.0, 3000.0, 20.0, -109.81, -127.01 }, { 44100.0, 3000.0, 30.0, -111.99, -111.99 },
+        { 44100.0, 5000.0, 10.0, -104.75, -115.97 }, { 44100.0, 5000.0, 20.0, -93.73, -106.91 },
+        { 44100.0, 5000.0, 30.0, -88.00, -88.19 }, { 44100.0, 10000.0, 10.0, -106.48, -108.34 },
+        { 44100.0, 10000.0, 20.0, -81.83, -92.15 }, { 44100.0, 10000.0, 30.0, -70.45, -84.54 },
+        { 48000.0, 1000.0, 10.0, -141.52, -174.51 }, { 48000.0, 1000.0, 20.0, -121.12, -156.35 },
+        { 48000.0, 1000.0, 30.0, -109.65, -152.11 }, { 48000.0, 3000.0, 10.0, -122.41, -136.20 },
+        { 48000.0, 3000.0, 20.0, -105.00, -126.55 }, { 48000.0, 3000.0, 30.0, -105.68, -108.85 },
+        { 48000.0, 5000.0, 10.0, -76.14, -128.91 }, { 48000.0, 5000.0, 20.0, -65.09, -106.44 },
+        { 48000.0, 5000.0, 30.0, -59.39, -94.36 }, { 48000.0, 10000.0, 10.0, -103.24, -103.24 },
+        { 48000.0, 10000.0, 20.0, -85.03, -85.03 }, { 48000.0, 10000.0, 30.0, -88.24, -93.78 },
+        { 44100.0, 1000.0, 10.0, -122.06, -160.93, Character::FET }, { 44100.0, 1000.0, 20.0, -101.09, -141.26, Character::FET },
+        { 44100.0, 1000.0, 30.0, -108.79, -132.25, Character::FET }, { 44100.0, 3000.0, 10.0, -119.85, -122.70, Character::FET },
+        { 44100.0, 3000.0, 20.0, -100.01, -112.88, Character::FET }, { 44100.0, 3000.0, 30.0, -104.61, -104.61, Character::FET },
+        { 44100.0, 5000.0, 10.0, -98.13, -116.18, Character::FET }, { 44100.0, 5000.0, 20.0, -85.40, -98.56, Character::FET },
+        { 44100.0, 5000.0, 30.0, -80.11, -80.29, Character::FET }, { 44100.0, 10000.0, 10.0, -80.61, -98.14, Character::FET },
+        { 44100.0, 10000.0, 20.0, -76.91, -86.49, Character::FET }, { 44100.0, 10000.0, 30.0, -62.55, -76.63, Character::FET },
+        { 48000.0, 1000.0, 10.0, -119.11, -163.42, Character::FET }, { 48000.0, 1000.0, 20.0, -108.14, -151.02, Character::FET },
+        { 48000.0, 1000.0, 30.0, -102.36, -144.60, Character::FET }, { 48000.0, 3000.0, 10.0, -119.00, -129.81, Character::FET },
+        { 48000.0, 3000.0, 20.0, -97.88, -120.45, Character::FET }, { 48000.0, 3000.0, 30.0, -97.48, -101.10, Character::FET },
+        { 48000.0, 5000.0, 10.0, -69.57, -112.25, Character::FET }, { 48000.0, 5000.0, 20.0, -56.76, -100.29, Character::FET },
+        { 48000.0, 5000.0, 30.0, -51.50, -86.36, Character::FET }, { 48000.0, 10000.0, 10.0, -93.07, -93.07, Character::FET },
+        { 48000.0, 10000.0, 20.0, -77.17, -77.17, Character::FET }, { 48000.0, 10000.0, 30.0, -80.33, -86.22, Character::FET },
+    };
+    static const std::vector<OversampledColour> x4 {
+        { 44100.0, 1000.0, 10.0, -130.65, -204.18 }, { 44100.0, 1000.0, 20.0, -109.97, -183.87 },
+        { 44100.0, 1000.0, 30.0, -118.05, -179.72 }, { 44100.0, 3000.0, 10.0, -167.69, -167.69 },
+        { 44100.0, 3000.0, 20.0, -151.01, -151.01 }, { 44100.0, 3000.0, 30.0, -137.58, -137.58 },
+        { 44100.0, 5000.0, 10.0, -103.71, -151.63 }, { 44100.0, 5000.0, 20.0, -92.54, -133.05 },
+        { 44100.0, 5000.0, 30.0, -86.98, -122.66 }, { 44100.0, 10000.0, 10.0, -143.27, -143.27 },
+        { 44100.0, 10000.0, 20.0, -110.07, -110.07 }, { 44100.0, 10000.0, 30.0, -100.84, -100.84 },
+        { 48000.0, 1000.0, 10.0, -140.89, -209.52 }, { 48000.0, 1000.0, 20.0, -120.32, -191.42 },
+        { 48000.0, 1000.0, 30.0, -108.93, -186.98 }, { 48000.0, 3000.0, 10.0, -121.55, -173.95 },
+        { 48000.0, 3000.0, 20.0, -104.12, -152.77 }, { 48000.0, 3000.0, 30.0, -104.62, -148.18 },
+        { 48000.0, 5000.0, 10.0, -75.27, -155.68 }, { 48000.0, 5000.0, 20.0, -64.09, -134.77 },
+        { 48000.0, 5000.0, 30.0, -58.54, -123.64 }, { 48000.0, 10000.0, 10.0, -129.60, -132.41 },
+        { 48000.0, 10000.0, 20.0, -107.20, -111.35 }, { 48000.0, 10000.0, 30.0, -95.10, -106.71 },
+        { 44100.0, 1000.0, 10.0, -121.34, -191.58, Character::FET }, { 44100.0, 1000.0, 20.0, -100.32, -179.25, Character::FET },
+        { 44100.0, 1000.0, 30.0, -107.91, -172.62, Character::FET }, { 44100.0, 3000.0, 10.0, -153.07, -153.07, Character::FET },
+        { 44100.0, 3000.0, 20.0, -147.05, -147.05, Character::FET }, { 44100.0, 3000.0, 30.0, -129.28, -129.28, Character::FET },
+        { 44100.0, 5000.0, 10.0, -97.32, -142.46, Character::FET }, { 44100.0, 5000.0, 20.0, -84.22, -124.19, Character::FET },
+        { 44100.0, 5000.0, 30.0, -79.07, -114.52, Character::FET }, { 44100.0, 10000.0, 10.0, -117.56, -117.56, Character::FET },
+        { 44100.0, 10000.0, 20.0, -102.99, -102.99, Character::FET }, { 44100.0, 10000.0, 30.0, -92.79, -92.79, Character::FET },
+        { 48000.0, 1000.0, 10.0, -118.36, -196.30, Character::FET }, { 48000.0, 1000.0, 20.0, -107.36, -180.78, Character::FET },
+        { 48000.0, 1000.0, 30.0, -101.65, -179.48, Character::FET }, { 48000.0, 3000.0, 10.0, -135.98, -160.56, Character::FET },
+        { 48000.0, 3000.0, 20.0, -97.02, -143.48, Character::FET }, { 48000.0, 3000.0, 30.0, -96.41, -140.17, Character::FET },
+        { 48000.0, 5000.0, 10.0, -68.89, -149.71, Character::FET }, { 48000.0, 5000.0, 20.0, -55.77, -124.45, Character::FET },
+        { 48000.0, 5000.0, 30.0, -50.63, -115.35, Character::FET }, { 48000.0, 10000.0, 10.0, -113.00, -127.16, Character::FET },
+        { 48000.0, 10000.0, 20.0, -101.06, -103.10, Character::FET }, { 48000.0, 10000.0, 30.0, -87.10, -98.46, Character::FET },
+    };
+    static const std::vector<OversampledColour> x8 {
+        { 44100.0, 1000.0, 10.0, -130.46, -222.50 }, { 44100.0, 1000.0, 20.0, -109.78, -207.89 },
+        { 44100.0, 1000.0, 30.0, -117.82, -194.35 }, { 44100.0, 3000.0, 10.0, -183.20, -183.20 },
+        { 44100.0, 3000.0, 20.0, -165.59, -165.59 }, { 44100.0, 3000.0, 30.0, -163.78, -163.78 },
+        { 44100.0, 5000.0, 10.0, -103.46, -180.88 }, { 44100.0, 5000.0, 20.0, -92.26, -162.12 },
+        { 44100.0, 5000.0, 30.0, -86.74, -150.93 }, { 44100.0, 10000.0, 10.0, -161.67, -163.39 },
+        { 44100.0, 10000.0, 20.0, -143.08, -145.65 }, { 44100.0, 10000.0, 30.0, -132.69, -133.00 },
+        { 48000.0, 1000.0, 10.0, -140.73, -222.21 }, { 48000.0, 1000.0, 20.0, -120.12, -208.27 },
+        { 48000.0, 1000.0, 30.0, -108.76, -194.02 }, { 48000.0, 3000.0, 10.0, -121.34, -197.29 },
+        { 48000.0, 3000.0, 20.0, -103.91, -179.11 }, { 48000.0, 3000.0, 30.0, -104.36, -177.39 },
+        { 48000.0, 5000.0, 10.0, -75.06, -187.71 }, { 48000.0, 5000.0, 20.0, -63.85, -166.45 },
+        { 48000.0, 5000.0, 30.0, -58.34, -156.46 }, { 48000.0, 10000.0, 10.0, -149.76, -149.76 },
+        { 48000.0, 10000.0, 20.0, -141.54, -141.54 }, { 48000.0, 10000.0, 30.0, -140.19, -140.19 },
+        { 44100.0, 1000.0, 10.0, -121.17, -216.38, Character::FET }, { 44100.0, 1000.0, 20.0, -100.13, -201.66, Character::FET },
+        { 44100.0, 1000.0, 30.0, -107.70, -186.49, Character::FET }, { 44100.0, 3000.0, 10.0, -185.33, -185.33, Character::FET },
+        { 44100.0, 3000.0, 20.0, -158.72, -158.72, Character::FET }, { 44100.0, 3000.0, 30.0, -155.63, -155.63, Character::FET },
+        { 44100.0, 5000.0, 10.0, -97.12, -167.57, Character::FET }, { 44100.0, 5000.0, 20.0, -83.94, -157.86, Character::FET },
+        { 44100.0, 5000.0, 30.0, -78.82, -143.04, Character::FET }, { 44100.0, 10000.0, 10.0, -152.48, -152.64, Character::FET },
+        { 44100.0, 10000.0, 20.0, -133.59, -133.59, Character::FET }, { 44100.0, 10000.0, 30.0, -124.55, -124.56, Character::FET },
+        { 48000.0, 1000.0, 10.0, -118.18, -217.73, Character::FET }, { 48000.0, 1000.0, 20.0, -107.17, -202.56, Character::FET },
+        { 48000.0, 1000.0, 30.0, -101.48, -186.18, Character::FET }, { 48000.0, 3000.0, 10.0, -136.48, -185.29, Character::FET },
+        { 48000.0, 3000.0, 20.0, -96.81, -170.70, Character::FET }, { 48000.0, 3000.0, 30.0, -96.15, -170.20, Character::FET },
+        { 48000.0, 5000.0, 10.0, -68.72, -172.12, Character::FET }, { 48000.0, 5000.0, 20.0, -55.53, -155.14, Character::FET },
+        { 48000.0, 5000.0, 30.0, -50.41, -147.98, Character::FET }, { 48000.0, 10000.0, 10.0, -139.73, -139.73, Character::FET },
+        { 48000.0, 10000.0, 20.0, -134.00, -134.00, Character::FET }, { 48000.0, 10000.0, 30.0, -131.43, -131.43, Character::FET },
+    };
+    return oversampling == Oversampling::x2 ? x2 : oversampling == Oversampling::x4 ? x4 : x8;
+}
+
+// The same condition's row at the base rate.
+const ColourCondition& atBase (const OversampledColour& row)
+{
+    for (const auto& condition : colourConditions())
+        if (condition.sampleRate == row.sampleRate && condition.frequency == row.frequency && condition.reductionDb == row.reductionDb
+            && condition.character == row.character)
+            return condition;
+    FAIL ("no base-rate row for the condition");
+    return colourConditions().front();
+}
+
+struct OversampledColourCondition
+{
+    Oversampling oversampling;
+    OversampledColour row;
+};
+
+std::vector<OversampledColourCondition> oversampledColourConditions()
+{
+    std::vector<OversampledColourCondition> all;
+    for (const auto oversampling : { Oversampling::x2, Oversampling::x4, Oversampling::x8 })
+        for (const auto& row : oversampledColourRows (oversampling))
+            all.push_back ({ oversampling, row });
+    return all;
+}
+
+} // namespace
+
+TEST_CASE ("Oversampled, VCA's and FET's worst alias at Colour 100% at each of dyn-lab's Colour conditions is within its factor's tolerance and no worse than at 1x", "[sweep]")
+{
+    const auto conditions = oversampledColourConditions();
+    const auto& [oversampling, row] = GENERATE_REF (from_range (conditions));
+    CAPTURE (factorOf (oversampling), row.sampleRate, row.frequency, row.reductionDb, static_cast<int> (row.character));
+    const int bin = test::toneBin (row.frequency, row.sampleRate);
+    const auto spectrum = test::amplitudes (test::steadilyCompressedTone (
+        { .character = row.character, .processingMode = ProcessingMode::HighQuality, .oversampling = oversampling }, row.sampleRate, bin,
+        test::levelForReductionDb (row.reductionDb), 8));
+    const double worst = test::worstAliasDb (spectrum, bin);
+    const auto top = static_cast<std::size_t> (passbandEdge * test::spectrumLength / 2);
+    const double passband = test::worstAliasDb ({ spectrum.begin(), spectrum.begin() + static_cast<std::ptrdiff_t> (top + 1) }, bin);
+    CHECK (passband <= passbandCeilingDb (oversampling));
+    CHECK (worst <= atBase (row).labDb);
+    if (row.labDb > colourComparedOverDb)
+        CHECK (std::abs (worst - row.labDb) <= labWithinDb);
+    if (row.passbandDb > colourComparedOverDb)
+        CHECK (std::abs (passband - row.passbandDb) <= labWithinDb);
 }

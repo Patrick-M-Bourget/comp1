@@ -290,16 +290,20 @@ The harmonics are within 0.9 dB of the ideal at 2x, 0.2 dB at 4x and 0.05 dB at 
 
 ## Colour
 
-Colour is a Character's own distortion, which grows with its Gain Reduction. Clean has none, at any setting. VCA's is the Saturation stage's shape and its anti-aliased residual (above), unchanged, driven by the Gain Reduction applied to each channel. After the compressor applies its gain, each compressed sample y becomes y + w · r(g · y) / g, with r the residual anti-aliased (ADR 0005), so the linear part passes sample-aligned. The weight w and the drive g follow the Gain Reduction, sample by sample:
+Colour is a Character's own distortion, which grows with its Gain Reduction. Clean has none, at any setting. VCA's is the Saturation stage's shape and its anti-aliased residual (above), unchanged, driven by the Gain Reduction applied to each channel. After the compressor applies its gain, each compressed sample y becomes y + w · r(G · y) / G, with r the residual anti-aliased (ADR 0005), so the linear part passes sample-aligned. G is the total gain the shape is driven at: the drive's, times the tracking's, 10^((`COLOUR_THRESHOLD_REFERENCE_DB` − Threshold) / 20). The weight w and the drive follow the Gain Reduction, sample by sample:
 
 - the weight is Colour × `VCA_COLOUR_WEIGHT` × (1 − e^(−GR / `VCA_COLOUR_WEIGHT_DB`));
 - the drive, in dB, is Drive's top, 24 dB, × (1 − e^(−GR / `VCA_COLOUR_DRIVE_DB`)), never above it.
 
 Each is exactly 0 with no Gain Reduction, so then, or at Colour 0%, the output is the compressed signal exactly. Each rises smoothly with the Gain Reduction, with no corner as compression starts.
 
+Colour runs in the After section, on the compressed signal, ahead of Saturation After, which hears the coloured signal. In High Quality its residual is worked out there at the Oversampling in force (ADR 0009), and in Zero Latency at the host rate, so both modes share one formula.
+
+**Colour tracks Threshold.** The shape is linear up to its knee, at |G · y| = 1, so Colour is heard only where the compressed signal comes within 1/G of full scale. At a steady Gain Reduction and Ratio, the compressed signal's level sits a fixed distance from Threshold: the input is over Threshold by as much as that Gain Reduction asks, and the output is the input less the Gain Reduction. Driven by the drive alone, the same compression would be coloured at a high Threshold and not at all at a low one, where the compressed signal never reaches the knee. The tracking moves the knee with Threshold: the compressed signal over Threshold is what is shaped, so the same Gain Reduction at the same Ratio gives the same Colour at every Threshold. **`COLOUR_THRESHOLD_REFERENCE_DB`, −18 dB,** is the default Threshold, where the tracking is 0 dB, so every figure at the defaults is the drive's alone: 10 dB of Gain Reduction gives VCA 0.30% THD at Threshold −10, −18 and −50 dB alike. In the Engine, the Threshold the tracking reads glides a sample at a time, as Drive does, so Threshold automation stays click-free with Colour on: stepped a run at a time, as the gain computer takes it, it puts a corner in the shaped waveform every run, which clicks.
+
 The constants, named once in `dynlab.py`:
 
-- **`VCA_COLOUR_DRIVE_DB`, 5 dB:** the drive is 10.8 dB at 3 dB of Gain Reduction, 20.8 dB at 10 dB and 23.6 dB at 20 dB, so the harder the compressor works, the further its output is pushed into the shape. The shape is linear up to its knee, which the drive sets at full scale less the drive, so Colour is heard only where the compressed signal comes within the drive of full scale: at the defaults, from about 6 dB of Gain Reduction. A quieter compressed signal (a low Threshold) gets less Colour at the same Gain Reduction.
+- **`VCA_COLOUR_DRIVE_DB`, 5 dB:** the drive is 10.8 dB at 3 dB of Gain Reduction, 20.8 dB at 10 dB and 23.6 dB at 20 dB, so the harder the compressor works, the further its output is pushed into the shape. With the tracking, the knee sits at the default Threshold's full scale less the drive, so Colour is heard from about 6 dB of Gain Reduction, at every Threshold.
 - **`VCA_COLOUR_WEIGHT`, 0.11, and `VCA_COLOUR_WEIGHT_DB`, 10 dB:** the residual's weight rises to 63% of its most at 10 dB of Gain Reduction and nears it by 30 dB. Together with the drive, they make Colour slight: 0.30% THD at 10 dB of Gain Reduction at Colour 100%, at the defaults, rising to 1.2% at 20 dB and 1.3% at 30 dB. That is a hint of density, well under where distortion reads as an effect, and leaves heavy distortion to Saturation.
 
 **FET's Colour** has VCA's form, with its own constants, `FET_COLOUR_WEIGHT`, 0.25, `FET_COLOUR_WEIGHT_DB`, 10 dB, and `FET_COLOUR_DRIVE_DB`, 4 dB. It is steeper than VCA's: 1.06% THD at 10 dB of Gain Reduction at Colour 100%, at the defaults, 2.99% at 20 dB and 3.24% at 30 dB, where VCA's are 0.30%, 1.2% and 1.3%. A FET's distortion is part of what it is chosen for, on vocals and drums: heard as grit once it works hard, though still under Saturation's. The weight's most, 0.25, sets the level at 20 dB and over, about 3%. The drive rising over 4 dB rather than 5 dB pushes the compressed signal into the shape sooner, so 10 dB of Gain Reduction already gives about 1%, and 6 dB a trace (0.04%). FET's Colour follows the Gain Reduction it applies, and stays outside the loop: the detector hears the detection signal times the gain, never Colour.
@@ -308,22 +312,49 @@ The even harmonics are absent, as the shape is odd and a steady Gain Reduction i
 
 ### `colour`
 
-Prints, for a Character at a Colour (`--colour`, 100% by default) and at the compressor options `transfer` takes, how its Colour follows the Gain Reduction: the residual's weight and the drive at each steady Gain Reduction (`COLOUR_REDUCTIONS`, 0, 3, 6, 10, 20 and 30 dB), and the 2nd to 5th harmonics, in dB relative to the fundamental, and their THD, of a steady bin-centred sine compressed by that much. The sine is the bin-centred tone nearest 1 kHz at 48 kHz (`COLOUR_TONE`), at the level whose Gain Reduction it is on the Transfer Curve (`COLOUR_BELOW_KNEE_DB`, 12 dB under the Knee, for none), and its Gain Reduction is held steady, as an External Detection Source holding a steady Sidechain gives it. A row the settings never reach (past Range) says so. Clean prints that it has no Colour.
+Prints, for a Character at a Colour (`--colour`, 100% by default) and at the compressor options `transfer` takes, `--threshold` included, how its Colour follows the Gain Reduction: the residual's weight and the drive at each steady Gain Reduction (`COLOUR_REDUCTIONS`, 0, 3, 6, 10, 20 and 30 dB), and the 2nd to 5th harmonics, in dB relative to the fundamental, and their THD, of a steady bin-centred sine compressed by that much. The sine is the bin-centred tone nearest 1 kHz at 48 kHz (`COLOUR_TONE`), at the level whose Gain Reduction it is on the Transfer Curve (`COLOUR_BELOW_KNEE_DB`, 12 dB under the Knee, for none), and its Gain Reduction is held steady, as an External Detection Source holding a steady Sidechain gives it. A row the settings never reach (past Range) says so. Clean prints that it has no Colour.
 
 **`COLOUR_HARMONIC_TOLERANCE_DB`, ±0.1 dB:** the Engine's harmonics, played that way with the Sidechain a steady square wave, are within 0.1 dB of the lab's. The two compute the same thing, the Engine in float at its input and output: they agree within 0.005 dB, the lab's rounding as printed. A harmonic more than 100 dB under the fundamental is lost in float's rounding, and isn't compared.
 
 Then it prints Colour's worst alias for bin-centred tones at the rates and frequencies `aliasing` uses (`--rates`), at 10, 20 and 30 dB of Gain Reduction (`COLOUR_ALIAS_REDUCTIONS`), each at the level whose Gain Reduction it is, for the naive shaper and for ADAA. It checks each against `ALIASING_TOLERANCE`'s ceiling and exits non-zero when a row is over it.
 
-**`ALIASING_TOLERANCE` for Colour:** the ceiling holds by a wide margin. The worst alias at Colour 100% is −47.4 dB (10 kHz at 30 dB of Gain Reduction, at 48 kHz), since the residual's weight is small. The improvement over the naive shaper does not hold everywhere: it is 23.4 and 19.8 dB at 10 kHz at 10 dB of Gain Reduction, but 14.6 and 10.7 dB at 20 dB and 12.1 and 9.1 dB at 30 dB (44.1 and 48 kHz), under the 15 dB Saturation's hardest condition meets. There the driven signal is 12 to 16 dB over the knee, where first-order ADAA at the base rate gains least, as Saturation's own milder Drives do. The improvement is printed and not checked: the ceiling, which is what is heard, holds with 23 dB to spare. Oversampled, Colour's residual gains far more at 10 kHz: the PR for Oversampling gives the lab's figures, and Colour still runs at the host rate.
+**`ALIASING_TOLERANCE` for Colour:** the ceiling holds by a wide margin. The worst alias at Colour 100% is −47.4 dB (10 kHz at 30 dB of Gain Reduction, at 48 kHz), since the residual's weight is small. The improvement over the naive shaper does not hold everywhere: it is 23.4 and 19.8 dB at 10 kHz at 10 dB of Gain Reduction, but 14.6 and 10.7 dB at 20 dB and 12.1 and 9.1 dB at 30 dB (44.1 and 48 kHz), under the 15 dB Saturation's hardest condition meets. There the driven signal is 12 to 16 dB over the knee, where first-order ADAA at the base rate gains least, as Saturation's own milder Drives do. The improvement is printed and not checked at the base rate: the ceiling, which is what is heard, holds with 23 dB to spare, and High Quality's Oversampling gains far more (below).
 
 FET's Colour, with more than twice VCA's weight, aliases more, and the ceiling still holds with 15.8 dB to spare: its worst alias is −39.8 dB (10 kHz at 30 dB of Gain Reduction, at 48 kHz). Its improvement over the naive shaper is printed and not checked, as VCA's: at 10 kHz it is 25.7 and 16.6 dB at 10 dB of Gain Reduction, but 14.6 and 10.8 dB at 20 dB and 12.5 and 9.5 dB at 30 dB (44.1 and 48 kHz).
 
+**At another Threshold** (`--threshold`), every row is the same as at the defaults, harmonics and aliasing both, but for the input level, which moves with Threshold: the tracking shapes the compressed signal over Threshold, and the weight, the drive and the shape see the same signal. At Threshold −10 dB and −50 dB, VCA gives 0.30% THD at 10 dB of Gain Reduction, as at −18 dB, and FET 1.06%.
+
     python3 tools/dyn-lab/dynlab.py colour
     python3 tools/dyn-lab/dynlab.py colour --character vca
+    python3 tools/dyn-lab/dynlab.py colour --character vca --threshold -10
+    python3 tools/dyn-lab/dynlab.py colour --character vca --threshold -50
     python3 tools/dyn-lab/dynlab.py colour --character vca --colour 50
     python3 tools/dyn-lab/dynlab.py colour --character vca --rates 44100
     python3 tools/dyn-lab/dynlab.py colour --character fet
+    python3 tools/dyn-lab/dynlab.py colour --character fet --threshold -10
+    python3 tools/dyn-lab/dynlab.py colour --character fet --threshold -50
     python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50
+
+#### Oversampled Colour
+
+With `--oversampling N`, the harmonics and each aliasing row are those of High Quality at N: the compressed signal through the After section (ADR 0009), its linear part delayed by the section, and Colour's residual through the up filters, ADAA at the oversampled rate, and the down filters, as [`aliasing`'s](#oversampled) are Saturation's. Each aliasing row prints ADAA's worst alias at 1x, at N, and at N below the passband edge, and N's improvement on the naive shaper at 1x. Each is checked as Saturation's oversampled rows are, against `ALIASING_TOLERANCE`'s figures for N: below the passband edge at most −45 dB at 2x, −60 dB at 4x and −75 dB at 8x, and anywhere no worse than at 1x. It exits non-zero when one is outside. N must be allowed at every rate given.
+
+At 10 kHz, where first-order ADAA at the base rate gains least, Oversampling improves on the naive shaper by about what it does for Saturation, on VCA and FET alike, at 44.1 and 48 kHz: 32.2 to 55.8 dB at 2x, 56.7 to 92.6 dB at 4x and 94.2 to 113.0 dB at 8x. Below the passband edge the worst alias is −84.5 dB at 2x, −100.8 dB at 4x and −133.0 dB at 8x on VCA, and −76.6, −92.8 and −124.6 dB on FET (each 10 kHz at 30 dB of Gain Reduction, at 44.1 kHz), so every ceiling holds with 30 dB or more to spare. The worst anywhere is a harmonic folding back from just over Nyquist, as Saturation's is, and stays at least 6.2 dB under 1x's (5 kHz at 20 dB of Gain Reduction, at 48 kHz, at 8x).
+
+The harmonics move toward the shape's own as the factor rises, since ADAA's half-sample average droops them less: FET's 5th at 10 dB of Gain Reduction is −56.60 dB at 1x and −56.46 dB at 8x. The Engine's harmonics in High Quality at N are checked against `colour --oversampling N`'s.
+
+    python3 tools/dyn-lab/dynlab.py colour --character vca --oversampling 2
+    python3 tools/dyn-lab/dynlab.py colour --character vca --oversampling 4
+    python3 tools/dyn-lab/dynlab.py colour --character vca --oversampling 8
+    python3 tools/dyn-lab/dynlab.py colour --character vca --colour 50 --oversampling 2
+    python3 tools/dyn-lab/dynlab.py colour --character vca --colour 50 --oversampling 4
+    python3 tools/dyn-lab/dynlab.py colour --character vca --colour 50 --oversampling 8
+    python3 tools/dyn-lab/dynlab.py colour --character fet --oversampling 2
+    python3 tools/dyn-lab/dynlab.py colour --character fet --oversampling 4
+    python3 tools/dyn-lab/dynlab.py colour --character fet --oversampling 8
+    python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50 --oversampling 2
+    python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50 --oversampling 4
+    python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50 --oversampling 8
 
 ## Auto Release
 
