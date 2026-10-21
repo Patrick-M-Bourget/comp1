@@ -38,7 +38,7 @@ public:
             gain.setTarget (target);
     }
 
-    void process (float* const* channels, int numChannels, int numSamples)
+    void process (AudioBlock block)
     {
         // Settled on exactly 1 at 0 dB, so the output is the input, bit for bit, with no work.
         if (gain.isSettled() && gain.value() == 1.0)
@@ -46,16 +46,16 @@ public:
         // The gain glides a sample at a time; once it has settled, next() would return its goal exactly, so the rest
         // is scaled by that as a constant, sample for sample the same.
         int i = 0;
-        for (; i < numSamples && ! gain.isSettled(); ++i)
+        for (; i < block.numSamples && ! gain.isSettled(); ++i)
         {
             const double g = gain.next();
-            for (int ch = 0; ch < numChannels; ++ch)
-                channels[ch][i] = static_cast<float> (g * channels[ch][i]);
+            for (int ch = 0; ch < block.numChannels; ++ch)
+                block.channels[ch][i] = static_cast<float> (g * block.channels[ch][i]);
         }
         const double g = gain.value();
-        for (int ch = 0; ch < numChannels; ++ch)
-            for (int n = i; n < numSamples; ++n)
-                channels[ch][n] = static_cast<float> (g * channels[ch][n]);
+        for (int ch = 0; ch < block.numChannels; ++ch)
+            for (int n = i; n < block.numSamples; ++n)
+                block.channels[ch][n] = static_cast<float> (g * block.channels[ch][n]);
     }
 
 private:
@@ -121,7 +121,7 @@ void Engine::process (AudioBlock main, const ConstAudioBlock*)
         for (int ch = 0; ch < channels; ++ch)
             impl->subBlock[static_cast<std::size_t> (ch)] = main.channels[ch] + start;
 
-        impl->outputGain.process (impl->subBlock.data(), channels, count);
+        impl->outputGain.process ({ impl->subBlock.data(), channels, count });
 
         impl->gridPosition += count;
         if (impl->gridPosition == plugkit::runSamples)
