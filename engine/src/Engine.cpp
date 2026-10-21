@@ -1,8 +1,12 @@
 #include "comp1/Engine.h"
 
 #include "Clean.h"
+#include "DelayLine.h"
 #include "Detection.h"
+#include "Lookahead.h"
+#include "ModeFade.h"
 #include "SaturationStage.h"
+#include "comp1/Latency.h"
 
 #include <plugkit/LatestValue.h>
 #include <plugkit/NoSubnormals.h>
@@ -194,6 +198,10 @@ struct Engine::Impl
     Compressor compressor;
     SaturationStage saturation;
     GlidingGain autoGain, outputGain;
+    // High Quality's delays (comp1/Latency.h): the Lookahead budget, around the compressor, and the reserves' padding.
+    LookaheadStage lookahead;
+    DelayLine oversamplingPadding, limiterPadding;
+    ModeFade modeFade;
 
     void applySettings()
     {
@@ -206,6 +214,11 @@ struct Engine::Impl
         autoGain.setTargetDb (settings.autoGain ? clean::autoGainDb (curveOf (settings)) : 0.0, snapToSettings);
         saturation.setSettings (settings, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
+        lookahead.setLookahead (settings.lookaheadMs, snapToSettings);
+        if (snapToSettings)
+            modeFade.reset (settings.processingMode);
+        else
+            modeFade.setTarget (settings.processingMode);
         snapToSettings = false;
     }
 };
@@ -223,6 +236,10 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->saturation.prepare (sampleRate, numChannels);
     impl->autoGain.prepare (sampleRate);
     impl->outputGain.prepare (sampleRate);
+    impl->lookahead.prepare (sampleRate, numChannels, plugkit::runSamples);
+    impl->oversamplingPadding.prepare (numChannels, oversamplingReserveSamples);
+    impl->limiterPadding.prepare (numChannels, limiterReserveSamples (sampleRate));
+    impl->modeFade.prepare (sampleRate);
     impl->snapToSettings = true;
 }
 
@@ -244,8 +261,10 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
     const int sidechainChannels = sidechainConnected ? std::min (sidechain->numChannels, 2) : 0;
     for (int start = 0, count = 0; start < main.numSamples; start += count)
     {
-        // The rest of the grid's run, or of the block where it ends first, leaving the run open.
-        count = std::min (plugkit::runSamples - impl->gridPosition, main.numSamples - start);
+        // The rest of the grid's run, or of the block where it ends first, leaving the run open; or less, so that a
+        // Processing Mode switch swaps paths between pieces.
+        const auto path = impl->modeFade.startPiece();
+        count = std::min ({ plugkit::runSamples - impl->gridPosition, main.numSamples - start, impl->modeFade.pieceLimit() });
         for (int ch = 0; ch < channels; ++ch)
         {
             float* samples = main.channels[ch] + start;
@@ -261,9 +280,9 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
 
         // The Wet path: Saturation Before, the detection stage, fed the compressor's input as the Internal signal,
         // then the compressor, Saturation After, Auto Gain and Output Gain; Saturation runs at one of its two
-        // positions. The compressor's settings step at the start of each run, wherever the
-        // host's blocks fall; Auto Gain and Output Gain glide a sample at a time with next(), so where the pieces fall
-        // changes nothing either. From the sample a new setting is taken (the start of the host's block, so the host
+        // positions. The compressor's settings step at the start of each run, wherever the host's blocks fall;
+        // Saturation, Auto Gain and Output Gain glide a sample at a time with next(), so where the pieces fall changes
+        // nothing either. From the sample a new setting is taken (the start of the host's block, so the host
         // decides when a change lands), the output is the same sample for sample however the audio is cut.
         const AudioBlock wet { impl->subBlock.data(), channels, count };
         if (impl->gridPosition == 0)
@@ -272,11 +291,23 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         const auto detected = impl->detection.process ({ wet.channels, wet.numChannels, wet.numSamples },
                                                        sidechainConnected ? &sidechainBlock : nullptr);
         if (impl->gridPosition == 0)
+        {
             impl->compressor.startRun();
-        impl->compressor.process (detected, wet);
+            impl->lookahead.startRun();
+        }
+        // In High Quality the audio is delayed by the Lookahead budget and the detection signal by less, so the
+        // compressor meets the audio Lookahead early; then the Oversampling padding before the Dry/Wet sum, and the
+        // Limiter padding. Last, the mode fade, which swaps the paths in silence.
+        const bool highQuality = path == ProcessingMode::HighQuality;
+        impl->compressor.process (impl->lookahead.process (detected, wet, highQuality), wet);
         impl->saturation.process (SaturationPosition::After, wet);
         impl->autoGain.process (wet);
+        if (highQuality)
+            impl->oversamplingPadding.process (wet);
         impl->outputGain.process (wet);
+        if (highQuality)
+            impl->limiterPadding.process (wet);
+        impl->modeFade.process (wet);
 
         impl->gridPosition += count;
         if (impl->gridPosition == plugkit::runSamples)

@@ -104,7 +104,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 floatParameter (holdId, "Hold", skewedRange (parameterRanges::hold, 50.0f), defaults.holdMs, withText (1, "ms")),
                 floatParameter (rangeId, "Range", linearRange (parameterRanges::range), defaults.rangeDb, withText (2, "dB")),
                 std::make_unique<juce::AudioParameterBool> (juce::ParameterID { autoGainId, 1 }, "Auto Gain", defaults.autoGain));
-    // Saturation Position's choices are frozen in this order (ADR 0003), SaturationPosition's.
+    // Saturation Position's choices are SaturationPosition's, stored in sessions by index, so their order never
+    // changes (ADR 0003).
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { saturationId, 1 }, "Saturation", defaults.saturation),
                 floatParameter (driveId, "Drive", linearRange (parameterRanges::drive), defaults.driveDb, withText (2, "dB")),
                 std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { saturationPositionId, 1 },
@@ -114,6 +115,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     // Linear in dB, symmetric about 0 dB, which is the default and the range's exact centre: the default passes audio
     // through bit for bit.
     layout.add (floatParameter (outputGainId, "Output Gain", linearRange (parameterRanges::outputGain), defaults.outputGainDb, withText (2, "dB")));
+    // Processing Mode's choices are stored in sessions by index, so their order never changes (ADR 0003). Hosts can't
+    // automate it: a switch changes the latency the host compensates for, and fades the output out and in.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { processingModeId, 1 },
+                                                              "Processing Mode",
+                                                              juce::StringArray { "Zero Latency", "High Quality" },
+                                                              static_cast<int> (defaults.processingMode),
+                                                              juce::AudioParameterChoiceAttributes().withAutomatable (false)),
+                floatParameter (lookaheadId, "Lookahead", linearRange (parameterRanges::lookahead), defaults.lookaheadMs, withText (2, "ms")));
     return layout;
 }
 
@@ -130,7 +139,9 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       saturation (parameters.getRawParameterValue (saturationId)),
       drive (parameters.getRawParameterValue (driveId)),
       saturationPosition (parameters.getRawParameterValue (saturationPositionId)),
-      outputGain (parameters.getRawParameterValue (outputGainId))
+      outputGain (parameters.getRawParameterValue (outputGainId)),
+      processingMode (parameters.getRawParameterValue (processingModeId)),
+      lookahead (parameters.getRawParameterValue (lookaheadId))
 {
 }
 
@@ -150,7 +161,9 @@ Settings SettingsReader::read() const
              .driveDb = plain (drive),
              .saturationPosition = saturationPosition->load (std::memory_order_relaxed) < 0.5f ? SaturationPosition::Before
                                                                                                : SaturationPosition::After,
-             .outputGainDb = plain (outputGain) };
+             .outputGainDb = plain (outputGain),
+             .processingMode = processingMode->load (std::memory_order_relaxed) >= 0.5f ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency,
+             .lookaheadMs = plain (lookahead) };
 }
 
 } // namespace comp1::parameters

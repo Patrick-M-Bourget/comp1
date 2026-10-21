@@ -1,5 +1,7 @@
 #include "PluginProcessor.h"
 
+#include "comp1/Latency.h"
+
 #include <cmath>
 
 namespace comp1
@@ -12,12 +14,27 @@ PluginProcessor::PluginProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       parameters (*this, nullptr, "comp1", parameters::createLayout())
 {
+    parameters.addParameterListener (parameters::processingModeId, &processingModeListener);
+}
+
+PluginProcessor::~PluginProcessor()
+{
+    parameters.removeParameterListener (parameters::processingModeId, &processingModeListener);
 }
 
 void PluginProcessor::prepareToPlay (double sampleRate, int maximumExpectedSamplesPerBlock)
 {
     engine.prepare (sampleRate, maximumExpectedSamplesPerBlock, getMainBusNumOutputChannels());
     publishedSincePrepare = false;
+    preparedSampleRate = sampleRate;
+    reportLatency();
+}
+
+void PluginProcessor::reportLatency()
+{
+    // Before the first prepareToPlay() there is no sample rate to report a latency at; prepareToPlay() reports it.
+    if (const double sampleRate = preparedSampleRate; sampleRate > 0.0)
+        setLatencySamples (comp1::latencySamples (reader.read().processingMode, sampleRate));
 }
 
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -124,6 +141,7 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
             setting.setProperty (valueProperty, restored, nullptr);
     }
     parameters.replaceState (state);
+    reportLatency();
 }
 
 } // namespace comp1

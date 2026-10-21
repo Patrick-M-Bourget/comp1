@@ -3,13 +3,15 @@
 
 Models the Clean Character after Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor
 Design — A Tutorial and Analysis" (J. Audio Eng. Soc. 60(6)): feedforward, with a soft-knee gain computer
-and a smooth branching peak detector in the log domain, with Hold, Auto Release and Range, and Auto Gain after it.
-Standard library only. See tools/dyn-lab/USAGE.md for every command.
+and a smooth branching peak detector in the log domain, with Hold, Auto Release and Range, and Auto Gain after it;
+and High Quality's Lookahead and fixed latency. Standard library only. See tools/dyn-lab/USAGE.md for every command.
 """
 
 import argparse
 import math
+import os
 from dataclasses import dataclass, fields, replace
+from fractions import Fraction
 from math import inf
 
 # The compressor's parameter ranges, low to high, named once. The check harness's docs stage fails when one
@@ -30,6 +32,10 @@ RELEASE_RANGE = (5, 5000)
 HOLD_RANGE = (0, 500)
 # ADR 0008: FabFilter publishes no Range limits; 60 dB is the most the lowest Threshold at Ratio ∞ can take off.
 RANGE_RANGE = (0, 60)
+# ADR 0001: High Quality's fixed latency holds 5 ms of Lookahead. A Processing Mode setting, not a Character's, so it
+# stays out of Settings.
+LOOKAHEAD_RANGE = (0, 5)
+LOOKAHEAD_DEFAULT = 0.0
 
 # The sample rates the Engine's timing tests run at.
 SAMPLE_RATES = (44100, 48000, 96000)
@@ -78,16 +84,22 @@ def _shown(value):
     return "∞" if value == math.inf else f"{value:g}"
 
 
+def check_range(name, value, value_range, unit):
+    """Raises ValueError naming the setting and its range when value is outside it."""
+    low, high = value_range
+    if not low <= value <= high:
+        raise ValueError(f"{name.capitalize()} {_shown(value)}{unit} is outside its range, "
+                         f"{_shown(low)} to {_shown(high)}{unit}")
+
+
 def check_ranges(settings):
     """Raises ValueError naming the first setting outside its range, and the range. A switch has no range."""
     for field in fields(settings):
         value = getattr(settings, field.name)
         if isinstance(value, bool):
             continue
-        (low, high), unit = PARAMETERS[field.name]
-        if not low <= value <= high:
-            raise ValueError(f"{field.name.capitalize()} {_shown(value)}{unit} is outside its range, "
-                             f"{_shown(low)} to {_shown(high)}{unit}")
+        value_range, unit = PARAMETERS[field.name]
+        check_range(field.name, value, value_range, unit)
 
 
 def gain_computer(level_db, settings):
@@ -252,11 +264,16 @@ def _times(detector, level_db, start, end, fractions):
     return reached, held
 
 
-def step_response(settings, fs):
+def step_response(settings, fs, lookahead=LOOKAHEAD_DEFAULT):
     """Steps the Detection Level from STEP_DB below Threshold to STEP_DB above it and back, from steady
     state, and measures the Gain Reduction's Attack, Release and Hold. None when there is no Gain
     Reduction to measure (Ratio 1:1 or Range 0 dB). Steady state above Threshold is sustained compression, so with
-    Auto Release on, its sustain state starts full: the longest release."""
+    Auto Release on, its sustain state starts full: the longest release.
+
+    With Lookahead (ms), the detector meets each step Lookahead before the listener hears it in the delayed audio.
+    Attack's times count from the step the listener hears, so they come Lookahead earlier and can be negative: the
+    Gain Reduction starts before the step. Hold and Release are durations from when the detector meets the step down,
+    so Lookahead doesn't move them."""
     quiet, loud = settings.threshold - STEP_DB, settings.threshold + STEP_DB
     low, high = gain_reduction(quiet, settings), gain_reduction(loud, settings)
     if high - low < 1e-9:
@@ -266,7 +283,69 @@ def step_response(settings, fs):
     (attack_63, attack_90), _ = _times(Detector(settings, fs, low), loud, low, high, fractions)
     sustained = AutoRelease(fs, sustain=1.0, heard=RUN_SAMPLES)
     (release_63, release_90), held = _times(Detector(settings, fs, high, sustained), quiet, high, low, fractions)
-    return Step(attack_63 * ms, attack_90 * ms, (release_63 - held) * ms, (release_90 - held) * ms, held * ms)
+    return Step(attack_63 * ms - lookahead, attack_90 * ms - lookahead, (release_63 - held) * ms,
+                (release_90 - held) * ms, held * ms)
+
+
+# --- Processing Mode: latency ---------------------------------------------------------------------
+
+# High Quality reports one fixed latency per sample rate, whatever the settings (ADR 0001), so the host's delay
+# compensation never moves while Oversampling or Lookahead do. It is three parts, each a delay in whole host samples
+# at its own place in the chain; Zero Latency has none of them.
+
+# Reserved for Oversampling (#10): the delay of its up- and down-sampling filters. ADR 0001 caps the internal rate at
+# about 384 kHz, so the largest factor halves each time the rate doubles, and the filters cost about the same number
+# of host samples at every rate: a fixed count, not a time. A linear-phase filter delays by half its length at its
+# own rate, so 2x stages of N taps, up and down, cost about N/2 host samples for the first, N/4 for the second and N/8
+# for the third: 128 holds the three stages of 8x at up to about 145 taps each, which #10 designs within it.
+OVERSAMPLING_RESERVE_SAMPLES = 128
+# The Lookahead budget: Lookahead's top, so every Lookahead fits within it. The audio is delayed by the whole budget
+# and the detection signal by the budget less Lookahead, so moving Lookahead moves only the detection signal.
+LOOKAHEAD_BUDGET_MS = LOOKAHEAD_RANGE[1]
+# Reserved for the Limiter (#18): its own lookahead, about 1 ms (ADR 0001), time to bring the gain down smoothly
+# ahead of a peak, whatever the compressor's Lookahead is.
+LIMITER_RESERVE_MS = 1.0
+
+# A Processing Mode switch fades the output out over MODE_FADE_MS, swaps paths in the silence, and fades the new one
+# in over MODE_FADE_MS, each fade on a smoothstep curve; it never crossfades between the two paths, whose delays
+# differ (ADR 0001). Smoothstep starts and ends flat, with no corner in the gain, so the fade adds no click: over
+# 10 ms its spectrum falls away fast above about 100 Hz. 10 ms is the shortest of ADR 0001's 10–20 ms, so the whole
+# switch is a dip of about 20 ms, which reads as the switch itself rather than as a dropout.
+MODE_FADE_MS = 10.0
+
+MODES = ("zero latency", "high quality")
+PLUGKIT_CONF = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            "plugkit.conf")
+
+
+def supported_rates():
+    """The sample rates comp1 supports, in Hz: plugkit.conf's SAMPLE_RATES, the one list pluginval and the tests run
+    at."""
+    with open(PLUGKIT_CONF) as conf:
+        for line in conf:
+            if line.startswith("SAMPLE_RATES="):
+                return tuple(int(rate) for rate in line.strip().split("=", 1)[1].split(","))
+    raise ValueError(f"{PLUGKIT_CONF} has no SAMPLE_RATES")
+
+
+def _whole_samples(ms, fs):
+    """ms at fs in host samples, rounded up so the time always fits. Exact: a rate like 44.1 kHz times 1 ms is 44.1,
+    which binary floating point holds a hair over or under."""
+    return math.ceil(Fraction(ms) * Fraction(fs) / 1000)
+
+
+def high_quality_parts(fs):
+    """High Quality's latency at fs, in host samples: the Oversampling reserve, the Lookahead budget and the Limiter
+    reserve, in that order."""
+    return (OVERSAMPLING_RESERVE_SAMPLES, _whole_samples(LOOKAHEAD_BUDGET_MS, fs),
+            _whole_samples(LIMITER_RESERVE_MS, fs))
+
+
+def latency(mode, fs):
+    """The latency a Processing Mode (one of MODES) reports at fs, in host samples."""
+    if mode not in MODES:
+        raise ValueError(f"Processing Mode {mode!r} is not one of {', '.join(MODES)}")
+    return sum(high_quality_parts(fs)) if mode == "high quality" else 0
 
 
 # --- Clean: Auto Gain ----------------------------------------------------------------------------
@@ -730,6 +809,7 @@ def timing_options(parser):
     parser.add_argument("--release", type=float, default=defaults.release, metavar="ms")
     parser.add_argument("--hold", type=float, default=defaults.hold, metavar="ms")
     parser.add_argument("--rates", type=float, nargs="+", default=list(SAMPLE_RATES), metavar="Hz")
+    parser.add_argument("--lookahead", type=float, default=LOOKAHEAD_DEFAULT, metavar="ms")
 
 
 def step_options(parser):
@@ -816,23 +896,54 @@ def report_transfer(settings):
 @command("step", options=step_options)
 def run_step(args):
     settings = settings_from(args)
+    check_range("lookahead", args.lookahead, LOOKAHEAD_RANGE, " ms")
     _check_rates(args.rates)
-    report_step(settings, args.rates)
+    report_step(settings, args.rates, args.lookahead)
 
 
-def report_step(settings, sample_rates=SAMPLE_RATES):
+def report_step(settings, sample_rates=SAMPLE_RATES, lookahead=LOOKAHEAD_DEFAULT):
     """The step response's times at each sample rate, for a level step STEP_DB either side of Threshold."""
     print(f"Step ±{STEP_DB:g} dB around Threshold, {_transfer_heading(settings)}, {_timing_heading(settings)}, "
-          f"Auto Release {'on' if settings.auto_release else 'off'}")
-    print("times in ms; Release counts from when it begins, after Hold; 63% is 1 - 1/e")
+          f"Auto Release {'on' if settings.auto_release else 'off'}, Lookahead {lookahead:g} ms")
+    print("times in ms; Attack counts from the step in the delayed audio the listener hears, which the detector meets "
+          "Lookahead earlier; Hold counts from when the detector meets the step down, and Release from when it "
+          "begins, after Hold; 63% is 1 - 1/e")
     print(f"{'rate Hz':>8} {'attack 63%':>11} {'attack 90%':>11} {'release 63%':>12} {'release 90%':>12} {'hold':>9}")
     for fs in sample_rates:
-        step = step_response(settings, fs)
+        step = step_response(settings, fs, lookahead)
         if step is None:
             print(f"{fs:8g}  no Gain Reduction to measure at Ratio 1:1 or Range 0 dB")
             continue
         print(f"{fs:8g} {step.attack_63:11.4f} {step.attack_90:11.4f} {step.release_63:12.4f} "
               f"{step.release_90:12.4f} {step.hold:9.4f}")
+
+
+def latency_options(parser):
+    parser.add_argument("--rates", type=float, nargs="+", default=None, metavar="Hz",
+                        help="default: plugkit.conf's SAMPLE_RATES")
+
+
+@command("latency", options=latency_options)
+def run_latency(args):
+    sample_rates = supported_rates() if args.rates is None else args.rates
+    _check_rates(sample_rates)
+    report_latency(sample_rates)
+
+
+def report_latency(sample_rates):
+    """Each Processing Mode's latency at each sample rate, High Quality's three parts, and the mode switch's fades."""
+    print("Latency in host samples: Zero Latency, and High Quality, the sum of its three parts")
+    print(f"High Quality: the Oversampling reserve ({OVERSAMPLING_RESERVE_SAMPLES} samples), the Lookahead budget "
+          f"({LOOKAHEAD_BUDGET_MS:g} ms) and the Limiter reserve ({LIMITER_RESERVE_MS:g} ms), each rounded up to "
+          f"whole samples")
+    print(f"{'rate Hz':>8} {'zero latency':>13} {'high quality':>13} {'oversampling':>13} {'lookahead':>10} "
+          f"{'limiter':>8}")
+    for fs in sample_rates:
+        oversampling, lookahead, limiter = high_quality_parts(fs)
+        print(f"{fs:8g} {latency('zero latency', fs):13d} {latency('high quality', fs):13d} {oversampling:13d} "
+              f"{lookahead:10d} {limiter:8d}")
+    print(f"a Processing Mode switch fades out over {MODE_FADE_MS:g} ms and in over {MODE_FADE_MS:g} ms, "
+          f"each on a smoothstep curve (MODE_FADE_MS)")
 
 
 def autogain_options(parser):

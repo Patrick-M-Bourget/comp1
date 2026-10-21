@@ -28,6 +28,7 @@ inline constexpr ParameterRange hold { 0.0, 500.0 };        // ms
 inline constexpr ParameterRange range { 0.0, 60.0 };        // dB; comp1's own: its top sets no limit
 inline constexpr ParameterRange drive { 0.0, 24.0 };        // dB; comp1's own
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own
+inline constexpr ParameterRange lookahead { 0.0, 5.0 };     // ms; ADR 0001's budget for it
 } // namespace parameterRanges
 
 // Where the Saturation stage sits on the Wet path. Hosts store it as a choice by index, so the order is frozen
@@ -36,6 +37,14 @@ enum class SaturationPosition
 {
     Before, // ahead of the compressor and its detection: the compressor reacts to the saturated signal
     After,  // after the compressor, before Auto Gain: the compressor reacts to the unsaturated signal
+};
+
+// How the whole plugin trades latency against quality (ADR 0001); comp1/Latency.h gives each one's latency. Stored in
+// sessions in this order, which never changes (ADR 0003).
+enum class ProcessingMode
+{
+    ZeroLatency,
+    HighQuality,
 };
 
 // Everything the Engine plays, in one value: the Plugin Shell builds it from the host parameters and hands it over
@@ -63,6 +72,10 @@ struct Settings
 
     // Output Gain, in dB: applied to the whole output after Dry and Wet are summed, before the Limiter.
     double outputGainDb = 0.0;
+
+    // Whole-plugin: the Processing Mode, and Lookahead in ms, which High Quality alone reads.
+    ProcessingMode processingMode = ProcessingMode::ZeroLatency;
+    double lookaheadMs = 0.0;
 
 #if defined(__GNUC__)
     #pragma GCC diagnostic push

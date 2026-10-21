@@ -147,6 +147,10 @@ const std::vector<Jump>& jumps()
                s.saturationPosition = SaturationPosition::Before;
            },
             saturating } },
+        { "Lookahead", [] (Settings& s, bool b) {
+             s.processingMode = ProcessingMode::HighQuality; // Zero Latency doesn't read it
+             s.lookaheadMs = b ? 5.0 : 0.0;
+         } },
     };
     return all;
 }
@@ -281,4 +285,14 @@ TEST_CASE ("While a compressor setting glides, the output is the same however th
         test::processInBlocks (engine, *audio, audio == &whole ? wholeCut : cut);
     }
     CHECK (cutUp == whole);
+}
+
+TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click")
+{
+    const auto host = anyHost();
+    CAPTURE (host.sampleRate, host.blockSize);
+    const auto output = playTone (host, [] (double time, Settings& s) {
+        s.processingMode = alternating (time) ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency;
+    });
+    CHECK (discontinuity (output, host.sampleRate) < threshold);
 }
