@@ -22,14 +22,15 @@ namespace comp1
 class LookaheadStage
 {
 public:
-    // Allocates for up to numChannels audio and detection channels of up to maxSamples samples a piece.
+    // Allocates for up to numChannels audio channels, and as many detection channels as the detection stage gives, of
+    // up to maxSamples samples a piece.
     void prepare (double newSampleRate, int numChannels, int maxSamples)
     {
         sampleRate = newSampleRate;
         budget = lookaheadBudgetSamples (sampleRate);
         audioDelay.prepare (numChannels, budget);
-        detectionDelay.prepare (numChannels, budget);
-        const auto channels = static_cast<std::size_t> (std::max (numChannels, 0));
+        detectionDelay.prepare (DetectionStage::maxChannels, budget);
+        const auto channels = static_cast<std::size_t> (DetectionStage::maxChannels);
         storage.assign (channels, std::vector<float> (static_cast<std::size_t> (std::max (maxSamples, 0))));
         pointers.assign (channels, nullptr);
         for (std::size_t ch = 0; ch < channels; ++ch)
@@ -78,7 +79,9 @@ public:
         return { .channels = pointers.data(),
                  .numChannels = detected.numChannels,
                  .numSamples = detected.numSamples,
-                 .followedBy = detected.followedBy };
+                 .followedBy = detected.followedBy,
+                 .midChannel = detected.midChannel,
+                 .sideChannel = detected.sideChannel };
     }
 
 private:

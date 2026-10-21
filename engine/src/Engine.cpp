@@ -9,6 +9,7 @@
 
 #include <plugkit/LatestValue.h>
 #include <plugkit/NoSubnormals.h>
+#include <plugkit/Placement.h>
 #include <plugkit/RunGrid.h>
 #include <plugkit/Smoother.h>
 #include <plugkit/Units.h>
@@ -34,8 +35,22 @@ clean::Curve curveOf (const Settings& settings)
              .rangeDb = settings.rangeDb };
 }
 
-// The compressor: the Clean Character's gain computer and detector on every sample of every channel, each main channel
-// detected from the detection channel it follows, with Stereo Link between the two channels of a stereo track.
+// comp1's Stereo Placement as plugkit routes it.
+plugkit::StereoPlacement routed (StereoPlacement placement)
+{
+    switch (placement)
+    {
+        case StereoPlacement::Stereo: return plugkit::StereoPlacement::Stereo;
+        case StereoPlacement::Mid: return plugkit::StereoPlacement::Mid;
+        case StereoPlacement::Side: return plugkit::StereoPlacement::Side;
+    }
+    return plugkit::StereoPlacement::Stereo;
+}
+
+// The compressor: the Clean Character's gain computer and detector on the part of the signal Stereo Placement picks.
+// With Stereo, on every channel, each main channel detected from the detection channel it follows, with Stereo Link
+// between the two channels of a stereo track; with Mid or Side, on that part alone, detected from the detection
+// signal's own Mid or Side. A mono track is compressed as Stereo, whatever Placement is stored.
 //
 // Its settings glide with plugkit's Smoother, a step of a whole run at each run's start, so a change, Host Automation
 // included, is click-free and glides the same at every host block size; the gain computer and detector read the
@@ -47,6 +62,7 @@ public:
     void prepare (double newSampleRate, int numChannels)
     {
         sampleRate = newSampleRate;
+        stereoTrack = numChannels == 2;
         detectors.assign (static_cast<std::size_t> (std::max (numChannels, 0)), {});
         reductions.assign (detectors.size(), 0.0);
         for (auto& detector : detectors)
@@ -70,6 +86,7 @@ public:
         }
         if (snap)
             update();
+        placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
         // Auto Release switches without a glide: the switch changes only how fast the gain comes back, not where it is.
         autoRelease = settings.autoRelease;
     }
@@ -100,6 +117,15 @@ public:
     // to link.
     void process (const DetectionSignal& detection, AudioBlock audio)
     {
+        if (placement == plugkit::StereoPlacement::Stereo)
+            processStereo (detection, audio);
+        else
+            processPart (placement == plugkit::StereoPlacement::Mid, detection, audio);
+    }
+
+private:
+    void processStereo (const DetectionSignal& detection, AudioBlock audio)
+    {
         const bool linked = audio.numChannels > 1;
         for (int i = 0; i < audio.numSamples; ++i)
         {
@@ -123,7 +149,28 @@ public:
         }
     }
 
-private:
+    // Mid (true) or Side alone, on a stereo track: the gain g goes on as a change to Left and Right, (g - 1) times the
+    // part added to Left and, for Mid, to Right, or for Side taken from it. Never an encode then a decode, which float
+    // doesn't round-trip: with no Gain Reduction the output is the input, bit for bit, and the other part passes.
+    void processPart (bool mid, const DetectionSignal& detection, AudioBlock audio)
+    {
+        const float* detected = mid ? detection.mid() : detection.side();
+        auto& detector = detectors.front();
+        float* left = audio.channels[0];
+        float* right = audio.channels[1];
+        for (int i = 0; i < audio.numSamples; ++i)
+        {
+            const double levelDb = plugkit::gainToDecibels (std::abs (static_cast<double> (detected[i])));
+            const double reduction = detector.process (clean::gainReduction (levelDb, curve), timing);
+            if (reduction <= 0.0)
+                continue;
+            const float part = mid ? plugkit::encodeMid (left[i], right[i]) : plugkit::encodeSide (left[i], right[i]);
+            const double change = (plugkit::decibelsToGain (-reduction) - 1.0) * part;
+            left[i] = static_cast<float> (left[i] + change);
+            right[i] = static_cast<float> (mid ? right[i] + change : right[i] - change);
+        }
+    }
+
     enum Glide : std::size_t { threshold, inverseRatio, knee, range, logAttack, logRelease, hold, link, count };
     // Close enough to count as arrived, in each glide's units (dB, 1/Ratio, log ms, ms, a fraction): far below what
     // can be heard.
@@ -147,6 +194,8 @@ private:
     double releaseMs = 100.0;
     bool autoRelease = false;
     double stereoLink = 1.0;                // 0 to 1
+    bool stereoTrack = false;
+    plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo;
     std::vector<clean::Detector> detectors; // per channel
     std::vector<double> reductions;         // per channel, each detector's Gain Reduction at the sample
 };

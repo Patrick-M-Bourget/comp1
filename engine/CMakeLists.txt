@@ -7,7 +7,8 @@ add_library(comp1::engine ALIAS comp1_engine)
 
 target_include_directories(comp1_engine PUBLIC include PRIVATE src)
 target_compile_features(comp1_engine PUBLIC cxx_std_20)
-# plugkit's shared Engine pieces: the Smoother, the run grid, subnormal flushing, the settings hand-off (ADR 0006).
+# plugkit's shared Engine pieces: the Smoother, the run grid, subnormal flushing, the settings hand-off, Stereo
+# Placement's routing (ADR 0006).
 target_link_libraries(comp1_engine PRIVATE plugkit::dsp)
 
 if(MSVC)
