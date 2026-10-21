@@ -35,12 +35,12 @@ clean::Curve curveOf (const Settings& settings)
 }
 
 // The compressor: the Clean Character's gain computer and detector on every sample of every channel, each main channel
-// detected from the detection channel it follows and compressed on its own.
+// detected from the detection channel it follows, with Stereo Link between the two channels of a stereo track.
 //
 // Its settings glide with plugkit's Smoother, a step of a whole run at each run's start, so a change, Host Automation
 // included, is click-free and glides the same at every host block size; the gain computer and detector read the
 // settings as they stand for the run. Ratio glides as 1/Ratio, so ∞:1 (0) is reached; Attack and Release glide in
-// log time, as their host parameters move.
+// log time, as their host parameters move; Stereo Link glides as a fraction, 0 to 1.
 class Compressor
 {
 public:
@@ -48,6 +48,7 @@ public:
     {
         sampleRate = newSampleRate;
         detectors.assign (static_cast<std::size_t> (std::max (numChannels, 0)), {});
+        reductions.assign (detectors.size(), 0.0);
         for (auto& detector : detectors)
             detector.prepare (sampleRate);
         for (auto& setting : glides)
@@ -58,7 +59,8 @@ public:
     void setSettings (const Settings& settings, bool snap)
     {
         const double targets[] = { settings.thresholdDb, 1.0 / settings.ratio, settings.kneeDb, settings.rangeDb,
-                                   std::log (settings.attackMs), std::log (settings.releaseMs), settings.holdMs };
+                                   std::log (settings.attackMs), std::log (settings.releaseMs), settings.holdMs,
+                                   settings.stereoLink / 100.0 };
         for (std::size_t s = 0; s < count; ++s)
         {
             if (snap)
@@ -91,17 +93,29 @@ public:
 
     // Applies gain to audio, sample for sample, from the detection signal of the same samples: each main channel's
     // Detection Level comes from the detection channel it follows, never from the audio.
+    //
+    // Stereo Link, after each channel's detector: each channel's Gain Reduction is its own plus Stereo Link times the
+    // larger of the two less its own, worked out as (1 - Stereo Link) times its own plus Stereo Link times the larger,
+    // so that 0% is exactly each channel's own and 100% exactly the larger, the same on both. A mono track has nothing
+    // to link.
     void process (const DetectionSignal& detection, AudioBlock audio)
     {
-        for (int ch = 0; ch < audio.numChannels; ++ch)
+        const bool linked = audio.numChannels > 1;
+        for (int i = 0; i < audio.numSamples; ++i)
         {
-            auto& detector = detectors[static_cast<std::size_t> (ch)];
-            const float* detected = detection.channelFollowedBy (ch);
-            for (int i = 0; i < audio.numSamples; ++i)
+            double largest = 0.0;
+            for (int ch = 0; ch < audio.numChannels; ++ch)
             {
                 // The Detection Level: the detection signal's peak level, in dB where a full-scale sine reads 0.
-                const double levelDb = plugkit::gainToDecibels (std::abs (static_cast<double> (detected[i])));
-                const double reduction = detector.process (clean::gainReduction (levelDb, curve), timing);
+                const double levelDb = plugkit::gainToDecibels (std::abs (static_cast<double> (detection.channelFollowedBy (ch)[i])));
+                const auto c = static_cast<std::size_t> (ch);
+                reductions[c] = detectors[c].process (clean::gainReduction (levelDb, curve), timing);
+                largest = std::max (largest, reductions[c]);
+            }
+            for (int ch = 0; ch < audio.numChannels; ++ch)
+            {
+                const double own = reductions[static_cast<std::size_t> (ch)];
+                const double reduction = linked ? (1.0 - stereoLink) * own + stereoLink * largest : own;
                 float& sample = audio.channels[ch][i];
                 if (reduction > 0.0)
                     sample = static_cast<float> (plugkit::decibelsToGain (-reduction) * sample);
@@ -110,8 +124,9 @@ public:
     }
 
 private:
-    enum Glide : std::size_t { threshold, inverseRatio, knee, range, logAttack, logRelease, hold, count };
-    // Close enough to count as arrived, in each glide's units (dB, 1/Ratio, log ms, ms): far below what can be heard.
+    enum Glide : std::size_t { threshold, inverseRatio, knee, range, logAttack, logRelease, hold, link, count };
+    // Close enough to count as arrived, in each glide's units (dB, 1/Ratio, log ms, ms, a fraction): far below what
+    // can be heard.
     static constexpr double arrivalTolerance = 1.0e-7;
 
     void update()
@@ -122,6 +137,7 @@ private:
                   .rangeDb = glides[range].value() };
         releaseMs = std::exp (glides[logRelease].value());
         timing = clean::timing (std::exp (glides[logAttack].value()), releaseMs, glides[hold].value(), sampleRate);
+        stereoLink = glides[link].value();
     }
 
     double sampleRate = 44100.0;
@@ -130,7 +146,9 @@ private:
     clean::Timing timing;
     double releaseMs = 100.0;
     bool autoRelease = false;
+    double stereoLink = 1.0;                // 0 to 1
     std::vector<clean::Detector> detectors; // per channel
+    std::vector<double> reductions;         // per channel, each detector's Gain Reduction at the sample
 };
 
 // A gain applied to every channel, in dB: Auto Gain, and Output Gain. It glides to each new target with plugkit's

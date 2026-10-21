@@ -31,6 +31,7 @@ add_executable(comp1_engine_tests
     engine/RealtimeSafetyTest.cpp
     engine/SettingsHandoffTest.cpp
     engine/StepResponseTest.cpp
+    engine/StereoLinkTest.cpp
     engine/SubnormalsTest.cpp
     engine/TransferCurveTest.cpp
 )

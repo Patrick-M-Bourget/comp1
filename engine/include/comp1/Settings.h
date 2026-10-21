@@ -28,6 +28,7 @@ inline constexpr ParameterRange hold { 0.0, 500.0 };        // ms
 inline constexpr ParameterRange range { 0.0, 60.0 };        // dB; comp1's own: its top sets no limit
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own
 inline constexpr ParameterRange lookahead { 0.0, 5.0 };     // ms; ADR 0001's budget for it
+inline constexpr ParameterRange stereoLink { 0.0, 100.0 };  // %
 } // namespace parameterRanges
 
 // How the whole plugin trades latency against quality (ADR 0001); comp1/Latency.h gives each one's latency. Stored in
@@ -36,6 +37,16 @@ enum class ProcessingMode
 {
     ZeroLatency,
     HighQuality,
+};
+
+// Which part of the stereo signal the compressor compresses: both channels, or the Mid or the Side alone. comp1's own
+// list, stored in sessions in this order, which never changes once released; the Engine maps it onto plugkit's
+// StereoPlacement where it routes.
+enum class StereoPlacement
+{
+    Stereo,
+    Mid,
+    Side,
 };
 
 // Everything the Engine plays, in one value: the Plugin Shell builds it from the host parameters and hands it over
@@ -55,6 +66,12 @@ struct Settings
     double rangeDb = 60.0; // the most Gain Reduction the compressor applies
     // Auto Gain, on the Wet path after the compressor: estimated from Threshold, Ratio, Knee and Range.
     bool autoGain = false;
+
+    // Where on a stereo track the compressor works: the part Stereo Placement picks, and with Stereo, Stereo Link in %
+    // (0 to 100), how much the two channels share one Gain Reduction, from each channel's own at 0% to the larger of
+    // the two at 100% (comp1's own default, ADR 0008). A mono track is compressed as Stereo, whatever they hold.
+    StereoPlacement stereoPlacement = StereoPlacement::Stereo;
+    double stereoLink = 100.0;
 
     // Output Gain, in dB: applied to the whole output after Dry and Wet are summed, before the Limiter.
     double outputGainDb = 0.0;
