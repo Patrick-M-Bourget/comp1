@@ -27,39 +27,37 @@ constexpr double onsetSeconds = 0.3;
 // -12 dB: 6 dB over the default Threshold, so the compressor is working when a jump comes.
 constexpr double toneAmplitude = 0.25;
 
-struct Host
-{
-    double sampleRate;
-    int blockSize;
-};
+using test::Host;
 
 // The tone's amplitude at each moment, in seconds.
 using Envelope = std::function<double (double)>;
 
-// Plays a sine through the Engine as a host would, letting change(seconds, settings) edit the settings before each
-// block, and returns the output. On two channels, the right is the left at half its amplitude, 2 radians ahead, so
-// the channels' levels differ and the Mid and the Side each carry the tone.
+// Plays a sine through the Engine as host would, in its cut's block sizes in turn, letting change(seconds, settings)
+// edit the settings before each block, and returns the output. On two channels, the right is the left at half its
+// amplitude, 2 radians ahead, so the channels' levels differ and the Mid and the Side each carry the tone.
 test::Channels playTone (Host host,
                          const std::function<void (double, Settings&)>& change,
                          const Envelope& amplitude = [] (double) { return toneAmplitude; },
                          double seconds = toneSeconds,
                          int numChannels = 1)
 {
-    const auto [sampleRate, blockSize] = host;
-    const int numBlocks = static_cast<int> (seconds * sampleRate / blockSize);
+    const double sampleRate = host.sampleRate;
+    const int largest = *std::max_element (host.cut.begin(), host.cut.end());
+    const auto length = static_cast<int> (seconds * sampleRate);
 
     Engine engine;
-    engine.prepare (sampleRate, blockSize, numChannels);
+    engine.prepare (sampleRate, largest, numChannels);
 
     Settings settings;
     test::Channels output (static_cast<std::size_t> (numChannels));
-    test::Channels block (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (blockSize)));
+    test::Channels block (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (largest)));
     std::vector<float*> channels;
     for (auto& channel : block)
         channels.push_back (channel.data());
     int n = 0;
-    for (int b = 0; b < numBlocks; ++b)
+    for (std::size_t b = 0; n + host.cut[b % host.cut.size()] <= length; ++b)
     {
+        const int blockSize = host.cut[b % host.cut.size()];
         change (static_cast<double> (n) / sampleRate, settings);
         engine.setSettings (settings);
         for (std::size_t i = 0; i < static_cast<std::size_t> (blockSize); ++i, ++n)
@@ -71,7 +69,7 @@ test::Channels playTone (Host host,
         }
         engine.process ({ channels.data(), numChannels, blockSize });
         for (std::size_t ch = 0; ch < block.size(); ++ch)
-            output[ch].insert (output[ch].end(), block[ch].begin(), block[ch].end());
+            output[ch].insert (output[ch].end(), block[ch].begin(), block[ch].begin() + blockSize);
     }
     return output;
 }
@@ -88,22 +86,10 @@ using test::clickLimit;
 // False until the onset has passed, then flips every 50 ms.
 bool alternating (double seconds) { return seconds >= onsetSeconds && static_cast<int> ((seconds - onsetSeconds) / 0.05) % 2 == 0; }
 
-// Every sample rate comp1 supports, each with a host block size in turn from a sample at a time, odd and large ones.
-const std::vector<Host>& hosts()
-{
-    static const std::vector<Host> all = [] {
-        const std::vector<int> blockSizes { 17, 512, 1, 64, 33, 4096 };
-        std::vector<Host> h;
-        for (std::size_t r = 0; r < test::sampleRates().size(); ++r)
-            h.push_back ({ test::sampleRates()[r], blockSizes[r % blockSizes.size()] });
-        return h;
-    }();
-    return all;
-}
-
+// Every sample rate comp1 supports, each with a block cut in turn.
 Host anyHost()
 {
-    return GENERATE (from_range (hosts()));
+    return GENERATE (from_range (test::hosts()));
 }
 
 constexpr double infinity = std::numeric_limits<double>::infinity();
@@ -459,7 +445,7 @@ TEST_CASE ("Jumps in each compressor setting do not click", "[sweep]")
 {
     const auto& jump = GENERATE (from_range (jumps()));
     const auto host = anyHost();
-    CAPTURE (jump.setting, host.sampleRate, host.blockSize);
+    CAPTURE (jump.setting, host.sampleRate, host.cut);
     const auto play = [&host, &jump] (const std::function<void (double, Settings&)>& change) {
         return playTone (host, change, jump.amplitude, toneSeconds, jump.numChannels);
     };
@@ -542,7 +528,7 @@ TEST_CASE ("Jumps in each Detection EQ setting do not click in Detection Auditio
 {
     const auto& jump = GENERATE (from_range (detectionEqJumps()));
     const auto host = anyHost();
-    CAPTURE (jump.setting, host.sampleRate, host.blockSize);
+    CAPTURE (jump.setting, host.sampleRate, host.cut);
     const auto output = playTone (host, [&jump] (double time, Settings& s) {
         s.detectionAudition = true;
         jump.set (s, alternating (time));
@@ -554,7 +540,7 @@ TEST_CASE ("Jumps in Stereo Placement do not click in Detection Audition", "[swe
 {
     const auto& jump = GENERATE (filter ([] (const Jump& j) { return j.setting.starts_with ("Stereo Placement"); }, from_range (jumps())));
     const auto host = anyHost();
-    CAPTURE (jump.setting, host.sampleRate, host.blockSize);
+    CAPTURE (jump.setting, host.sampleRate, host.cut);
     const auto output = playTone (
         host,
         [&jump] (double time, Settings& s) {
@@ -571,7 +557,7 @@ TEST_CASE ("Jumps in Release and Auto Release mid-release do not click", "[sweep
 {
     const auto& jump = GENERATE (from_range (midReleaseJumps()));
     const auto host = anyHost();
-    CAPTURE (jump.setting, host.sampleRate, host.blockSize);
+    CAPTURE (jump.setting, host.sampleRate, host.cut);
     bool wasMidRelease = false;
     const auto output = playTone (
         host,
@@ -616,7 +602,7 @@ TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click, at eve
     const bool limiter = GENERATE (false, true);
     // 1x, and 8x, which plays each rate's cap.
     const auto oversampling = GENERATE (Oversampling::x1, Oversampling::x8);
-    CAPTURE (host.sampleRate, host.blockSize, dryDb, limiter, static_cast<int> (oversampling));
+    CAPTURE (host.sampleRate, host.cut, dryDb, limiter, static_cast<int> (oversampling));
     const auto pushed = [dryDb, limiter, oversampling] (Settings& s, ProcessingMode mode) {
         s.dryDb = dryDb;
         if (limiter)
@@ -638,7 +624,7 @@ TEST_CASE ("An Oversampling change, each way between 1x and the largest allowed,
 {
     const auto host = anyHost();
     const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
-    CAPTURE (host.sampleRate, host.blockSize, static_cast<int> (position));
+    CAPTURE (host.sampleRate, host.cut, static_cast<int> (position));
     const auto largest = maxOversampling (host.sampleRate);
     // In High Quality, Saturation on at Drive 12 dB with the tone at -6 dB, 6 dB into the shape, and Ratio 1:1, so the
     // shape works as hard at either position.

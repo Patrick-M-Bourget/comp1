@@ -276,6 +276,45 @@ inline const std::vector<std::vector<int>>& blockCuts()
     return cuts;
 }
 
+// A host: a sample rate, and the block sizes it cuts the audio into, in turn.
+struct Host
+{
+    double sampleRate;
+    std::vector<int> cut;
+};
+
+// Each sample rate comp1 supports, with a block cut in turn, for a sweep that needs every rate but not every rate at
+// every cut.
+inline const std::vector<Host>& hosts()
+{
+    static const std::vector<Host> all = [] {
+        std::vector<Host> h;
+        for (std::size_t r = 0; r < sampleRates().size(); ++r)
+            h.push_back ({ sampleRates()[r], blockCuts()[r % blockCuts().size()] });
+        return h;
+    }();
+    return all;
+}
+
+// signal on the left channel and, at half its level, on the right.
+inline Channels stereo (const std::vector<float>& signal)
+{
+    Channels audio { signal, signal };
+    for (auto& sample : audio[1])
+        sample *= 0.5f;
+    return audio;
+}
+
+// The loudest sample of every channel, linear.
+inline double samplePeak (const Channels& audio)
+{
+    double peak = 0.0;
+    for (const auto& channel : audio)
+        for (const float sample : channel)
+            peak = std::max (peak, static_cast<double> (std::abs (sample)));
+    return peak;
+}
+
 // --- Step response -----------------------------------------------------------------------------------------------
 
 // The Gain Reduction in dB the listener hears on each sample, as an Engine with settings at sampleRate plays a steady

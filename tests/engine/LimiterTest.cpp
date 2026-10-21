@@ -41,41 +41,9 @@ const std::vector<double>& ceilings()
     return all;
 }
 
-// Each sample rate comp1 supports, with a block cut in turn: the cut is shown not to matter on its own (below).
-struct Host
-{
-    double sampleRate;
-    std::vector<int> cut;
-};
-
-const std::vector<Host>& hosts()
-{
-    static const std::vector<Host> all = [] {
-        std::vector<Host> h;
-        for (std::size_t r = 0; r < test::sampleRates().size(); ++r)
-            h.push_back ({ test::sampleRates()[r], test::blockCuts()[r % test::blockCuts().size()] });
-        return h;
-    }();
-    return all;
-}
-
-// signal on the left channel and, at half its level, on the right, long enough to play out the latency too.
-test::Channels stereo (const std::vector<float>& signal)
-{
-    test::Channels audio { signal, signal };
-    for (auto& sample : audio[1])
-        sample *= 0.5f;
-    return audio;
-}
-
-double samplePeak (const test::Channels& audio)
-{
-    double peak = 0.0;
-    for (const auto& channel : audio)
-        for (const float sample : channel)
-            peak = std::max (peak, static_cast<double> (std::abs (sample)));
-    return peak;
-}
+using test::hosts;
+using test::samplePeak;
+using test::stereo;
 
 } // namespace
 
