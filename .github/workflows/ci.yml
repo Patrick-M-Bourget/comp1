@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  # Every pull request, whatever its base branch.
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Each step runs one stage of plugkit's check harness (plugkit's README.md, "A plugin's CI"), at the tag
+# plugkit.conf pins, so a local run of the harness checks what CI checks. The job names are the ones
+# plugkit's merge-on-green.sh waits for.
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Universal
+            os: macos-latest
+          - name: Windows x64
+            os: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.deps
+      GH_TOKEN: ${{ github.token }}
+      # sccache caches compiled objects in the GitHub Actions cache, so unchanged JUCE modules and sources aren't
+      # compiled again. Universal macOS objects (two -arch flags) are cached too.
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: "1"
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Ninja
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      # Puts cl and Visual Studio's Ninja on the PATH, so the harness builds with Ninja.
+      - name: MSVC developer environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: x64
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Cache dependencies and validators
+        uses: actions/cache@v5
+        with:
+          path: .deps
+          # A restored folder built with another CMake generator is rebuilt by the harness's build stage.
+          key: deps-v1-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'plugkit.conf') }}
+          # A miss starts from the last saved dependencies (and the juceaide built in them), not from nothing.
+          restore-keys: deps-v1-${{ runner.os }}-
+
+      # The harness has to be here before anything is configured: Doc references runs before Build.
+      # A job's env can't read the runner context, so the later steps find the checkout through GITHUB_ENV, as a
+      # path Git Bash runs scripts from on Windows too.
+      - name: plugkit at the pinned tag
+        run: |
+          PLUGKIT=$(cygpath -u "$RUNNER_TEMP" 2> /dev/null || echo "$RUNNER_TEMP")/plugkit
+          echo "PLUGKIT=$PLUGKIT" >> "$GITHUB_ENV"
+          git clone --quiet --depth 1 --branch "$(sed -n 's/^PLUGKIT_TAG=//p' plugkit.conf)" https://github.com/Patrick-M-Bourget/plugkit.git "$PLUGKIT"
+
+      - name: Doc references
+        run: '"$PLUGKIT/scripts/check.sh" docs'
+
+      - name: Build
+        run: '"$PLUGKIT/scripts/check.sh" build'
+
+      # Time limits of about twice a normal run, so a step that slows down fails and names itself. Build has none:
+      # a cold compiler cache varies too much.
+      - name: Engine and Plugin Shell tests
+        timeout-minutes: 8
+        run: '"$PLUGKIT/scripts/check.sh" test'
+
+      - name: Engine tests under ThreadSanitizer
+        if: runner.os == 'macOS'
+        timeout-minutes: 15
+        run: '"$PLUGKIT/scripts/check.sh" tsan'
+
+      - name: Validate plugins (pluginval, auval, clap-validator, Sidechain routing, AAX and Standalone built)
+        timeout-minutes: 8
+        run: '"$PLUGKIT/scripts/check.sh" validate'
+
+      - name: Compiler cache statistics
+        if: always()
+        run: sccache --show-stats
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: comp1-${{ runner.os }}
+          path: |
+            build/plugin/comp1_artefacts/Release/VST3
+            build/plugin/comp1_artefacts/Release/AU
+            build/plugin/comp1_artefacts/Release/AAX
+            build/plugin/comp1_artefacts/Release/CLAP
+            build/plugin/comp1_artefacts/Release/Standalone
