@@ -37,7 +37,8 @@ struct DetectionSignal
 // for sample, and each main channel follows its own; the Sidechain changes nothing. With External the detection
 // channels are the Sidechain's: each main channel follows the Sidechain channel of its own index, a mono Sidechain is
 // followed by every main channel, so a mono key, like a kick, ducks the whole track, and a mono main follows the
-// louder of a stereo Sidechain's two channels at each sample.
+// louder of a stereo Sidechain's two channels at each sample. With External and no Sidechain, the detection signal is
+// silence, a channel of it per main channel: no Gain Reduction starts, and any in progress returns at Release.
 class DetectionStage
 {
 public:
@@ -63,8 +64,15 @@ public:
     {
         assert (internal.numChannels <= static_cast<int> (followed.size()));
         assert (internal.numChannels == 0 || internal.numSamples <= static_cast<int> (louder.size()));
-        if (source == DetectionSource::External && sidechain != nullptr)
+        if (source == DetectionSource::External)
         {
+            // With no Sidechain connected the detector hears silence, a channel of it per main channel.
+            if (sidechain == nullptr)
+            {
+                for (int ch = 0; ch < internal.numChannels; ++ch)
+                    std::fill_n (storage[static_cast<std::size_t> (ch)].begin(), internal.numSamples, 0.0f);
+                return signal (internal.numChannels, internal);
+            }
             assert (sidechain->numChannels <= static_cast<int> (maxSidechainChannels) && sidechain->numSamples == internal.numSamples);
             for (int ch = 0; ch < sidechain->numChannels; ++ch)
                 std::copy_n (sidechain->channels[ch], internal.numSamples, storage[static_cast<std::size_t> (ch)].begin());

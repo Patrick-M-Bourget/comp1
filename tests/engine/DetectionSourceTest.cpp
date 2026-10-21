@@ -79,6 +79,57 @@ TEST_CASE ("With External and a mono Sidechain, every main channel is compressed
     CHECK (gains[1] == Catch::Approx (-18.0).margin (0.1));
 }
 
+TEST_CASE ("With External and no Sidechain connected, a loud main input passes bit for bit")
+{
+    // A Sidechain that is null, has no channels, or has fewer samples than the block counts as none connected.
+    enum Missing { null, noChannels, tooShort };
+    const auto missing = GENERATE (null, noChannels, tooShort);
+    CAPTURE (missing);
+    constexpr int blockSize = 512;
+    const auto input = test::noise (2, 16 * blockSize); // peaks near -6 dB, 12 dB over Threshold
+    auto output = input;
+    const std::vector<float> sidechainSamples (blockSize / 2, 1.0f);
+    const float* sidechainChannels[] = { sidechainSamples.data() };
+    const ConstAudioBlock sidechain { sidechainChannels, missing == noChannels ? 0 : 1, blockSize / 2 };
+
+    Engine engine;
+    engine.prepare (48000.0, blockSize, 2);
+    engine.setSettings (external());
+    for (int start = 0; start < static_cast<int> (output[0].size()); start += blockSize)
+    {
+        float* main[] = { output[0].data() + start, output[1].data() + start };
+        engine.process ({ main, 2, blockSize }, missing == null ? nullptr : &sidechain);
+    }
+    CHECK (output == input);
+}
+
+TEST_CASE ("With External, Gain Reduction returns at Release once the Sidechain is gone, and comes back with it")
+{
+    constexpr double sampleRate = 48000.0;
+    auto settings = external();
+    settings.releaseMs = 50.0;
+    settings.holdMs = 0.0;
+    Engine engine;
+    engine.prepare (sampleRate, 512, 2);
+    engine.setSettings (settings);
+
+    // The gain in dB the last sample of a stretch of the steady main input got, with sidechainSamples or none.
+    const auto play = [&engine] (int numSamples, const test::Channels* sidechainSamples) {
+        const auto input = test::steadyLevel (2, numSamples, mainDb);
+        auto output = input;
+        test::processInBlocks (engine, output, { 512 }, sidechainSamples);
+        return 20.0 * std::log10 (static_cast<double> (output[0].back()) / static_cast<double> (input[0].back()));
+    };
+    const auto sidechainSamples = steadySidechain ({ 0.0 }, sampleRate, 0.2);
+    const auto sidechainLength = static_cast<int> (sidechainSamples[0].size());
+    CHECK (play (sidechainLength, &sidechainSamples) == Catch::Approx (-18.0).margin (0.1));
+    // Release gives back 1 - 1/e of the Gain Reduction in Release's time, one pole, as dyn-lab's step measures it.
+    const auto releaseSamples = static_cast<int> (settings.releaseMs * sampleRate / 1000.0);
+    CHECK (play (releaseSamples, nullptr) == Catch::Approx (-18.0 / std::exp (1.0)).margin (0.1));
+    CHECK (play (20 * releaseSamples, nullptr) == Catch::Approx (0.0).margin (0.01));
+    CHECK (play (sidechainLength, &sidechainSamples) == Catch::Approx (-18.0).margin (0.1));
+}
+
 TEST_CASE ("With External, a stereo Sidechain and a mono main, the main is compressed by the louder Sidechain channel")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
