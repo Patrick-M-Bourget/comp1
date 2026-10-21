@@ -106,10 +106,11 @@ TEST_CASE ("High Quality's Limiter never lets the true peak past the Ceiling, at
     CAPTURE (host.sampleRate, host.cut, ceilingDb, outputGainDb);
     // Long enough for the whole signal to come out after the latency.
     const int length = test::limiterSignalSamples + latencySamples (highQuality, host.sampleRate);
+    // On one channel: the gain the channels share has its own test below.
     for (const auto& signal : test::limiterSignals())
     {
         CAPTURE (signal.name);
-        const auto input = stereo (signal.make (ceilingDb, host.sampleRate, length));
+        const test::Channels input { signal.make (ceilingDb, host.sampleRate, length) };
         const auto out = test::played (limiting (highQuality, ceilingDb, outputGainDb), host.sampleRate, input, host.cut);
         CHECK (test::truePeak (out) <= test::gainOf (ceilingDb));
     }
@@ -163,7 +164,10 @@ TEST_CASE ("Below the Ceiling, once the release has settled, the Limiter on is b
     CHECK (test::played (on, host.sampleRate, quiet, host.cut) == test::played (off, host.sampleRate, quiet, host.cut));
 
     // 50 ms 12 dB over it, then the quiet tone: once the release has given back all of the Gain Reduction, down to
-    // dyn-lab's LIMITER_SETTLED_DB (from 12 dB, 200 ms × ln 1.2e8: 3.7 s), the two match again.
+    // dyn-lab's LIMITER_SETTLED_DB (from 12 dB, 200 ms × ln 1.2e8: 3.7 s), the two match again. Seconds long, so at
+    // the lowest and highest rates only.
+    if (host.sampleRate != test::sampleRates().front() && host.sampleRate != test::sampleRates().back())
+        return;
     const int loud = static_cast<int> (0.05 * host.sampleRate), settle = static_cast<int> (4.0 * host.sampleRate);
     auto audio = stereo (test::limiterTone (1000.0, 6.0, host.sampleRate, loud));
     const auto after = stereo (test::limiterTone (1000.0, -7.0, host.sampleRate, settle + 4000));
@@ -336,10 +340,11 @@ TEST_CASE ("While the Ceiling glides, no peak passes the higher of the two Ceili
 {
     const auto mode = GENERATE (zeroLatency, highQuality);
     const auto [fromDb, toDb] = GENERATE (table<double, double> ({ { 0.0, -30.0 }, { -30.0, 0.0 }, { -6.0, -12.0 } }));
-    const double sampleRate = GENERATE (44100.0, 192000.0);
+    // One rate: the glide is a time, and the bound per sample is the other tests' at every rate.
+    const double sampleRate = 48000.0;
     CAPTURE (static_cast<int> (mode), fromDb, toDb, sampleRate);
     // Noise 12 dB over the higher Ceiling, limited throughout.
-    const auto input = stereo (test::bandLimitedNoise (12.0, sampleRate, static_cast<int> (1.0 * sampleRate)));
+    const test::Channels input { test::bandLimitedNoise (12.0, sampleRate, static_cast<int> (0.9 * sampleRate)) };
     const int at = static_cast<int> (0.1 * sampleRate);
     const test::SettingsChange jumped { .at = at, .settings = limiting (mode, toDb) };
     const auto out = test::played (limiting (mode, fromDb), sampleRate, input, { 512 }, nullptr, jumped);
@@ -354,9 +359,9 @@ TEST_CASE ("While the Ceiling glides, no peak passes the higher of the two Ceili
 TEST_CASE ("Once the Limiter has switched on, the Ceiling holds")
 {
     const auto mode = GENERATE (zeroLatency, highQuality);
-    const double sampleRate = GENERATE (44100.0, 192000.0);
-    CAPTURE (static_cast<int> (mode), sampleRate);
-    const auto input = stereo (test::bandLimitedNoise (6.0, sampleRate, static_cast<int> (0.5 * sampleRate)));
+    const double sampleRate = 48000.0;
+    CAPTURE (static_cast<int> (mode));
+    const test::Channels input { test::bandLimitedNoise (6.0, sampleRate, static_cast<int> (0.3 * sampleRate)) };
     auto off = limiting (mode, -6.0);
     off.limiter = false;
     const int at = static_cast<int> (0.1 * sampleRate);

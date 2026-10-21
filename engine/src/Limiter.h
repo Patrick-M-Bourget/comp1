@@ -132,7 +132,7 @@ private:
         for (int ch = 0; ch < block.numChannels; ++ch)
             peak = std::max (peak, static_cast<double> (std::abs (block.channels[ch][i])));
         zeroLatencyReduction = settled (std::max (overDb (peak, ceilingGain), releasePole * zeroLatencyReduction));
-        if (zeroLatencyReduction == 0.0 && share == 0.0)
+        if (share == 0.0)
             return;
         const double gain = gainOf (zeroLatencyReduction);
         // The largest float at or under the Ceiling, so a clipped sample never rounds past it.
@@ -157,6 +157,7 @@ private:
         // The estimate for the sample estimatorDelay ago: the loudest of its segment and the one before, on every
         // channel. While stale audio arrives, silence.
         double segment = 0.0;
+        const double aim = ceilingGain * headroomGain;
         const bool stale = staleLeft > 0;
         if (stale)
             --staleLeft;
@@ -166,12 +167,12 @@ private:
             const double sample = stale ? 0.0 : static_cast<double> (block.channels[ch][i]);
             // Written twice, so the latest estimatorTaps samples sit in a row from historyPosition + 1.
             h[static_cast<std::size_t> (historyPosition)] = h[static_cast<std::size_t> (historyPosition + estimatorTaps)] = sample;
-            segment = std::max (segment, segmentPeak (h.data() + historyPosition + 1));
+            segment = std::max (segment, segmentPeak (h.data() + historyPosition + 1, aim));
         }
         historyPosition = historyPosition + 1 == estimatorTaps ? 0 : historyPosition + 1;
         const double peak = std::max (segment, previousSegment);
         previousSegment = segment;
-        pushHeld (overDb (peak, ceilingGain * headroomGain));
+        pushHeld (overDb (peak, aim));
         released = settled (std::max (heldValues[static_cast<std::size_t> (heldFront)], releasePole * released));
         pushAveraged (released);
         const double reduction = nonzeroAveraged > 0 ? averagedSum / span : 0.0;
@@ -190,9 +191,15 @@ private:
     }
 
     // The loudest of the sample at the middle of the estimatorTaps samples from window and the estimator's points
-    // between it and the next.
-    double segmentPeak (const double* window) const
+    // between it and the next. Where no phase can reach aim, the most any could read instead, which asks for the same
+    // Gain Reduction, none, for less work.
+    double segmentPeak (const double* window, double aim) const
     {
+        double loudest = 0.0;
+        for (int j = 0; j < estimatorTaps; ++j)
+            loudest = std::max (loudest, std::abs (window[j]));
+        if (loudest * mostGain <= aim)
+            return loudest * mostGain;
         double peak = std::abs (window[estimatorDelay - 1]);
         for (const auto& phase : phases)
         {
@@ -293,13 +300,19 @@ private:
                 phase[static_cast<std::size_t> (j)] = std::sin (std::numbers::pi * t) / (std::numbers::pi * t) * window;
                 total += phase[static_cast<std::size_t> (j)];
             }
+            double gain = 0.0;
             for (double& c : phase)
+            {
                 c /= total;
+                gain += std::abs (c);
+            }
+            mostGain = std::max (mostGain, gain);
         }
     }
 
     std::array<std::array<double, estimatorTaps>, estimatorFactor - 1> phases {};
     double headroomGain = 1.0; // the true peak High Quality aims for, against the Ceiling
+    double mostGain = 1.0;     // the most any phase reads of samples up to 1 in magnitude, its taps' magnitudes summed
     double releasePole = 0.0;
     int reserve = 1, span = 1, staleSamples = 0;
     plugkit::Smoother onShare; // 0 off, 1 on

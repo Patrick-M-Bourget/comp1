@@ -452,19 +452,42 @@ inline double truePeak (const Channels& audio, int from = 0)
         }
         return all;
     }();
+    // The most any phase can make of samples up to 1 in magnitude: a segment whose window peaks at w can read no more
+    // than w times it, so one that can't pass the peak found so far is skipped, which changes nothing it returns.
+    static const double mostGain = [] {
+        double most = 0.0;
+        for (const auto& kernel : phases)
+        {
+            double sum = 0.0;
+            for (const double c : kernel)
+                sum += std::abs (c);
+            most = std::max (most, sum);
+        }
+        return most;
+    }();
     double peak = 0.0;
+    std::vector<double> padded;
     for (const auto& channel : audio)
     {
         const auto length = static_cast<int> (channel.size());
-        const auto at = [&channel, length] (int n) { return n >= 0 && n < length ? static_cast<double> (channel[static_cast<std::size_t> (n)]) : 0.0; };
+        // half samples of silence before, the channel, then half more, so every window reads in range.
+        padded.assign (static_cast<std::size_t> (length + taps), 0.0);
+        for (int n = 0; n < length; ++n)
+            padded[static_cast<std::size_t> (n + half)] = channel[static_cast<std::size_t> (n)];
         for (int m = from; m + half < length; ++m)
         {
-            peak = std::max (peak, std::abs (at (m)));
+            const double* window = padded.data() + m + 1; // x[m + 1 - half] to x[m + half]
+            peak = std::max (peak, std::abs (window[half - 1]));
+            double loudest = 0.0;
+            for (int j = 0; j < taps; ++j)
+                loudest = std::max (loudest, std::abs (window[j]));
+            if (loudest * mostGain <= peak)
+                continue;
             for (const auto& kernel : phases)
             {
                 double sum = 0.0;
                 for (int j = 0; j < taps; ++j)
-                    sum += kernel[static_cast<std::size_t> (j)] * at (m + 1 - half + j);
+                    sum += kernel[static_cast<std::size_t> (j)] * window[j];
                 peak = std::max (peak, std::abs (sum));
             }
         }
