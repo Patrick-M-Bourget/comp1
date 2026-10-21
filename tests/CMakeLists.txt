@@ -23,6 +23,7 @@ add_executable(comp1_engine_tests
     engine/ClickFreeTest.cpp
     engine/DetectionStageTest.cpp
     engine/LatencyTest.cpp
+    engine/LookaheadTest.cpp
     engine/NonFiniteInputTest.cpp
     engine/OutputGainTest.cpp
     engine/ProcessingModeTest.cpp

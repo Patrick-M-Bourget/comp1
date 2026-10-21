@@ -88,6 +88,32 @@ inline const std::vector<std::vector<int>>& blockCuts()
     return cuts;
 }
 
+// --- Step response -----------------------------------------------------------------------------------------------
+
+// The Gain Reduction in dB the listener hears on each sample, as an Engine with settings at sampleRate plays a steady
+// level held for seconds, then another for as long: each output sample against the input sample latency samples
+// earlier, the one it carries. Index 0 is the first output sample after the first level's seconds, so the step itself
+// is heard at index latency.
+inline std::vector<double> heardGainReduction (const Settings& settings, double sampleRate, double fromDb, double toDb, double seconds, int latency)
+{
+    const int length = static_cast<int> (seconds * sampleRate);
+    auto audio = steadyLevel (1, length, fromDb);
+    const auto after = steadyLevel (1, length, toDb);
+    audio.front().insert (audio.front().end(), after.front().begin(), after.front().end());
+    const auto input = audio.front();
+    Engine engine;
+    engine.prepare (sampleRate, 512, 1);
+    engine.setSettings (settings);
+    processInBlocks (engine, audio, { 512 });
+    std::vector<double> reduction;
+    for (auto i = static_cast<std::size_t> (length); i < input.size(); ++i)
+    {
+        const auto carried = static_cast<double> (input[i - static_cast<std::size_t> (latency)]);
+        reduction.push_back (-20.0 * std::log10 (static_cast<double> (audio.front()[i]) / carried));
+    }
+    return reduction;
+}
+
 // --- Delay -------------------------------------------------------------------------------------------------------
 
 // How many samples an Engine with settings at sampleRate delays an impulse by, played in blocks of blockSize: where
