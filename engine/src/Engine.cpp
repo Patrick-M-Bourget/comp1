@@ -233,8 +233,7 @@ private:
         const auto levelDb = [] (float sample) { return plugkit::gainToDecibels (std::abs (static_cast<double> (sample))); };
         if (voice.placement != plugkit::StereoPlacement::Stereo)
         {
-            const float* detected = voice.placement == plugkit::StereoPlacement::Mid ? detection.mid : detection.side;
-            voice.levelsDb[0] = levelDb (detected[i]);
+            voice.levelsDb[0] = levelDb (detection.partFollowedBy (voice.placement)[i]);
             voice.reductionsDb[0] = voice.detectors[0].process (clean::gainReduction (voice.levelsDb[0], curve), timing);
             voice.gains[0] = gainOf (voice.reductionsDb[0]);
             return;
@@ -275,19 +274,16 @@ private:
     }
 
     // What the gains voice asks for add to channel ch of a sample whose Left and Right are left and right: (g - 1) times
-    // what it compresses. Under Stereo, the channel itself; under Mid, the Mid, on Left and on Right; under Side, the
-    // Side, added to Left and taken from Right.
+    // what channel ch carries of the part it compresses, as plugkit places a part (placedSample). Under Stereo, the
+    // channel itself; under Mid, the Mid, on Left and on Right; under Side, the Side, added to Left and taken from Right.
     static double changeTo (const Voice& voice, int ch, float left, float right)
     {
-        switch (voice.placement)
-        {
-            case plugkit::StereoPlacement::Mid: return (voice.gains[0] - 1.0) * plugkit::encodeMid (left, right);
-            case plugkit::StereoPlacement::Side: return (ch == 0 ? 1.0 : -1.0) * (voice.gains[0] - 1.0) * plugkit::encodeSide (left, right);
-            case plugkit::StereoPlacement::Stereo:
-            case plugkit::StereoPlacement::Left:
-            case plugkit::StereoPlacement::Right: break;
-        }
-        return (voice.gains[static_cast<std::size_t> (ch)] - 1.0) * (ch == 0 ? left : right);
+        const float carried = plugkit::placedSample (voice.placement, 2, ch, [&] (int part) {
+            if (voice.placement == plugkit::StereoPlacement::Stereo)
+                return part == 0 ? left : right;
+            return voice.placement == plugkit::StereoPlacement::Mid ? plugkit::encodeMid (left, right) : plugkit::encodeSide (left, right);
+        });
+        return (gainOn (voice, ch) - 1.0) * carried;
     }
 
     enum Glide : std::size_t { threshold, inverseRatio, knee, range, logAttack, logRelease, hold, count };
@@ -465,9 +461,7 @@ private:
     static float detectionSample (const DetectionSignal& detection, plugkit::StereoPlacement placement, int outputChannels, int ch, int i)
     {
         if (placement != plugkit::StereoPlacement::Stereo)
-            return plugkit::placedSample (placement, outputChannels, ch, [&] (int) {
-                return placement == plugkit::StereoPlacement::Mid ? detection.mid[i] : detection.side[i];
-            });
+            return plugkit::placedSample (placement, outputChannels, ch, [&] (int) { return detection.partFollowedBy (placement)[i]; });
         if (detection.numChannels == 1)
             return detection.channels[0][i];
         if (outputChannels == 1)

@@ -40,6 +40,9 @@ struct DetectionSignal
     int runPosition = 0;                    // where the first sample fell in the run grid, 0 to a run less one
 
     const float* channelFollowedBy (int mainChannel) const { return followed[mainChannel]; }
+
+    // What Stereo Placement Mid or Side follows.
+    const float* partFollowedBy (plugkit::StereoPlacement placement) const { return placement == plugkit::StereoPlacement::Mid ? mid : side; }
 };
 
 // Takes the Internal signal and the Sidechain (or none) for one piece of a run, each a block of that piece's samples,
