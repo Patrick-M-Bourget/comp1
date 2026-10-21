@@ -7,8 +7,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <cstddef>
 #include <limits>
 #include <memory>
+#include <utility>
+#include <vector>
 
 using Catch::Matchers::WithinAbs;
 using plugkit::ui::CompareSide;
@@ -123,6 +126,80 @@ TEST_CASE ("A Preset holds every host parameter as plain values, Processing Mode
         CHECK (static_cast<float> (setting.getProperty ("value")) == host.value (id));
     }
     CHECK (static_cast<float> (preset.getChildWithProperty ("id", "processing_mode").getProperty ("value")) == highQuality);
+}
+
+namespace
+{
+// The later stages' settings, each away from its default as plain values: the Gate's, the Limiter's, Colour,
+// Oversampling (8x), Dry and Wet.
+const std::vector<std::pair<juce::String, float>>& laterStageEdits()
+{
+    static const std::vector<std::pair<juce::String, float>> edits {
+        { "gate", 1.0f },        { "gate_threshold", -25.0f }, { "gate_range", 30.0f }, { "gate_attack", 5.0f },
+        { "gate_release", 250.0f }, { "gate_hold", 50.0f },     { "limiter", 1.0f },     { "ceiling", -3.0f },
+        { "colour", 40.0f },     { "oversampling", 3.0f },     { "dry", -6.0f },        { "wet", -3.0f },
+    };
+    return edits;
+}
+
+// Makes each of the later stages' edits, checking each moves its setting off its default.
+void editLaterStages (const Host& host)
+{
+    for (const auto& [id, plain] : laterStageEdits())
+    {
+        CAPTURE (id);
+        const float before = host.value (id);
+        host.edit (id, plain);
+        REQUIRE (host.value (id) != before);
+    }
+}
+} // namespace
+
+TEST_CASE ("A Preset loads back the Gate, the Limiter, Colour, Oversampling, Dry and Wet")
+{
+    Host maker;
+    editLaterStages (maker);
+    const auto file = maker.session.presetLibrary().save ("Later", maker.session.presetState());
+    REQUIRE (file.has_value());
+
+    Host host;
+    const auto preset = host.session.presetLibrary().read (*file);
+    REQUIRE (preset.isValid());
+    REQUIRE (host.session.loadPreset (preset, "Later"));
+    for (const auto& [id, plain] : laterStageEdits())
+    {
+        CAPTURE (id);
+        CHECK (host.value (id) == maker.value (id));
+    }
+    CHECK_FALSE (host.session.isLoadedPresetModified());
+}
+
+TEST_CASE ("Each A/B side keeps its own Gate, Limiter, Colour, Oversampling, Dry and Wet, through save and reload")
+{
+    Host saved;
+    const Host defaults;
+    saved.session.selectCompareSide (CompareSide::B);
+    editLaterStages (saved);
+    std::vector<float> onB;
+    for (const auto& [id, plain] : laterStageEdits())
+        onB.push_back (saved.value (id));
+    saved.session.selectCompareSide (CompareSide::A);
+    for (const auto& [id, plain] : laterStageEdits())
+    {
+        CAPTURE (id);
+        CHECK (saved.value (id) == defaults.value (id));
+    }
+    const auto state = host::saved (*saved.processor);
+
+    Host restored;
+    host::restore (*restored.processor, state);
+    CHECK (restored.session.compareSide() == CompareSide::A);
+    restored.session.selectCompareSide (CompareSide::B);
+    for (std::size_t i = 0; i < laterStageEdits().size(); ++i)
+    {
+        CAPTURE (laterStageEdits()[i].first);
+        CHECK (restored.value (laterStageEdits()[i].first) == onB[i]);
+    }
 }
 
 TEST_CASE ("A Preset saved as a .comp1preset file loads back every setting, Ratio infinity:1 included, as one undo step")
