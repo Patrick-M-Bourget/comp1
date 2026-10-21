@@ -16,8 +16,8 @@ struct ParameterRange
 };
 
 // Every range the host parameters span, each named once; dyn-lab (tools/dyn-lab/dynlab.py) names the same ones,
-// with their sources. Pro-C 3's, where FabFilter publishes them, and comp1's own where it doesn't (ADR 0008).
-// Settings holds values within them.
+// with their sources. Pro-C 3's, where FabFilter publishes them, and comp1's own where it doesn't, each with its
+// reason: ADR 0008's, or the one given beside it here or in dyn-lab. Settings holds values within them.
 namespace parameterRanges
 {
 inline constexpr double inf = std::numeric_limits<double>::infinity();
@@ -32,8 +32,8 @@ inline constexpr ParameterRange range { 0.0, 60.0 };        // dB; comp1's own: 
 inline constexpr ParameterRange colour { 0.0, 100.0 };      // %; comp1's own: none to the Character's tuned amount
 inline constexpr ParameterRange drive { 0.0, 24.0 };        // dB; comp1's own
 // Dry and Wet, each from Off (-inf) up. Pro-C 3's help ("Time controls") names its Dry Gain and Wet Gain knobs but
-// gives no range, so these are comp1's own (ADR 0008): +12 dB of boost over unity, enough to bring a quiet parallel
-// path up level with a heavily compressed one.
+// gives no range, so these are comp1's own, for this reason: +12 dB of boost over unity is enough to bring a quiet
+// parallel path up level with a heavily compressed one.
 inline constexpr ParameterRange dry { -inf, 12.0 };         // dB; comp1's own
 inline constexpr ParameterRange wet { -inf, 12.0 };         // dB; comp1's own
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own
