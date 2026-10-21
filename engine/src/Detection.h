@@ -1,8 +1,8 @@
 #pragma once
 
 // The detection stage: what the detector hears, worked out apart from the audio the compressor applies gain to, so
-// the audio can be delayed (Lookahead, #9) and the detection signal shaped (Detection Source #13, Detection EQ #14,
-// Stereo Placement and Stereo Link #15) without touching the gain computer or the detector.
+// the audio can be delayed (High Quality's Lookahead, Lookahead.h) and the detection signal shaped (Detection Source
+// #13, Detection EQ #14, Stereo Placement and Stereo Link #15) without touching the gain computer or the detector.
 
 #include "comp1/Engine.h"
 

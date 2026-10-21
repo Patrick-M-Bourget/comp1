@@ -3,7 +3,8 @@
 
 Models the Clean Character after Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor
 Design — A Tutorial and Analysis" (J. Audio Eng. Soc. 60(6)): feedforward, with a soft-knee gain computer
-and a smooth branching peak detector in the log domain, with Hold and Range, and Auto Gain after it. Standard
+and a smooth branching peak detector in the log domain, with Hold and Range, and Auto Gain after it; and High
+Quality's Lookahead and fixed latency. Standard
 library only. See
 tools/dyn-lab/USAGE.md for every command.
 """
