@@ -455,6 +455,58 @@ class Colour(unittest.TestCase):
         self.assertTrue(all(row.within for row in rows))
         self.assertFalse(dynlab.ColourAlias(48000, 10000, 30, -10.0, dynlab.ALIASING_TOLERANCE.ceiling + 0.01).within)
 
+    def test_the_threshold_reference_is_the_default_threshold(self):
+        # So every figure at the defaults is as it was before Colour tracked Threshold.
+        self.assertEqual(dynlab.COLOUR_THRESHOLD_REFERENCE_DB, dynlab.Settings().threshold)
+        self.assertEqual(dynlab.colour_at(dynlab.Settings(character="vca"), 10).tracking, 0.0)
+        self.assertEqual(dynlab.colour_at(dynlab.Settings(character="vca", threshold=-50), 10).tracking, 32.0)
+
+    def test_colour_tracks_threshold_the_same_thd_at_a_steady_gain_reduction_at_every_threshold(self):
+        k = dynlab.tone_bin(*dynlab.COLOUR_TONE)
+        for character, thd in (("vca", 0.3), ("fet", 1.06)):
+            for reduction in (10, 20):
+                at_default = dynlab.colour_row(dynlab.Settings(character=character), reduction, k)
+                for threshold in (-10, -50):
+                    with self.subTest(character=character, reduction=reduction, threshold=threshold):
+                        row = dynlab.colour_row(dynlab.Settings(character=character, threshold=threshold), reduction, k)
+                        for here, there in zip(row.harmonics, at_default.harmonics):
+                            self.assertAlmostEqual(here, there, delta=0.01)
+            row = dynlab.colour_row(dynlab.Settings(character=character, threshold=-50), 10, k)
+            self.assertAlmostEqual(row.thd, thd, delta=0.02)
+
+    def test_oversampled_with_no_weight_colour_is_the_compressed_signal_delayed_by_the_section(self):
+        x = dynlab.tone(dynlab.tone_bin(5000, 48000), 0.0)[:600]
+        colour = dynlab.colour_at(dynlab.Settings(character="vca", colour=0), 10)
+        section = dynlab.OVERSAMPLING_SECTION_SAMPLES
+        gain = 10 ** (-10 / 20)
+        for factor in (2, 4, 8):
+            with self.subTest(factor):
+                out = dynlab.oversampled_coloured(x, 10, colour, factor)
+                self.assertEqual(out, [0.0] * section + [gain * s for s in x[:-section]])
+
+    def test_every_oversampled_aliasing_row_is_within_its_factors_tolerance(self):
+        for character in ("vca", "fet"):
+            for factor in (2, 4, 8):
+                rows = dynlab.colour_aliases(dynlab.Settings(character=character), factor=factor)
+                self.assertEqual(len(rows), len(dynlab.ALIAS_RATES) * len(dynlab.ALIAS_FREQUENCIES) * 3)
+                for row in rows:
+                    with self.subTest(character=character, factor=factor, fs=row.fs, frequency=row.frequency,
+                                      reduction=row.reduction):
+                        self.assertTrue(row.within)
+        over = dynlab.ColourAlias(48000, 10000, 30, -10.0, -40.0, factor=2, oversampled=-39.0, passband=-60.0)
+        self.assertFalse(over.within)
+        over.oversampled, over.passband = -50.0, dynlab.ALIASING_TOLERANCE.passband_ceilings[2] + 0.01
+        self.assertFalse(over.within)
+
+    def test_oversampling_improves_on_the_naive_shaper_at_10_khz_as_saturations_does(self):
+        # Near what Saturation's oversampled rows gain at 10 kHz, where first-order ADAA at the base rate gains least.
+        for factor, least in ((2, 32), (4, 56), (8, 94)):
+            for character in ("vca", "fet"):
+                with self.subTest(factor=factor, character=character):
+                    rows = dynlab.colour_aliases(dynlab.Settings(character=character), frequencies=(10000,),
+                                                 factor=factor)
+                    self.assertGreaterEqual(min(row.naive - row.oversampled for row in rows), least)
+
 
 class Latency(unittest.TestCase):
     def test_zero_latency_reports_0(self):
@@ -972,6 +1024,11 @@ class CommandLine(unittest.TestCase):
 
     def test_aliasing_rejects_a_factor_over_the_cap(self):
         result = run("aliasing", "--oversampling", "8", "--rates", "96000")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("4x", result.stderr)
+
+    def test_colour_rejects_a_factor_over_the_cap(self):
+        result = run("colour", "--character", "vca", "--oversampling", "8", "--rates", "96000")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("4x", result.stderr)
 

@@ -1113,22 +1113,28 @@ def _down(u, h):
     return out
 
 
-def oversampled_driven(x, drive_db, factor):
-    """The Saturation stage at factor (ADR 0009): the linear part, x, delayed by the section's
-    OVERSAMPLING_SECTION_SAMPLES; the residual worked out at the oversampled rate, with ADAA at that rate, from x
-    through the up filters, then back through the down filters and padded to the same delay."""
-    g = 10 ** (drive_db / 20)
+def oversampled_section(x, residual_of, factor):
+    """High Quality's oversampled section at factor (ADR 0009) on x: the linear part, x, delayed by the section's
+    OVERSAMPLING_SECTION_SAMPLES; the residual worked out at the oversampled rate by residual_of (one call per
+    oversampled sample, in order), from x through the up filters, then back through the down filters and padded to the
+    same delay."""
     up = list(x)
     for h in stages(factor):
         up = _up(up, h)
-    adaa = AntiAliased()
-    residual_up = [0.0] * pair(factor).internal_padding + [adaa(g * s) / g for s in up]
+    residual_up = [0.0] * pair(factor).internal_padding + [residual_of(s) for s in up]
     for h in reversed(stages(factor)):
         residual_up = _down(residual_up, h)
     section = OVERSAMPLING_SECTION_SAMPLES
     linear = [0.0] * section + list(x)
     residual_out = [0.0] * pair(factor).padding + residual_up
     return [linear[n] + residual_out[n] for n in range(len(x))]
+
+
+def oversampled_driven(x, drive_db, factor):
+    """The Saturation stage at factor in its oversampled section, with ADAA at the oversampled rate."""
+    g = 10 ** (drive_db / 20)
+    adaa = AntiAliased()
+    return oversampled_section(x, lambda u: adaa(g * u) / g, factor)
 
 
 def aliasing_options(parser):
@@ -1143,10 +1149,7 @@ def run_aliasing(args):
     for drive in args.drive:
         check_drive(drive)
     _check_rates(args.rates)
-    for fs in args.rates:
-        if args.oversampling not in allowed_factors(fs):
-            raise ValueError(f"Oversampling {args.oversampling}x is over the cap at {fs:g} Hz: "
-                             f"{MAX_INTERNAL_RATE_HZ} Hz allows up to {max_oversampling(fs)}x there")
+    _check_factor(args.oversampling, args.rates)
     if not report_aliasing(args.rates, args.drive, args.oversampling):
         raise SystemExit(1)
 
@@ -1209,9 +1212,16 @@ VCA_COLOUR_DRIVE_DB = 5.0
 
 @dataclass
 class ColourAt:
-    """A Character's Colour at a Gain Reduction: the residual's weight, Colour included, and the drive in dB."""
+    """A Character's Colour at a Gain Reduction: the residual's weight, Colour included, the drive in dB, and the
+    tracking in dB, COLOUR_THRESHOLD_REFERENCE_DB less Threshold, which the shape is driven by too."""
     weight: float
     drive: float
+    tracking: float = 0.0
+
+    @property
+    def gain(self):
+        """The total gain the compressed signal is shaped at, G: the drive's and the tracking's."""
+        return 10 ** ((self.drive + self.tracking) / 20)
 
 
 def _rising(reduction_db, scale_db):
@@ -1229,6 +1239,11 @@ FET_COLOUR_DRIVE_DB = 4.0
 COLOUR_MAPPINGS = {"vca": (VCA_COLOUR_WEIGHT, VCA_COLOUR_WEIGHT_DB, VCA_COLOUR_DRIVE_DB),
                    "fet": (FET_COLOUR_WEIGHT, FET_COLOUR_WEIGHT_DB, FET_COLOUR_DRIVE_DB)}
 
+# Colour's shape is driven relative to Threshold: the compressed signal is shaped at the drive plus this less
+# Threshold, in dB, so a steady Gain Reduction at a Ratio gives the same Colour at every Threshold. It is the default
+# Threshold, so at the defaults the drive alone sets it. USAGE.md gives the reasons.
+COLOUR_THRESHOLD_REFERENCE_DB = -18.0
+
 
 def colour_at(settings, reduction_db):
     """The Character's Colour at a Gain Reduction in dB, or None for a Character with none (Clean)."""
@@ -1236,19 +1251,34 @@ def colour_at(settings, reduction_db):
         return None
     weight, weight_db, drive_db = COLOUR_MAPPINGS[settings.character]
     return ColourAt(settings.colour / 100 * weight * _rising(reduction_db, weight_db),
-                    DRIVE_RANGE[1] * _rising(reduction_db, drive_db))
+                    DRIVE_RANGE[1] * _rising(reduction_db, drive_db),
+                    COLOUR_THRESHOLD_REFERENCE_DB - settings.threshold)
+
+
+def _compressed(x, reduction_db):
+    gain = 10 ** (-reduction_db / 20)
+    return [gain * s for s in x]
 
 
 def coloured(x, reduction_db, colour, residual_of):
-    """The compressor's output with Colour: each sample of x times the steady Gain Reduction, plus the weight times
-    the residual of the driven sample over the drive (residual_of, one call per sample, in order), so the linear part
-    passes sample-aligned (ADR 0005)."""
-    gain = 10 ** (-reduction_db / 20)
-    compressed = [gain * s for s in x]
+    """Colour at the base rate: each sample y of x times the steady Gain Reduction, plus the weight times the residual
+    of y at the total gain G, over G, w · r(G · y) / G (residual_of, one call per sample, in order), so the linear
+    part passes sample-aligned (ADR 0005)."""
+    compressed = _compressed(x, reduction_db)
     if colour.weight == 0:
         return compressed
-    g = 10 ** (colour.drive / 20)
+    g = colour.gain
     return [y + colour.weight * residual_of(g * y) / g for y in compressed]
+
+
+def oversampled_coloured(x, reduction_db, colour, factor):
+    """Colour in High Quality at factor: x times the steady Gain Reduction, through the After section (ADR 0009), its
+    residual w · r(G · u) / G worked out at the oversampled rate, with ADAA at that rate. With a weight of 0 it adds
+    exactly nothing, and the section is a plain delay."""
+    compressed = _compressed(x, reduction_db)
+    g = colour.gain
+    adaa = AntiAliased()
+    return oversampled_section(compressed, lambda u: colour.weight * adaa(g * u) / g if colour.weight else 0.0, factor)
 
 
 # The steady Gain Reductions `colour` reports, in dB.
@@ -1284,13 +1314,20 @@ class ColourRow:
     thd: float
 
 
-def colour_row(settings, reduction_db, k):
-    """Colour on the bin-centred tone k at the level whose Gain Reduction is reduction_db, held steady."""
+def colour_spectrum(x, reduction_db, colour, factor=1):
+    """The spectrum of x coloured at a steady Gain Reduction: at the base rate, or at factor in the After section."""
+    if factor == 1:
+        return spectrum(coloured(x, reduction_db, colour, AntiAliased()))
+    return spectrum(oversampled_coloured(x, reduction_db, colour, factor))
+
+
+def colour_row(settings, reduction_db, k, factor=1):
+    """Colour on the bin-centred tone k at the level whose Gain Reduction is reduction_db, held steady, at factor."""
     level = colour_level(settings, reduction_db)
     if level is None:
         return None
     colour = colour_at(settings, reduction_db)
-    amplitudes = spectrum(coloured(tone(k, level), reduction_db, colour, AntiAliased()))
+    amplitudes = colour_spectrum(tone(k, level), reduction_db, colour, factor)
     relative = [amplitudes[h * k] / amplitudes[k] for h in HARMONICS]
     thd = 100 * math.sqrt(sum(a * a for a in relative))
     return ColourRow(reduction_db, level, colour, [20 * math.log10(a) if a > 1e-15 else -math.inf for a in relative],
@@ -1299,20 +1336,30 @@ def colour_row(settings, reduction_db, k):
 
 @dataclass
 class ColourAlias:
-    """Colour's worst alias at one condition, in dB relative to the fundamental: the naive shaper's and ADAA's."""
+    """Colour's worst alias at one condition, in dB relative to the fundamental: the naive shaper's and ADAA's, at the
+    base rate; oversampled, ADAA's at factor too, anywhere and below the passband edge. Checked as Saturation's rows
+    are (Alias), but for the improvement on naive at the base rate, which is shown and not checked."""
     fs: float
     frequency: float  # the tone's, bin-centred
     reduction: float
     naive: float
     adaa: float
+    factor: int = 1
+    oversampled: float = None
+    passband: float = None
 
     @property
     def within(self):
+        if self.factor > 1:
+            return (self.passband <= ALIASING_TOLERANCE.passband_ceilings[self.factor]
+                    and self.oversampled <= self.adaa)
         return self.adaa <= ALIASING_TOLERANCE.ceiling
 
 
-def colour_aliases(settings, rates=ALIAS_RATES, frequencies=ALIAS_FREQUENCIES, reductions=COLOUR_ALIAS_REDUCTIONS):
-    """Colour's worst alias at each condition the settings reach."""
+def colour_aliases(settings, rates=ALIAS_RATES, frequencies=ALIAS_FREQUENCIES, reductions=COLOUR_ALIAS_REDUCTIONS,
+                   factor=1):
+    """Colour's worst alias at each condition the settings reach, at the base rate and, when factor is over 1,
+    oversampled by it."""
     rows = []
     for fs in rates:
         for frequency in frequencies:
@@ -1324,8 +1371,13 @@ def colour_aliases(settings, rates=ALIAS_RATES, frequencies=ALIAS_FREQUENCIES, r
                 colour = colour_at(settings, reduction)
                 x = tone(k, level)
                 naive = worst_alias_db(spectrum(coloured(x, reduction, colour, residual)), k)
-                adaa = worst_alias_db(spectrum(coloured(x, reduction, colour, AntiAliased())), k)
-                rows.append(ColourAlias(fs, k * fs / ALIAS_SAMPLES, reduction, naive, adaa))
+                adaa = worst_alias_db(colour_spectrum(x, reduction, colour), k)
+                row = ColourAlias(fs, k * fs / ALIAS_SAMPLES, reduction, naive, adaa, factor)
+                if factor > 1:
+                    amplitudes = colour_spectrum(x, reduction, colour, factor)
+                    row.oversampled = worst_alias_db(amplitudes, k)
+                    row.passband = worst_passband_alias_db(amplitudes, k)
+                rows.append(row)
     return rows
 
 
@@ -1334,12 +1386,23 @@ def colour_options(parser):
     character_option(parser)
     parser.add_argument("--colour", type=float, default=Settings().colour, metavar="%")
     parser.add_argument("--rates", type=float, nargs="+", default=list(ALIAS_RATES), metavar="Hz")
+    parser.add_argument("--oversampling", type=int, default=1, choices=OVERSAMPLING_FACTORS, metavar="N",
+                        help="the factor: 1 (the base rate, the default), 2, 4 or 8")
+
+
+def _check_factor(factor, rates):
+    """Raises ValueError when factor is over the cap at one of rates."""
+    for fs in rates:
+        if factor not in allowed_factors(fs):
+            raise ValueError(f"Oversampling {factor}x is over the cap at {fs:g} Hz: "
+                             f"{MAX_INTERNAL_RATE_HZ} Hz allows up to {max_oversampling(fs)}x there")
 
 
 @command("colour", options=colour_options)
 def run_colour(args):
     _check_rates(args.rates)
-    if not report_colour(settings_from(args), args.rates):
+    _check_factor(args.oversampling, args.rates)
+    if not report_colour(settings_from(args), args.rates, args.oversampling):
         raise SystemExit(1)
 
 
@@ -1347,10 +1410,11 @@ def _shown_db(value):
     return f"{value:8.2f}" if value > -math.inf else f"{'absent':>8}"
 
 
-def report_colour(settings, rates=ALIAS_RATES):
-    """How the Character's Colour follows the Gain Reduction, then Colour's worst alias at each condition. True when
-    every aliasing row is within its tolerance."""
-    print(f"Colour, {_transfer_heading(settings)}, Colour {settings.colour:g}%")
+def report_colour(settings, rates=ALIAS_RATES, factor=1):
+    """How the Character's Colour follows the Gain Reduction, then Colour's worst alias at each condition, at the base
+    rate or oversampled by factor. True when every aliasing row is within its tolerance."""
+    at = "" if factor == 1 else f", Oversampling {factor}x"
+    print(f"Colour, {_transfer_heading(settings)}, Colour {settings.colour:g}%{at}")
     if colour_at(settings, 10.0) is None:
         print(f"{settings.character.capitalize()} has no Colour, at any setting")
         return True
@@ -1358,10 +1422,13 @@ def report_colour(settings, rates=ALIAS_RATES):
     print(f"a steady bin-centred sine of {k * COLOUR_TONE[1] / ALIAS_SAMPLES:.1f} Hz at {COLOUR_TONE[1]:g} Hz at the "
           f"level whose Gain Reduction it is, held steady (or {COLOUR_BELOW_KNEE_DB:g} dB under the Knee for none); "
           f"harmonics in dB relative to the fundamental; tolerance for the Engine's ±{COLOUR_HARMONIC_TOLERANCE_DB:g} dB")
+    print(f"the shape driven at the drive plus the tracking, {_shown_tracking(settings)} dB "
+          f"({COLOUR_THRESHOLD_REFERENCE_DB:g} dB less Threshold)"
+          + ("" if factor == 1 else f"; the residual oversampled {factor}x in the After section"))
     print(f"{'GR dB':>6} {'input dB':>9} {'weight':>9} {'drive dB':>9} {'2nd':>8} {'3rd':>8} {'4th':>8} {'5th':>8} "
           f"{'THD %':>8}")
     for reduction in COLOUR_REDUCTIONS:
-        row = colour_row(settings, reduction, k)
+        row = colour_row(settings, reduction, k, factor)
         if row is None:
             print(f"{reduction:6g}  not reached at these settings")
             continue
@@ -1370,15 +1437,33 @@ def report_colour(settings, rates=ALIAS_RATES):
     tolerance = ALIASING_TOLERANCE
     print(f"Colour aliasing, bin-centred tones at the level whose Gain Reduction it is, over {ALIAS_SAMPLES} samples: "
           f"the worst alias in dB relative to the fundamental")
-    print(f"tolerance: ADAA at most {tolerance.ceiling:g} dB; the improvement on naive is shown, not checked "
-          f"(USAGE.md, \"Colour\")")
-    print(f"{'rate Hz':>8} {'tone Hz':>8} {'GR dB':>6} {'input dB':>9} {'naive':>8} {'ADAA':>8} {'better':>8}  check")
-    rows = colour_aliases(settings, rates)
-    for row in rows:
-        print(f"{row.fs:8g} {row.frequency:8.1f} {row.reduction:6g} {colour_level(settings, row.reduction):9.2f} "
-              f"{row.naive:8.2f} {row.adaa:8.2f} {row.naive - row.adaa:8.2f}  "
-              f"{'within' if row.within else 'outside'}")
+    rows = colour_aliases(settings, rates, factor=factor)
+    if factor == 1:
+        print(f"tolerance: ADAA at most {tolerance.ceiling:g} dB; the improvement on naive is shown, not checked "
+              f"(USAGE.md, \"Colour\")")
+        print(f"{'rate Hz':>8} {'tone Hz':>8} {'GR dB':>6} {'input dB':>9} {'naive':>8} {'ADAA':>8} {'better':>8}  "
+              f"check")
+        for row in rows:
+            print(f"{row.fs:8g} {row.frequency:8.1f} {row.reduction:6g} {colour_level(settings, row.reduction):9.2f} "
+                  f"{row.naive:8.2f} {row.adaa:8.2f} {row.naive - row.adaa:8.2f}  "
+                  f"{'within' if row.within else 'outside'}")
+    else:
+        oversampled = f"{factor}x"
+        print(f"Oversampling {factor}x, the residual alone through the up and down filters (ADR 0009). Tolerance: below "
+              f"the passband edge ({OVERSAMPLING_PASSBAND_EDGE:g} of Nyquist) at most "
+              f"{tolerance.passband_ceilings[factor]:g} dB, and anywhere no worse than ADAA at 1x; better: {factor}x's "
+              f"improvement on naive at 1x")
+        print(f"{'rate Hz':>8} {'tone Hz':>8} {'GR dB':>6} {'input dB':>9} {'naive':>8} {'1x':>8} {oversampled:>8} "
+              f"{'passband':>9} {'better':>8}  check")
+        for row in rows:
+            print(f"{row.fs:8g} {row.frequency:8.1f} {row.reduction:6g} {colour_level(settings, row.reduction):9.2f} "
+                  f"{row.naive:8.2f} {row.adaa:8.2f} {row.oversampled:8.2f} {row.passband:9.2f} "
+                  f"{row.naive - row.oversampled:8.2f}  {'within' if row.within else 'outside'}")
     return all(row.within for row in rows)
+
+
+def _shown_tracking(settings):
+    return f"{COLOUR_THRESHOLD_REFERENCE_DB - settings.threshold:g}"
 
 
 def oversampling_options(parser):
