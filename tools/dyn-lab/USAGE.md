@@ -8,7 +8,7 @@ Hold freezes the Gain Reduction for Hold ms whenever it stops rising, mid-Attack
 
 Range caps the Gain Reduction the gain computer asks for, before the detector smooths it. So the Transfer Curve rises with the input again, Range below it, once the Gain Reduction reaches Range, and Attack, Release and Hold take the same times over a smaller step. At 60 dB, its top, Range sets no limit (ADR 0008).
 
-Every option has a default, and a setting outside its range exits with an error that names the range. The ranges are named once in `dynlab.py` (`THRESHOLD_RANGE`, `RATIO_RANGE` and so on), each with its source: Pro-C 3's documentation, or ADR 0008 for Threshold, Release and Range. The check harness's `docs` stage fails when one differs from the plugin's, `engine/include/comp1/Settings.h`'s `parameterRanges` (`LAB_RANGES` in `plugkit.conf`).
+Every option has a default, and a setting outside its range exits with an error that names the range. The ranges are named once in `dynlab.py` (`THRESHOLD_RANGE`, `RATIO_RANGE` and so on), each with its source: Pro-C 3's documentation, ADR 0008 for Threshold, Release and Range, or ADR 0001 for Lookahead. Lookahead is a Processing Mode setting, read in High Quality only, not one of the compressor's. The check harness's `docs` stage fails when one differs from the plugin's, `engine/include/comp1/Settings.h`'s `parameterRanges` (`LAB_RANGES` in `plugkit.conf`).
 
 | Setting | Range | Default |
 |---|---|---|
@@ -19,6 +19,7 @@ Every option has a default, and a setting outside its range exits with an error 
 | Release | 5 to 5000 ms | 100 ms |
 | Hold | 0 to 500 ms | 0 ms |
 | Range | 0 to 60 dB | 60 dB |
+| Lookahead | 0 to 5 ms | 0 ms |
 
 ## `transfer`
 
@@ -39,10 +40,27 @@ Prints the step response at each sample rate (44.1, 48 and 96 kHz by default). T
 
 At Ratio 1:1 or Range 0 dB there is no Gain Reduction to measure, and the row says so.
 
+`--lookahead ms` (0 by default) models High Quality's Lookahead: the detector meets each step that many ms before the listener hears it in the delayed audio. Attack's times count from the step the listener hears, so they come Lookahead earlier, and the 63% time is negative when Lookahead is longer than Attack: the Gain Reduction starts before the step. Hold and Release are durations, counted from when the detector meets the step down as before, so Lookahead doesn't move them.
+
     python3 tools/dyn-lab/dynlab.py step
     python3 tools/dyn-lab/dynlab.py step --attack 10 --release 100 --hold 0
     python3 tools/dyn-lab/dynlab.py step --attack 0.5 --release 50 --hold 20 --rates 44100 192000
     python3 tools/dyn-lab/dynlab.py step --range 6
+    python3 tools/dyn-lab/dynlab.py step --lookahead 5
+    python3 tools/dyn-lab/dynlab.py step --lookahead 2 --attack 0.5 --release 50 --hold 20
+
+## `latency`
+
+Prints each Processing Mode's latency in whole host samples, at every sample rate comp1 supports (`plugkit.conf`'s `SAMPLE_RATES`, 44.1 to 192 kHz) or at the `--rates` given. Zero Latency reports 0. High Quality reports one fixed latency per rate, whatever the settings (ADR 0001), the sum of three parts, each a named constant in `dynlab.py` with its reason:
+
+- the Oversampling reserve (`OVERSAMPLING_RESERVE_SAMPLES`), 128 samples at every rate, reserved for Oversampling's filters (#10);
+- the Lookahead budget (`LOOKAHEAD_BUDGET_MS`), Lookahead's top of 5 ms, rounded up;
+- the Limiter reserve (`LIMITER_RESERVE_MS`), 1 ms rounded up, reserved for the Limiter's own lookahead (#18).
+
+It also prints `MODE_FADE_MS`: a Processing Mode switch fades the output out over 10 ms, swaps paths in the silence, and fades the new path in over 10 ms, each on a smoothstep curve.
+
+    python3 tools/dyn-lab/dynlab.py latency
+    python3 tools/dyn-lab/dynlab.py latency --rates 44100 48000
 
 ## `autogain`
 
