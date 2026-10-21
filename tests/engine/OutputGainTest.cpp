@@ -2,11 +2,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <catch2/generators/catch_generators_adapters.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <tuple>
+#include <vector>
 
 using namespace comp1;
 
@@ -20,6 +22,9 @@ double largestGlideStep (double jump, double sampleRate)
 {
     return 1.01 * std::abs (jump) / (std::exp (1.0) * glideTimeConstantSeconds * sampleRate);
 }
+
+// The block size the cut-up output is compared against.
+const std::vector<int> wholeCut { 4096 };
 } // namespace
 
 TEST_CASE ("At 0 dB Output Gain the output is the input, bit for bit, at every sample rate and block size")
@@ -91,7 +96,9 @@ TEST_CASE ("A jump in Output Gain glides, with no step larger than the Smoother 
 
 TEST_CASE ("While Output Gain glides, the output is the same however the audio is cut into blocks")
 {
-    const auto cut = GENERATE (from_range (test::blockCuts()));
+    // The reference plays the audio in blocks of 4096 (wholeCut); that cut is left out, as it would equal the
+    // reference by construction.
+    const auto cut = GENERATE (filter ([] (const std::vector<int>& c) { return c != wholeCut; }, from_range (test::blockCuts())));
     CAPTURE (cut);
     const auto input = test::noise (2, 20000);
     auto whole = input, cutUp = input;
@@ -103,7 +110,7 @@ TEST_CASE ("While Output Gain glides, the output is the same however the audio i
         auto lead = test::noise (2, 100, 9);
         test::processInBlocks (engine, lead, { 100 });
         engine.setSettings ({ .outputGainDb = -24.0 });
-        test::processInBlocks (engine, *audio, audio == &whole ? std::vector<int> { 4096 } : cut);
+        test::processInBlocks (engine, *audio, audio == &whole ? wholeCut : cut);
     }
     CHECK (cutUp == whole);
 }
