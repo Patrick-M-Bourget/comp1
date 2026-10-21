@@ -49,10 +49,22 @@ bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
+    play (buffer, false);
+}
+
+void PluginProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    play (buffer, true);
+}
+
+void PluginProcessor::play (juce::AudioBuffer<float>& buffer, bool hostBypassed)
+{
     // Host Automation arrives on the audio thread, so the Settings are read here, once per block, and handed over
-    // only when it differs from the last one. Detection Audition, held by the editor, rides along.
+    // only when it differs from the last one. Detection Audition, held by the editor, rides along, and so does the
+    // host's bypass, as Global Bypass.
     auto settings = reader.read();
     settings.detectionAudition = detectionAudition();
+    settings.globalBypass = settings.globalBypass || hostBypassed;
     if (! publishedSincePrepare || settings != publishedSettings)
     {
         publishedSettings = settings;

@@ -23,6 +23,11 @@ public:
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
     using AudioProcessor::processBlock;
+    // The host's own bypass: played as processBlock() plays, with Global Bypass forced on, so it is delayed by the
+    // reported latency in each Processing Mode and crossfades in and out click-free. The Global Bypass host parameter
+    // isn't written.
+    void processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
+    using AudioProcessor::processBlockBypassed;
 
     // A placeholder: the host parameters, as JUCE's generic editor lays them out.
     juce::AudioProcessorEditor* createEditor() override;
@@ -59,6 +64,9 @@ public:
     bool detectionAudition() const { return heldDetectionAudition.load (std::memory_order_relaxed); }
 
 private:
+    // processBlock(), with Global Bypass forced on while the host bypasses.
+    void play (juce::AudioBuffer<float>& buffer, bool hostBypassed);
+
     juce::AudioProcessorValueTreeState parameters;
     parameters::SettingsReader reader { parameters }; // read on the audio thread
     Engine engine;
