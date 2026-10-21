@@ -39,12 +39,14 @@ float asStored (juce::AudioProcessor& processor, const juce::String& id, double 
 }
 
 // The host parameters choosing style writes, with the plain values ADR 0002 has it write: Style, and the Style's
-// Colour, Threshold, Ratio, Knee, Attack, Release, Auto Release, Hold, Range, Gate and Limiter settings.
+// default Comp with Comp Follow on, its Colour, Threshold, Ratio, Knee, Attack, Release, Auto Release, Hold, Range, Gate and Limiter settings.
 std::map<juce::String, double> writtenBy (Style style)
 {
     const auto s = comp1::styled (style);
     return {
         { "style", styleValue (style) },
+        { "comp", s.comp },
+        { "comp_follow", 1.0 },
         { "colour", s.colour },
         { "threshold", s.thresholdDb },
         { "ratio", s.ratio },

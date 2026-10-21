@@ -38,7 +38,9 @@ public:
 
     // A placeholder: the host parameters, as JUCE's generic editor lays them out. Its Style box sets the Style
     // parameter alone, as a host would: the Character changes, and the Style's defaults are not written
-    // (chooseStyle() writes them).
+    // (chooseStyle() writes them). Its Comp Follow box sets that parameter alone too, which glides as Host Automation
+    // does, without followComp()'s or stopFollowingComp()'s writes; and while Comp Follow is on, its Threshold and
+    // Ratio sliders have no effect.
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
@@ -77,11 +79,29 @@ public:
     // Source Styles join them with their defaults (#26).
     static const std::vector<Style>& offeredStyles();
     // Chooses an offered Style, from the message thread, as the editor's Style picker does: writes the Style parameter
-    // and exactly that Style's defaults (ADR 0002), inside gestures, as one undo step, and returns true. Choosing the
+    // and exactly that Style's defaults (ADR 0002), its default Comp and Comp Follow on among them, never Auto Gain,
+    // inside gestures, as one undo step, and returns true. Choosing the
     // Style already chosen writes its defaults again. A Style not offered changes nothing and returns false. Nothing
     // else writes a Style's defaults: restoring a session, loading a Preset, an A/B switch, undo and redo put back the
     // values they hold, and Host Automation can't set Style.
     bool chooseStyle (Style style);
+
+    // Comp Follow from the editor (ADR 0004), from the message thread: the plugin writes parameters only inside these
+    // and chooseStyle(), never on its own. Each writes inside gestures, as one undo step, and inside a transaction the
+    // editor holds, as part of its step, so the switch and the drag that follows are one undo step.
+    //
+    // stopFollowingComp(), as the editor turns Comp Follow off by editing Threshold or Ratio: while Comp Follow is on,
+    // writes it off, the curve's Threshold and Ratio at Comp, and Auto Gain on, so the output doesn't change, and
+    // returns true. With Comp Follow off it changes nothing and returns false.
+    bool stopFollowingComp();
+    // followComp(), as the editor turns Comp Follow on by grabbing Comp: while Comp Follow is off, writes Comp at the
+    // position nearest the stored Threshold on the Style's Comp Curve, clamped to its span, and Comp Follow on, and
+    // returns true; the Engine then glides onto the curve. With Comp Follow on it changes nothing and returns false.
+    bool followComp();
+    // The Threshold in dB and the Ratio (:1) the Style's Comp Curve sets at the current Comp: what the Engine plays
+    // while Comp Follow is on, and what the editor shows then. Any thread.
+    double followedThresholdDb() const;
+    double followedRatio() const;
 
     // Whether the editor offers Stereo Placement and Stereo Link: only on a stereo track. On a mono one both keep
     // their stored values and change nothing, the mono channel compressed as Stereo.
