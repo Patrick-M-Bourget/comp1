@@ -44,7 +44,24 @@ struct Table
     std::vector<Row> rows;
     // In High Quality at this factor, or with x1 at the base rate in both Processing Modes.
     Oversampling oversampling = Oversampling::x1;
+    double thresholdDb = Settings {}.thresholdDb;
 };
+
+// The rows `colour --character vca --threshold T` prints at T -10 and -50 dB, copied as printed: the same at both.
+std::vector<Row> vcaTracked()
+{
+    return { { 0.0, { absent, absent, absent, absent } },          { 3.0, { absent, absent, absent, absent } },
+             { 6.0, { absent, -112.03, absent, -113.47 } },        { 10.0, { absent, -50.75, absent, -62.96 } },
+             { 20.0, { absent, -38.38, absent, -51.77 } },         { 30.0, { absent, -38.33, absent, -46.24 } } };
+}
+
+// Likewise, `colour --character fet --threshold T`.
+std::vector<Row> fetTracked()
+{
+    return { { 0.0, { absent, absent, absent, absent } },   { 3.0, { absent, absent, absent, absent } },
+             { 6.0, { absent, -68.46, absent, -73.21 } },   { 10.0, { absent, -39.58, absent, -56.60 } },
+             { 20.0, { absent, -30.73, absent, -43.45 } },  { 30.0, { absent, -30.45, absent, -38.32 } } };
+}
 
 // Each table is the output of the dyn-lab command named with it, copied as printed.
 const std::vector<Table>& tables()
@@ -207,6 +224,11 @@ const std::vector<Table>& tables()
             { 20.0, { absent, -37.11, absent, -49.70 } },
             { 30.0, { absent, -37.10, absent, -44.86 } } },
           Oversampling::x8 },
+        // Colour tracks Threshold: at each Threshold, the same Gain Reduction gives the same harmonics.
+        { "python3 tools/dyn-lab/dynlab.py colour --character vca --threshold -10", Character::VCA, 100.0, vcaTracked(), Oversampling::x1, -10.0 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character vca --threshold -50", Character::VCA, 100.0, vcaTracked(), Oversampling::x1, -50.0 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet --threshold -10", Character::FET, 100.0, fetTracked(), Oversampling::x1, -10.0 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet --threshold -50", Character::FET, 100.0, fetTracked(), Oversampling::x1, -50.0 },
     };
     return all;
 }
@@ -226,8 +248,12 @@ TEST_CASE ("On VCA and FET, Colour follows the Gain Reduction: the harmonics mat
     // An oversampled table is High Quality's alone.
     if (table.oversampling != Oversampling::x1 && mode == ProcessingMode::ZeroLatency)
         return;
-    const Settings settings { .character = table.character, .colour = table.colour, .processingMode = mode, .oversampling = table.oversampling };
-    const auto spectrum = test::amplitudes (colouredTone (settings, test::levelForReductionDb (row.reductionDb)));
+    const Settings settings { .character = table.character,
+                              .thresholdDb = table.thresholdDb,
+                              .colour = table.colour,
+                              .processingMode = mode,
+                              .oversampling = table.oversampling };
+    const auto spectrum = test::amplitudes (colouredTone (settings, test::levelForReductionDb (row.reductionDb, table.thresholdDb)));
     const auto bin = static_cast<std::size_t> (test::toneBin (1000.0, sampleRate));
     for (std::size_t h = 0; h < row.harmonicsDb.size(); ++h)
     {
@@ -238,6 +264,20 @@ TEST_CASE ("On VCA and FET, Colour follows the Gain Reduction: the harmonics mat
         else
             CHECK (levelDb < comparedOverDb);
     }
+}
+
+TEST_CASE ("Colour tracks Threshold: on VCA, 10 dB of Gain Reduction gives about 0.3% THD at Threshold -10, -18 and -50 dB")
+{
+    const double thresholdDb = GENERATE (-10.0, -18.0, -50.0);
+    CAPTURE (thresholdDb);
+    const auto spectrum = test::amplitudes (colouredTone ({ .character = Character::VCA, .thresholdDb = thresholdDb },
+                                                          test::levelForReductionDb (10.0, thresholdDb)));
+    const auto bin = static_cast<std::size_t> (test::toneBin (1000.0, sampleRate));
+    double power = 0.0;
+    for (std::size_t h = 2; h <= 5; ++h)
+        power += std::pow (spectrum[h * bin] / spectrum[bin], 2.0);
+    // dyn-lab's colour gives 0.2987% at each.
+    CHECK (std::abs (100.0 * std::sqrt (power) - 0.2987) <= 0.001);
 }
 
 TEST_CASE ("At Colour 0% VCA adds no distortion: doubling the main input doubles the output bit for bit, under compression")

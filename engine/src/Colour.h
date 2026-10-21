@@ -22,12 +22,17 @@
 namespace comp1
 {
 
-// A Character's Colour at a Gain Reduction: the residual's weight and the drive in dB.
+// A Character's Colour at a Gain Reduction: the residual's weight, and the drive in dB the compressed signal is shaped
+// at, the tracking of Threshold included.
 struct ColourAt
 {
     double weight = 0.0;
     double driveDb = 0.0;
 };
+
+// dyn-lab's COLOUR_THRESHOLD_REFERENCE_DB: the Threshold at which Colour's shape is driven by the mapping's drive
+// alone. It is the default Threshold, so every figure at the defaults is the drive's alone.
+inline const double colourThresholdReferenceDb = Settings {}.thresholdDb;
 
 // A Character's Colour mapping (dyn-lab's COLOUR_MAPPINGS): the most its weight reaches, and the Gain Reductions in dB
 // over which its weight and its drive rise.
@@ -38,15 +43,20 @@ struct ColourMapping
     double driveDb = 1.0;
 };
 
-// The Colour mapping at a Gain Reduction in dB, before the Colour control scales its weight: the weight mapping.weight ×
-// (1 - e^(-GR / mapping.weightDb)), and the drive Drive's top × (1 - e^(-GR / mapping.driveDb)), which nears it and
-// never passes it. Each is exactly 0 with no Gain Reduction, and rises smoothly with it.
-inline ColourAt colourAt (const ColourMapping& mapping, double gainReductionDb)
+// The Colour mapping at a Gain Reduction and a Threshold in dB, before the Colour control scales its weight: the weight
+// mapping.weight × (1 - e^(-GR / mapping.weightDb)), and the drive Drive's top × (1 - e^(-GR / mapping.driveDb)),
+// which nears it and never passes it, plus the tracking, colourThresholdReferenceDb less Threshold. The weight is
+// exactly 0 with no Gain Reduction, and each rises smoothly with it.
+//
+// The tracking drives the shape relative to Threshold: at a steady Gain Reduction and Ratio the compressed signal sits
+// a fixed distance from Threshold, so its Colour is the same at every Threshold (dyn-lab's USAGE.md, "Colour").
+inline ColourAt colourAt (const ColourMapping& mapping, double gainReductionDb, double thresholdDb)
 {
     if (! (gainReductionDb > 0.0))
         return {};
     return { .weight = mapping.weight * -std::expm1 (-gainReductionDb / mapping.weightDb),
-             .driveDb = parameterRanges::drive.high * -std::expm1 (-gainReductionDb / mapping.driveDb) };
+             .driveDb = parameterRanges::drive.high * -std::expm1 (-gainReductionDb / mapping.driveDb)
+                        + (colourThresholdReferenceDb - thresholdDb) };
 }
 
 // One voice's Colour controls over a piece of the Wet path, which the compressor hands the After section: its

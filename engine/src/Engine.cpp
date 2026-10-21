@@ -72,7 +72,7 @@ plugkit::StereoPlacement routed (StereoPlacement placement)
 // settings as they stand for the run. Ratio glides as 1/Ratio, so ∞:1 (0) is reached; Attack and Release glide in
 // log time, as their host parameters move. Stereo Link glides as a fraction, 0 to 1, a sample at a time: it moves the
 // Gain Reduction itself, after the detectors, where a step a run would put a corner in the gain every run. Colour glides
-// as a fraction, 0 to 1, a sample at a time too, as it shapes the waveform.
+// as a fraction, 0 to 1, a sample at a time too, as it shapes the waveform, and so does Threshold as Colour tracks it.
 //
 // A voice is a Placement and a Character, and a change of either never jumps. At the start of a run, the new voice
 // starts with detectors and Colour of its own and fades in over the glide time as the old one fades out, its detectors
@@ -102,6 +102,7 @@ public:
             setting.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         stereoLink.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         colourShare.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
+        colourThreshold.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         fade.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         fade.reset (1.0);
         fading = false;
@@ -118,6 +119,7 @@ public:
         glideTo (glides[hold], settings.holdMs, snap);
         glideTo (stereoLink, settings.stereoLink / 100.0, snap);
         glideTo (colourShare, settings.colour / 100.0, snap);
+        glideTo (colourThreshold, settings.thresholdDb, snap);
         placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
         character = played (settings.character);
         source = settings.detectionSource;
@@ -187,15 +189,16 @@ public:
                 startDetectorRuns();
             const double link = stereoLink.isSettled() ? stereoLink.value() : stereoLink.next();
             const double share = colourShare.isSettled() ? colourShare.value() : colourShare.next();
+            const double thresholdDb = colourThreshold.isSettled() ? colourThreshold.value() : colourThreshold.next();
             askGains (heard, detection, audio.numChannels, i, link);
             if (! fading)
             {
                 for (std::size_t c = 0; c < partsOf (heard); ++c)
                     levels.noteDetection (heard.levelsDb[c], heard.reductionsDb[c]);
-                colourControls (heard, heardColour, i, share);
+                colourControls (heard, heardColour, i, share, thresholdDb);
                 // A fade over part-way through the piece: the voice gone adds nothing for the rest of it.
                 if (leavingColour.active)
-                    colourControls (leaving, leavingColour, i, 0.0);
+                    colourControls (leaving, leavingColour, i, 0.0, thresholdDb);
                 applyGains (heard, audio, i);
                 continue;
             }
@@ -208,8 +211,8 @@ public:
                 const double gain = in * gainOn (heard, ch) + (1.0 - in) * gainOn (leaving, ch);
                 levels.noteDetection (heard.levelsDb[partOf (heard, ch)], gain < 1.0 ? -plugkit::gainToDecibels (gain) : 0.0);
             }
-            colourControls (heard, heardColour, i, in * share);
-            colourControls (leaving, leavingColour, i, (1.0 - in) * share);
+            colourControls (heard, heardColour, i, in * share, thresholdDb);
+            colourControls (leaving, leavingColour, i, (1.0 - in) * share, thresholdDb);
             // Each voice's change to the sample, its gain, weighted by its share of the fade.
             const float left = audio.channels[0][i];
             const float right = audio.numChannels > 1 ? audio.channels[1][i] : left;
@@ -305,15 +308,15 @@ private:
     }
 
     // voice's Colour controls at sample i, for each part it compresses: from the Character's mapping of the Gain
-    // Reduction applied to the part, after Stereo Link, the weight scaled by share (the Colour control, and any fade's
-    // share), and the drive's gain. Under Mid or Side there is the one part. A Character with no Colour (Clean) has a
-    // weight of exactly 0.
-    static void colourControls (const Voice& voice, ColourVoice& colour, int i, double share)
+    // Reduction applied to the part, after Stereo Link, and of Threshold as Colour tracks it, the weight scaled by share
+    // (the Colour control, and any fade's share), and the drive's gain. Under Mid or Side there is the one part. A
+    // Character with no Colour (Clean) has a weight of exactly 0.
+    static void colourControls (const Voice& voice, ColourVoice& colour, int i, double share, double thresholdDb)
     {
         const auto n = static_cast<std::size_t> (i);
         for (std::size_t p = 0; p < partsOf (voice); ++p)
         {
-            auto at = hasColour (voice.character) ? colourOf (voice.character, voice.reductionsDb[p]) : ColourAt {};
+            auto at = hasColour (voice.character) ? colourOf (voice.character, voice.reductionsDb[p], thresholdDb) : ColourAt {};
             at.weight *= share;
             colour.weights[p][n] = at.weight;
             colour.gains[p][n] = plugkit::decibelsToGain (at.driveDb);
@@ -375,6 +378,9 @@ private:
     plugkit::Smoother glides[count];
     plugkit::Smoother stereoLink;  // 0 to 1
     plugkit::Smoother colourShare; // Colour, 0 to 1
+    // Threshold as Colour tracks it, in dB, gliding a sample at a time: it drives the shape, where the gain computer's
+    // step a run would put a corner in the waveform every run.
+    plugkit::Smoother colourThreshold;
     clean::Curve curve;
     clean::Timing timing;
     double releaseMs = 100.0;

@@ -152,8 +152,9 @@ void freeBandAtTone (Settings& s)
     s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = 1.0 };
 }
 
-// Colour is heard where the compressed tone comes within its drive of full scale (tools/dyn-lab/USAGE.md, "Colour"):
-// the tone at +12 dB, 30 dB over Threshold, compressed by 22.5 dB to -10.5 dB and driven 23.7 dB, 13 dB into the shape.
+// Colour is heard where the compressed tone comes within its drive of full scale, at the default Threshold, and as far
+// over Threshold at any other (tools/dyn-lab/USAGE.md, "Colour"): the tone at +12 dB, 30 dB over the default
+// Threshold, compressed by 22.5 dB to -10.5 dB and driven 23.7 dB, 13 dB into the shape.
 double colourful (double) { return 4.0; }
 
 void onVca (Settings& s) { s.character = Character::VCA; }
@@ -164,6 +165,27 @@ void oversampledColour (Settings& s)
     s.processingMode = ProcessingMode::HighQuality;
     s.oversampling = Oversampling::x8;
 }
+
+// Threshold jumping from -10 dB to -40 dB on character, the tone (+12 dB) compressed by 16.5 and 39 dB: Colour's shape
+// is driven 8 dB less and 22 dB more than at the default Threshold, so the jump moves it by 30 dB.
+Jump trackedThresholdJump (void (*character) (Settings&), std::string setting)
+{
+    const auto at = [character] (double thresholdDb) {
+        return [character, thresholdDb] (Settings& s) {
+            character (s);
+            s.thresholdDb = thresholdDb;
+        };
+    };
+    return { std::move (setting),
+             [character] (Settings& s, bool b) {
+                 character (s);
+                 s.thresholdDb = b ? -40.0 : -10.0;
+             },
+             { at (-10.0), at (-40.0) },
+             1,
+             colourful };
+}
+
 // The Limiter on, the tone (-12 dB) pushed 24 dB by Output Gain, 12 dB over the Ceiling's top, in mode.
 void limitingTone (Settings& s, ProcessingMode mode)
 {
@@ -406,6 +428,10 @@ const std::vector<Jump>& jumps()
             } },
           1,
           colourful },
+        // Threshold under compression at Colour 100%, which Colour tracks as it glides: against the steady tone at each
+        // end, coloured alike by the tracking.
+        trackedThresholdJump (onVca, "Threshold, VCA at Colour 100%"),
+        trackedThresholdJump (onFet, "Threshold, FET at Colour 100%"),
         // Mid-compression, at Colour 100%: Clean's gain and VCA's gain and Colour crossfade.
         { "Character, Clean and VCA",
           [] (Settings& s, bool b) { s.character = b ? Character::VCA : Character::Clean; },
