@@ -346,6 +346,31 @@ inline double worstRelativeError (const Channels& output, const Channels& expect
     return worst;
 }
 
+// --- Clicks ------------------------------------------------------------------------------------------------------
+
+// How much sharper the sharpest corner of a tone's output is, from sample from on, than a pure sine of toneFrequency
+// at the output's peak level allows: a sine A sin(wn) has a second difference of at most A w^2. Clicks show up far
+// above 1. On two channels, the worse of the two, each against its own peak.
+inline double discontinuity (const Channels& output, double toneFrequency, double sampleRate, std::size_t from)
+{
+    double worst = 0.0;
+    for (const auto& channel : output)
+    {
+        double peak = 0.0, sharpest = 0.0;
+        for (auto i = std::max (from, std::size_t { 2 }); i < channel.size(); ++i)
+        {
+            peak = std::max (peak, static_cast<double> (std::abs (channel[i])));
+            sharpest = std::max (sharpest, std::abs (static_cast<double> (channel[i]) - 2.0 * channel[i - 1] + channel[i - 2]));
+        }
+        const double w = 2.0 * std::numbers::pi * toneFrequency / sampleRate;
+        worst = std::max (worst, sharpest / (peak * w * w));
+    }
+    return worst;
+}
+
+// A discontinuity() at or over this is a click.
+inline constexpr double clickLimit = 2.0;
+
 // --- Spectra: aliasing and harmonics, as dyn-lab's `aliasing` measures them ------------------------
 
 // The length of each spectrum, a power of two, as dyn-lab's ALIAS_SAMPLES: a tone of a whole number of cycles over it

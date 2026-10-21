@@ -181,6 +181,14 @@ _Avoid_: Bypass (unqualified) for the whole plugin
 A saved, named set of every setting that affects the sound: Factory (shipped with comp1) or User (saved by the user).
 _Avoid_: Patch, program, snapshot, Style
 
+**Loaded Preset**:
+The Preset last loaded onto, or saved from, an A/B Compare side, shown by name. Each side has its own, or none until a Preset is loaded or saved on it.
+_Avoid_: Current preset, active preset, selected preset
+
+**Modified**:
+An A/B Compare side whose settings differ from its Loaded Preset's; returning to the Preset's settings, by edits or undo, makes it unmodified again.
+_Avoid_: Dirty, edited, changed (as a state)
+
 **A/B Compare**:
 Switching between two independent sets of the settings a Preset holds, in one plugin instance, to compare them.
 _Avoid_: Snapshot, compare slots

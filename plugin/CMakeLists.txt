@@ -1,10 +1,4 @@
-# The Plugin Shell: the JUCE layer around the DSP Engine.
-FetchContent_Declare(JUCE
-    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG 9.0.3
-    GIT_SHALLOW TRUE
-    SYSTEM)
-FetchContent_MakeAvailable(JUCE)
+# The Plugin Shell: the JUCE layer around the DSP Engine. JUCE is fetched in the root CMakeLists.txt, before plugkit.
 
 # CLAP comes from clap-juce-extensions until JUCE ships native CLAP, pinned to a commit, which can't move under the
 # build: no release supports JUCE 9 yet. The patch asks the host to rescan parameter values after a state load
@@ -58,6 +52,8 @@ target_link_libraries(comp1
     PRIVATE
         comp1::engine
         juce::juce_audio_utils
+        # From the plugin target only, which compiles its sources (plugkit's README.md, "Linking plugkit-ui").
+        plugkit::ui
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
