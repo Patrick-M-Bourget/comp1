@@ -1,6 +1,7 @@
 #include "Measure.h"
 
 #include <plugkit/OutputLevel.h>
+#include <plugkit/test/AllocationGuard.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -8,10 +9,12 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <limits>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace comp1;
@@ -348,4 +351,89 @@ TEST_CASE ("The level history is the same, record for record, however the host c
             REQUIRE (records[r].detectionLevelDb == reference[r].detectionLevelDb);
         }
     }
+}
+
+TEST_CASE ("Each level tap is read on a reader thread while process() runs, and reading never allocates")
+{
+    // The audio thread plays a steady 0 dB on both channels at the defaults, which dyn-lab's transfer compresses by
+    // 13.50 dB. The reader reads every tap until it has seen each one settle there; the audio plays until then, or for
+    // ten minutes of audio, when the test fails.
+    Engine engine;
+    engine.prepare (48000.0, 64, 2);
+    engine.setSettings ({});
+    std::atomic<bool> done { false };
+    std::thread audio ([&] {
+        test::Channels block (2, std::vector<float> (64));
+        float* main[] = { block[0].data(), block[1].data() };
+        for (int n = 0; n < 48000 * 600 / 64 && ! done; ++n)
+        {
+            for (auto& channel : block)
+                for (std::size_t i = 0; i < channel.size(); ++i)
+                    channel[i] = i % 2 == 0 ? 1.0f : -1.0f;
+            engine.process ({ main, 2, 64 });
+        }
+        done = true;
+    });
+
+    std::vector<LevelRecord> records (static_cast<std::size_t> (engine.levelHistoryCapacity()));
+    LevelRecord last {};
+    plugkit::OutputLevel output[2] {};
+    std::size_t allocations = 0;
+    const auto settled = [] (double db, double target) { return std::abs (db - target) < 0.01; };
+    while (! done
+           && ! (settled (last.gainReductionDb, 13.50) && settled (output[0].rmsDb, -13.50) && settled (output[1].rmsDb, -13.50)))
+    {
+        plugkit::test::AllocationGuard guard;
+        if (const int count = engine.readLevels (records.data(), static_cast<int> (records.size())); count > 0)
+            last = records[static_cast<std::size_t> (count - 1)];
+        for (int ch = 0; ch < engine.outputLevelChannels(); ++ch)
+            if (const auto level = engine.readOutputLevel (ch); level.peakDb > plugkit::levelFloorDb)
+                output[ch] = level;
+        allocations += guard.allocations();
+    }
+    done = true;
+    audio.join();
+
+    CHECK (allocations == 0);
+    CHECK_THAT (last.inputDb, WithinAbs (0.0, 1.0e-4));
+    CHECK_THAT (last.detectionLevelDb, WithinAbs (0.0, 1.0e-4));
+    CHECK_THAT (last.gainReductionDb, WithinAbs (13.50, 0.01));
+    CHECK_THAT (last.outputDb, WithinAbs (-13.50, 0.01));
+    for (const auto& level : output)
+    {
+        CHECK_THAT (level.peakDb, WithinAbs (-13.50, 0.01));
+        CHECK_THAT (level.rmsDb, WithinAbs (-13.50, 0.01));
+    }
+}
+
+TEST_CASE ("The level taps can be read while the host prepares the Engine again at another rate or channel count")
+{
+    Engine engine;
+    engine.prepare (48000.0, 256, 2);
+    std::atomic<bool> done { false };
+    std::thread reader ([&] {
+        std::vector<LevelRecord> records (4096);
+        while (! done)
+        {
+            engine.readLevels (records.data(), std::min (engine.levelHistoryCapacity(), static_cast<int> (records.size())));
+            for (int ch = 0; ch < 2; ++ch)
+                engine.readOutputLevel (ch);
+            engine.skipLevels();
+        }
+    });
+
+    // The host prepares and processes on its audio thread, here this one, while the editor reads.
+    auto audio = test::noise (2, 256);
+    float* main[] = { audio[0].data(), audio[1].data() };
+    const double rates[] = { 44100.0, 96000.0, 192000.0, 48000.0 };
+    for (int round = 0; round < 60; ++round)
+    {
+        const int numChannels = 1 + round % 2;
+        engine.prepare (rates[round % 4], 256, numChannels);
+        for (int block = 0; block < 8; ++block)
+            engine.process ({ main, numChannels, 256 });
+    }
+    done = true;
+    reader.join();
+    CHECK (engine.outputLevelChannels() == 2);
 }
