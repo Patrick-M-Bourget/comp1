@@ -23,7 +23,14 @@ struct Settings
     // Output Gain, in dB: applied to the whole output after Dry and Wet are summed, before the Limiter.
     double outputGainDb = 0.0;
 
+#if defined(__GNUC__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wfloat-equal" // exactly equal: a snapshot that changed nothing is skipped
+#endif
     bool operator== (const Settings&) const = default;
+#if defined(__GNUC__)
+    #pragma GCC diagnostic pop
+#endif
 };
 
 } // namespace comp1
