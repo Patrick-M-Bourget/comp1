@@ -12,8 +12,10 @@
 //   samples, so the gain moves smoothly and is fully down when a peak reaches the audio. The estimator's delay and W
 //   fill the Limiter reserve (comp1/Latency.h) exactly: the audio is delayed by it, on or off.
 //
-// The Limiter runs whether on or off. On and off crossfade between its output and its input, which have the same
-// delay, with plugkit's Smoother; settled off, the output is its input, bit for bit. The Ceiling glides on plugkit's
+// On and off crossfade between the Limiter's output and its input, which have the same delay, with plugkit's
+// Smoother; settled off, the output is its input, bit for bit, and the gain computer rests: High Quality only delays
+// the audio and feeds its estimator, and Zero Latency does nothing. Turned on, the Gain Reduction starts afresh, and is
+// whole long before the crossfade is over. The Ceiling glides on plugkit's
 // Smoother too, in linear gain, so it never passes the higher of the old and new Ceilings. Below the Ceiling the
 // Gain Reduction settles on exactly none, and the audio passes bit for bit. Each sample moves the same however the
 // audio is cut. When a Processing Mode's path starts playing again, its Limiter starts afresh.
@@ -83,6 +85,8 @@ public:
         startPath (ProcessingMode::HighQuality);
         playing = ProcessingMode::ZeroLatency;
         position = 0;
+        computed = 0;
+        resting = false;
         for (auto& channel : delayed)
             std::fill (channel.begin(), channel.end(), 0.0f);
     }
@@ -101,6 +105,16 @@ public:
             playing = path;
             startPath (path);
         }
+        if (onShare.isSettled() && onShare.value() == 0.0)
+        {
+            rest (block, path, levels);
+            return;
+        }
+        if (resting)
+        {
+            resting = false;
+            startGain();
+        }
         for (int i = 0; i < block.numSamples; ++i)
         {
             const double share = onShare.isSettled() ? onShare.value() : onShare.next();
@@ -110,12 +124,17 @@ public:
         }
     }
 
+    // How many samples the gain computer has worked out a Gain Reduction for since prepare(), in either mode: High
+    // Quality's estimator, hold, release and average, or Zero Latency's peak and release. For tests.
+    std::int64_t gainSamplesComputed() const { return computed; }
+
 private:
     // --- Zero Latency ---
 
     // Each sample returns the gain it applied, after the on/off crossfade.
     double zeroLatencySample (AudioBlock block, int i, double share, double ceilingGain)
     {
+        ++computed;
         double peak = 0.0;
         for (int ch = 0; ch < block.numChannels; ++ch)
             peak = std::max (peak, static_cast<double> (std::abs (block.channels[ch][i])));
@@ -143,19 +162,15 @@ private:
 
     double highQualitySample (AudioBlock block, int i, double share, double ceilingGain)
     {
+        ++computed;
+        feedHistory (block, i);
         // The estimate for the sample estimatorDelay ago: the loudest of its segment and the one before, on every
         // channel.
         double segment = 0.0;
         const double aim = ceilingGain * headroomGain;
-        for (int ch = 0; ch < block.numChannels; ++ch)
-        {
-            auto& h = history[static_cast<std::size_t> (ch)];
-            const auto sample = static_cast<double> (block.channels[ch][i]);
-            // Written twice, so the latest estimatorTaps samples sit in a row from historyPosition + 1.
-            h[static_cast<std::size_t> (historyPosition)] = h[static_cast<std::size_t> (historyPosition + estimatorTaps)] = sample;
+        for (const auto& h : history)
             segment = std::max (segment, segmentPeak (h.data() + historyPosition + 1, aim));
-        }
-        historyPosition = historyPosition + 1 == estimatorTaps ? 0 : historyPosition + 1;
+        advanceHistory();
         const double peak = std::max (segment, previousSegment);
         previousSegment = segment;
         pushHeld (overDb (peak, aim));
@@ -166,6 +181,27 @@ private:
         // The audio, delayed by the whole reserve, takes the gain: the crossfade between it limited and as it is,
         // the same scale, is a crossfade of the gain.
         const double gain = share == 0.0 ? 1.0 : share * gainOf (reduction) + (1.0 - share);
+        delay (block, i, gain);
+        return gain;
+    }
+
+    // Writes sample i of every channel into the estimator's history, twice, so the latest estimatorTaps samples sit
+    // in a row from historyPosition + 1 until advanceHistory().
+    void feedHistory (AudioBlock block, int i)
+    {
+        for (int ch = 0; ch < block.numChannels; ++ch)
+        {
+            auto& h = history[static_cast<std::size_t> (ch)];
+            h[static_cast<std::size_t> (historyPosition)] = h[static_cast<std::size_t> (historyPosition + estimatorTaps)] =
+                static_cast<double> (block.channels[ch][i]);
+        }
+    }
+
+    void advanceHistory() { historyPosition = historyPosition + 1 == estimatorTaps ? 0 : historyPosition + 1; }
+
+    // Sample i of every channel goes into the reserve's delay, and the sample the reserve ago comes out, at gain.
+    void delay (AudioBlock block, int i, double gain)
+    {
         for (int ch = 0; ch < block.numChannels; ++ch)
         {
             float& slot = delayed[static_cast<std::size_t> (ch)][static_cast<std::size_t> (position)];
@@ -174,7 +210,6 @@ private:
             block.channels[ch][i] = gain == 1.0 ? out : static_cast<float> (gain * out);
         }
         position = position + 1 == reserve ? 0 : position + 1;
-        return gain;
     }
 
     // The loudest of the sample at the middle of the estimatorTaps samples from window and the estimator's points
@@ -239,6 +274,26 @@ private:
 
     static double gainOf (double reductionDb) { return reductionDb > 0.0 ? plugkit::decibelsToGain (-reductionDb) : 1.0; }
 
+    // Off and settled, block plays as it is, delayed by the reserve in High Quality, with no Gain Reduction worked out.
+    // High Quality's estimator still hears it, so the estimates are whole once the Limiter turns on, and the Ceiling
+    // keeps gliding.
+    void rest (AudioBlock block, ProcessingMode path, RunLevels& levels)
+    {
+        resting = true;
+        if (! ceiling.isSettled())
+            for (int i = 0; i < block.numSamples; ++i)
+                ceiling.next();
+        if (path == ProcessingMode::HighQuality)
+            for (int i = 0; i < block.numSamples; ++i)
+            {
+                feedHistory (block, i);
+                advanceHistory();
+                delay (block, i, 1.0);
+            }
+        if (block.numSamples > 0)
+            levels.noteLimiterGain (1.0);
+    }
+
     // path starts afresh, with no Gain Reduction.
     void startPath (ProcessingMode path)
     {
@@ -250,6 +305,14 @@ private:
         for (auto& h : history)
             h.fill (0.0);
         historyPosition = 0;
+        startGain();
+    }
+
+    // Both paths' Gain Reduction starts afresh at none, High Quality's estimator keeping what it has heard. The hold
+    // and the average fill again within the reserve, long before the on/off crossfade is over.
+    void startGain()
+    {
+        zeroLatencyReduction = 0.0;
         previousSegment = 0.0;
         std::fill (heldValues.begin(), heldValues.end(), 0.0);
         heldFront = heldCount = 0;
@@ -311,6 +374,8 @@ private:
     int nonzeroAveraged = 0, averagedPosition = 0;
     std::vector<std::vector<float>> delayed; // per channel, a ring of the reserve's length
     int position = 0;
+    bool resting = false; // off and settled since the gain was last worked out
+    std::int64_t computed = 0;
 };
 
 } // namespace comp1

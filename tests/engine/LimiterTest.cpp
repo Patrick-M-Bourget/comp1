@@ -1,3 +1,5 @@
+#include "LevelTaps.h"
+#include "Limiter.h"
 #include "Measure.h"
 #include "comp1/Latency.h"
 
@@ -415,4 +417,52 @@ TEST_CASE ("At a sample rate comp1 doesn't support, the Limiter still plays, at 
     impulse[0][100] = 0.25f;
     const auto heard = test::played ({ .ratio = 1.0, .limiter = true, .processingMode = mode }, sampleRate, impulse);
     CHECK (heard == test::delayed (impulse, latencySamples (mode, sampleRate)));
+}
+
+namespace
+{
+
+// Plays audio through limiter on path, in blocks of 512, in place.
+void playLimiter (Limiter& limiter, ProcessingMode path, test::Channels& audio)
+{
+    RunLevels levels;
+    std::vector<float*> channels (audio.size());
+    const auto length = static_cast<int> (audio.front().size());
+    for (int start = 0; start < length; start += 512)
+    {
+        for (std::size_t ch = 0; ch < audio.size(); ++ch)
+            channels[ch] = audio[ch].data() + start;
+        limiter.process ({ channels.data(), static_cast<int> (audio.size()), std::min (512, length - start) }, path, levels);
+    }
+}
+
+} // namespace
+
+TEST_CASE ("Off and settled, the Limiter's gain computer does no work; turned on, it runs again")
+{
+    const auto mode = GENERATE (zeroLatency, highQuality);
+    const double sampleRate = 48000.0;
+    CAPTURE (static_cast<int> (mode));
+    Limiter limiter;
+    limiter.prepare (sampleRate, 2);
+    limiter.setCeiling (-30.0, true);
+    // Noise far over the Ceiling: the gain computer, running, would have Gain Reduction to work out on every sample.
+    auto audio = test::noise (2, 4800);
+    playLimiter (limiter, mode, audio);
+    CHECK (limiter.gainSamplesComputed() == 0);
+
+    limiter.setOn (true, false);
+    audio = test::noise (2, 4800);
+    playLimiter (limiter, mode, audio);
+    CHECK (limiter.gainSamplesComputed() == 4800);
+
+    // Off again: it works through the glide down, then stops once the share has settled at 0.
+    limiter.setOn (false, false);
+    audio = test::noise (2, static_cast<int> (sampleRate));
+    playLimiter (limiter, mode, audio);
+    const auto computed = limiter.gainSamplesComputed();
+    CHECK (computed > 4800);
+    audio = test::noise (2, 4800);
+    playLimiter (limiter, mode, audio);
+    CHECK (limiter.gainSamplesComputed() == computed);
 }
