@@ -3,7 +3,7 @@
 // Colour: a Character's own distortion, which grows with its Gain Reduction (dyn-lab's USAGE.md, "Colour"). The
 // saturation module's shape and anti-aliased residual (Saturation.h), unchanged, driven by the Character's mapping of
 // the Gain Reduction applied, sample by sample. Like the module, it assumes nothing about the sample rate, so it runs
-// as well oversampled (#10).
+// as well oversampled (ADR 0009).
 
 #include "Saturation.h"
 

@@ -97,9 +97,9 @@ TEST_CASE ("A Processing Mode switch under Global Bypass falls to silence and ri
     const auto [from, to] = GENERATE (table<ProcessingMode, ProcessingMode> ({ { zeroLatency, highQuality }, { highQuality, zeroLatency } }));
     CAPTURE (sampleRate, static_cast<int> (to));
     // dyn-lab's MODE_FADE_MS: the fade-out, and the fade-in, each 10 ms. Into High Quality, the silence also waits
-    // for its delays after the compressor to fill.
+    // for its delays to fill: all of them, its whole latency, as ProcessingModeTest's switch says.
     const int fade = static_cast<int> (std::lround (10.0 * sampleRate / 1000.0));
-    const int padding = to == highQuality ? latencySamples (highQuality, sampleRate) - lookaheadBudgetSamples (sampleRate) : 0;
+    const int padding = to == highQuality ? latencySamples (highQuality, sampleRate) : 0;
     const int switchAt = 4003;
     const auto input = test::noise (2, switchAt + 2 * fade + padding + 3000);
     const auto reference = test::played (compressing (from, true), sampleRate, input, { 4096 }, nullptr, test::SettingsChange { switchAt, compressing (to, true) });

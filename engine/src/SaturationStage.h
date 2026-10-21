@@ -69,35 +69,34 @@ public:
     // Saturates audio in place when the stage is at, and otherwise leaves it alone.
     void process (SaturationPosition at, AudioBlock audio)
     {
-        if (at != position || audio.numSamples == 0)
+        if (! arrive (at, { audio.channels, audio.numChannels, audio.numSamples }))
             return;
-        // Just moved: each channel's ADAA starts from the signal here, not the one at the old position.
-        if (arrived)
-        {
-            for (int ch = 0; ch < audio.numChannels; ++ch)
-                channels[static_cast<std::size_t> (ch)].follow (gain * audio.channels[ch][0]);
-            arrived = false;
-        }
-        if (silent())
-        {
-            for (int i = 0; i < audio.numSamples && ! drive.isSettled(); ++i)
-                glideDrive();
-            for (int ch = 0; ch < audio.numChannels; ++ch)
-                channels[static_cast<std::size_t> (ch)].follow (gain * audio.channels[ch][audio.numSamples - 1]);
-            return;
-        }
-        // The weight and Drive glide a sample at a time; once both have settled, next() would return each goal
-        // exactly, so the rest takes them as constants, sample for sample the same.
-        int i = 0;
-        for (; i < audio.numSamples && ! (weight.isSettled() && drive.isSettled()); ++i)
-        {
-            if (! drive.isSettled())
-                glideDrive();
-            saturate (audio, i, weight.next());
-        }
-        const double w = weight.value();
-        for (; i < audio.numSamples; ++i)
-            saturate (audio, i, w);
+        run (audio.numSamples, [&] (int i, double w) { saturate (audio, i, w); });
+    }
+
+    // Whether the stage, at, adds a residual to the next samples: it is there and not faded out exactly.
+    bool heardAt (SaturationPosition at) const { return at == position && ! silent(); }
+
+    // High Quality's oversampled residual (ADR 0009), when the stage is at: host is the stage's input, and oversampled
+    // holds it at factor samples a host sample, from Oversampling's up filters. Each oversampled sample u becomes the
+    // residual alone, w r(g u) / g, with ADAA running at the oversampled rate; the weight and Drive glide a host
+    // sample at a time, as process() moves them, so at factor 1 each is exactly what process() adds to its sample.
+    // Returns false, leaving oversampled alone, when the stage adds nothing (heardAt() is false): it then moves on
+    // as process() would, following host.
+    bool residual (SaturationPosition at, ConstAudioBlock host, double* const* oversampled, int factor)
+    {
+        if (! arrive (at, host))
+            return false;
+        run (host.numSamples, [&] (int i, double w) {
+            for (int ch = 0; ch < host.numChannels; ++ch)
+            {
+                auto& adaa = channels[static_cast<std::size_t> (ch)];
+                double* samples = oversampled[ch] + i * factor;
+                for (int k = 0; k < factor; ++k)
+                    samples[k] = w * adaa.process (gain * samples[k]) / gain;
+            }
+        });
+        return true;
     }
 
 private:
@@ -110,6 +109,45 @@ private:
     void aimWeight() { weight.setTarget (on && position == wanted ? 1.0 : 0.0); }
 
     void glideDrive() { gain = plugkit::decibelsToGain (drive.next()); }
+
+    // Whether the stage saturates audio at: it is there and not faded out. A stage just moved there starts each
+    // channel's ADAA from the signal here, not the one at the old position; a silent one glides Drive and follows
+    // the signal, as if it had saturated it.
+    bool arrive (SaturationPosition at, ConstAudioBlock audio)
+    {
+        if (at != position || audio.numSamples == 0)
+            return false;
+        if (arrived)
+        {
+            for (int ch = 0; ch < audio.numChannels; ++ch)
+                channels[static_cast<std::size_t> (ch)].follow (gain * audio.channels[ch][0]);
+            arrived = false;
+        }
+        if (! silent())
+            return true;
+        for (int i = 0; i < audio.numSamples && ! drive.isSettled(); ++i)
+            glideDrive();
+        for (int ch = 0; ch < audio.numChannels; ++ch)
+            channels[static_cast<std::size_t> (ch)].follow (gain * audio.channels[ch][audio.numSamples - 1]);
+        return false;
+    }
+
+    // Calls saturate (i, w) for each of numSamples samples, with the weight and Drive as they glide. Once both have
+    // settled, next() would return each goal exactly, so the rest takes them as constants, sample for sample the same.
+    template <typename Saturate>
+    void run (int numSamples, Saturate&& saturate)
+    {
+        int i = 0;
+        for (; i < numSamples && ! (weight.isSettled() && drive.isSettled()); ++i)
+        {
+            if (! drive.isSettled())
+                glideDrive();
+            saturate (i, weight.next());
+        }
+        const double w = weight.value();
+        for (; i < numSamples; ++i)
+            saturate (i, w);
+    }
 
     void saturate (AudioBlock audio, int i, double w)
     {

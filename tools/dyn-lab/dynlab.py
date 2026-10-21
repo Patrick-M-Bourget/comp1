@@ -10,6 +10,7 @@ command.
 """
 
 import argparse
+import functools
 import math
 import operator
 import os
@@ -382,11 +383,12 @@ def step_response(settings, fs, lookahead=LOOKAHEAD_DEFAULT):
 # compensation never moves while Oversampling or Lookahead do. It is three parts, each a delay in whole host samples
 # at its own place in the chain; Zero Latency has none of them.
 
-# Reserved for Oversampling (#10): the delay of its up- and down-sampling filters. ADR 0001 caps the internal rate at
-# about 384 kHz, so the largest factor halves each time the rate doubles, and the filters cost about the same number
-# of host samples at every rate: a fixed count, not a time. A linear-phase filter delays by half its length at its
-# own rate, so 2x stages of N taps, up and down, cost about N/2 host samples for the first, N/4 for the second and N/8
-# for the third: 128 holds the three stages of 8x at up to about 145 taps each, which #10 designs within it.
+# The Oversampling reserve: the delay of Oversampling's two sections, OVERSAMPLING_SECTION_SAMPLES each (see
+# "Oversampling" below). ADR 0001 caps the internal rate at about 384 kHz, so the largest factor halves each time the
+# rate doubles, and the filters cost about the same number of host samples at every rate: a fixed count, not a time.
+# A linear-phase filter delays by half its length at its own rate, so 2x stages of N taps, up and down, cost about
+# N/2 host samples for the first, N/4 for the second and N/8 for the third: each section's 64 holds the three stages
+# of 8x at up to about 73 taps each.
 OVERSAMPLING_RESERVE_SAMPLES = 128
 # The Lookahead budget: Lookahead's top, so every Lookahead fits within it. The audio is delayed by the whole budget
 # and the detection signal by the budget less Lookahead, so moving Lookahead moves only the detection signal.
@@ -720,6 +722,15 @@ def shaped(k, level_db, drive_db, residual_of):
     return spectrum(driven(tone(k, level_db), drive_db, residual_of))
 
 
+@functools.lru_cache(maxsize=None)
+def anti_aliased(k, level_db, drive_db, factor=1):
+    """The spectrum of the bin-centred tone k at level_db through the Saturation stage at drive_db with ADAA: at the
+    base rate, or at factor in High Quality's oversampled section (oversampled_driven)."""
+    if factor == 1:
+        return shaped(k, level_db, drive_db, AntiAliased())
+    return spectrum(oversampled_driven(tone(k, level_db), drive_db, factor))
+
+
 # The reference conditions: each rate, tone and Drive, at one level, full scale. Drive is level-compensated, so the
 # shape sees only the level plus the Drive, and every figure relative to the fundamental depends on that sum: a
 # quieter level is a lower Drive. Full scale gives each Drive its hardest case.
@@ -735,42 +746,66 @@ HARDEST = (max(ALIAS_FREQUENCIES), DRIVE_RANGE[1])
 
 @dataclass
 class AliasingTolerance:
-    """ADAA's worst alias in dB relative to the fundamental is at most ceiling at every reference condition, and at
-    the hardest (HARDEST) at least improvement dB under the naive shaper's. USAGE.md gives the reasons."""
+    """At the base rate, ADAA's worst alias in dB relative to the fundamental is at most ceiling at every reference
+    condition, and at the hardest (HARDEST) at least improvement dB under the naive shaper's. Oversampled, at each
+    factor of passband_ceilings, the worst alias below the passband edge is at most that factor's ceiling, and the
+    worst alias anywhere is no worse than at the base rate. USAGE.md gives the reasons."""
     ceiling: float
     improvement: float
+    passband_ceilings: dict
 
 
-ALIASING_TOLERANCE = AliasingTolerance(ceiling=-24.0, improvement=15.0)
+ALIASING_TOLERANCE = AliasingTolerance(ceiling=-24.0, improvement=15.0,
+                                       passband_ceilings={2: -45.0, 4: -60.0, 8: -75.0})
+
+
+def worst_passband_alias_db(amplitudes, k):
+    """The worst alias below the passband edge (OVERSAMPLING_PASSBAND_EDGE of Nyquist), in dB relative to the
+    fundamental: the band the oversampled section's filters keep flat."""
+    top = int(OVERSAMPLING_PASSBAND_EDGE * ALIAS_SAMPLES / 2)
+    return worst_alias_db(amplitudes[:top + 1], k)
 
 
 @dataclass
 class Alias:
-    """The worst alias at one condition, in dB relative to the fundamental: the naive shaper's and ADAA's."""
+    """The worst alias at one condition, in dB relative to the fundamental: the naive shaper's and ADAA's, at the base
+    rate; oversampled, ADAA's at factor too, anywhere and below the passband edge."""
     fs: float
     frequency: float  # the tone's, bin-centred
     drive: float
     naive: float
     adaa: float
     hardest: bool = False
+    factor: int = 1
+    oversampled: float = None
+    passband: float = None
 
     @property
     def within(self):
+        if self.factor > 1:
+            return (self.passband <= ALIASING_TOLERANCE.passband_ceilings[self.factor]
+                    and self.oversampled <= self.adaa)
         return (self.adaa <= ALIASING_TOLERANCE.ceiling
                 and (not self.hardest or self.naive - self.adaa >= ALIASING_TOLERANCE.improvement))
 
 
-def aliases(rates=ALIAS_RATES, frequencies=ALIAS_FREQUENCIES, drives=ALIAS_DRIVES, level_db=ALIAS_LEVEL):
-    """The worst alias at each condition, the hardest marked."""
+def aliases(rates=ALIAS_RATES, frequencies=ALIAS_FREQUENCIES, drives=ALIAS_DRIVES, level_db=ALIAS_LEVEL, factor=1):
+    """The worst alias at each condition, the hardest marked, at the base rate and, when factor is over 1, oversampled
+    by it."""
     rows = []
     for fs in rates:
         for frequency in frequencies:
             k = tone_bin(frequency, fs)
             for drive in drives:
                 naive = worst_alias_db(shaped(k, level_db, drive, residual), k)
-                adaa = worst_alias_db(shaped(k, level_db, drive, AntiAliased()), k)
+                adaa = worst_alias_db(anti_aliased(k, level_db, drive), k)
                 hardest = (frequency, drive) == HARDEST
-                rows.append(Alias(fs, k * fs / ALIAS_SAMPLES, drive, naive, adaa, hardest))
+                row = Alias(fs, k * fs / ALIAS_SAMPLES, drive, naive, adaa, hardest, factor)
+                if factor > 1:
+                    amplitudes = anti_aliased(k, level_db, drive, factor)
+                    row.oversampled = worst_alias_db(amplitudes, k)
+                    row.passband = worst_passband_alias_db(amplitudes, k)
+                rows.append(row)
     return rows
 
 
@@ -819,24 +854,225 @@ class Harmonic:
         return not self.compared or abs(self.adaa - self.ideal) <= HARMONIC_TOLERANCE_DB
 
 
-def harmonics(rates=ALIAS_RATES, frequencies=HARMONIC_FREQUENCIES, drives=ALIAS_DRIVES, level_db=ALIAS_LEVEL):
-    """Each in-band harmonic, 2nd to 5th, of each reference tone through ADAA, beside the ideal reference's."""
+def harmonics(rates=ALIAS_RATES, frequencies=HARMONIC_FREQUENCIES, drives=ALIAS_DRIVES, level_db=ALIAS_LEVEL,
+              factor=1, numbers=HARMONICS):
+    """Each in-band harmonic of numbers (2nd to 5th by default) of each reference tone through ADAA, at the base rate
+    or oversampled by factor, beside the ideal reference's."""
     rows = []
     for fs in rates:
         for frequency in frequencies:
             k = tone_bin(frequency, fs)
             for drive in drives:
-                amplitudes = shaped(k, level_db, drive, AntiAliased())
-                for h in HARMONICS:
+                amplitudes = anti_aliased(k, level_db, drive, factor)
+                for h in numbers:
                     if h * k < ALIAS_SAMPLES // 2:
                         adaa = 20 * math.log10(max(amplitudes[h * k], 1e-300))
                         rows.append(Harmonic(fs, k * fs / ALIAS_SAMPLES, drive, h, ideal_harmonic_db(h, level_db, drive), adaa))
     return rows
 
 
+# --- Oversampling ---------------------------------------------------------------------------------
+
+# The factors Oversampling offers, frozen in this order (ADR 0003), and ADR 0001's cap on the internal rate: a factor
+# is allowed at a rate when the rate times the factor is at or under the cap, so the largest allowed factor halves as
+# the rate doubles and the filters' delay in host samples stays the same at every rate.
+OVERSAMPLING_FACTORS = (1, 2, 4, 8)
+MAX_INTERNAL_RATE_HZ = 384000
+
+# Each of the two oversampled sections on the Wet path (Before the detection stage and After the compressor) delays
+# its linear part by exactly this many host samples, and pads its residual's up and down filters to the same total,
+# so the sections' delay never depends on the factor: half the Oversampling reserve each.
+OVERSAMPLING_SECTION_SAMPLES = OVERSAMPLING_RESERVE_SAMPLES // 2
+
+# The filters: each 2x step is a linear-phase half-band FIR, Kaiser-windowed, cascaded for 4x and 8x, and up and down
+# use the same design. Only the nonlinear residual passes through them (ADR 0009), never the linear part, so their
+# passband edge needn't reach 20 kHz: below the edge the residual's harmonics pass flat, and above it they are
+# inaudible at 44.1 kHz or gone at the higher rates, where the edge is far above 20 kHz.
+#
+# The passband edge, as a fraction of the host's Nyquist (17.64 kHz at 44.1 kHz). A half-band filter's transition is
+# centred on the rate it halves to's Nyquist, so its stopband starts as far above that Nyquist as the passband edge
+# is below it. 0.8 keeps the first stage's transition 0.1 of its rate wide: wider costs fewer taps, but folds more of
+# the residual's top octave back into the band.
+OVERSAMPLING_PASSBAND_EDGE = 0.8
+# The stopband attenuation every stage reaches, in dB. Aliases the filters let through then sit 100 dB under the
+# residual's own out-of-band harmonics: far under every alias ADAA leaves at the oversampled rate (the aliasing rows
+# below), and within 40 dB of the float audio's own rounding, so a deeper stopband buys nothing measurable.
+OVERSAMPLING_STOPBAND_DB = 100.0
+# The Kaiser window's beta for that attenuation, Kaiser's formula for attenuations over 50 dB, 0.1102 (A - 8.7).
+# Each stage's length is then the shortest half-band, 4m - 1 taps, whose measured stopband reaches the attenuation.
+KAISER_BETA = 0.1102 * (OVERSAMPLING_STOPBAND_DB - 8.7)
+# The measured passband edge: the highest frequency the cascade's gain stays within this many dB of unity up to. A
+# half-band's passband ripple equals its stopband's, 10^(-100/20), about 1e-4 dB, so 0.001 dB marks where the
+# transition starts.
+PASSBAND_FLAT_DB = 0.001
+# The points each response is measured at, across its band.
+RESPONSE_POINTS = 2000
+
+
+def allowed_factors(fs):
+    """The Oversampling factors allowed at fs: those whose internal rate is at or under MAX_INTERNAL_RATE_HZ."""
+    return tuple(factor for factor in OVERSAMPLING_FACTORS if factor * fs <= MAX_INTERNAL_RATE_HZ)
+
+
+def max_oversampling(fs):
+    """The largest Oversampling factor allowed at fs."""
+    return max(allowed_factors(fs))
+
+
+def factor_in_force(setting, fs):
+    """The factor a setting plays at fs: the largest allowed factor at or under it."""
+    return max(factor for factor in allowed_factors(fs) if factor <= setting)
+
+
+def halfband(taps):
+    """A Kaiser-windowed half-band lowpass of taps taps (4m - 1), its DC gain 1: the centre tap 1/2, every other tap
+    on each side 0, the rest the ideal half-band's sin(πn/2)/(πn), windowed."""
+    centre = (taps - 1) // 2
+    window = bessel_i0(KAISER_BETA)
+    return [0.5 if n == centre else 0.0 if (n - centre) % 2 == 0 else
+            math.sin(math.pi * (n - centre) / 2) / (math.pi * (n - centre))
+            * bessel_i0(KAISER_BETA * math.sqrt(1 - ((n - centre) / centre) ** 2)) / window
+            for n in range(taps)]
+
+
+def amplitude(h, f):
+    """The zero-phase amplitude of the symmetric filter h at f, a fraction of its own rate."""
+    centre = (len(h) - 1) // 2
+    return h[centre] + 2 * sum(h[centre + j] * math.cos(2 * math.pi * f * j) for j in range(1, centre + 1) if h[centre + j])
+
+
+def stage_passband(stage):
+    """Stage stage's passband edge (0 for 1x to 2x), a fraction of its own rate, 2^(stage + 1) host rates."""
+    return OVERSAMPLING_PASSBAND_EDGE / 2 / 2 ** (stage + 1)
+
+
+def stopband_db(h, edge):
+    """h's measured attenuation in dB across its stopband, from 1/2 - edge to its Nyquist, the least of it."""
+    start = 0.5 - edge
+    return min(-20 * math.log10(max(abs(amplitude(h, start + (0.5 - start) * i / RESPONSE_POINTS)), 1e-300))
+               for i in range(RESPONSE_POINTS + 1))
+
+
+_STAGES = {}
+
+
+def stage_filter(stage):
+    """Stage stage's half-band: the shortest, 4m - 1 taps, whose stopband reaches OVERSAMPLING_STOPBAND_DB."""
+    if stage not in _STAGES:
+        m = 1
+        while stopband_db(halfband(4 * m - 1), stage_passband(stage)) < OVERSAMPLING_STOPBAND_DB:
+            m += 1
+        _STAGES[stage] = halfband(4 * m - 1)
+    return _STAGES[stage]
+
+
+def stages(factor):
+    """The half-bands of factor's cascade, the first (host rate to 2x) first."""
+    return [stage_filter(stage) for stage in range(factor.bit_length() - 1)]
+
+
+@dataclass
+class Pair:
+    """factor's up and down filters: their delay together in host samples, the padding that rounds it up to whole host
+    samples (in samples at the oversampled rate), and the section's padding left to OVERSAMPLING_SECTION_SAMPLES."""
+    factor: int
+    delay: int
+    internal_padding: int
+
+    @property
+    def padding(self):
+        return OVERSAMPLING_SECTION_SAMPLES - self.delay
+
+
+def pair(factor):
+    """factor's up and down filters' delay. A linear-phase stage of N taps delays by (N - 1) / 2 samples at its own
+    rate, up and down alike; stage s runs at 2^(s + 1) host rates. Each half-band's delay is odd at its rate, so a
+    cascade's can fall between host samples: padding at the oversampled rate rounds it up to whole ones."""
+    total = sum((len(h) - 1) * factor // 2 ** (stage + 1) for stage, h in enumerate(stages(factor)))
+    delay = -(-total // factor)
+    return Pair(factor, delay, delay * factor - total)
+
+
+def cascade_gain(factor, f):
+    """The magnitude of factor's cascade (either way: up and down use the same design) at f Hz over the host rate."""
+    gain = 1.0
+    for stage, h in enumerate(stages(factor)):
+        gain *= abs(amplitude(h, f / 2 ** (stage + 1)))
+    return gain
+
+
+def stopband_bands(factor):
+    """The bands, in host rates, where factor's cascade must stop: within the passband edge of each multiple of the
+    host rate, up to the oversampled Nyquist. The images of the host's passband land there going up, and what lies
+    there coming down is what folds back into the passband."""
+    edge = OVERSAMPLING_PASSBAND_EDGE / 2
+    return [(k - edge, min(k + edge, factor / 2)) for k in range(1, factor // 2 + 1)]
+
+
+def measured_stopband_db(factor):
+    """The cascade's least attenuation in dB across its stopband bands."""
+    return min(-20 * math.log10(max(cascade_gain(factor, start + (end - start) * i / RESPONSE_POINTS), 1e-300))
+               for start, end in stopband_bands(factor) for i in range(RESPONSE_POINTS + 1))
+
+
+def measured_passband_edge(factor):
+    """The highest frequency, as a fraction of the host rate, up to which the cascade stays within PASSBAND_FLAT_DB
+    of unity."""
+    step = 0.5 / RESPONSE_POINTS
+    f = 0.0
+    while f + step <= 0.5 and abs(20 * math.log10(cascade_gain(factor, f + step))) <= PASSBAND_FLAT_DB:
+        f += step
+    return f
+
+
+def _up(x, h):
+    """x at twice its rate: zero-stuffed, then filtered by h at twice its gain, as a polyphase pair. Delayed by h's
+    centre, (len(h) - 1) / 2 samples at the new rate."""
+    even = [2 * h[i] for i in range(0, len(h), 2)][::-1]
+    centre = (len(h) - 1) // 2
+    padded = [0.0] * (len(even) - 1) + x
+    out = []
+    for n in range(len(x)):
+        out.append(sum(map(operator.mul, even, padded[n:n + len(even)])))
+        out.append(padded[n + len(even) - 1 - (centre - 1) // 2])
+    return out
+
+
+def _down(u, h):
+    """u at half its rate: filtered by h, keeping every other sample, as a polyphase pair. Delayed by h's centre,
+    (len(h) - 1) / 2 samples at u's rate."""
+    even = [h[i] for i in range(0, len(h), 2)][::-1]
+    centre = (len(h) - 1) // 2
+    padded = [0.0] * (len(h) - 1) + u
+    out = []
+    for n in range(0, len(u), 2):
+        out.append(sum(map(operator.mul, even, padded[n:n + len(h):2])) + 0.5 * padded[n + len(h) - 1 - centre])
+    return out
+
+
+def oversampled_driven(x, drive_db, factor):
+    """The Saturation stage at factor (ADR 0009): the linear part, x, delayed by the section's
+    OVERSAMPLING_SECTION_SAMPLES; the residual worked out at the oversampled rate, with ADAA at that rate, from x
+    through the up filters, then back through the down filters and padded to the same delay."""
+    g = 10 ** (drive_db / 20)
+    up = list(x)
+    for h in stages(factor):
+        up = _up(up, h)
+    adaa = AntiAliased()
+    residual_up = [0.0] * pair(factor).internal_padding + [adaa(g * s) / g for s in up]
+    for h in reversed(stages(factor)):
+        residual_up = _down(residual_up, h)
+    section = OVERSAMPLING_SECTION_SAMPLES
+    linear = [0.0] * section + list(x)
+    residual_out = [0.0] * pair(factor).padding + residual_up
+    return [linear[n] + residual_out[n] for n in range(len(x))]
+
+
 def aliasing_options(parser):
     parser.add_argument("--drive", type=float, nargs="+", default=list(ALIAS_DRIVES), metavar="dB")
     parser.add_argument("--rates", type=float, nargs="+", default=list(ALIAS_RATES), metavar="Hz")
+    parser.add_argument("--oversampling", type=int, default=1, choices=OVERSAMPLING_FACTORS, metavar="N",
+                        help="the factor: 1 (the base rate, the default), 2, 4 or 8")
 
 
 @command("aliasing", options=aliasing_options)
@@ -844,34 +1080,56 @@ def run_aliasing(args):
     for drive in args.drive:
         check_drive(drive)
     _check_rates(args.rates)
-    if not report_aliasing(args.rates, args.drive):
+    for fs in args.rates:
+        if args.oversampling not in allowed_factors(fs):
+            raise ValueError(f"Oversampling {args.oversampling}x is over the cap at {fs:g} Hz: "
+                             f"{MAX_INTERNAL_RATE_HZ} Hz allows up to {max_oversampling(fs)}x there")
+    if not report_aliasing(args.rates, args.drive, args.oversampling):
         raise SystemExit(1)
 
 
-def report_aliasing(rates=ALIAS_RATES, drives=ALIAS_DRIVES):
-    """The worst alias at each reference condition, naive and ADAA, then ADAA's in-band harmonics beside the ideal
-    reference's. True when every row is within its tolerance."""
+def report_aliasing(rates=ALIAS_RATES, drives=ALIAS_DRIVES, factor=1):
+    """The worst alias at each reference condition, naive and ADAA, and oversampled by factor when it is over 1; then
+    ADAA's in-band harmonics, at factor, beside the ideal reference's, and its fundamental. True when every row is
+    within its tolerance."""
     tolerance = ALIASING_TOLERANCE
     print(f"Saturation aliasing, bin-centred tones at {ALIAS_LEVEL:g} dBFS over {ALIAS_SAMPLES} samples: the worst "
           f"alias in dB relative to the fundamental")
-    print(f"tolerance: ADAA at most {tolerance.ceiling:g} dB, and at the hardest condition (*) at least "
-          f"{tolerance.improvement:g} dB under naive")
-    print(f"{'rate Hz':>8} {'tone Hz':>8} {'drive dB':>9} {'naive':>8} {'ADAA':>8} {'better':>8}  check")
-    rows = aliases(rates, ALIAS_FREQUENCIES, drives)
-    for row in rows:
-        print(f"{row.fs:8g} {row.frequency:8.1f} {row.drive:9g} {row.naive:8.2f} {row.adaa:8.2f} "
-              f"{row.naive - row.adaa:8.2f}  {'within' if row.within else 'outside'}{' *' if row.hardest else ''}")
-    print(f"In-band harmonics through ADAA against the ideal reference (the shaper {IDEAL_POINTS} points a cycle, "
+    rows = aliases(rates, ALIAS_FREQUENCIES, drives, factor=factor)
+    if factor == 1:
+        print(f"tolerance: ADAA at most {tolerance.ceiling:g} dB, and at the hardest condition (*) at least "
+              f"{tolerance.improvement:g} dB under naive")
+        print(f"{'rate Hz':>8} {'tone Hz':>8} {'drive dB':>9} {'naive':>8} {'ADAA':>8} {'better':>8}  check")
+        for row in rows:
+            print(f"{row.fs:8g} {row.frequency:8.1f} {row.drive:9g} {row.naive:8.2f} {row.adaa:8.2f} "
+                  f"{row.naive - row.adaa:8.2f}  {'within' if row.within else 'outside'}{' *' if row.hardest else ''}")
+    else:
+        ceiling = tolerance.passband_ceilings[factor]
+        oversampled = f"{factor}x"
+        print(f"Oversampling {factor}x, the residual alone through the up and down filters (ADR 0009). Tolerance: "
+              f"below the passband edge ({OVERSAMPLING_PASSBAND_EDGE:g} of Nyquist) at most {ceiling:g} dB, and "
+              f"anywhere no worse than ADAA at 1x")
+        print(f"{'rate Hz':>8} {'tone Hz':>8} {'drive dB':>9} {'1x':>8} {oversampled:>8} {'passband':>9}  check")
+        for row in rows:
+            print(f"{row.fs:8g} {row.frequency:8.1f} {row.drive:9g} {row.adaa:8.2f} {row.oversampled:8.2f} "
+                  f"{row.passband:9.2f}  {'within' if row.within else 'outside'}")
+    at = "" if factor == 1 else f" at {factor}x"
+    print(f"In-band harmonics through ADAA{at} against the ideal reference (the shaper {IDEAL_POINTS} points a cycle, "
           f"band-limited), peak dB; tolerance ±{HARMONIC_TOLERANCE_DB:g} dB")
     print(f"{'rate Hz':>8} {'tone Hz':>8} {'drive dB':>9} {'harmonic':>9} {'at Hz':>8} {'ideal':>8} {'ADAA':>8} "
           f"{'diff':>7}  check")
-    bands = harmonics(rates, HARMONIC_FREQUENCIES, drives)
+    bands = harmonics(rates, HARMONIC_FREQUENCIES, drives, factor=factor)
     for row in bands:
         if row.compared:
             print(f"{row.fs:8g} {row.frequency:8.1f} {row.drive:9g} {row.harmonic:9d} "
                   f"{row.harmonic * row.frequency:8.1f} {row.ideal:8.2f} {row.adaa:8.2f} {row.adaa - row.ideal:7.2f}  "
                   f"{'within' if row.within else 'outside'}")
     print(f"the even harmonics are absent from both, under {ABSENT_DB:g} dB: the shape is odd")
+    print(f"The fundamental through ADAA{at} against the ideal reference's, peak dB (reported, not checked)")
+    print(f"{'rate Hz':>8} {'tone Hz':>8} {'drive dB':>9} {'ideal':>8} {'ADAA':>8} {'diff':>7}")
+    for row in harmonics(rates, HARMONIC_FREQUENCIES, drives, factor=factor, numbers=(1,)):
+        print(f"{row.fs:8g} {row.frequency:8.1f} {row.drive:9g} {row.ideal:8.2f} {row.adaa:8.2f} "
+              f"{row.adaa - row.ideal:7.2f}")
     return all(row.within for row in rows) and all(row.within for row in bands)
 
 
@@ -1046,6 +1304,47 @@ def report_colour(settings, rates=ALIAS_RATES):
               f"{row.naive:8.2f} {row.adaa:8.2f} {row.naive - row.adaa:8.2f}  "
               f"{'within' if row.within else 'outside'}")
     return all(row.within for row in rows)
+
+
+def oversampling_options(parser):
+    parser.add_argument("--rates", type=float, nargs="+", default=None, metavar="Hz",
+                        help="default: plugkit.conf's SAMPLE_RATES")
+
+
+@command("oversampling", options=oversampling_options)
+def run_oversampling(args):
+    sample_rates = supported_rates() if args.rates is None else args.rates
+    _check_rates(sample_rates)
+    if not report_oversampling(sample_rates):
+        raise SystemExit(1)
+
+
+def report_oversampling(sample_rates):
+    """At each rate, the allowed factors and, for each, its stages' taps, the up and down filters' delay and padding,
+    and the cascade's measured stopband and passband edge. True when every pair fits within
+    OVERSAMPLING_SECTION_SAMPLES."""
+    factors = ", ".join(f"{factor}x" for factor in OVERSAMPLING_FACTORS)
+    print(f"Oversampling: {factors}, the internal rate at most {MAX_INTERNAL_RATE_HZ} Hz (ADR 0001)")
+    print(f"each 2x stage a Kaiser half-band (beta {KAISER_BETA:.4f}), passband edge {OVERSAMPLING_PASSBAND_EDGE:g} of "
+          f"Nyquist, stopband {OVERSAMPLING_STOPBAND_DB:g} dB; each section {OVERSAMPLING_SECTION_SAMPLES} host samples")
+    print(f"{'rate Hz':>8} {'factor':>7} {'taps':>12} {'delay':>6} {'internal':>9} {'padding':>8} {'stopband dB':>12} "
+          f"{'passband Hz':>12}  check")
+    fits = True
+    for fs in sample_rates:
+        allowed = ", ".join(f"{factor}x" for factor in allowed_factors(fs))
+        print(f"{fs:8g} allows {allowed}")
+        for factor in allowed_factors(fs):
+            filters = pair(factor)
+            fits = fits and filters.padding >= 0
+            taps = "+".join(str(len(h)) for h in stages(factor)) or "-"
+            stopband = f"{measured_stopband_db(factor):12.2f}" if factor > 1 else f"{'-':>12}"
+            passband = f"{measured_passband_edge(factor) * fs:12.1f}" if factor > 1 else f"{'-':>12}"
+            named = f"{factor}x"
+            print(f"{fs:8g} {named:>7} {taps:>12} {filters.delay:6d} {filters.internal_padding:9d} "
+                  f"{filters.padding:8d} {stopband} {passband}  {'fits' if filters.padding >= 0 else 'overruns'}")
+    print("delay: the up and down filters' together, in host samples, the internal padding (in samples at the "
+          "oversampled rate) rounding it up to whole ones; padding: what is left to the section's")
+    return fits
 
 
 # --- Limiter --------------------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 """Tests for dyn-lab, at its seams: the gain computer, the step response, Auto Release, Auto Gain, VCA's RMS
-Detection Level, the latency, the Limiter, Saturation, its aliasing, Colour and the command line.
+Detection Level, the latency, the Limiter, Saturation, its aliasing, Colour, Oversampling and the command line.
 
     python3 tools/dyn-lab/test_dynlab.py
 """
@@ -550,6 +550,96 @@ class Aliasing(unittest.TestCase):
         self.assertAlmostEqual(row.adaa - row.ideal, 20 * math.log10(math.sin(x) / x), delta=0.25)
 
 
+class Oversampling(unittest.TestCase):
+    def test_the_cap_allows_8x_at_44_1_and_48_khz_4x_at_88_2_and_96_and_2x_at_176_4_and_192(self):
+        # ADR 0001's table, worked by hand: the internal rate at or under 384 kHz.
+        expected = {44100: 8, 48000: 8, 88200: 4, 96000: 4, 176400: 2, 192000: 2}
+        self.assertEqual({fs: dynlab.max_oversampling(fs) for fs in dynlab.supported_rates()}, expected)
+        self.assertEqual(dynlab.allowed_factors(96000), (1, 2, 4))
+
+    def test_a_setting_over_the_cap_plays_the_cap(self):
+        self.assertEqual(dynlab.factor_in_force(8, 96000), 4)
+        self.assertEqual(dynlab.factor_in_force(8, 192000), 2)
+        self.assertEqual(dynlab.factor_in_force(2, 192000), 2)
+        self.assertEqual(dynlab.factor_in_force(1, 44100), 1)
+
+    def test_each_stage_is_a_half_band_with_unity_gain_at_dc(self):
+        for stage in range(3):
+            h = dynlab.stage_filter(stage)
+            centre = (len(h) - 1) // 2
+            with self.subTest(stage):
+                self.assertEqual(len(h) % 4, 3)
+                self.assertEqual(h[centre], 0.5)
+                self.assertEqual(h, h[::-1])
+                self.assertTrue(all(h[centre + j] == 0 for j in range(2, centre + 1, 2)))
+                self.assertAlmostEqual(sum(h), 1, delta=1e-4)
+                self.assertGreaterEqual(dynlab.stopband_db(h, dynlab.stage_passband(stage)), dynlab.OVERSAMPLING_STOPBAND_DB)
+                # The shortest that reaches it: 4 taps fewer falls short.
+                shorter = dynlab.halfband(len(h) - 4)
+                self.assertLess(dynlab.stopband_db(shorter, dynlab.stage_passband(stage)), dynlab.OVERSAMPLING_STOPBAND_DB)
+
+    def test_every_pair_fits_within_its_section_in_whole_host_samples(self):
+        self.assertEqual(dynlab.OVERSAMPLING_SECTION_SAMPLES * 2, dynlab.OVERSAMPLING_RESERVE_SAMPLES)
+        self.assertEqual(dynlab.pair(1), dynlab.Pair(1, 0, 0))
+        for factor in (2, 4, 8):
+            with self.subTest(factor):
+                filters = dynlab.pair(factor)
+                self.assertGreaterEqual(filters.padding, 0)
+                self.assertTrue(0 <= filters.internal_padding < factor)
+                self.assertGreaterEqual(dynlab.measured_stopband_db(factor), dynlab.OVERSAMPLING_STOPBAND_DB)
+
+    def test_up_then_down_passes_a_tone_in_the_passband_delayed_by_the_pair(self):
+        # 3 kHz at 44.1 kHz, well inside the 17.6 kHz edge, comes back delayed by the pair's delay, within the
+        # passband ripple.
+        x = [math.sin(2 * math.pi * 3000 * n / 44100) for n in range(600)]
+        for factor in (2, 4, 8):
+            with self.subTest(factor):
+                up = x
+                for h in dynlab.stages(factor):
+                    up = dynlab._up(up, h)
+                self.assertEqual(len(up), factor * len(x))
+                back = [0.0] * dynlab.pair(factor).internal_padding + up
+                for h in reversed(dynlab.stages(factor)):
+                    back = dynlab._down(back, h)
+                delay = dynlab.pair(factor).delay
+                self.assertLess(max(abs(back[n] - x[n - delay]) for n in range(200, 600)), 1e-4)
+
+    def test_below_the_knee_the_section_is_its_input_delayed_by_the_section_exactly(self):
+        x = [0.5 * math.sin(2 * math.pi * 5000 * n / 48000) for n in range(400)]
+        section = dynlab.OVERSAMPLING_SECTION_SAMPLES
+        for factor in (2, 4, 8):
+            with self.subTest(factor):
+                self.assertEqual(dynlab.oversampled_driven(x, 0.0, factor), [0.0] * section + x[:-section])
+
+    def test_every_oversampled_reference_condition_is_within_its_factors_tolerance(self):
+        for factor in (2, 4, 8):
+            for row in dynlab.aliases(factor=factor):
+                with self.subTest(factor=factor, fs=row.fs, frequency=row.frequency, drive=row.drive):
+                    self.assertTrue(row.within)
+
+    def test_each_factors_ceiling_fails_the_factor_below_it(self):
+        # The ceilings are tight enough to tell the factors apart.
+        def worst_passband(factor):
+            if factor > 1:
+                return max(row.passband for row in dynlab.aliases(factor=factor))
+            return max(dynlab.worst_passband_alias_db(dynlab.anti_aliased(dynlab.tone_bin(f, fs), 0.0, drive), dynlab.tone_bin(f, fs))
+                       for fs in dynlab.ALIAS_RATES for f in dynlab.ALIAS_FREQUENCIES for drive in dynlab.ALIAS_DRIVES)
+
+        for factor in (2, 4, 8):
+            with self.subTest(factor):
+                self.assertGreater(worst_passband(factor // 2), dynlab.ALIASING_TOLERANCE.passband_ceilings[factor])
+
+    def test_oversampling_closes_the_fundamentals_shortfall_at_5_khz(self):
+        # At 1x the fundamental is 7.6 dB louder than the ideal at 44.1 kHz and Drive 24 dB. Each factor at least halves it.
+        shortfalls = []
+        for factor in (1, 2, 4, 8):
+            (row,) = dynlab.harmonics(rates=(44100,), frequencies=(5000,), drives=(24.0,), factor=factor, numbers=(1,))
+            shortfalls.append(row.adaa - row.ideal)
+        self.assertAlmostEqual(shortfalls[0], 7.6, delta=0.05)
+        for lower, higher in zip(shortfalls, shortfalls[1:]):
+            self.assertLess(higher, lower / 2)
+
+
 LAB = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(LAB))
 
@@ -635,6 +725,21 @@ class CommandLine(unittest.TestCase):
         # 44.1 kHz's row, worked by hand above: Zero Latency, High Quality, then its three parts.
         self.assertEqual(rows[0][1:], ["0", "394", "128", "221", "45"])
         self.assertIn(f"{dynlab.MODE_FADE_MS:g} ms", result.stdout)
+
+    def test_oversampling_prints_every_allowed_factor_at_every_supported_rate(self):
+        result = run("oversampling")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = [line.split() for line in result.stdout.splitlines() if line.split()[0].isdigit() and line.split()[1:2] in (["1x"], ["2x"], ["4x"], ["8x"])]
+        self.assertEqual([(float(row[0]), row[1]) for row in rows],
+                         [(fs, f"{factor}x") for fs in dynlab.supported_rates() for factor in dynlab.allowed_factors(fs)])
+        self.assertTrue(all(row[-1] == "fits" for row in rows))
+        # 8x at 44.1 kHz: three stages, a delay of 43 host samples with 6 of internal padding, and 21 left to 64.
+        self.assertEqual(rows[3][:6], ["44100", "8x", "67+27+23", "43", "6", "21"])
+
+    def test_aliasing_rejects_a_factor_over_the_cap(self):
+        result = run("aliasing", "--oversampling", "8", "--rates", "96000")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("4x", result.stderr)
 
     def test_bursts_prints_off_and_on_for_every_length_and_rate(self):
         result = run("bursts", "--lengths", "1", "1000", "--rates", "48000", "96000")

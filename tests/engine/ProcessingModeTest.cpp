@@ -178,15 +178,20 @@ TEST_CASE ("A Processing Mode switch falls to silence and rises again within the
     const auto [dryDb, gain, limiter] = GENERATE (table<double, float, bool> ({ { -std::numeric_limits<double>::infinity(), 1.0f, false },
                                                                                 { 0.0, 2.0f, false },
                                                                                 { -std::numeric_limits<double>::infinity(), 1.0f, true } }));
-    CAPTURE (sampleRate, static_cast<int> (to), dryDb, limiter);
+    // 1x, and 8x, which plays each rate's cap.
+    const auto oversampling = GENERATE (Oversampling::x1, Oversampling::x8);
+    CAPTURE (sampleRate, static_cast<int> (to), dryDb, limiter, factorOf (oversampling));
     const int fade = static_cast<int> (std::lround (modeFadeMs * sampleRate / 1000.0));
-    // Into High Quality, the silence lasts while its delays after the compressor, the reserves' padding, fill with the
-    // new path's audio, so the fade-in starts from it: High Quality's latency less the Lookahead budget.
-    const int padding = to == highQuality ? latencySamples (highQuality, sampleRate) - lookaheadBudgetSamples (sampleRate) : 0;
+    // Into High Quality, the silence lasts while its delays fill with the new path's audio, so the fade-in starts from
+    // it: every one of them, its whole latency, as the Oversampling section ahead of the detection stage moves what the
+    // Lookahead budget is fed.
+    const int padding = to == highQuality ? latencySamples (highQuality, sampleRate) : 0;
     // Part-way through a run, once the old path has played long enough to fill its delays.
     const int switchAt = 4003;
     const auto input = test::noise (2, switchAt + 2 * fade + padding + 3000);
-    Settings before { .ratio = 1.0, .limiter = limiter, .processingMode = from }, after { .ratio = 1.0, .limiter = limiter, .processingMode = to };
+    Settings before { .ratio = 1.0, .limiter = limiter, .processingMode = from, .oversampling = oversampling };
+    auto after = before;
+    after.processingMode = to;
     before.dryDb = after.dryDb = dryDb;
     const auto reference = play (input, sampleRate, { 4096 }, before, after, switchAt);
 

@@ -1,4 +1,5 @@
 #include "Measure.h"
+#include "comp1/Latency.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -121,7 +122,8 @@ TEST_CASE ("At Drive 0 dB, Saturation passes anything at or below full scale thr
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE (from_range (test::blockCuts()));
     const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
-    // High Quality runs at the base rate until Oversampling (#10): there too the stage adds nothing to its latency.
+    // High Quality at 1x runs the stage at the base rate, as Zero Latency does: there too it adds nothing to the
+    // latency.
     const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
     CAPTURE (sampleRate, cut, static_cast<int> (position), static_cast<int> (mode));
     // Noise up to full scale, with full scale itself, of both signs, among it.
@@ -134,8 +136,29 @@ TEST_CASE ("At Drive 0 dB, Saturation passes anything at or below full scale thr
         channel[101] = -1.0f;
         channel[2000] = -1.0f;
     }
-    const auto off = test::played ({ .processingMode = mode }, sampleRate, input, cut);
-    CHECK (test::played ({ .saturation = true, .driveDb = 0.0, .saturationPosition = position, .processingMode = mode }, sampleRate, input, cut) == off);
+    const Settings off { .processingMode = mode, .oversampling = Oversampling::x1 };
+    auto on = off;
+    on.saturation = true;
+    on.driveDb = 0.0;
+    on.saturationPosition = position;
+    CHECK (test::played (on, sampleRate, input, cut) == test::played (off, sampleRate, input, cut));
+}
+
+TEST_CASE ("Oversampled, at Drive 0 dB, Saturation passes a signal whose peaks between samples stay under full scale through bit for bit", "[sweep]")
+{
+    // The up filters rebuild the peaks between samples, which full-scale noise pushes past the shape's knee; at
+    // -6 dBFS they stay under it.
+    const double sampleRate = GENERATE (from_range (test::sampleRates()));
+    const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
+    const auto oversampling = GENERATE (Oversampling::x2, Oversampling::x4, Oversampling::x8);
+    CAPTURE (sampleRate, static_cast<int> (position), factorOf (oversampling));
+    const auto input = test::noise (2, 6000, 5);
+    const Settings off { .processingMode = ProcessingMode::HighQuality, .oversampling = oversampling };
+    auto on = off;
+    on.saturation = true;
+    on.driveDb = 0.0;
+    on.saturationPosition = position;
+    CHECK (test::played (on, sampleRate, input, { 512 }) == test::played (off, sampleRate, input, { 512 }));
 }
 
 TEST_CASE ("Saturation never makes a non-finite output, from a non-finite input or a near-equal pair of samples")

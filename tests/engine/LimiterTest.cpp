@@ -312,8 +312,8 @@ TEST_CASE ("Back in High Quality, the Limiter doesn't hear what the path played 
     }
     const int latency = latencySamples (highQuality, sampleRate);
     const auto expected = test::delayed (input, latency);
-    // The fade-out, the silence while High Quality's delays after the compressor fill, and the fade-in.
-    const int settled = toHighQuality + 2 * 480 + latency - lookaheadBudgetSamples (sampleRate);
+    // The fade-out, the silence while High Quality's delays fill (its whole latency), and the fade-in.
+    const int settled = toHighQuality + 2 * 480 + latency;
     for (std::size_t ch = 0; ch < 2; ++ch)
         CHECK (std::vector<float> (out[ch].begin() + settled, out[ch].end()) == std::vector<float> (expected[ch].begin() + settled, expected[ch].end()));
 }

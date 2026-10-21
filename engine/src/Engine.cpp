@@ -11,6 +11,7 @@
 #include "Limiter.h"
 #include "Lookahead.h"
 #include "ModeFade.h"
+#include "OversampledSection.h"
 #include "SaturationStage.h"
 #include "comp1/Latency.h"
 
@@ -434,7 +435,8 @@ private:
 // places a part on its own (placedSample): the Mid on both channels, the Side on the left and, inverted, the right. A
 // change of Placement fades from the old part to the new over the glide time; one asked for during the fade starts
 // once it is over. In High Quality it is delayed as the Wet path is up to here (comp1/Latency.h's
-// wetPathLatencySamples), so it keeps the reported latency and fades against the Wet path in time.
+// wetPathLatencySamples) less the Oversampling section ahead of the detection stage, which has delayed the detection
+// signal already, so it keeps the reported latency and fades against the Wet path in time.
 class Audition
 {
 public:
@@ -452,7 +454,7 @@ public:
         pointers.assign (channels, nullptr);
         for (std::size_t ch = 0; ch < channels; ++ch)
             pointers[ch] = storage[ch].data();
-        delay.prepare (numChannels, wetPathLatencySamples (ProcessingMode::HighQuality, sampleRate));
+        delay.prepare (numChannels, wetPathLatencySamples (ProcessingMode::HighQuality, sampleRate) - oversamplingSectionSamples);
     }
 
     // With snap, it is held or let go at once instead of fading.
@@ -472,8 +474,9 @@ public:
         }
     }
 
-    // detection is the piece of the detection signal of the samples now coming in, audio the Wet path's piece, which
-    // High Quality has delayed by wetPathLatencySamples. The detection signal, mapped to the output's channels, feeds
+    // detection is the piece of the detection signal of the samples now coming in (in High Quality, as the Oversampling
+    // section ahead of the detection stage has delayed them), audio the Wet path's piece, which High Quality has
+    // delayed by wetPathLatencySamples. The detection signal, mapped to the output's channels, feeds
     // the delay in both Processing Modes, so a switch to High Quality starts from the latest of it.
     void process (const DetectionSignal& detection, AudioBlock audio, bool highQuality)
     {
@@ -583,6 +586,7 @@ private:
 struct Engine::Impl
 {
     int numChannels = 0;
+    double sampleRate = 44100.0;
 
     plugkit::LatestValue<Settings> handoff;
     Settings settings;          // the newest settings the audio thread has taken
@@ -597,10 +601,17 @@ struct Engine::Impl
     Compressor compressor;
     SaturationStage saturation;
     GlidingGain autoGain, outputGain;
-    // High Quality's delays (comp1/Latency.h): the Lookahead budget, around the compressor, and the Oversampling
-    // reserve's padding; the Limiter fills the Limiter reserve.
+    // High Quality's delays (comp1/Latency.h): the Oversampling sections, Before the detection stage (with the
+    // Sidechain's delay, so External detection meets the audio as Internal does) and After the compressor, and the
+    // Lookahead budget around the compressor; the Limiter fills the Limiter reserve.
+    OversampledSection beforeSection, afterSection;
+    DelayLine sidechainDelay;
+    std::array<std::vector<float>, 2> sidechainStorage; // the Sidechain's piece, delayed, or silence
+    std::array<float*, 2> sidechainPointers {};
+    std::array<const float*, 2> sidechainConstPointers {};
+    ConstAudioBlock heardSidechain;
+    std::vector<float> silence; // a run of it, for the Sidechain's delay when nothing is connected
     LookaheadStage lookahead;
-    DelayLine oversamplingPadding;
     Limiter limiter;
     ModeFade modeFade;
     Audition audition;
@@ -633,6 +644,9 @@ struct Engine::Impl
         audition.setHeld (settings.detectionAudition, snapToSettings);
         audition.setPlacement (settings.stereoPlacement, snapToSettings);
         lookahead.setLookahead (settings.lookaheadMs, snapToSettings);
+        const auto oversampling = oversamplingInForce (settings.oversampling, sampleRate);
+        beforeSection.setOversampling (oversampling, snapToSettings);
+        afterSection.setOversampling (oversampling, snapToSettings);
         glideTo (modeFade, settings.processingMode, snapToSettings);
         globalBypass.setOn (settings.globalBypass, snapToSettings);
         snapToSettings = false;
@@ -664,35 +678,78 @@ struct Engine::Impl
     // the output is the same sample for sample however the audio is cut. The detector runs while Detection Audition
     // is held, so letting go doesn't restart compression from zero.
     //
-    // In High Quality the audio is delayed by the Lookahead budget and the detection signal by less, so the compressor
-    // meets the audio Lookahead early; then the Oversampling padding before the Dry/Wet sum. After Output Gain, the
-    // Limiter, on the path playing. Then Global Bypass, which crossfades to the input as it came in, delayed to match;
-    // it takes precedence over Detection Audition, and everything before it runs on while it is on, so turning it off
-    // has no restart transient. Last, the mode fade, which swaps the paths in silence.
+    // In High Quality, Saturation runs in its Oversampling section, Before or After (ADR 0009), each delaying the audio
+    // by a section whether Saturation is in it or not, the Sidechain delayed with the Before one. Colour runs in the
+    // compressor, at the host rate. The audio is delayed by the Lookahead budget and the detection signal by
+    // less, so the compressor meets the audio Lookahead early; the two sections and the budget are the Wet path's delay
+    // up to the Dry/Wet sum. After Output Gain, the Limiter, on the path playing. Then Global Bypass, which crossfades
+    // to the input as it came in, delayed to match; it takes precedence over Detection Audition, and everything before
+    // it runs on while it is on, so turning it off has no restart transient. Last, the mode fade, which swaps the paths
+    // in silence.
     void wetPath (AudioBlock wet, const ConstAudioBlock* sidechainPiece, ProcessingMode path)
     {
         globalBypass.takeInput ({ wet.channels, wet.numChannels, wet.numSamples }, path);
         if (gridPosition == 0)
+        {
             saturation.startRun();
-        saturation.process (SaturationPosition::Before, wet);
-        const auto detected = detection.process ({ wet.channels, wet.numChannels, wet.numSamples }, sidechainPiece);
+            beforeSection.startRun();
+            afterSection.startRun();
+        }
+        const bool highQuality = path == ProcessingMode::HighQuality;
+        oversampledSaturation (beforeSection, SaturationPosition::Before, wet, highQuality);
+        const auto* sidechainHeard = delayedSidechain (sidechainPiece, wet.numSamples, highQuality);
+        const auto detected = detection.process ({ wet.channels, wet.numChannels, wet.numSamples }, sidechainHeard);
         if (gridPosition == 0)
         {
             compressor.startRun();
             lookahead.startRun();
         }
-        const bool highQuality = path == ProcessingMode::HighQuality;
         compressor.process (lookahead.process (detected, wet, highQuality), wet, runLevels);
-        saturation.process (SaturationPosition::After, wet);
+        oversampledSaturation (afterSection, SaturationPosition::After, wet, highQuality);
         autoGain.process (wet);
-        if (highQuality)
-            oversamplingPadding.process (wet);
         dryWet.sum (wet);
         audition.process (detected, wet, highQuality);
         outputGain.process (wet);
         limiter.process (wet, path);
         globalBypass.process (wet);
         modeFade.process (wet);
+    }
+
+    // Saturation at its position on wet: in High Quality, in that position's Oversampling section, which delays wet by
+    // a section whether Saturation is there or not; in Zero Latency at the host rate, with the section fed so it holds
+    // the latest audio.
+    void oversampledSaturation (OversampledSection& section, SaturationPosition at, AudioBlock wet, bool highQuality)
+    {
+        if (! highQuality)
+        {
+            section.write ({ wet.channels, wet.numChannels, wet.numSamples });
+            saturation.process (at, wet);
+            return;
+        }
+        section.process (wet, saturation.heardAt (at), [&] (ConstAudioBlock host, double* const* oversampled, int factor) {
+            return saturation.residual (at, host, oversampled, factor);
+        });
+    }
+
+    // The Sidechain's piece as the detection stage hears it: in High Quality delayed by the Before section's delay,
+    // as the audio is, so External detection keeps Internal's timing. Its delay is fed in both Processing Modes, with
+    // silence when nothing is connected, so a switch or a connection starts from the latest of it.
+    const ConstAudioBlock* delayedSidechain (const ConstAudioBlock* sidechainPiece, int numSamples, bool highQuality)
+    {
+        std::array<const float*, 2> in {};
+        for (std::size_t ch = 0; ch < in.size(); ++ch)
+            in[ch] = sidechainPiece == nullptr ? silence.data()
+                                               : sidechainPiece->channels[std::min (static_cast<int> (ch), sidechainPiece->numChannels - 1)];
+        if (! highQuality)
+        {
+            sidechainDelay.write ({ in.data(), 2, numSamples });
+            return sidechainPiece;
+        }
+        sidechainDelay.process ({ in.data(), 2, numSamples }, { sidechainPointers.data(), 2, numSamples }, sidechainDelay.getLength());
+        if (sidechainPiece == nullptr)
+            return nullptr;
+        heardSidechain = { sidechainConstPointers.data(), sidechainPiece->numChannels, numSamples };
+        return &heardSidechain;
     }
 
     // The Output Level of what the piece sends on, after everything.
@@ -719,7 +776,17 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->autoGain.prepare (sampleRate);
     impl->outputGain.prepare (sampleRate);
     impl->lookahead.prepare (sampleRate, numChannels, plugkit::runSamples);
-    impl->oversamplingPadding.prepare (numChannels, oversamplingReserveSamples);
+    impl->sampleRate = sampleRate;
+    impl->beforeSection.prepare (sampleRate, numChannels, plugkit::runSamples);
+    impl->afterSection.prepare (sampleRate, numChannels, plugkit::runSamples);
+    impl->sidechainDelay.prepare (2, oversamplingSectionSamples);
+    impl->silence.assign (static_cast<std::size_t> (plugkit::runSamples), 0.0f);
+    for (std::size_t ch = 0; ch < impl->sidechainStorage.size(); ++ch)
+    {
+        impl->sidechainStorage[ch].assign (static_cast<std::size_t> (plugkit::runSamples), 0.0f);
+        impl->sidechainPointers[ch] = impl->sidechainStorage[ch].data();
+        impl->sidechainConstPointers[ch] = impl->sidechainStorage[ch].data();
+    }
     impl->limiter.prepare (sampleRate, numChannels);
     impl->modeFade.prepare (sampleRate);
     impl->audition.prepare (sampleRate, numChannels);
