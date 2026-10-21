@@ -25,7 +25,7 @@ TEST_CASE ("Settings set on another thread while audio runs reach the output")
         done = true;
     });
 
-    const auto half = static_cast<float> (test::minus6DbGain);
+    const auto minus6Db = static_cast<float> (test::minus6DbGain);
     std::vector<float> samples (blockSize);
     float* channels[] = { samples.data() };
     const auto playBlock = [&] {
@@ -36,10 +36,10 @@ TEST_CASE ("Settings set on another thread while audio runs reach the output")
     {
         playBlock();
         for (const float sample : samples)
-            REQUIRE ((sample >= half && sample <= 1.0f));
+            REQUIRE ((sample >= minus6Db && sample <= 1.0f));
     }
     writer.join();
     for (int block = 0; block < 300; ++block) // 400 ms, for the glide to settle
         playBlock();
-    CHECK (samples.back() == half);
+    CHECK (samples.back() == minus6Db);
 }
