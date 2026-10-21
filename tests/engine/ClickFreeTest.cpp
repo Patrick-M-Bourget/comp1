@@ -174,6 +174,13 @@ double tremolo (double seconds)
     return toneAmplitude * std::pow (10.0, -15.0 * (1.0 - std::cos (2.0 * std::numbers::pi * 20.0 * seconds)) / 20.0);
 }
 
+// The Detection EQ's free band on, a Bell boosting 18 dB at the tone, which each free band row moves from.
+void freeBandAtTone (Settings& s)
+{
+    s.detectionEq.freeBand.on = true;
+    s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = 1.0 };
+}
+
 Jump placementJump (StereoPlacement a, StereoPlacement b, std::string setting)
 {
     return onStereo (std::move (setting), [a, b] (Settings& s, bool toB) { s.stereoPlacement = toB ? b : a; });
@@ -255,27 +262,24 @@ const std::vector<Jump>& jumps()
              s.detectionEq.lowPass.filter.slope = b ? 48.0 : 6.0;
          } },
         { "Detection EQ free band on", [] (Settings& s, bool b) {
-             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = 1.0 };
+             freeBandAtTone (s);
              s.detectionEq.freeBand.on = b;
          } },
         { "Detection EQ free band Shape", [] (Settings& s, bool b) {
-             s.detectionEq.freeBand.on = true;
-             s.detectionEq.freeBand.filter = { .shape = shapeOf (b ? FreeBandShape::HighShelf : FreeBandShape::Bell),
-                                           .gain = 18.0,
-                                           .frequency = toneFrequency,
-                                           .q = 1.0 };
+             freeBandAtTone (s);
+             s.detectionEq.freeBand.filter.shape = shapeOf (b ? FreeBandShape::HighShelf : FreeBandShape::Bell);
          } },
         { "Detection EQ free band Frequency", [] (Settings& s, bool b) {
-             s.detectionEq.freeBand.on = true;
-             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = b ? 20000.0 : 20.0, .q = 1.0 };
+             freeBandAtTone (s);
+             s.detectionEq.freeBand.filter.frequency = b ? 20000.0 : 20.0;
          } },
         { "Detection EQ free band Gain", [] (Settings& s, bool b) {
-             s.detectionEq.freeBand.on = true;
-             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = b ? 30.0 : -30.0, .frequency = toneFrequency, .q = 1.0 };
+             freeBandAtTone (s);
+             s.detectionEq.freeBand.filter.gain = b ? 30.0 : -30.0;
          } },
         { "Detection EQ free band Q", [] (Settings& s, bool b) {
-             s.detectionEq.freeBand.on = true;
-             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = b ? 40.0 : 0.025 };
+             freeBandAtTone (s);
+             s.detectionEq.freeBand.filter.q = b ? 40.0 : 0.025;
          } },
         onStereo ("Stereo Link", [] (Settings& s, bool b) { s.stereoLink = b ? 100.0 : 0.0; }),
         placementJump (StereoPlacement::Stereo, StereoPlacement::Mid, "Stereo Placement, Stereo and Mid"),
