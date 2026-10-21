@@ -131,6 +131,7 @@ struct Jump
     // a pure sine: Saturation's own harmonics sharpen the tone's corners past a sine's.
     std::vector<std::function<void (Settings&)>> steady = {};
     int numChannels = 1; // the track it is heard on
+    Envelope amplitude = [] (double) { return toneAmplitude; };
 };
 
 // Saturation on at Drive 24 dB, which pushes the tone (-12 dB) 12 dB into the shape.
@@ -151,6 +152,25 @@ Jump onStereo (std::string setting, std::function<void (Settings&, bool)> set)
              },
              {},
              2 };
+}
+
+// High Quality, where Lookahead is read, with a compressor quick enough to follow the tremolo below.
+void lookingAhead (Settings& s)
+{
+    s.processingMode = ProcessingMode::HighQuality;
+    s.thresholdDb = -40.0;
+    s.ratio = 4.0;
+    s.attackMs = 5.0;
+    s.releaseMs = 50.0;
+}
+
+// The tone swelling and fading by 30 dB twenty times a second. On a steady tone the detector hears the same level at
+// any Lookahead, so a jump would move nothing; here a jump moves what the detector hears to a level up to 9 dB away.
+// Without Lookahead's glide that clicks at 44.1, 88.2 and 176.4 kHz, up to 3 times the limit; with it, it stays under
+// the limit at every host.
+double tremolo (double seconds)
+{
+    return toneAmplitude * std::pow (10.0, -15.0 * (1.0 - std::cos (2.0 * std::numbers::pi * 20.0 * seconds)) / 20.0);
 }
 
 Jump placementJump (StereoPlacement a, StereoPlacement b, std::string setting)
@@ -194,10 +214,18 @@ const std::vector<Jump>& jumps()
             saturating } },
         // Held, the uncompressed input plays in place of the compressed one.
         { "Detection Audition", [] (Settings& s, bool b) { s.detectionAudition = b; } },
-        { "Lookahead", [] (Settings& s, bool b) {
-             s.processingMode = ProcessingMode::HighQuality; // Zero Latency doesn't read it
-             s.lookaheadMs = b ? 5.0 : 0.0;
-         } },
+        { "Lookahead",
+          [] (Settings& s, bool b) {
+              lookingAhead (s);
+              s.lookaheadMs = b ? 5.0 : 0.0;
+          },
+          { lookingAhead,
+            [] (Settings& s) {
+                lookingAhead (s);
+                s.lookaheadMs = 5.0;
+            } },
+          1,
+          tremolo },
         // The Detection EQ's, each moving across the tone or switching how it filters it.
         { "Detection EQ high-pass on", [] (Settings& s, bool b) {
              s.detectionEq.highPass.filter.frequency = 1000.0;
@@ -272,7 +300,7 @@ TEST_CASE ("Jumps in each compressor setting do not click")
     const auto host = anyHost();
     CAPTURE (jump.setting, host.sampleRate, host.blockSize);
     const auto play = [&host, &jump] (const std::function<void (double, Settings&)>& change) {
-        return playTone (host, change, [] (double) { return toneAmplitude; }, toneSeconds, jump.numChannels);
+        return playTone (host, change, jump.amplitude, toneSeconds, jump.numChannels);
     };
     const auto output = play ([&jump] (double time, Settings& s) { jump.set (s, alternating (time)); });
     double steady = 1.0;
