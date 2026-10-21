@@ -77,6 +77,8 @@ public:
             voice.detectors.assign (static_cast<std::size_t> (std::max (numChannels, 0)), {});
             for (auto& detector : voice.detectors)
                 detector.prepare (sampleRate);
+            voice.levelsDb.assign (voice.detectors.size(), plugkit::levelFloorDb);
+            voice.reductionsDb.assign (voice.detectors.size(), 0.0);
             voice.gains.assign (voice.detectors.size(), 1.0);
         }
         reductions.assign (voices[0].detectors.size(), 0.0);
@@ -141,8 +143,9 @@ public:
 
     // Applies gain to audio, sample for sample, from the detection signal of the same samples: each main channel's
     // Detection Level comes from what it follows, or the Mid or the Side, never from the audio. Each sample's
-    // Detection Level and Gain Reduction, as the Placement heard applies it (after Stereo Link), go to levels, taken
-    // where the detector reads them, so they follow whatever it hears.
+    // Detection Level, as the Placement heard reads it, and Gain Reduction, as the gain applied (after Stereo Link),
+    // go to levels, taken where the detector reads them, so they follow whatever it hears. During a Placement's fade
+    // the gain applied is each Placement's gain weighted by its share, exactly so where both compress the same part.
     //
     // At each start of a run of the detection signal's own grid, which High Quality's delay moves off the audio's, each
     // detector heard's Auto Release moves on by the run just heard, so Auto Release runs on the samples the detector
@@ -155,17 +158,24 @@ public:
             if ((detection.runPosition + i) % plugkit::runSamples == 0)
                 startDetectorRuns();
             const double link = stereoLink.isSettled() ? stereoLink.value() : stereoLink.next();
-            askGains (heard, detection, audio.numChannels, i, link, &levels);
+            askGains (heard, detection, audio.numChannels, i, link);
             if (! fading)
             {
+                for (std::size_t c = 0; c < partsOf (heard); ++c)
+                    levels.noteDetection (heard.levelsDb[c], heard.reductionsDb[c]);
                 applyGains (heard, audio, i);
                 continue;
             }
             auto& leaving = voices[1 - playing];
-            askGains (leaving, detection, audio.numChannels, i, link, nullptr);
+            askGains (leaving, detection, audio.numChannels, i, link);
             const double in = fade.next();
             if (fade.isSettled())
                 fading = false;
+            for (int ch = 0; ch < audio.numChannels; ++ch)
+            {
+                const double gain = in * gainOn (heard, ch) + (1.0 - in) * gainOn (leaving, ch);
+                levels.noteDetection (heard.levelsDb[partOf (heard, ch)], gain < 1.0 ? -plugkit::gainToDecibels (gain) : 0.0);
+            }
             // Each Placement's change to the sample, weighted by its share of the fade.
             const float left = audio.channels[0][i];
             const float right = audio.numChannels > 1 ? audio.channels[1][i] : left;
@@ -188,22 +198,38 @@ private:
                     detector.startRun (releaseMs, autoRelease);
     }
 
-    // One Placement, with detectors of its own (per channel under Stereo, the first for Mid or Side) and the gains it
-    // asks for at the sample (likewise).
+    // One Placement, with detectors of its own (per channel under Stereo, the first for Mid or Side), and at the sample
+    // the Detection Levels they read, the Gain Reductions it asks for and the gains they make (likewise).
     struct Voice
     {
         plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo;
         std::vector<clean::Detector> detectors;
-        std::vector<double> gains;
+        std::vector<double> levelsDb, reductionsDb, gains;
     };
 
-    // The gain voice asks for at sample i, as a factor, exactly 1 with no Gain Reduction.
+    // How many parts voice compresses: each channel under Stereo, or the one part, Mid or Side.
+    static std::size_t partsOf (const Voice& voice)
+    {
+        return voice.placement == plugkit::StereoPlacement::Stereo ? voice.detectors.size() : 1;
+    }
+
+    // The part of voice channel ch follows: its own under Stereo, the Mid or Side otherwise.
+    static std::size_t partOf (const Voice& voice, int ch)
+    {
+        return voice.placement == plugkit::StereoPlacement::Stereo ? static_cast<std::size_t> (ch) : 0;
+    }
+
+    // The gain voice applies to what channel ch carries of the part it compresses.
+    static double gainOn (const Voice& voice, int ch) { return voice.gains[partOf (voice, ch)]; }
+
+    // The gain voice asks for at sample i, as a factor, exactly 1 with no Gain Reduction, and the Detection Level and
+    // Gain Reduction it comes from.
     //
     // Stereo Link, after each channel's detector: each channel's Gain Reduction is its own plus Stereo Link times the
     // larger of the two less its own, worked out as (1 - Stereo Link) times its own plus Stereo Link times the larger,
     // so that 0% is exactly each channel's own and 100% exactly the larger, the same on both. A mono track has nothing
-    // to link. With levels, each Detection Level the voice reads and the Gain Reduction it applies for it go there.
-    void askGains (Voice& voice, const DetectionSignal& detection, int numChannels, int i, double link, RunLevels* levels)
+    // to link.
+    void askGains (Voice& voice, const DetectionSignal& detection, int numChannels, int i, double link)
     {
         const auto gainOf = [] (double reduction) { return reduction > 0.0 ? plugkit::decibelsToGain (-reduction) : 1.0; };
         // The Detection Level: the detection signal's peak level, in dB where a full-scale sine reads 0.
@@ -211,11 +237,9 @@ private:
         if (voice.placement != plugkit::StereoPlacement::Stereo)
         {
             const float* detected = voice.placement == plugkit::StereoPlacement::Mid ? detection.mid : detection.side;
-            const double partDb = levelDb (detected[i]);
-            const double reduction = voice.detectors[0].process (clean::gainReduction (partDb, curve), timing);
-            if (levels != nullptr)
-                levels->noteDetection (partDb, reduction);
-            voice.gains[0] = gainOf (reduction);
+            voice.levelsDb[0] = levelDb (detected[i]);
+            voice.reductionsDb[0] = voice.detectors[0].process (clean::gainReduction (voice.levelsDb[0], curve), timing);
+            voice.gains[0] = gainOf (voice.reductionsDb[0]);
             return;
         }
         double largest = 0.0;
@@ -228,10 +252,9 @@ private:
         }
         for (std::size_t c = 0; c < reductions.size(); ++c)
         {
-            const double reduction = numChannels > 1 ? (1.0 - link) * reductions[c] + link * largest : reductions[c];
-            if (levels != nullptr)
-                levels->noteDetection (channelDb[c], reduction);
-            voice.gains[c] = gainOf (reduction);
+            voice.levelsDb[c] = channelDb[c];
+            voice.reductionsDb[c] = numChannels > 1 ? (1.0 - link) * reductions[c] + link * largest : reductions[c];
+            voice.gains[c] = gainOf (voice.reductionsDb[c]);
         }
     }
 

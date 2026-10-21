@@ -98,6 +98,34 @@ inline Channels played (const Settings& settings,
     return out;
 }
 
+// The level history of audio through a fresh Engine at sampleRate, with settings from the start, and from change's
+// sample on with its settings when there is one: every record, read after each host block of up to 512 samples, as
+// the editor reads it while the host plays.
+inline std::vector<LevelRecord> levelHistory (const Settings& settings, double sampleRate, Channels audio, const std::optional<SettingsChange>& change = std::nullopt)
+{
+    constexpr int blockSize = 512;
+    Engine engine;
+    engine.prepare (sampleRate, blockSize, static_cast<int> (audio.size()));
+    engine.setSettings (settings);
+    std::vector<LevelRecord> all, records (static_cast<std::size_t> (engine.levelHistoryCapacity()));
+    const int numSamples = static_cast<int> (audio.front().size());
+    std::vector<float*> main (audio.size());
+    for (int start = 0; start < numSamples;)
+    {
+        if (change && start == change->at)
+            engine.setSettings (change->settings);
+        const int end = change && start < change->at ? std::min (start + blockSize, change->at) : start + blockSize;
+        const int count = std::min (end, numSamples) - start;
+        for (std::size_t ch = 0; ch < audio.size(); ++ch)
+            main[ch] = audio[ch].data() + start;
+        engine.process ({ main.data(), static_cast<int> (main.size()), count });
+        start += count;
+        const int read = engine.readLevels (records.data(), static_cast<int> (records.size()));
+        all.insert (all.end(), records.begin(), records.begin() + read);
+    }
+    return all;
+}
+
 // audio delayed by samples, the start filled with silence and the end cut off, so it keeps its length.
 inline Channels delayed (const Channels& audio, int samples)
 {

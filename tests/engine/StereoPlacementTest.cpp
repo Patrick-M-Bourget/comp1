@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
+#include <catch2/generators/catch_generators_adapters.hpp>
 #include <plugkit/Placement.h>
 
 #include <cmath>
@@ -141,4 +142,30 @@ TEST_CASE ("With External, a stereo Sidechain's Mid or Side drives Stereo Placem
     const bool driven = key == Key::mono || (key == Key::loudMid) == mid;
     CHECK (std::abs (partGainDb (input, output, mid) + (driven ? 9.0 : 0.0)) <= 0.01);
     CHECK (std::abs (partGainDb (input, output, ! mid)) <= 0.01);
+}
+
+TEST_CASE ("During a Stereo Placement fade, the Gain Reduction is the gain the Engine applies")
+{
+    const auto [from, to] = GENERATE (table<StereoPlacement, StereoPlacement> ({ { StereoPlacement::Stereo, StereoPlacement::Side },
+                                                                                 { StereoPlacement::Side, StereoPlacement::Stereo },
+                                                                                 { StereoPlacement::Stereo, StereoPlacement::Mid },
+                                                                                 { StereoPlacement::Mid, StereoPlacement::Side } }));
+    CAPTURE (from, to);
+    // Both channels alike, the loud part's steady level: all Mid, with no Side. So Stereo and Mid take the Transfer
+    // Curve's 1.5 dB off both channels and Side none, and through each fade the gain moves between the two on both
+    // channels alike.
+    const auto input = test::steadyLevel (2, numSamples, loudDb);
+    auto before = partSettings, after = partSettings;
+    before.stereoPlacement = from;
+    after.stereoPlacement = to;
+    // Once Attack has long settled.
+    const int changeAt = numSamples / 2;
+    const auto records = test::levelHistory (before, sampleRate, input, test::SettingsChange { .at = changeAt, .settings = after });
+    REQUIRE (records.size() == static_cast<std::size_t> (numSamples / 16));
+    // Within what the gain moves in a run as it fades.
+    for (auto run = static_cast<std::size_t> (changeAt / 16 - 10); run < records.size(); ++run)
+    {
+        CAPTURE (run);
+        REQUIRE (std::abs (records[run].gainReductionDb - (records[run].inputDb - records[run].outputDb)) <= 0.05);
+    }
 }
