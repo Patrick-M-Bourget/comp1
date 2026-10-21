@@ -13,7 +13,7 @@ struct ParameterRange
 // Every range the host parameters span. Settings holds the same values.
 namespace parameterRanges
 {
-inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB
+inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own, as Pro-C 3 documents none (ADR 0008)
 } // namespace parameterRanges
 
 // Everything the Engine plays, in one value: the Plugin Shell builds it from the host parameters and hands it over
