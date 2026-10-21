@@ -102,11 +102,22 @@ constexpr double threshold = 2.0;
 // False until the onset has passed, then flips every 50 ms.
 bool alternating (double seconds) { return seconds >= onsetSeconds && static_cast<int> ((seconds - onsetSeconds) / 0.05) % 2 == 0; }
 
-// A sample at a time, odd and large blocks, at every sample rate comp1 supports.
+// Every sample rate comp1 supports, each with a host block size in turn from a sample at a time, odd and large ones.
+const std::vector<Host>& hosts()
+{
+    static const std::vector<Host> all = [] {
+        const std::vector<int> blockSizes { 17, 512, 1, 64, 33, 4096 };
+        std::vector<Host> h;
+        for (std::size_t r = 0; r < test::sampleRates().size(); ++r)
+            h.push_back ({ test::sampleRates()[r], blockSizes[r % blockSizes.size()] });
+        return h;
+    }();
+    return all;
+}
+
 Host anyHost()
 {
-    return GENERATE (Host { 44100.0, 17 }, Host { 48000.0, 64 }, Host { 48000.0, 512 }, Host { 88200.0, 1 }, Host { 96000.0, 17 },
-                     Host { 96000.0, 512 }, Host { 176400.0, 33 }, Host { 192000.0, 4096 });
+    return GENERATE (from_range (hosts()));
 }
 
 constexpr double infinity = std::numeric_limits<double>::infinity();
