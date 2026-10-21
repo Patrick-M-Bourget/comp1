@@ -6,7 +6,7 @@ Design — A Tutorial and Analysis" (J. Audio Eng. Soc. 60(6)): feedforward, wit
 and a smooth branching peak detector in the log domain, with Hold, Auto Release and Range, and Auto Gain after it;
 the VCA Character, an RMS Detection Level into Clean's gain computer and detector, and its Colour; the FET Character,
 feedback detection solved within each sample, and its Colour; the Opto Character, FET's loop with a material-dependent
-attack, a two-stage release and a history of its own, and its Colour; High Quality's Lookahead and fixed latency; Saturation; the Limiter; the Gate; and the Character Styles' defaults. Standard library only. See tools/dyn-lab/USAGE.md for every
+attack, a two-stage release and a history of its own, and its Colour; High Quality's Lookahead and fixed latency; Saturation; the Limiter; the Gate; and the Character Styles' defaults, their Comp Curves and the Comp Follow glide. Standard library only. See tools/dyn-lab/USAGE.md for every
 command.
 """
 
@@ -2833,27 +2833,120 @@ def report_gate(gate, sample_rates=SAMPLE_RATES):
               + f" {row.stop:8.2f} {row.fade:8.2f}{mark}")
 
 
+# --- Comp -----------------------------------------------------------------------------------------------
+
+# Comp, in %: from compressing nothing to the most its Style's Comp Curve goes to.
+COMP_RANGE = (0, 100)
+
+
+@dataclass(frozen=True)
+class CompPoint:
+    """A point a Comp Curve passes through: Comp in %, Threshold in dB and Ratio in :1."""
+    comp: float
+    threshold: float
+    ratio: float
+
+
+@dataclass(frozen=True)
+class CompCurve:
+    """A Style's Comp Curve: three points, at Comp 0%, the Style's default Comp and 100%, with Threshold and 1/Ratio
+    each running in a straight line from one point to the next. The first point's Ratio is 1:1, so 0% compresses
+    nothing; each point's Threshold is below the one before and its Ratio above, so each Threshold on the Comp Curve has one
+    Comp. The middle point is the Style's default Threshold and Ratio, which the default Comp lands on exactly."""
+    points: tuple
+
+
+def _between(comp_curve, comp):
+    """The two points comp (clamped to COMP_RANGE) falls between, and how far from the first to the second, 0 to 1."""
+    comp = min(max(comp, COMP_RANGE[0]), COMP_RANGE[1])
+    for a, b in zip(comp_curve.points, comp_curve.points[1:]):
+        if comp <= b.comp:
+            return a, b, (comp - a.comp) / (b.comp - a.comp)
+    return comp_curve.points[-2], comp_curve.points[-1], 1.0
+
+
+def _mix(a, b, u):
+    """a and b mixed as (1 - u) a + u b: exactly a at u = 0, and exactly b at u = 1, so the Comp Curve meets its points."""
+    return (1 - u) * a + u * b
+
+
+def comp_threshold(comp_curve, comp):
+    """The Threshold in dB the Comp Curve sets at comp (%)."""
+    a, b, u = _between(comp_curve, comp)
+    return _mix(a.threshold, b.threshold, u)
+
+
+def comp_ratio(comp_curve, comp):
+    """The Ratio the Comp Curve sets at comp (%), :1, gliding as 1/Ratio between points so ∞:1 (0) can be one."""
+    a, b, u = _between(comp_curve, comp)
+    inverse = _mix(1 / a.ratio, 1 / b.ratio, u)
+    return inf if inverse == 0 else 1 / inverse
+
+
+def comp_for_threshold(comp_curve, threshold):
+    """The Comp (%) on the Comp Curve nearest a Threshold in dB: the one that sets it, clamped to the Comp Curve's span, so a
+    Threshold above the Comp Curve's start is 0% and one below its end is 100%."""
+    points = comp_curve.points
+    if threshold >= points[0].threshold:
+        return COMP_RANGE[0]
+    for a, b in zip(points, points[1:]):
+        if threshold >= b.threshold:
+            return _mix(a.comp, b.comp, (a.threshold - threshold) / (a.threshold - b.threshold))
+    return COMP_RANGE[1]
+
+
+# The Comp Follow glide: how long turning Comp Follow on (or off) takes to move Threshold, Ratio and Auto Gain from the
+# stored settings onto the Comp Curve (or back), in ms (ADR 0004: a fixed time, so playback reproduces it). Long enough
+# that a move from the stored settings to the Comp Curve, which may be 30 dB of Threshold, is heard as compression easing
+# over rather than a jump: six times the 50 ms every other setting glides over. Short enough to have arrived within a
+# beat at 200 bpm, so grabbing Comp still answers at once.
+COMP_FOLLOW_GLIDE_MS = 300.0
+
+
+def follow_share(fraction):
+    """How far along the Comp Follow glide is, 0 to 1, at fraction (0 to 1) of COMP_FOLLOW_GLIDE_MS: a smoothstep,
+    3 f^2 - 2 f^3, whose slope is 0 at each end, so the glide starts and ends without a corner."""
+    f = min(max(fraction, 0.0), 1.0)
+    return f * f * (3 - 2 * f)
+
+
 # --- Styles ---------------------------------------------------------------------------------------------
 
 @dataclass
 class StyleDefaults:
-    """What choosing a Character Style writes (ADR 0002): the compressor's Settings, its Character among them, the
-    Gate's, and the Limiter on or off with its Ceiling."""
+    """What choosing a Character Style writes (ADR 0002): the compressor's Settings, its Character among them, its
+    default Comp in % (and Comp Follow on), the Gate's, and the Limiter on or off with its Ceiling. Beside them, the
+    Style's Comp Curve, and how far its Auto Gain may let the reference signal's level move along it, in dB."""
     settings: Settings
+    comp: float
+    comp_curve: CompCurve
     gate: Gate = field(default_factory=Gate)
     limiter: bool = False
     ceiling: float = CEILING_DEFAULT
+    auto_gain_tolerance: float = AUTO_GAIN_TOLERANCE
 
+
+# FET's Auto Gain tolerance along its Comp Curve, in dB: its worst shortfall there (2.36 dB, at 100%), rounded up to the
+# half dB. Its 0.5 ms Attack catches the reference noise's crests, which an estimate from the Transfer Curve can't see,
+# so the reference signal comes out quieter, the more so the more it compresses. The fast Attack is what FET's Style is
+# for, so it stays, and this is the cost until Auto Gain's estimate knows Attack.
+FET_AUTO_GAIN_TOLERANCE = 2.5
 
 # Each Character Style's defaults, in the Style order (ADR 0003), Characters first; the Source Styles add theirs with
 # their own ticket (#26). Clean's are the lab's defaults, so a new instance, which plays Clean, holds its own Style's.
 # Every Style writes the Gate and the Limiter off, at their defaults: each is a tool for the material, not a part of a
-# Character. USAGE.md ("Styles") gives each row's reasons and its `step --style` figures.
+# Character. Every default Comp is 50%, the middle of the knob, with as much room to compress more as less. USAGE.md
+# ("Styles" and "Comp") gives each row's reasons and its `step --style` and `compcurve` figures.
 STYLE_DEFAULTS = {
-    "clean": StyleDefaults(Settings()),
-    "vca": StyleDefaults(Settings(character="vca", knee=3.0)),
-    "fet": StyleDefaults(Settings(character="fet", knee=3.0, attack=0.5, release=50.0)),
-    "opto": StyleDefaults(Settings(character="opto", ratio=3.0, knee=12.0)),
+    "clean": StyleDefaults(Settings(), 50.0,
+                           CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 4.0), CompPoint(100.0, -36.0, 8.0)))),
+    "vca": StyleDefaults(Settings(character="vca", knee=3.0), 50.0,
+                         CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 4.0), CompPoint(100.0, -36.0, 10.0)))),
+    "fet": StyleDefaults(Settings(character="fet", knee=3.0, attack=0.5, release=50.0), 50.0,
+                         CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 4.0), CompPoint(100.0, -28.0, 20.0))),
+                         auto_gain_tolerance=FET_AUTO_GAIN_TOLERANCE),
+    "opto": StyleDefaults(Settings(character="opto", ratio=3.0, knee=12.0), 50.0,
+                          CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 3.0), CompPoint(100.0, -42.0, 6.0)))),
 }
 
 
@@ -2868,18 +2961,78 @@ def run_styles(args):
 
 def report_styles():
     """Each Character Style's Character and the defaults choosing it writes."""
-    print("Each Character Style's Character and defaults: the compressor's (Threshold, Ratio, Knee and Range in dB or :1, "
+    print("Each Character Style's Character and defaults: its default Comp in %, the compressor's (Threshold, Ratio, Knee and Range in dB or :1, "
           "Attack, Release and Hold in ms, Colour in %), the Gate's (on or off, Gate Threshold, Gate Range, Gate Attack, "
           "Gate Release, Gate Hold) and the Limiter's (on or off, Ceiling in dBFS)")
-    print(f"{'style':<6} {'character':<9} {'threshold':>9} {'ratio':>5} {'knee':>5} {'attack':>6} {'release':>7} "
+    print(f"{'style':<6} {'character':<9} {'comp':>4} {'threshold':>9} {'ratio':>5} {'knee':>5} {'attack':>6} {'release':>7} "
           f"{'auto release':>12} {'hold':>5} {'range':>5} {'colour':>6} {'gate':>5} {'threshold':>9} {'range':>5} "
           f"{'attack':>6} {'release':>7} {'hold':>5} {'limiter':>7} {'ceiling':>7}")
     for name, style in STYLE_DEFAULTS.items():
         s, g = style.settings, style.gate
-        print(f"{name:<6} {s.character:<9} {s.threshold:9g} {_shown(s.ratio):>5} {s.knee:5g} {s.attack:6g} "
+        print(f"{name:<6} {s.character:<9} {style.comp:4g} {s.threshold:9g} {_shown(s.ratio):>5} {s.knee:5g} {s.attack:6g} "
               f"{s.release:7g} {_on_off(s.auto_release):>12} {s.hold:5g} {s.range:5g} {s.colour:6g} "
               f"{_on_off(g.on):>5} {g.threshold:9g} {g.range:5g} {g.attack:6g} {g.release:7g} {g.hold:5g} "
               f"{_on_off(style.limiter):>7} {style.ceiling:7g}")
+
+
+@dataclass
+class CompRow:
+    """A point of a Style's Comp Curve, at its other defaults: Comp in %, the Threshold and Ratio there, the Auto Gain
+    estimate, and the reference signal's level difference, output minus input, with that Auto Gain, in dB."""
+    comp: float
+    threshold: float
+    ratio: float
+    estimate: float
+    difference: float
+
+
+# The Comps compcurve prints the Comp Curve at, in %.
+COMP_STEPS = tuple(range(COMP_RANGE[0], COMP_RANGE[1] + 1, 10))
+
+
+@functools.lru_cache(maxsize=None)
+def comp_curve_rows(name):
+    """The Character Style name's Comp Curve at each of COMP_STEPS, at the Style's other defaults."""
+    style = STYLE_DEFAULTS[name]
+    rows = []
+    for comp in COMP_STEPS:
+        threshold, ratio = comp_threshold(style.comp_curve, comp), comp_ratio(style.comp_curve, comp)
+        settings = replace(style.settings, threshold=threshold, ratio=ratio)
+        rows.append(CompRow(comp, threshold, ratio, auto_gain(settings), level_difference(settings)))
+    return rows
+
+
+def compcurve_options(parser):
+    parser.add_argument("--style", choices=STYLE_DEFAULTS, required=True)
+    parser.add_argument("--tolerance", type=float, metavar="dB",
+                        help="check against this tolerance in place of the Style's own")
+
+
+@command("compcurve", options=compcurve_options)
+def run_compcurve(args):
+    if not report_compcurve(args.style, args.tolerance):
+        raise SystemExit(1)
+
+
+def report_compcurve(name, tolerance=None):
+    """A Style's Comp Curve at each of COMP_STEPS, and the Auto Gain check along it. True when every point holds."""
+    style = STYLE_DEFAULTS[name]
+    tolerance = style.auto_gain_tolerance if tolerance is None else tolerance
+    s = style.settings
+    print(f"Comp Curve, {name}: Threshold and 1/Ratio straight between "
+          + ", ".join(f"Comp {p.comp:g}% ({p.threshold:g} dB, {_shown(p.ratio)}:1)" for p in style.comp_curve.points)
+          + f"; default Comp {style.comp:g}%")
+    print(f"reference signal at {name}'s defaults (Knee {s.knee:g} dB, Attack {s.attack:g} ms, Release {s.release:g} ms, "
+          f"Hold {s.hold:g} ms, Range {s.range:g} dB), Auto Gain on: output minus input, within ±{tolerance:g} dB")
+    print(f"{'comp':>5} {'threshold':>9} {'ratio':>6} {'estimate':>8} {'level':>6}")
+    held = True
+    for row in comp_curve_rows(name):
+        within = abs(row.difference) <= tolerance
+        held = held and within
+        print(f"{row.comp:4g}% {row.threshold:9.2f} {row.ratio:6.2f} {row.estimate:+8.4f} {row.difference:+6.2f} "
+              f"{'within' if within else 'outside'}")
+    print(f"Comp Follow glides on and off over {COMP_FOLLOW_GLIDE_MS:g} ms, on a smoothstep (follow_share)")
+    return held
 
 
 if __name__ == "__main__":

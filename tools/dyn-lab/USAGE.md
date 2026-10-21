@@ -2,7 +2,7 @@
 
 A Python model of comp1's Characters. It prints the figures the Engine's tests check, so a ticket brief can cite a command and its output exactly. It needs only the standard library: no installs, no numpy. Run it from the repo root.
 
-It models the Clean, VCA, FET and Opto Characters (see [VCA](#vca), [FET](#fet) and [Opto](#opto)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's, FET's and Opto's Colour (see [Colour](#colour)) the Limiter (see [Limiter](#limiter)), the Gate (see [Gate](#gate)) and the Character Styles' defaults (see [Styles](#styles)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
+It models the Clean, VCA, FET and Opto Characters (see [VCA](#vca), [FET](#fet) and [Opto](#opto)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's, FET's and Opto's Colour (see [Colour](#colour)) the Limiter (see [Limiter](#limiter)), the Gate (see [Gate](#gate)), the Character Styles' defaults (see [Styles](#styles)) and their Comp Curves, with the Comp Follow glide (see [Comp](#comp)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
 
 Hold freezes the Gain Reduction for Hold ms whenever it stops rising, mid-Attack included, before Release begins. Any rise restarts the count.
 
@@ -531,7 +531,7 @@ At Gate Range 0 dB there is nothing to measure, and the row says so. Then it pri
 
 ## Styles
 
-Choosing a Style writes its defaults (ADR 0002). `STYLE_DEFAULTS` holds each Character Style's: its Character, the compressor's Colour, Threshold, Ratio, Knee, Attack, Release, Auto Release, Hold and Range, the Gate on or off with its five settings, and the Limiter on or off with its Ceiling. The Source Styles (Vocal, Instrument, Bus and Drums) add theirs with #26.
+Choosing a Style writes its defaults (ADR 0002). `STYLE_DEFAULTS` holds each Character Style's: its Character, its default Comp with Comp Follow on (see [Comp](#comp)), the compressor's Colour, Threshold, Ratio, Knee, Attack, Release, Auto Release, Hold and Range, the Gate on or off with its five settings, and the Limiter on or off with its Ceiling. The Source Styles (Vocal, Instrument, Bus and Drums) add theirs with #26.
 
 | Style | Threshold | Ratio | Knee | Attack | Release | Auto Release | Hold | Range | Colour |
 |---|---|---|---|---|---|---|---|---|---|
@@ -542,7 +542,7 @@ Choosing a Style writes its defaults (ADR 0002). `STYLE_DEFAULTS` holds each Cha
 
 Every Style writes the Gate off and the Limiter off, each at its defaults (Gate Threshold −40 dB, Gate Range 20 dB, Gate Attack 1 ms, Gate Release 100 ms, Gate Hold 20 ms; Ceiling 0 dBFS): both are tools for the material in hand, not part of how a Character sounds, so a Style switches them off rather than guessing at the material. Each Style keeps Threshold −18 dB, Range 60 dB (no limit) and Colour 100% (its Character's as tuned): Threshold is the material's to set, and a Style is a Character's own sound at full. The rows, and why:
 
-- **Clean** is the lab's defaults exactly, so a new instance, which plays Clean, holds its own Style's defaults, and choosing Clean on a new instance changes nothing.
+- **Clean** is the lab's defaults exactly, so a new instance, which plays Clean, holds its own Style's defaults, except Comp Follow: a new instance holds it off, so it plays its stored settings, while choosing any Style, Clean included, turns it on.
 - **VCA**, a Knee of 3 dB: firmer than Clean's 6 dB, for the precise, controlled onset VCA compression is chosen for on buses and drums. It needn't be harder: the RMS stage already rounds a transient's onset over its 5 ms, and a hard knee on a level held near Threshold would switch compression in and out at each small change of level. Its timing is the defaults: the RMS stage lengthens them a little, Attack's 63% to 12.1 ms and Release's to 111.7 ms.
 - **FET**, Attack 0.5 ms, Release 50 ms and a Knee of 3 dB: a FET is chosen for a fast grab and a quick, lively release, on drums, bass and aggressive vocals. The loop's speed-up at 4:1 brings Attack's 63% to 0.15 ms, under a millisecond at every rate, and Release's 63% is 50 ms, its own (a step down to under the Knee releases as on Clean). The Knee is VCA's, for the same firm onset.
 - **Opto**, Ratio 3:1 and a Knee of 12 dB: an optical cell is chosen for gentle, smooth levelling, so a lower Ratio over a wide Knee eases compression in across 12 dB rather than switching it on. Its timing is the defaults, since Opto's own timing varies around them: the 20 dB step's overshoot catches it in 4.0 ms at 63%, and its two-stage release gives back 63% in 297 ms and 90% in 2120 ms after a second of compression.
@@ -572,7 +572,72 @@ Every Style writes the Gate off and the Limiter off, each at its defaults (Gate 
 
 ### `styles`
 
-Prints each Character Style's Character and the defaults choosing it writes, one row per Style in the Style order: the compressor's, the Gate's and the Limiter's.
+Prints each Character Style's Character and the defaults choosing it writes, one row per Style in the Style order: its default Comp, the compressor's, the Gate's and the Limiter's.
+
+## Comp
+
+Comp, 0 to 100% (`COMP_RANGE`), sets Threshold and Ratio together along the Style's Comp Curve while Comp Follow is on, and Auto Gain is on with it (ADR 0004). Each Character Style's row in `STYLE_DEFAULTS` holds its curve and its default Comp, 50% for every Style: the middle of the knob, with as much room to compress more as less.
+
+A curve is three points (`CompCurve`): Comp 0%, the default Comp, and 100%, each a Threshold and a Ratio. Between neighbours Threshold runs in a straight line, and so does 1/Ratio, as the Engine glides Ratio. The first point's Ratio is 1:1, so 0% compresses nothing and Auto Gain adds 0 dB; its Threshold, 0 dB, starts the fall from the top of Threshold's range. Each point's Threshold is lower than the one before and its Ratio higher, so Threshold falls and Ratio rises monotonically with Comp, and each Threshold on the curve has one Comp: `comp_for_threshold` finds it, clamped to the curve's span, which is where turning Comp Follow on from the editor puts Comp. The middle point is the Style's default Threshold and Ratio, which the default Comp lands on exactly (`comp_threshold`, `comp_ratio`). A Source Style will add its own three points, not a new form.
+
+| Style | 0% | 50% (default) | 100% | Auto Gain tolerance |
+|---|---|---|---|---|
+| Clean | 0 dB, 1:1 | −18 dB, 4:1 | −36 dB, 8:1 | ±1 dB |
+| VCA | 0 dB, 1:1 | −18 dB, 4:1 | −36 dB, 10:1 | ±1 dB |
+| FET | 0 dB, 1:1 | −18 dB, 4:1 | −28 dB, 20:1 | ±2.5 dB |
+| Opto | 0 dB, 1:1 | −18 dB, 3:1 | −42 dB, 6:1 | ±1 dB |
+
+Below the default every curve eases in alike, from nothing to the Style's default over 0 to 50%. Above it each goes where its Character is chosen for:
+
+- **Clean**, to −36 dB at 8:1: general-purpose compression, getting firmer as it gets deeper, without reaching limiting. The deepest point keeps the reference signal within the ±1 dB tolerance (+0.87 dB); 10:1 there would leave it.
+- **VCA**, to −36 dB at 10:1: the same depth as Clean's, a little firmer, for the controlled bus and drum compression VCA is chosen for. Its RMS stage keeps the check well within (−0.71 dB).
+- **FET**, to −28 dB at 20:1: a FET's top end is the all-out grab, so its Ratio climbs to near limiting while its Threshold stays higher than the others', which keeps how far its Auto Gain falls short bounded. At −36 dB, 10:1 it falls 2.63 dB short.
+- **Opto**, to −42 dB at 6:1: an optical cell levels rather than limits, so its curve goes deepest with the gentlest Ratio, and the 12 dB Knee keeps the check within at every point (−0.60 dB at worst, at 70%).
+
+**Auto Gain along each curve:** `compcurve` runs the reference signal (see [`autogain`](#autogain)) at each point, at the Style's other defaults, with the estimate as Auto Gain. Clean, VCA and Opto keep within ±1 dB everywhere. FET can't: its 0.5 ms Attack catches the noise's crests, which an estimate from the Transfer Curve can't see, so its output comes out quieter the more it compresses, 1.38 dB at its default and 2.36 dB at 100%. Its fast Attack is what FET's Style is for, so it stays, and FET has a tolerance of its own, its worst shortfall rounded up to the half dB, ±2.5 dB (`FET_AUTO_GAIN_TOLERANCE`), the cost of an estimate that doesn't know Attack. Every other Style stays at ±1 dB (`AUTO_GAIN_TOLERANCE`).
+
+**The glide:** turning Comp Follow on glides Threshold, Ratio and Auto Gain from the stored settings onto the curve over a fixed time, and turning it off glides them back over the same one: 300 ms (`COMP_FOLLOW_GLIDE_MS`). A fixed time, not one over the knob's travel, so playback reproduces it (ADR 0004). 300 ms is six times the 50 ms every other setting glides over, so a move of 30 dB of Threshold is heard as compression easing over rather than a jump, and it has arrived within a beat at 200 bpm, so grabbing Comp still answers at once. The glide follows a smoothstep, 3f² − 2f³ of the fraction of the time gone (`follow_share`), whose slope is 0 at each end, so it starts and ends without a corner.
+
+    python3 tools/dyn-lab/dynlab.py compcurve --style clean
+    python3 tools/dyn-lab/dynlab.py compcurve --style vca
+    python3 tools/dyn-lab/dynlab.py compcurve --style fet
+    python3 tools/dyn-lab/dynlab.py compcurve --style opto
+
+`compcurve --style clean`:
+
+| Comp | Threshold | Ratio | Estimate | Level |
+|---|---|---|---|---|
+| 0% | 0.00 dB | 1.00 | +0.0000 dB | +0.00 dB |
+| 10% | −3.60 dB | 1.18 | +0.0425 dB | −0.02 dB |
+| 20% | −7.20 dB | 1.43 | +0.2497 dB | −0.03 dB |
+| 30% | −10.80 dB | 1.82 | +0.7602 dB | −0.01 dB |
+| 40% | −14.40 dB | 2.50 | +1.7130 dB | +0.05 dB |
+| 50% | −18.00 dB | 4.00 | +3.2470 dB | +0.17 dB |
+| 60% | −21.60 dB | 4.44 | +4.7370 dB | +0.28 dB |
+| 70% | −25.20 dB | 5.00 | +6.5629 dB | +0.41 dB |
+| 80% | −28.80 dB | 5.71 | +8.7480 dB | +0.55 dB |
+| 90% | −32.40 dB | 6.67 | +11.3154 dB | +0.71 dB |
+| 100% | −36.00 dB | 8.00 | +14.2882 dB | +0.87 dB |
+
+`compcurve --style fet`:
+
+| Comp | Threshold | Ratio | Estimate | Level |
+|---|---|---|---|---|
+| 0% | 0.00 dB | 1.00 | +0.0000 dB | +0.00 dB |
+| 10% | −3.60 dB | 1.18 | +0.0386 dB | −0.09 dB |
+| 20% | −7.20 dB | 1.43 | +0.2414 dB | −0.26 dB |
+| 30% | −10.80 dB | 1.82 | +0.7478 dB | −0.52 dB |
+| 40% | −14.40 dB | 2.50 | +1.6972 dB | −0.88 dB |
+| 50% | −18.00 dB | 4.00 | +3.2277 dB | −1.38 dB |
+| 60% | −20.00 dB | 4.76 | +4.1522 dB | −1.57 dB |
+| 70% | −22.00 dB | 5.88 | +5.2320 dB | −1.76 dB |
+| 80% | −24.00 dB | 7.69 | +6.4784 dB | −1.95 dB |
+| 90% | −26.00 dB | 11.11 | +7.9029 dB | −2.15 dB |
+| 100% | −28.00 dB | 20.00 | +9.5170 dB | −2.36 dB |
+
+### `compcurve`
+
+Prints a Character Style's Comp Curve (`--style`, required) at Comp 0, 10, … 100%: the Threshold and Ratio there, the Auto Gain estimate, and the reference signal's level difference with it, output minus input, at the Style's other defaults, each marked within or outside the Style's tolerance. A last line gives the glide time. It exits non-zero when a point is outside the tolerance; `--tolerance <dB>` checks against another in place of the Style's own, so `--style fet --tolerance 1` shows where FET's curve leaves ±1 dB.
 
 ## Tests
 

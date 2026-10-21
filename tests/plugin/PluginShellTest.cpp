@@ -99,6 +99,7 @@ TEST_CASE ("The compressor's controls are host parameters, with dyn-lab's ranges
     juce::ScopedJuceInitialiser_GUI juce;
     comp1::PluginProcessor processor;
     const auto expected = GENERATE (values<Expected> ({
+        { "comp", "Comp", "%", 0.0f, 100.0f, 50.0f, 37.5f, "37.5" },
         { "threshold", "Threshold", "dB", -60.0f, 0.0f, -18.0f, -24.5f, "-24.50" },
         { "ratio", "Ratio", ":1", 1.0f, infinity, 4.0f, 2.5f, "2.50" },
         { "knee", "Knee", "dB", 0.0f, 72.0f, 6.0f, 12.0f, "12.00" },
@@ -270,6 +271,17 @@ TEST_CASE ("Auto Gain is an on/off host parameter, off by default")
     CHECK (autoGain.getNumSteps() == 2);
     CHECK (autoGain.getDefaultValue() == 0.0f);
     CHECK (autoGain.isAutomatable());
+}
+
+TEST_CASE ("Comp Follow is an on/off host parameter, off by default")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    comp1::PluginProcessor processor;
+    auto& compFollow = host::parameter (processor, "comp_follow");
+    CHECK (compFollow.getName (100) == "Comp Follow");
+    CHECK (compFollow.getNumSteps() == 2);
+    CHECK (compFollow.getDefaultValue() == 0.0f);
+    CHECK (compFollow.isAutomatable());
 }
 
 TEST_CASE ("Output Gain is a host parameter in dB, -36 to +36, defaulting to 0 dB")

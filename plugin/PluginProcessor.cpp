@@ -27,13 +27,16 @@ void migrate (juce::ValueTree& state)
 }
 
 // The host parameters choosing a Style writes, as plain values from settings: Style itself, then the settings ADR 0002
-// lists (the Character is Style's). Every other parameter is routing or a level, which a Style never touches.
+// lists (the Character and the Comp Curve are Style's). Every other parameter is Auto Gain, routing or a level, which
+// a Style never touches.
 std::vector<std::pair<juce::String, float>> styleWrites (Style style, const Settings& s)
 {
     const auto plain = [] (double value) { return static_cast<float> (value); };
     const auto onOff = [] (bool on) { return on ? 1.0f : 0.0f; };
     return {
         { parameters::styleId, static_cast<float> (style) },
+        { parameters::compId, plain (s.comp) },
+        { parameters::compFollowId, onOff (s.compFollow) },
         { parameters::colourId, plain (s.colour) },
         { parameters::thresholdId, plain (s.thresholdDb) },
         { parameters::ratioId, plain (s.ratio) },
@@ -52,6 +55,23 @@ std::vector<std::pair<juce::String, float>> styleWrites (Style style, const Sett
         { parameters::limiterId, onOff (s.limiter) },
         { parameters::ceilingId, plain (s.ceilingDb) },
     };
+}
+
+// writes as one undo step inside gestures, as the editor's own edits are: one transaction around them, so the edit is
+// one step however the host orders the gestures, and one step with the editor's own when it holds a transaction too.
+void setAsOneEdit (juce::AudioProcessorValueTreeState& parameters,
+                   plugkit::ui::EditHistory& history,
+                   const std::vector<std::pair<juce::String, float>>& writes)
+{
+    std::vector<plugkit::ui::NewValue> values;
+    for (const auto& [id, plain] : writes)
+    {
+        auto* parameter = parameters.getParameter (id);
+        values.push_back ({ parameter, parameter->convertTo0to1 (plain) });
+    }
+    history.beginTransaction();
+    plugkit::ui::setTogether (values);
+    history.endTransaction();
 }
 
 plugkit::ui::Session::Config sessionConfig (juce::File userSettingsFile, juce::File presetFolder)
@@ -162,17 +182,47 @@ bool PluginProcessor::chooseStyle (Style style)
     auto settings = reader.read();
     if (! applyStyle (style, settings))
         return false;
-    std::vector<plugkit::ui::NewValue> values;
-    for (const auto& [id, plain] : styleWrites (style, settings))
-    {
-        auto* parameter = parameters.getParameter (id);
-        values.push_back ({ parameter, parameter->convertTo0to1 (plain) });
-    }
-    // One transaction around the gestures, so the edit is one undo step however the host orders them.
-    auto& history = sessionState.editHistory();
-    history.beginTransaction();
-    plugkit::ui::setTogether (values);
-    history.endTransaction();
+    setAsOneEdit (parameters, sessionState.editHistory(), styleWrites (style, settings));
+    return true;
+}
+
+double PluginProcessor::followedThresholdDb() const
+{
+    const auto settings = reader.read();
+    return compThresholdDb (settings.compCurve, settings.comp);
+}
+
+double PluginProcessor::followedRatio() const
+{
+    const auto settings = reader.read();
+    return compRatio (settings.compCurve, settings.comp);
+}
+
+bool PluginProcessor::stopFollowingComp()
+{
+    const auto settings = reader.read();
+    if (! settings.compFollow)
+        return false;
+    // Comp Follow last, so a block the audio thread reads part-way through still plays the Comp Curve.
+    setAsOneEdit (parameters,
+                  sessionState.editHistory(),
+                  { { parameters::thresholdId, static_cast<float> (compThresholdDb (settings.compCurve, settings.comp)) },
+                    { parameters::ratioId, static_cast<float> (compRatio (settings.compCurve, settings.comp)) },
+                    { parameters::autoGainId, 1.0f },
+                    { parameters::compFollowId, 0.0f } });
+    return true;
+}
+
+bool PluginProcessor::followComp()
+{
+    const auto settings = reader.read();
+    if (settings.compFollow)
+        return false;
+    // Comp first, so Comp Follow turns on at the Comp it glides to.
+    setAsOneEdit (parameters,
+                  sessionState.editHistory(),
+                  { { parameters::compId, static_cast<float> (compNearestThreshold (settings.compCurve, settings.thresholdDb)) },
+                    { parameters::compFollowId, 1.0f } });
     return true;
 }
 

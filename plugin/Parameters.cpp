@@ -204,7 +204,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 floatParameter (gateAttackId, "Gate Attack", logRange (parameterRanges::attack), gate.attackMs, withText (3, "ms")),
                 floatParameter (gateReleaseId, "Gate Release", logRange (parameterRanges::release), gate.releaseMs, withText (1, "ms")),
                 floatParameter (gateHoldId, "Gate Hold", skewedRange (parameterRanges::hold, 50.0f), gate.holdMs, withText (1, "ms")));
-    layout.add (floatParameter (thresholdId, "Threshold", linearRange (parameterRanges::threshold), defaults.thresholdDb, withText (2, "dB")),
+    // Comp and Comp Follow first (ADR 0004): while Comp Follow is on, Comp sets Threshold and Ratio along the Style's
+    // Comp Curve, and the stored Threshold, Ratio and Auto Gain below it are ignored. Both are automatable, so a session
+    // that switches Comp Follow mid-song plays back the same way every time.
+    layout.add (floatParameter (compId, "Comp", linearRange (parameterRanges::comp), defaults.comp, withText (1, "%")),
+                std::make_unique<juce::AudioParameterBool> (juce::ParameterID { compFollowId, 1 }, "Comp Follow", defaults.compFollow),
+                floatParameter (thresholdId, "Threshold", linearRange (parameterRanges::threshold), defaults.thresholdDb, withText (2, "dB")),
                 floatParameter (ratioId, "Ratio", ratioRange(), defaults.ratio, ratioText()),
                 floatParameter (kneeId, "Knee", linearRange (parameterRanges::knee), defaults.kneeDb, withText (2, "dB")),
                 floatParameter (attackId, "Attack", logRange (parameterRanges::attack), defaults.attackMs, withText (3, "ms")),
@@ -263,6 +268,8 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       gateAttack (parameters.getRawParameterValue (gateAttackId)),
       gateRelease (parameters.getRawParameterValue (gateReleaseId)),
       gateHold (parameters.getRawParameterValue (gateHoldId)),
+      comp (parameters.getRawParameterValue (compId)),
+      compFollow (parameters.getRawParameterValue (compFollowId)),
       threshold (parameters.getRawParameterValue (thresholdId)),
       ratio (parameters.getRawParameterValue (ratioId)),
       knee (parameters.getRawParameterValue (kneeId)),
@@ -324,14 +331,18 @@ Settings SettingsReader::read() const
     eq.freeBand.filter.frequency = plain (bandFrequency);
     eq.freeBand.filter.gain = plain (bandGain);
     eq.freeBand.filter.q = plain (bandQ);
+    const auto chosen = choice (style, Style::Drums);
     return { .gate = { .on = on (gate),
                        .thresholdDb = plain (gateThreshold),
                        .rangeDb = plain (gateRange),
                        .attackMs = plain (gateAttack),
                        .releaseMs = plain (gateRelease),
                        .holdMs = plain (gateHold) },
-             // Style alone decides the Character.
-             .character = characterOf (choice (style, Style::Drums)),
+             // Style alone decides the Character, and the Comp Curve.
+             .character = characterOf (chosen),
+             .comp = plain (comp),
+             .compFollow = on (compFollow),
+             .compCurve = compCurveOf (chosen),
              .thresholdDb = plain (threshold),
              .ratio = plain (ratio),
              .kneeDb = plain (knee),

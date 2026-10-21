@@ -24,6 +24,7 @@ add_executable(comp1_engine_tests
     engine/AutoReleaseTest.cpp
     engine/CharacterTest.cpp
     engine/ClickFreeTest.cpp
+    engine/CompFollowTest.cpp
     engine/ColourTest.cpp
     engine/DetectionAuditionTest.cpp
     engine/DetectionEqTest.cpp
@@ -78,6 +79,7 @@ if(COMP1_BUILD_PLUGIN)
     add_executable(comp1_plugin_tests
         plugin/AutoReleaseParameterTest.cpp
         plugin/ColourParameterTest.cpp
+        plugin/CompParameterTest.cpp
         plugin/DryWetParameterTest.cpp
         plugin/GateParameterTest.cpp
         plugin/GlobalBypassParameterTest.cpp

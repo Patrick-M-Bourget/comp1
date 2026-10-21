@@ -1,5 +1,5 @@
 """Tests for dyn-lab, at its seams: the gain computer, the step response, Auto Release, Auto Gain, VCA's RMS
-Detection Level, the latency, the Limiter, Saturation, its aliasing, Colour, Oversampling, the Styles and the command
+Detection Level, the latency, the Limiter, Saturation, its aliasing, Colour, Oversampling, the Styles, Comp and the command
 line.
 
     python3 tools/dyn-lab/test_dynlab.py
@@ -1086,7 +1086,88 @@ class Styles(unittest.TestCase):
                                 "opto": (-18, 3, 12, 10, 100, False, 0, 60, 100)})
 
 
-LAB = os.path.dirname(os.path.abspath(__file__))
+class Comp(unittest.TestCase):
+    """Each Character Style's Comp Curve, and the Comp Follow glide."""
+
+    COMPS = range(0, 101, 10)
+
+    def test_at_0_percent_each_curve_compresses_nothing(self):
+        for name, style in dynlab.STYLE_DEFAULTS.items():
+            with self.subTest(name):
+                self.assertEqual(dynlab.comp_ratio(style.comp_curve, 0), 1)
+                at_zero = replace_settings(style.settings, style.comp_curve, 0)
+                self.assertEqual(dynlab.auto_gain(at_zero), 0)
+
+    def test_threshold_falls_and_ratio_rises_with_comp(self):
+        for name, style in dynlab.STYLE_DEFAULTS.items():
+            with self.subTest(name):
+                comps = [c / 4 for c in range(401)]
+                thresholds = [dynlab.comp_threshold(style.comp_curve, c) for c in comps]
+                ratios = [dynlab.comp_ratio(style.comp_curve, c) for c in comps]
+                self.assertTrue(all(a > b for a, b in zip(thresholds, thresholds[1:])))
+                self.assertTrue(all(a < b for a, b in zip(ratios, ratios[1:])))
+
+    def test_every_point_is_within_the_parameter_ranges(self):
+        for name, style in dynlab.STYLE_DEFAULTS.items():
+            with self.subTest(name):
+                dynlab.check_range("comp", style.comp, dynlab.COMP_RANGE, "%")
+                for c in self.COMPS:
+                    dynlab.check_ranges(replace_settings(style.settings, style.comp_curve, c))
+
+    def test_the_default_comp_gives_exactly_the_default_threshold_and_ratio(self):
+        for name, style in dynlab.STYLE_DEFAULTS.items():
+            with self.subTest(name):
+                self.assertEqual(dynlab.comp_threshold(style.comp_curve, style.comp), style.settings.threshold)
+                self.assertEqual(dynlab.comp_ratio(style.comp_curve, style.comp), style.settings.ratio)
+
+    def test_the_comp_nearest_a_threshold_inverts_the_curve_and_clamps_to_its_span(self):
+        for name, style in dynlab.STYLE_DEFAULTS.items():
+            with self.subTest(name):
+                for c in self.COMPS:
+                    threshold = dynlab.comp_threshold(style.comp_curve, c)
+                    self.assertAlmostEqual(dynlab.comp_for_threshold(style.comp_curve, threshold), c, places=9)
+                start, end = style.comp_curve.points[0].threshold, style.comp_curve.points[-1].threshold
+                self.assertEqual(dynlab.comp_for_threshold(style.comp_curve, start + 6), 0)
+                self.assertEqual(dynlab.comp_for_threshold(style.comp_curve, end - 6), 100)
+        # Clean's runs straight from 0 dB at 0% to -18 dB at 50%: -9 dB is a quarter of the way.
+        self.assertAlmostEqual(dynlab.comp_for_threshold(dynlab.STYLE_DEFAULTS["clean"].comp_curve, -9), 25, places=9)
+
+    def test_along_each_curve_the_reference_signal_keeps_its_level_within_the_styles_tolerance(self):
+        for name, style in dynlab.STYLE_DEFAULTS.items():
+            with self.subTest(name):
+                rows = dynlab.comp_curve_rows(name)
+                self.assertEqual([row.comp for row in rows], list(self.COMPS))
+                self.assertTrue(all(abs(row.difference) <= style.auto_gain_tolerance for row in rows))
+
+    def test_only_fet_has_a_tolerance_of_its_own_its_worst_shortfall_rounded_up_to_half_a_db(self):
+        for name, style in dynlab.STYLE_DEFAULTS.items():
+            if name != "fet":
+                self.assertEqual(style.auto_gain_tolerance, dynlab.AUTO_GAIN_TOLERANCE)
+        fet = dynlab.STYLE_DEFAULTS["fet"]
+        worst = max(-row.difference for row in dynlab.comp_curve_rows("fet"))
+        self.assertGreater(worst, dynlab.AUTO_GAIN_TOLERANCE)
+        self.assertEqual(fet.auto_gain_tolerance, math.ceil(worst * 2) / 2)
+        self.assertEqual(fet.auto_gain_tolerance, 2.5)
+
+    def test_the_glide_runs_over_its_time_from_0_to_1_without_a_corner_at_either_end(self):
+        self.assertEqual(dynlab.COMP_FOLLOW_GLIDE_MS, 300)
+        self.assertEqual(dynlab.follow_share(0), 0)
+        self.assertEqual(dynlab.follow_share(1), 1)
+        self.assertEqual(dynlab.follow_share(0.5), 0.5)
+        shares = [dynlab.follow_share(k / 1000) for k in range(1001)]
+        self.assertTrue(all(a < b for a, b in zip(shares, shares[1:])))
+        # No corner: the slope at each end is 0, so the first and last steps are far smaller than the middle's.
+        middle = shares[501] - shares[500]
+        self.assertLess(shares[1] - shares[0], middle / 100)
+        self.assertLess(shares[1000] - shares[999], middle / 100)
+
+
+def replace_settings(settings, comp_curve, comp):
+    """settings with the Threshold and Ratio of comp_curve at comp."""
+    return dynlab.replace(settings, threshold=dynlab.comp_threshold(comp_curve, comp), ratio=dynlab.comp_ratio(comp_curve, comp))
+
+
+LAB =os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(LAB))
 
 
@@ -1242,8 +1323,22 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         rows = [line.split() for line in result.stdout.splitlines() if line.split()[:1] in (["clean"], ["vca"], ["fet"], ["opto"])]
         self.assertEqual([row[:2] for row in rows], [["clean", "clean"], ["vca", "vca"], ["fet", "fet"], ["opto", "opto"]])
-        self.assertEqual(rows[2], ["fet", "fet", "-18", "4", "3", "0.5", "50", "off", "0", "60", "100", "off", "-40", "20",
-                                   "1", "100", "20", "off", "0"])
+        self.assertEqual(rows[2], ["fet", "fet", "50", "-18", "4", "3", "0.5", "50", "off", "0", "60", "100", "off", "-40",
+                                   "20", "1", "100", "20", "off", "0"])
+
+    def test_compcurve_prints_each_tenth_of_comp_and_exits_non_zero_past_the_tolerance(self):
+        result = run("compcurve", "--style", "opto")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = [line.split() for line in result.stdout.splitlines() if line.split()[:1] and line.split()[0].endswith("%")
+                and line.split()[0][:-1].isdigit()]
+        self.assertEqual([row[0] for row in rows], [f"{c}%" for c in range(0, 101, 10)])
+        self.assertEqual(rows[5][1:3], ["-18.00", "3.00"])
+        self.assertTrue(all(row[-1] == "within" for row in rows))
+        self.assertNotEqual(run("compcurve", "--style", "tube").returncode, 0)
+        # FET's Comp Curve at Clean's ±1 dB tolerance: past it from 50% up.
+        strict = run("compcurve", "--style", "fet", "--tolerance", "1")
+        self.assertNotEqual(strict.returncode, 0)
+        self.assertIn("outside", strict.stdout)
 
     def test_style_runs_its_character_at_its_defaults_and_options_override_them(self):
         for command in ("transfer", "step", "bursts", "autogain", "colour"):

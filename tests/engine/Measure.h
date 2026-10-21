@@ -739,6 +739,66 @@ inline Channels bursts (int numChannels, int numSamples, double sampleRate, std:
     return audio;
 }
 
+// --- Auto Gain's reference signal ----------------------------------------------------------------------------
+
+// dyn-lab's reference signal (tools/dyn-lab/USAGE.md, "autogain"), written again from its description: pink-like noise
+// from a 32-bit linear congruential generator (seed 1) through Paul Kellet's three-pole filter, 0.5 s at 48 kHz at
+// each Detection Level from -40 to 0 dB in 2 dB steps, lowest first, each segment at the power of a sine whose peak
+// reads its level.
+inline constexpr double referenceRate = 48000.0;
+
+inline std::vector<std::vector<float>> referenceSegments()
+{
+    std::uint32_t state = 1;
+    double b0 = 0.0, b1 = 0.0, b2 = 0.0;
+    std::vector<std::vector<float>> segments;
+    for (int levelDb = -40; levelDb <= 0; levelDb += 2)
+    {
+        std::vector<double> noise (static_cast<std::size_t> (0.5 * referenceRate));
+        double power = 0.0;
+        for (auto& x : noise)
+        {
+            state = 1664525u * state + 1013904223u;
+            const double w = state / 2147483648.0 - 1.0;
+            b0 = 0.99765 * b0 + 0.0990460 * w;
+            b1 = 0.96300 * b1 + 0.2965164 * w;
+            b2 = 0.57000 * b2 + 1.0526913 * w;
+            x = b0 + b1 + b2 + 0.1848 * w;
+            power += x * x;
+        }
+        const double scale = std::sqrt (std::pow (10.0, levelDb / 10.0) / 2.0 / (power / static_cast<double> (noise.size())));
+        auto& segment = segments.emplace_back();
+        for (const double x : noise)
+            segment.push_back (static_cast<float> (x * scale));
+    }
+    return segments;
+}
+
+// The reference signal's long-term level difference through a fresh mono Engine with settings, output minus input, in
+// dB, as dyn-lab measures it: each segment's level difference (its power ratio), averaged in dB over the segments. The
+// segments play one after another, in blocks of 512.
+inline double referenceLevelDifferenceDb (const Settings& settings)
+{
+    const auto segments = referenceSegments();
+    Engine engine;
+    engine.prepare (referenceRate, 512, 1);
+    engine.setSettings (settings);
+    double sumDb = 0.0;
+    for (const auto& segment : segments)
+    {
+        Channels audio { segment };
+        processInBlocks (engine, audio, { 512 });
+        double powerIn = 0.0, powerOut = 0.0;
+        for (std::size_t i = 0; i < segment.size(); ++i)
+        {
+            powerIn += static_cast<double> (segment[i]) * segment[i];
+            powerOut += static_cast<double> (audio.front()[i]) * audio.front()[i];
+        }
+        sumDb += 10.0 * std::log10 (powerOut / powerIn);
+    }
+    return sumDb / static_cast<double> (segments.size());
+}
+
 // The worst case: every stage on, at its most costly. FET with its full Colour, High Quality at 8x Oversampling (the
 // cap at each rate: 4x at 96 kHz) with the most Lookahead, Saturation on, the Gate on and closing on the bursts' quiet
 // part (its Threshold over burstQuietDb), Dry and Wet both at 0 dB, and the Limiter on and limiting, Output Gain driving

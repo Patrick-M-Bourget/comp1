@@ -55,6 +55,20 @@ void automateThreshold (Settings& settings, double seconds)
     settings.thresholdDb = Settings {}.thresholdDb + 6.0 * std::sin (std::numbers::pi * seconds);
 }
 
+// Comp swept by Host Automation while following, 30% either side of its default, once every 2 s: Threshold and Ratio
+// move along the Comp Curve every block, and Auto Gain's estimate with them.
+void automateComp (Settings& settings, double seconds)
+{
+    settings.comp = Settings {}.comp + 30.0 * std::sin (std::numbers::pi * seconds);
+}
+
+// Comp Follow switched by Host Automation every 300 ms, the glide time, so it is always gliding, on or off, between the
+// stored settings and the Comp Curve (followingFar's).
+void automateCompFollow (Settings& settings, double seconds)
+{
+    settings.compFollow = static_cast<int> (seconds / 0.3) % 2 == 0;
+}
+
 // A ceiling, in percent of real time.
 struct Ceiling
 {
@@ -91,6 +105,25 @@ Settings highQuality()
     return settings;
 }
 
+// Comp Follow on.
+Settings following()
+{
+    Settings settings;
+    settings.compFollow = true;
+    return settings;
+}
+
+// Comp at 100%, Clean's Comp Curve at its deepest (-36 dB, 8:1), and the stored Threshold and Ratio compressing nothing:
+// far from the Comp Curve, so Comp Follow's glide moves every setting it mixes.
+Settings followingFar()
+{
+    auto settings = following();
+    settings.comp = 100.0;
+    settings.thresholdDb = 0.0;
+    settings.ratio = 1.0;
+    return settings;
+}
+
 // The worst case with the Limiter off: what the rest of the Engine costs, and so what the Limiter costs on.
 Settings worstCaseLimiterOff()
 {
@@ -115,6 +148,8 @@ std::vector<Scene> scenes()
         { .name = "VCA's Style defaults", .settings = styled (Style::VCA) },
         { .name = "FET's Style defaults", .settings = styled (Style::FET) },
         { .name = "Opto's Style defaults", .settings = styled (Style::Opto) },
+        { .name = "Comp Follow on, Comp automated", .settings = following(), .automate = automateComp },
+        { .name = "Comp Follow gliding", .settings = followingFar(), .automate = automateCompFollow },
         { .name = "High Quality, 2x Oversampling", .settings = highQuality() },
         { .name = "Defaults, 32-sample blocks", .settings = {}, .blockSize = 32 },
         // Timed after 10 s of silence, long enough for every filter and envelope to have rung down below the smallest

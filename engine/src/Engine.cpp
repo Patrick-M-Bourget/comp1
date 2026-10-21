@@ -74,6 +74,14 @@ plugkit::StereoPlacement routed (StereoPlacement placement)
 // Gain Reduction itself, after the detectors, where a step a run would put a corner in the gain every run. Colour glides
 // as a fraction, 0 to 1, a sample at a time too, as it shapes the waveform, and so does Threshold as Colour tracks it.
 //
+// Comp Follow (ADR 0004): the gain computer, Colour's Threshold tracking and Auto Gain's estimate take Threshold and
+// 1/Ratio from the Comp Curve at Comp while it is on, with the stored Knee and Range, and the stored Threshold, Ratio
+// and Auto Gain change nothing. Turning it on or off moves a share of the Comp Curve's values over theirs, 0 to 1, along a
+// smoothstep over compFollowGlideMs (dyn-lab's follow_share), stepping a run at a time on the run grid: each run's start
+// mixes the two by the share, (1 - share) times the stored plus share times the Comp Curve's, and the settings glide to the
+// mix as any change does. Moving targets, Comp or the stored values, move the mix with them, and a switch back
+// mid-glide turns the share round from where it is.
+//
 // A voice is a Placement and a Character, and a change of either never jumps. At the start of a run, the new voice
 // starts with detectors and Colour of its own and fades in over the glide time as the old one fades out, its detectors
 // still running, so the applied gain crossfades, and each voice's Colour weight carries its share; a change asked for
@@ -106,12 +114,21 @@ public:
         fade.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         fade.reset (1.0);
         fading = false;
+        followStep = plugkit::runSamples / (compFollowGlideMs / 1000.0 * sampleRate);
     }
 
     // With snap, the settings take effect at once instead of gliding.
     void setSettings (const Settings& settings, bool snap)
     {
-        const auto target = curveOf (settings);
+        stored = curveOf (settings);
+        storedAutoGain = settings.autoGain;
+        followed = stored;
+        followed.thresholdDb = compThresholdDb (settings.compCurve, settings.comp);
+        followed.inverseRatio = compInverseRatio (settings.compCurve, settings.comp);
+        following = settings.compFollow;
+        if (snap)
+            followPhase = following ? 1.0 : 0.0;
+        const auto target = mixed();
         for (std::size_t s = 0; s < std::size (curveGlides); ++s)
             glideTo (glides[s], target.*curveGlides[s], snap);
         glideTo (glides[logAttack], std::log (settings.attackMs), snap);
@@ -119,7 +136,7 @@ public:
         glideTo (glides[hold], settings.holdMs, snap);
         glideTo (stereoLink, settings.stereoLink / 100.0, snap);
         glideTo (colourShare, settings.colour / 100.0, snap);
-        glideTo (colourThreshold, settings.thresholdDb, snap);
+        glideTo (colourThreshold, target.thresholdDb, snap);
         placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
         character = settings.character;
         source = settings.detectionSource;
@@ -133,10 +150,22 @@ public:
         autoRelease = settings.autoRelease;
     }
 
-    // At the start of each run: the settings move on by a run, and the gain computer and detector take them. Then a
-    // change of voice, a Placement or a Character, starts its fade.
-    void startRun()
+    // Auto Gain's estimate for the settings as they stand, in dB: the mixed settings' while Comp Follow's share is above
+    // 0 (all of it while following), and the stored settings' alone at 0, 0 dB with the stored Auto Gain off. Off, its
+    // share of the estimate is Comp Follow's, so it glides in and out with the Comp Curve.
+    double autoGainDb() const
     {
+        const double share = followShare();
+        const double estimate = clean::autoGainDb (mixed());
+        return storedAutoGain ? estimate : share * estimate;
+    }
+
+    // At the start of each run: Comp Follow's share moves on by a run, and the settings glide to the new mix; true when
+    // it moved, so Auto Gain's estimate has too. Then the settings move on by a run, and the gain computer and detector
+    // take them, and a change of voice, a Placement or a Character, starts its fade.
+    bool startRun()
+    {
+        const bool followMoved = stepFollow();
         bool moving = false;
         for (auto& setting : glides)
             if (! setting.isSettled())
@@ -163,6 +192,7 @@ public:
             fade.setTarget (1.0);
             fading = true;
         }
+        return followMoved;
     }
 
     // Applies gain to audio, sample for sample, from the detection signal of the same samples: each main channel's
@@ -367,6 +397,38 @@ private:
     static constexpr double clean::Curve::* curveGlides[] = { &clean::Curve::thresholdDb, &clean::Curve::inverseRatio, &clean::Curve::kneeDb,
                                                               &clean::Curve::rangeDb };
 
+    // Comp Follow's share of the Comp Curve's values, 0 to 1: the smoothstep of its phase, so its glide starts and ends
+    // without a corner.
+    double followShare() const { return followPhase * followPhase * (3.0 - 2.0 * followPhase); }
+
+    // The gain computer's settings as Comp Follow's share mixes them: the stored ones at 0, the Comp Curve's at 1, exactly.
+    clean::Curve mixed() const
+    {
+        if (followPhase <= 0.0)
+            return stored;
+        if (followPhase >= 1.0)
+            return followed;
+        const double share = followShare();
+        auto between = stored;
+        between.thresholdDb = (1.0 - share) * stored.thresholdDb + share * followed.thresholdDb;
+        between.inverseRatio = (1.0 - share) * stored.inverseRatio + share * followed.inverseRatio;
+        return between;
+    }
+
+    // Moves Comp Follow's phase a run toward on or off, and the settings it mixes with it; false when it is there.
+    bool stepFollow()
+    {
+        const double goal = following ? 1.0 : 0.0;
+        if (followPhase == goal)
+            return false;
+        followPhase = following ? std::min (followPhase + followStep, 1.0) : std::max (followPhase - followStep, 0.0);
+        const auto target = mixed();
+        glides[threshold].setTarget (target.thresholdDb);
+        glides[inverseRatio].setTarget (target.inverseRatio);
+        colourThreshold.setTarget (target.thresholdDb);
+        return true;
+    }
+
     void update()
     {
         for (std::size_t s = 0; s < std::size (curveGlides); ++s)
@@ -384,6 +446,13 @@ private:
     plugkit::Smoother colourThreshold;
     clean::Curve curve;
     clean::Timing timing;
+    // Comp Follow: the gain computer's settings as stored and as the Comp Curve sets them at Comp (the stored Knee and
+    // Range), whether it is on, its phase, 0 to 1, and how far a run moves it.
+    clean::Curve stored, followed;
+    bool storedAutoGain = false;
+    bool following = false;
+    double followPhase = 0.0;
+    double followStep = 1.0;
     double releaseMs = 100.0;
     bool autoRelease = false;
     bool stereoTrack = false;
@@ -654,7 +723,7 @@ struct Engine::Impl
         detection.setSource (settings.detectionSource);
         detection.setDetectionEq (settings.detectionEq, snapToSettings);
         compressor.setSettings (settings, snapToSettings);
-        autoGain.setTargetDb (settings.autoGain ? clean::autoGainDb (curveOf (settings)) : 0.0, snapToSettings);
+        autoGain.setTargetDb (compressor.autoGainDb(), snapToSettings);
         saturation.setSettings (settings, snapToSettings);
         dryWet.setLevels (settings.dryDb, settings.wetDb, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
@@ -719,7 +788,9 @@ struct Engine::Impl
         const auto detected = detection.process ({ wet.channels, wet.numChannels, wet.numSamples }, sidechainHeard);
         if (gridPosition == 0)
         {
-            compressor.startRun();
+            // Comp Follow's glide moves Auto Gain's estimate a run at a time.
+            if (compressor.startRun())
+                autoGain.setTargetDb (compressor.autoGainDb(), false);
             lookahead.startRun();
         }
         compressor.process (lookahead.process (detected, wet, highQuality), wet, runLevels, colourControls);
