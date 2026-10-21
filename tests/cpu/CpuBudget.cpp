@@ -1,5 +1,6 @@
 // Measures the Engine's CPU load in each CPU scene and fails when a scene with a ceiling is over budget, or when
-// silence or subnormal input costs more than quietCostRatio times the first scene (docs/performance.md, "CPU budget").
+// silence or subnormal input costs more than quietCostRatio times the same settings on the bursts, the Worst case
+// scene (docs/performance.md, "CPU budget").
 // Run by scripts/check.sh cpu, on its own: timings taken while other tests run are meaningless.
 //
 // scripts/check.sh cpu <ref> (docs/performance.md, "CPU A/B") runs it scene by scene instead, alternating with <ref>'s
@@ -71,7 +72,8 @@ struct Scene
     double startSeconds = 0.0;
     Automation automate = nullptr;
     std::optional<Ceiling> ceiling = {};
-    bool quiet = false; // held to quietCostRatio times the first scene's load
+    bool quietReference = false; // the scene the quiet ones are held to: their settings, on the bursts
+    bool quiet = false;          // held to quietCostRatio times the quiet reference's load
 };
 
 Settings withCharacter (Character character)
@@ -88,14 +90,14 @@ Settings highQuality()
     return settings;
 }
 
-// The CPU scenes, in the order printed, one per line, so tickets adding scenes in parallel merge cleanly. The first
-// one's load is the quiet-cost rule's reference.
+// The CPU scenes, in the order printed, one per line, so tickets adding scenes in parallel merge cleanly. The quiet
+// reference comes before the quiet scenes.
 std::vector<Scene> scenes()
 {
     return {
         { .name = "Defaults", .settings = {}, .ceiling = Ceiling { 3.0, 6.0 } },
         { .name = "Defaults, Threshold automated", .settings = {}, .automate = automateThreshold, .ceiling = Ceiling { 3.0, 6.0 } },
-        { .name = "Worst case", .settings = test::worstCaseSettings(), .ceiling = Ceiling { 100.0, 100.0 } },
+        { .name = "Worst case", .settings = test::worstCaseSettings(), .ceiling = Ceiling { 100.0, 100.0 }, .quietReference = true },
         { .name = "Clean, Colour 100%", .settings = withCharacter (Character::Clean) },
         { .name = "VCA, Colour 100%", .settings = withCharacter (Character::VCA) },
         { .name = "FET, Colour 100%", .settings = withCharacter (Character::FET) },
@@ -199,8 +201,8 @@ double medianLoadPercent (const Scene& scene, double sampleRate)
 // The sample rates the budget is measured at.
 constexpr double sampleRates[] = { 48000.0, 96000.0 };
 
-// Silence and subnormal input may cost no more than this times the first scene's bursts. Subnormal arithmetic is many
-// times slower on x64, so a filter or envelope left to ring down into subnormal numbers is far over it.
+// Silence and subnormal input may cost no more than this times the same settings on the bursts. Subnormal arithmetic
+// is many times slower on x64, so a filter or envelope left to ring down into subnormal numbers is far over it.
 constexpr double quietCostRatio = 1.5;
 
 int budget()
@@ -215,7 +217,7 @@ int budget()
         for (const auto& scene : all)
         {
             const double load = medianLoadPercent (scene, sampleRate);
-            if (&scene == &all.front())
+            if (scene.quietReference)
                 reference = load;
             std::printf ("%-32s %6.1f kHz  %6.2f%%", scene.name, sampleRate / 1000.0, load);
             if (scene.ceiling)
@@ -228,7 +230,7 @@ int budget()
             if (scene.quiet && load > quietCostRatio * reference)
             {
                 overBudget = true;
-                std::printf ("  OVER: more than %.1f x %s", quietCostRatio, all.front().name);
+                std::printf ("  OVER: more than %.1f x the same settings on the bursts", quietCostRatio);
             }
             std::printf ("\n");
         }

@@ -12,7 +12,7 @@ The scenes, and why each exists:
 - **Clean, VCA and FET, each at Colour 100%**, Zero Latency: what each Character's detector and Colour cost over Clean.
 - **High Quality, 2x Oversampling**: the default High Quality, its Oversampling sections and delays.
 - **Defaults, 32-sample blocks**: the per-block overhead, at the smallest block size hosts commonly use.
-- **Worst case on silence** (timed after 10 s of nothing, when every filter and envelope has rung down) and **on subnormal input**: these fail the run when they cost more than 1.5 times the Defaults scene. That catches arithmetic on subnormal numbers, many times slower than normal on x64; on arm64 it runs at full speed, so the Windows x64 run is the one that would catch it.
+- **Worst case on silence** (timed after 10 s of nothing, when every filter and envelope has rung down) and **on subnormal input**: these fail the run when they cost more than 1.5 times the Worst case scene, the same settings on the bursts. They are held to their own settings, not to Defaults, because the Engine runs every stage it has whatever the input (the Limiter and the Oversampling sections included), so silence through the worst case still costs about 0.6 times the worst case on the bursts, several times Defaults. That catches arithmetic on subnormal numbers, many times slower than normal on x64; on arm64 it runs at full speed, so the Windows x64 run is the one that would catch it.
 
 | CPU scene | Ceiling 48 / 96 kHz | Apple M3 48 kHz | 96 kHz | CI Windows x64 48 kHz | 96 kHz | CI macOS 48 kHz | 96 kHz |
 | --- | --- | --- | --- | --- | --- | --- | --- |
