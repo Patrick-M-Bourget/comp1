@@ -1,6 +1,7 @@
 #include "comp1/Engine.h"
 
 #include "Clean.h"
+#include "Detection.h"
 
 #include <plugkit/LatestValue.h>
 #include <plugkit/NoSubnormals.h>
@@ -9,6 +10,7 @@
 #include <plugkit/Units.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -28,8 +30,8 @@ clean::Curve curveOf (const Settings& settings)
              .rangeDb = settings.rangeDb };
 }
 
-// The compressor: the Clean Character's gain computer and detector on every sample of every channel, each channel
-// detected and compressed on its own.
+// The compressor: the Clean Character's gain computer and detector on every sample of every channel, each main channel
+// detected from the detection channel it follows and compressed on its own.
 //
 // Its settings glide with plugkit's Smoother, a step of a whole run at each run's start, so a change, Host Automation
 // included, is click-free and glides the same at every host block size; the gain computer and detector read the
@@ -83,17 +85,20 @@ public:
             detector.startRun (releaseMs, autoRelease);
     }
 
-    void process (AudioBlock block)
+    // Applies gain to audio, sample for sample, from the detection signal of the same samples: each main channel's
+    // Detection Level comes from the detection channel it follows, never from the audio.
+    void process (const DetectionSignal& detection, AudioBlock audio)
     {
-        for (int ch = 0; ch < block.numChannels; ++ch)
+        for (int ch = 0; ch < audio.numChannels; ++ch)
         {
             auto& detector = detectors[static_cast<std::size_t> (ch)];
-            for (int i = 0; i < block.numSamples; ++i)
+            const float* detected = detection.channelFollowedBy (ch);
+            for (int i = 0; i < audio.numSamples; ++i)
             {
-                float& sample = block.channels[ch][i];
-                // The Detection Level: the main input's own peak level, in dB where a full-scale sine reads 0.
-                const double levelDb = plugkit::gainToDecibels (std::abs (static_cast<double> (sample)));
+                // The Detection Level: the detection signal's peak level, in dB where a full-scale sine reads 0.
+                const double levelDb = plugkit::gainToDecibels (std::abs (static_cast<double> (detected[i])));
                 const double reduction = detector.process (clean::gainReduction (levelDb, curve), timing);
+                float& sample = audio.channels[ch][i];
                 if (reduction > 0.0)
                     sample = static_cast<float> (plugkit::decibelsToGain (-reduction) * sample);
             }
@@ -184,6 +189,7 @@ struct Engine::Impl
     int gridPosition = 0;
     std::vector<float*> subBlock; // per channel
 
+    DetectionStage detection;
     Compressor compressor;
     GlidingGain autoGain, outputGain;
 
@@ -209,6 +215,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->numChannels = numChannels;
     impl->gridPosition = 0;
     impl->subBlock.assign (static_cast<std::size_t> (std::max (numChannels, 0)), nullptr);
+    impl->detection.prepare (numChannels, plugkit::runSamples);
     impl->compressor.prepare (sampleRate, numChannels);
     impl->autoGain.prepare (sampleRate);
     impl->outputGain.prepare (sampleRate);
@@ -220,12 +227,17 @@ void Engine::setSettings (const Settings& settings)
     impl->handoff.publish (settings);
 }
 
-void Engine::process (AudioBlock main, const ConstAudioBlock*)
+void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
 {
     const plugkit::NoSubnormals noSubnormals;
     impl->applySettings();
 
     const int channels = std::min (main.numChannels, impl->numChannels);
+    // The Sidechain counts as connected only with a channel and a whole block of samples, and it contributes its first
+    // two channels.
+    const bool sidechainConnected = sidechain != nullptr && sidechain->numChannels > 0 && sidechain->numSamples >= main.numSamples;
+    std::array<const float*, 2> sidechainPiece {};
+    const int sidechainChannels = sidechainConnected ? std::min (sidechain->numChannels, 2) : 0;
     for (int start = 0, count = 0; start < main.numSamples; start += count)
     {
         // The rest of the grid's run, or of the block where it ends first, leaving the run open.
@@ -239,17 +251,23 @@ void Engine::process (AudioBlock main, const ConstAudioBlock*)
             for (int i = 0; i < count; ++i)
                 samples[i] = std::isfinite (samples[i]) ? samples[i] : 0.0f;
         }
+        for (int ch = 0; ch < sidechainChannels; ++ch)
+            sidechainPiece[static_cast<std::size_t> (ch)] = sidechain->channels[ch] + start;
+        const ConstAudioBlock sidechainBlock { sidechainPiece.data(), sidechainChannels, count };
 
-        // The Wet path, the compressor then Auto Gain, then Output Gain. The compressor's settings step at the start of
-        // each run, wherever the host's blocks fall; Auto Gain and Output Gain glide a sample at a time with next(),
-        // so where the pieces fall changes nothing either. From the sample a new setting is taken (the start of the
-        // host's block, so the host decides when a change lands), the output is the same sample for sample however
-        // the audio is cut.
+        // The Wet path: the detection stage, fed the compressor's input as the Internal signal, then the compressor,
+        // then Auto Gain, then Output Gain. The compressor's settings step at the start of each run, wherever the
+        // host's blocks fall; Auto Gain and Output Gain glide a sample at a time with next(), so where the pieces fall
+        // changes nothing either. From the sample a new setting is taken (the start of the host's block, so the host
+        // decides when a change lands), the output is the same sample for sample however the audio is cut.
+        const AudioBlock wet { impl->subBlock.data(), channels, count };
+        const auto detected = impl->detection.process ({ wet.channels, wet.numChannels, wet.numSamples },
+                                                       sidechainConnected ? &sidechainBlock : nullptr);
         if (impl->gridPosition == 0)
             impl->compressor.startRun();
-        impl->compressor.process ({ impl->subBlock.data(), channels, count });
-        impl->autoGain.process ({ impl->subBlock.data(), channels, count });
-        impl->outputGain.process ({ impl->subBlock.data(), channels, count });
+        impl->compressor.process (detected, wet);
+        impl->autoGain.process (wet);
+        impl->outputGain.process (wet);
 
         impl->gridPosition += count;
         if (impl->gridPosition == plugkit::runSamples)
