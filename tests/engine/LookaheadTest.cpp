@@ -34,6 +34,9 @@ struct Response
     Settings settings;   // in High Quality, at the command's Lookahead
     double gainReductionDb; // the Gain Reduction 20 dB over Threshold: (1 - 1/Ratio) 20 dB
     std::vector<Rate> rates;
+    // How long the step down's loud level plays, from a fresh Engine, and then its quiet level, in seconds: on Opto,
+    // whose release depends on how long it compressed, dyn-lab's OPTO_STEP_HOLD_MS and long enough for Release's 90%.
+    double loudSeconds = 2.0, quietSeconds = 2.0;
 };
 
 constexpr auto highQuality = ProcessingMode::HighQuality;
@@ -75,6 +78,15 @@ const std::vector<Response>& responses()
           { { 44100, { -1.8639, -1.6825, 50.0227, 115.1474, 20.0000 } },
             { 48000, { -1.8542, -1.6875, 50.0000, 115.1458, 20.0000 } },
             { 96000, { -1.8646, -1.6979, 50.0104, 115.1354, 20.0000 } } } },
+        // Opto's loop reads the detection signal Lookahead early, times the gain, as FET's does.
+        { "python3 tools/dyn-lab/dynlab.py step --character opto --lookahead 5",
+          { .character = Character::Opto, .colour = 0.0, .processingMode = highQuality, .lookaheadMs = 5.0 },
+          15.0,
+          { { 44100, { -2.2562, 3.6621, 297.1655, 2120.0454, 0.0000 } },
+            { 48000, { -2.2708, 3.6667, 297.1667, 2120.0417, 0.0000 } },
+            { 96000, { -2.2708, 3.6562, 297.1562, 2120.0208, 0.0000 } } },
+          1.0,
+          3.0 },
     };
     return all;
 }
@@ -106,7 +118,7 @@ TEST_CASE ("In High Quality, Lookahead's step response matches dyn-lab's within 
 
     // And down, for Hold and Release, from when the detector meets the step: Lookahead before the listener does.
     const int detectorMeetsIt = latency - static_cast<int> (std::lround (settings.lookaheadMs * rate.sampleRate / 1000.0));
-    const auto release = test::crossings (test::heardGainReduction (settings, rate.sampleRate, loud, quiet, 2.0, latency),
+    const auto release = test::crossings (test::heardGainReduction (settings, rate.sampleRate, loud, quiet, response.loudSeconds, latency, response.quietSeconds),
                                           response.gainReductionDb,
                                           0.0,
                                           static_cast<std::size_t> (detectorMeetsIt));

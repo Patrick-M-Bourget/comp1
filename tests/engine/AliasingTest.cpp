@@ -303,9 +303,9 @@ struct ColourCondition
     Character character = Character::VCA;
 };
 
-// The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca` and `--character fet` print, copied as
-// printed. Only the ceiling is checked: the improvement over the naive shaper doesn't hold for Colour at 20 and 30 dB of
-// Gain Reduction (tools/dyn-lab/USAGE.md, "colour").
+// The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca`, `--character fet` and `--character opto`
+// print, copied as printed. Only the ceiling is checked: the improvement over the naive shaper doesn't hold for Colour
+// at 20 and 30 dB of Gain Reduction (tools/dyn-lab/USAGE.md, "colour").
 const std::vector<ColourCondition>& colourConditions()
 {
     static const std::vector<ColourCondition> all {
@@ -331,6 +331,19 @@ const std::vector<ColourCondition>& colourConditions()
         { 48000.0, 5000.0, 10.0, -60.64, Character::FET },  { 48000.0, 5000.0, 20.0, -49.23, Character::FET },
         { 48000.0, 5000.0, 30.0, -43.30, Character::FET },  { 48000.0, 10000.0, 10.0, -56.08, Character::FET },
         { 48000.0, 10000.0, 20.0, -41.41, Character::FET }, { 48000.0, 10000.0, 30.0, -39.84, Character::FET },
+        // `python3 tools/dyn-lab/dynlab.py colour --character opto`: Opto's gentler Colour aliases least.
+        { 44100.0, 1000.0, 10.0, -125.81, Character::Opto }, { 44100.0, 1000.0, 20.0, -105.09, Character::Opto },
+        { 44100.0, 1000.0, 30.0, -103.45, Character::Opto }, { 44100.0, 3000.0, 10.0, -93.00, Character::Opto },
+        { 44100.0, 3000.0, 20.0, -75.73, Character::Opto }, { 44100.0, 3000.0, 30.0, -77.79, Character::Opto },
+        { 44100.0, 5000.0, 10.0, -72.65, Character::Opto }, { 44100.0, 5000.0, 20.0, -62.47, Character::Opto },
+        { 44100.0, 5000.0, 30.0, -55.76, Character::Opto }, { 44100.0, 10000.0, 10.0, -77.38, Character::Opto },
+        { 44100.0, 10000.0, 20.0, -56.25, Character::Opto }, { 44100.0, 10000.0, 30.0, -53.74, Character::Opto },
+        { 48000.0, 1000.0, 10.0, -129.27, Character::Opto }, { 48000.0, 1000.0, 20.0, -115.98, Character::Opto },
+        { 48000.0, 1000.0, 30.0, -102.28, Character::Opto }, { 48000.0, 3000.0, 10.0, -91.88, Character::Opto },
+        { 48000.0, 3000.0, 20.0, -74.61, Character::Opto }, { 48000.0, 3000.0, 30.0, -76.34, Character::Opto },
+        { 48000.0, 5000.0, 10.0, -71.40, Character::Opto }, { 48000.0, 5000.0, 20.0, -61.03, Character::Opto },
+        { 48000.0, 5000.0, 30.0, -54.61, Character::Opto }, { 48000.0, 10000.0, 10.0, -73.73, Character::Opto },
+        { 48000.0, 10000.0, 20.0, -52.38, Character::Opto }, { 48000.0, 10000.0, 30.0, -50.79, Character::Opto },
     };
     return all;
 }
@@ -341,7 +354,7 @@ constexpr double colourComparedOverDb = -100.0;
 
 } // namespace
 
-TEST_CASE ("At the base rate, VCA's and FET's worst alias at Colour 100% at each of dyn-lab's Colour conditions is under the ceiling", "[sweep]")
+TEST_CASE ("At the base rate, VCA's, FET's and Opto's worst alias at Colour 100% at each of dyn-lab's Colour conditions is under the ceiling", "[sweep]")
 {
     const auto& condition = GENERATE (from_range (colourConditions()));
     const auto mode = atBaseRate();
@@ -373,9 +386,9 @@ struct OversampledColour
     Character character = Character::VCA;
 };
 
-// The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca --oversampling N` and `--character fet`
-// print, copied as printed: each factor's worst alias anywhere and below the passband edge (1x's column is
-// colourConditions()'s).
+// The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca --oversampling N`, `--character fet` and
+// `--character opto` print, copied as printed: each factor's worst alias anywhere and below the passband edge (1x's
+// column is colourConditions()'s).
 const std::vector<OversampledColour>& oversampledColourRows (Oversampling oversampling)
 {
     static const std::vector<OversampledColour> x2 {
@@ -403,6 +416,19 @@ const std::vector<OversampledColour>& oversampledColourRows (Oversampling oversa
         { 48000.0, 5000.0, 10.0, -69.57, -112.25, Character::FET }, { 48000.0, 5000.0, 20.0, -56.76, -100.29, Character::FET },
         { 48000.0, 5000.0, 30.0, -51.50, -86.36, Character::FET }, { 48000.0, 10000.0, 10.0, -93.07, -93.07, Character::FET },
         { 48000.0, 10000.0, 20.0, -77.17, -77.17, Character::FET }, { 48000.0, 10000.0, 30.0, -80.33, -86.22, Character::FET },
+        // `--character opto --oversampling 2`.
+        { 44100.0, 1000.0, 10.0, -134.79, -173.41, Character::Opto }, { 44100.0, 1000.0, 20.0, -114.19, -152.88, Character::Opto },
+        { 44100.0, 1000.0, 30.0, -122.47, -143.96, Character::Opto }, { 44100.0, 3000.0, 10.0, -134.40, -144.96, Character::Opto },
+        { 44100.0, 3000.0, 20.0, -113.24, -130.45, Character::Opto }, { 44100.0, 3000.0, 30.0, -115.50, -115.50, Character::Opto },
+        { 44100.0, 5000.0, 10.0, -108.09, -119.31, Character::Opto }, { 44100.0, 5000.0, 20.0, -97.16, -110.34, Character::Opto },
+        { 44100.0, 5000.0, 30.0, -91.50, -91.69, Character::Opto }, { 44100.0, 10000.0, 10.0, -109.81, -111.68, Character::Opto },
+        { 44100.0, 10000.0, 20.0, -85.25, -95.57, Character::Opto }, { 44100.0, 10000.0, 30.0, -73.94, -88.02, Character::Opto },
+        { 48000.0, 1000.0, 10.0, -144.86, -177.85, Character::Opto }, { 48000.0, 1000.0, 20.0, -124.56, -159.79, Character::Opto },
+        { 48000.0, 1000.0, 30.0, -113.16, -155.62, Character::Opto }, { 48000.0, 3000.0, 10.0, -125.75, -139.54, Character::Opto },
+        { 48000.0, 3000.0, 20.0, -108.43, -129.99, Character::Opto }, { 48000.0, 3000.0, 30.0, -109.19, -112.36, Character::Opto },
+        { 48000.0, 5000.0, 10.0, -79.48, -132.25, Character::Opto }, { 48000.0, 5000.0, 20.0, -68.52, -109.88, Character::Opto },
+        { 48000.0, 5000.0, 30.0, -62.90, -97.87, Character::Opto }, { 48000.0, 10000.0, 10.0, -106.58, -106.58, Character::Opto },
+        { 48000.0, 10000.0, 20.0, -88.45, -88.45, Character::Opto }, { 48000.0, 10000.0, 30.0, -91.73, -97.26, Character::Opto },
     };
     static const std::vector<OversampledColour> x4 {
         { 44100.0, 1000.0, 10.0, -130.65, -204.18 }, { 44100.0, 1000.0, 20.0, -109.97, -183.87 },
@@ -429,6 +455,19 @@ const std::vector<OversampledColour>& oversampledColourRows (Oversampling oversa
         { 48000.0, 5000.0, 10.0, -68.89, -149.71, Character::FET }, { 48000.0, 5000.0, 20.0, -55.77, -124.45, Character::FET },
         { 48000.0, 5000.0, 30.0, -50.63, -115.35, Character::FET }, { 48000.0, 10000.0, 10.0, -113.00, -127.16, Character::FET },
         { 48000.0, 10000.0, 20.0, -101.06, -103.10, Character::FET }, { 48000.0, 10000.0, 30.0, -87.10, -98.46, Character::FET },
+        // `--character opto --oversampling 4`.
+        { 44100.0, 1000.0, 10.0, -133.99, -207.52, Character::Opto }, { 44100.0, 1000.0, 20.0, -113.41, -187.31, Character::Opto },
+        { 44100.0, 1000.0, 30.0, -121.56, -183.23, Character::Opto }, { 44100.0, 3000.0, 10.0, -171.03, -171.03, Character::Opto },
+        { 44100.0, 3000.0, 20.0, -154.45, -154.45, Character::Opto }, { 44100.0, 3000.0, 30.0, -141.09, -141.09, Character::Opto },
+        { 44100.0, 5000.0, 10.0, -107.05, -154.97, Character::Opto }, { 44100.0, 5000.0, 20.0, -95.98, -136.49, Character::Opto },
+        { 44100.0, 5000.0, 30.0, -90.49, -126.17, Character::Opto }, { 44100.0, 10000.0, 10.0, -146.61, -146.61, Character::Opto },
+        { 44100.0, 10000.0, 20.0, -113.50, -113.50, Character::Opto }, { 44100.0, 10000.0, 30.0, -104.35, -104.35, Character::Opto },
+        { 48000.0, 1000.0, 10.0, -144.23, -212.86, Character::Opto }, { 48000.0, 1000.0, 20.0, -123.75, -194.86, Character::Opto },
+        { 48000.0, 1000.0, 30.0, -112.44, -190.49, Character::Opto }, { 48000.0, 3000.0, 10.0, -124.89, -177.29, Character::Opto },
+        { 48000.0, 3000.0, 20.0, -107.56, -156.21, Character::Opto }, { 48000.0, 3000.0, 30.0, -108.13, -151.69, Character::Opto },
+        { 48000.0, 5000.0, 10.0, -78.61, -159.02, Character::Opto }, { 48000.0, 5000.0, 20.0, -67.53, -138.21, Character::Opto },
+        { 48000.0, 5000.0, 30.0, -62.05, -127.15, Character::Opto }, { 48000.0, 10000.0, 10.0, -132.94, -135.75, Character::Opto },
+        { 48000.0, 10000.0, 20.0, -110.64, -114.78, Character::Opto }, { 48000.0, 10000.0, 30.0, -98.61, -110.22, Character::Opto },
     };
     static const std::vector<OversampledColour> x8 {
         { 44100.0, 1000.0, 10.0, -130.46, -222.50 }, { 44100.0, 1000.0, 20.0, -109.78, -207.89 },
@@ -455,6 +494,19 @@ const std::vector<OversampledColour>& oversampledColourRows (Oversampling oversa
         { 48000.0, 5000.0, 10.0, -68.72, -172.12, Character::FET }, { 48000.0, 5000.0, 20.0, -55.53, -155.14, Character::FET },
         { 48000.0, 5000.0, 30.0, -50.41, -147.98, Character::FET }, { 48000.0, 10000.0, 10.0, -139.73, -139.73, Character::FET },
         { 48000.0, 10000.0, 20.0, -134.00, -134.00, Character::FET }, { 48000.0, 10000.0, 30.0, -131.43, -131.43, Character::FET },
+        // `--character opto --oversampling 8`.
+        { 44100.0, 1000.0, 10.0, -133.80, -225.84, Character::Opto }, { 44100.0, 1000.0, 20.0, -113.22, -211.33, Character::Opto },
+        { 44100.0, 1000.0, 30.0, -121.33, -197.86, Character::Opto }, { 44100.0, 3000.0, 10.0, -186.54, -186.54, Character::Opto },
+        { 44100.0, 3000.0, 20.0, -169.02, -169.02, Character::Opto }, { 44100.0, 3000.0, 30.0, -167.29, -167.29, Character::Opto },
+        { 44100.0, 5000.0, 10.0, -106.80, -184.22, Character::Opto }, { 44100.0, 5000.0, 20.0, -95.69, -165.56, Character::Opto },
+        { 44100.0, 5000.0, 30.0, -90.25, -154.44, Character::Opto }, { 44100.0, 10000.0, 10.0, -165.01, -166.73, Character::Opto },
+        { 44100.0, 10000.0, 20.0, -146.52, -149.09, Character::Opto }, { 44100.0, 10000.0, 30.0, -136.20, -136.51, Character::Opto },
+        { 48000.0, 1000.0, 10.0, -144.08, -225.55, Character::Opto }, { 48000.0, 1000.0, 20.0, -123.56, -211.71, Character::Opto },
+        { 48000.0, 1000.0, 30.0, -112.27, -197.53, Character::Opto }, { 48000.0, 3000.0, 10.0, -124.68, -200.63, Character::Opto },
+        { 48000.0, 3000.0, 20.0, -107.35, -182.54, Character::Opto }, { 48000.0, 3000.0, 30.0, -107.87, -180.90, Character::Opto },
+        { 48000.0, 5000.0, 10.0, -78.40, -191.05, Character::Opto }, { 48000.0, 5000.0, 20.0, -67.29, -169.89, Character::Opto },
+        { 48000.0, 5000.0, 30.0, -61.85, -159.97, Character::Opto }, { 48000.0, 10000.0, 10.0, -153.10, -153.10, Character::Opto },
+        { 48000.0, 10000.0, 20.0, -144.97, -144.97, Character::Opto }, { 48000.0, 10000.0, 30.0, -143.70, -143.70, Character::Opto },
     };
     return oversampling == Oversampling::x2 ? x2 : oversampling == Oversampling::x4 ? x4 : x8;
 }
@@ -487,7 +539,7 @@ std::vector<OversampledColourCondition> oversampledColourConditions()
 
 } // namespace
 
-TEST_CASE ("Oversampled, VCA's and FET's worst alias at Colour 100% at each of dyn-lab's Colour conditions is within its factor's tolerance and no worse than at 1x", "[sweep]")
+TEST_CASE ("Oversampled, VCA's, FET's and Opto's worst alias at Colour 100% at each of dyn-lab's Colour conditions is within its factor's tolerance and no worse than at 1x", "[sweep]")
 {
     const auto conditions = oversampledColourConditions();
     const auto& [oversampling, row] = GENERATE_REF (from_range (conditions));

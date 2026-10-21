@@ -2,7 +2,7 @@
 
 A Python model of comp1's Characters. It prints the figures the Engine's tests check, so a ticket brief can cite a command and its output exactly. It needs only the standard library: no installs, no numpy. Run it from the repo root.
 
-It models the Clean, VCA and FET Characters (see [VCA](#vca) and [FET](#fet)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's and FET's Colour (see [Colour](#colour)) the Limiter (see [Limiter](#limiter)) and the Gate (see [Gate](#gate)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
+It models the Clean, VCA, FET and Opto Characters (see [VCA](#vca), [FET](#fet) and [Opto](#opto)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's, FET's and Opto's Colour (see [Colour](#colour)) the Limiter (see [Limiter](#limiter)) and the Gate (see [Gate](#gate)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
 
 Hold freezes the Gain Reduction for Hold ms whenever it stops rising, mid-Attack included, before Release begins. Any rise restarts the count.
 
@@ -31,7 +31,7 @@ Every option has a default, and a setting outside its range exits with an error 
 | Gate Attack | 0.005 to 250 ms | 1 ms |
 | Gate Release | 5 to 5000 ms | 100 ms |
 | Gate Hold | 0 to 500 ms | 20 ms |
-| Character | `clean`, `vca` or `fet` (`--character`) | `clean` |
+| Character | `clean`, `vca`, `fet` or `opto` (`--character`) | `clean` |
 
 `--character` is taken by `transfer`, `step`, `bursts`, `autogain` and `colour`. Clean's figures are the same with it as without.
 
@@ -58,6 +58,8 @@ With `--auto-release`, the step down follows steady compression, so the sustain 
 
 With `--external`, the step is the Sidechain's on an External Detection Source, while the main stays steady, so the Gain Reduction never reaches what the detector hears. Clean and VCA are feedforward either way, so their times are unchanged; FET's are Clean's (see [FET](#fet)).
 
+`--over dB` (20 by default) sets how far over Threshold the step goes; it still starts 20 dB under it.
+
 `--lookahead ms` (0 by default) models High Quality's Lookahead: the detector meets each step that many ms before the listener hears it in the delayed audio. Attack's times count from the step the listener hears, so they come Lookahead earlier, and the 63% time is negative when Lookahead is longer than Attack: the Gain Reduction starts before the step. Hold and Release are durations, counted from when the detector meets the step down as before, so Lookahead doesn't move them.
 
     python3 tools/dyn-lab/dynlab.py step
@@ -67,6 +69,7 @@ With `--external`, the step is the Sidechain's on an External Detection Source, 
     python3 tools/dyn-lab/dynlab.py step --auto-release
     python3 tools/dyn-lab/dynlab.py step --lookahead 5
     python3 tools/dyn-lab/dynlab.py step --lookahead 2 --attack 0.5 --release 50 --hold 20
+    python3 tools/dyn-lab/dynlab.py step --over 5
 
 ## `latency`
 
@@ -229,6 +232,79 @@ Prints FET's Attack times beside Clean's at each of `SPEEDUP_RATIOS` (1.5, 2, 4,
 
     python3 tools/dyn-lab/dynlab.py speedup --rates 44100 96000
 
+## Opto
+
+Opto is FET's loop with an optical cell's timing. It reads a peak Detection Level and, with an Internal Detection Source, is fed back exactly as FET is: the gain computer reads the detection sample's level less the Gain Reduction applied in that same sample, solved within the sample (`loop_from`, FET's `fet_loop` in a general form) and capped by `FET_SPEEDUP_MAX`. Hold and the branching between Attack and Release are Clean's. What is Opto's own is how fast each step moves: an attack that varies with the material, and a release of two parts, one of which gets slower the longer Opto has compressed. So at steady state its output is Clean's Transfer Curve, at every setting: `transfer --character opto` runs the loop to steady state at each level, as FET's does, and is under 10⁻⁹ dB from it.
+
+**The material-dependent attack.** Attack's time is scaled, each sample, by the overshoot: how far the Transfer Curve's Gain Reduction at the detection sample's level is over the Gain Reduction held. The scale is `OPTO_ATTACK_SLOWEST`, 2, at no overshoot, `OPTO_ATTACK_FASTEST`, 0.5, at `OPTO_ATTACK_SPAN_DB`, 20 dB, and over, and a smoothstep between them in the scale's logarithm, so it is 1, Attack's own time, at `OPTO_ATTACK_REFERENCE_DB`, 10 dB, half the span, with no corner at either end. A large jump in level is caught twice as fast as Attack says, a small one is eased in at half its pace, and every attack slows as it closes on its target, the soft landing an optical cell gives. Both parts of the Gain Reduction rise at the scaled Attack. Since the loop speeds Attack up as it does on FET, the times are FET's scaled; `overshoot` prints them against the step's size, at 48 kHz, the defaults otherwise (63% and 90%, in ms):
+
+| Over Threshold | GR | FET, 10 ms | Opto, 10 ms | FET, 1 ms | Opto, 1 ms |
+|---|---|---|---|---|---|
+| 5 dB | 3.75 dB | 2.52, 5.79 | 4.75, 11.23 | 0.27, 0.60 | 0.48, 1.15 |
+| 10 dB | 7.5 dB | 2.52, 5.79 | 4.10, 10.46 | 0.27, 0.60 | 0.42, 1.06 |
+| 20 dB | 15 dB | 2.52, 5.79 | 2.73, 8.67 | 0.27, 0.60 | 0.29, 0.88 |
+| 30 dB | 22.5 dB | 2.88, 6.13 | 2.06, 7.42 | 0.29, 0.63 | 0.21, 0.75 |
+
+The 90% times stay longer than FET's even on the largest step: the last tenth of an attack is closing a small overshoot, at up to twice Attack's time.
+
+**The two-stage release.** The Gain Reduction is the sum of two parts, each one pole toward its share of what the gain computer asks for: the fast part, `OPTO_FAST_SHARE`, 60% of it, at Release, and the slow part, the other 40%, at a time of Opto's own. With Auto Release on, the fast part releases at Auto Release's pole in Release's place, so it follows the material as on every Character; the slow part applies either way. Fed back, the loop is solved over both parts at once: one sample of the two is G = a + b · w(L − G), with a what each part keeps of itself and b the shares of what each moves toward, which is FET's loop with a and b in place of its one pole's. The cap holds each part to its own pole to the power `FET_SPEEDUP_MAX`.
+
+**Opto's history** is a state from 0 to 1 that charges toward 1 while the Transfer Curve asks for Gain Reduction (`OPTO_HISTORY_CHARGE_MS`, 3000 ms) and discharges toward 0 while it doesn't (`OPTO_HISTORY_DISCHARGE_MS`, 5000 ms), each covering 1 − 1/e of the way in its time, stepped on the run grid as Auto Release's sustain state is (`RUN_SAMPLES`). It reads what the gain computer asks for, as Auto Release does, not the Gain Reduction still being given back, so a long release doesn't charge it further. The slow part's time grows with it, linearly, from `OPTO_SLOW_FRESH_MS`, 500 ms, with none, to `OPTO_SLOW_SEASONED_MS`, 5000 ms, when it is full. These are Opto's constants, not bounded by Release's range (ADR 0008), and Release doesn't move them.
+
+The constants, and why:
+
+- **`OPTO_FAST_SHARE`, 60%:** most of the Gain Reduction comes back at Release, so Release keeps its meaning and a transient lets go about when it says (63% in 187 ms after a 1 ms burst at the default 100 ms, against Clean's 100 ms), while the slow 40% gives the long tail an optical cell is chosen for.
+- **`OPTO_SLOW_FRESH_MS`, 500 ms, to `OPTO_SLOW_SEASONED_MS`, 5000 ms:** an optical cell's slow release runs from about half a second to several seconds after heavy, long compression. Five times Auto Release's longest at the default Release, it levels a vocal or a bus over phrases rather than beats.
+- **`OPTO_HISTORY_CHARGE_MS`, 3000 ms:** a drum hit or a word barely charges it (100 ms charges it 3%), a held phrase most of the way (3 s, 63%), so a short burst releases near its fresh figures and only sustained compression slows it. Three times Auto Release's charge, so the slow part's lengthening comes over phrases while Auto Release's comes over beats.
+- **`OPTO_HISTORY_DISCHARGE_MS`, 5000 ms:** longer than the charge, so the gaps between phrases don't empty it and the next phrase releases as slowly, and longer than the slow part's own longest time, so the history doesn't fall away during the release it set.
+
+**`step --character opto`** measures Attack from steady state under Threshold, as on every Character. Its step down follows `OPTO_STEP_HOLD_MS`, 1000 ms, at the loud level, from that steady state, the run grid starting with it, rather than steady compression, since Opto's release depends on how long it compressed: the Engine's step tests play the same. At the defaults, Release's 63% is 297 ms and 90% 2120 ms; with `--auto-release`, the fast part's pole is Auto Release's and 63% is 608 ms, 90% still the slow part's, 2122 ms.
+
+**`bursts --character opto`** shows the release after each burst lengthen with the burst, Auto Release off and on, at 48 kHz (63% and 90%, in ms):
+
+| Burst | Off | On |
+|---|---|---|
+| 1 ms | 187, 698 | 188, 698 |
+| 100 ms | 205, 881 | 249, 885 |
+| 1000 ms | 297, 2120 | 608, 2122 |
+| 3000 ms | 385, 3452 | 884, 3452 |
+| 10000 ms | 463, 4459 | 1015, 4459 |
+
+With Auto Release on, the fast part follows the material: after a transient it releases at about Release, as off, and after sustained compression at up to 5 times it, while 90% is the slow part's either way.
+
+**An External Detection Source** feeds Opto from the Sidechain, which the gain applied never reaches, so it is feedforward, keeping its material-dependent attack, its two-stage release, its history and its Colour: its attack is then the scaled Attack without the loop's speed-up (63% in 10.9 ms at the defaults), and its release is unchanged.
+
+**With Lookahead** the loop reads the detection signal Lookahead early, times the gain it applies in that sample, as FET's does, so `step --lookahead` reports Attack's times against the delayed audio.
+
+**Auto Gain on Opto:** the estimate is the Transfer Curve's, Clean's. The measured check runs the reference signal through Opto's model: −0.62 dB at the defaults, −0.61 dB at Ratio ∞, and −0.26 dB at Threshold −40 dB, Ratio ∞, where Clean's overshoots, all within the tolerance.
+
+**Opto's Colour** is in [Colour](#colour).
+
+    python3 tools/dyn-lab/dynlab.py transfer --character opto
+    python3 tools/dyn-lab/dynlab.py transfer --character opto --ratio inf
+    python3 tools/dyn-lab/dynlab.py transfer --character opto --knee 0
+    python3 tools/dyn-lab/dynlab.py transfer --character opto --knee 72
+    python3 tools/dyn-lab/dynlab.py transfer --character opto --range 6
+    python3 tools/dyn-lab/dynlab.py step --character opto
+    python3 tools/dyn-lab/dynlab.py step --character opto --attack 1 --release 50 --hold 20
+    python3 tools/dyn-lab/dynlab.py step --character opto --over 5
+    python3 tools/dyn-lab/dynlab.py step --character opto --over 30
+    python3 tools/dyn-lab/dynlab.py step --character opto --auto-release
+    python3 tools/dyn-lab/dynlab.py step --character opto --external
+    python3 tools/dyn-lab/dynlab.py step --character opto --lookahead 5
+    python3 tools/dyn-lab/dynlab.py bursts --character opto --lengths 100 1000 10000
+    python3 tools/dyn-lab/dynlab.py bursts --character opto --lengths 1 10000
+    python3 tools/dyn-lab/dynlab.py autogain --character opto
+    python3 tools/dyn-lab/dynlab.py autogain --character opto --ratio inf
+    python3 tools/dyn-lab/dynlab.py autogain --character opto --threshold -40 --ratio inf
+    python3 tools/dyn-lab/dynlab.py overshoot
+
+### `overshoot`
+
+Prints Opto's Attack times beside FET's, against the step's size: steps from 20 dB under Threshold to 5, 10, 20 and 30 dB over it (`OVERSHOOT_STEPS_DB`), at Attack 10 and 1 ms (`OVERSHOOT_ATTACKS`), with each step's Gain Reduction and the scale at its first sample. At 48 kHz by default, `--rates` for others.
+
+    python3 tools/dyn-lab/dynlab.py overshoot --rates 44100 96000
+
 ## Saturation
 
 The Saturation stage is one soft-clip shape, f(u), with level-compensated Drive. The shape is exactly linear for |u| ≤ 1. Above that it is 1 + tanh(|u| − 1), with u's sign, so it leaves the line with the same slope (1) and curvature (0): it is C²-smooth, and it saturates toward 2. Its nonlinear residual is r(u) = f(u) − u, which is 0 for |u| ≤ 1 and tanh(t) − t, with u's sign, above it, where t = |u| − 1. The residual's antiderivative is R(u) = ln cosh t − t²/2 above the knee, and 0 below it. Drive, in dB, gives g = 10^(Drive/20), and the stage's output is x + r(g·x)/g. So below the knee the output is the input exactly, and the knee sits at full scale at Drive 0 dB and Drive dB under it above that. The output saturates toward 2/g.
@@ -308,6 +384,8 @@ The constants, named once in `dynlab.py`:
 
 **FET's Colour** has VCA's form, with its own constants, `FET_COLOUR_WEIGHT`, 0.25, `FET_COLOUR_WEIGHT_DB`, 10 dB, and `FET_COLOUR_DRIVE_DB`, 4 dB. It is steeper than VCA's: 1.06% THD at 10 dB of Gain Reduction at Colour 100%, at the defaults, 2.99% at 20 dB and 3.24% at 30 dB, where VCA's are 0.30%, 1.2% and 1.3%. A FET's distortion is part of what it is chosen for, on vocals and drums: heard as grit once it works hard, though still under Saturation's. The weight's most, 0.25, sets the level at 20 dB and over, about 3%. The drive rising over 4 dB rather than 5 dB pushes the compressed signal into the shape sooner, so 10 dB of Gain Reduction already gives about 1%, and 6 dB a trace (0.04%). FET's Colour follows the Gain Reduction it applies, and stays outside the loop: the detector hears the detection signal times the gain, never Colour.
 
+**Opto's Colour** has VCA's form, with its own constants, `OPTO_COLOUR_WEIGHT`, 0.075, `OPTO_COLOUR_WEIGHT_DB`, 10 dB, and `OPTO_COLOUR_DRIVE_DB`, 5 dB: the gentlest of the three, 0.20% THD at 10 dB of Gain Reduction at Colour 100%, at the defaults, 0.83% at 20 dB and 0.87% at 30 dB. An optical cell is chosen to level without being heard, so its Colour is a warmth under VCA's. Its drive is VCA's, so it comes in at the same Gain Reduction, about 6 dB; only the weight, two thirds of VCA's, is less, which keeps each harmonic about 3.3 dB under VCA's at every Gain Reduction. It stays outside the loop, as FET's does. Its aliasing is the lowest of the three: the ceiling holds with 26.8 dB to spare at 1x (−50.8 dB, 10 kHz at 30 dB of Gain Reduction, at 48 kHz), its improvement on the naive shaper at 10 kHz is FET's and VCA's, 9.0 to 23.4 dB, printed and not checked, and its oversampled rows are within their tolerances at 2x, 4x and 8x (below the passband edge at most −88.0, −104.3 and −136.5 dB).
+
 The even harmonics are absent, as the shape is odd and a steady Gain Reduction is symmetric.
 
 ### `colour`
@@ -334,6 +412,8 @@ FET's Colour, with more than twice VCA's weight, aliases more, and the ceiling s
     python3 tools/dyn-lab/dynlab.py colour --character fet --threshold -10
     python3 tools/dyn-lab/dynlab.py colour --character fet --threshold -50
     python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50
+    python3 tools/dyn-lab/dynlab.py colour --character opto
+    python3 tools/dyn-lab/dynlab.py colour --character opto --colour 50
 
 #### Oversampled Colour
 
@@ -355,6 +435,12 @@ The harmonics move toward the shape's own as the factor rises, since ADAA's half
     python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50 --oversampling 2
     python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50 --oversampling 4
     python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50 --oversampling 8
+    python3 tools/dyn-lab/dynlab.py colour --character opto --oversampling 2
+    python3 tools/dyn-lab/dynlab.py colour --character opto --oversampling 4
+    python3 tools/dyn-lab/dynlab.py colour --character opto --oversampling 8
+    python3 tools/dyn-lab/dynlab.py colour --character opto --colour 50 --oversampling 2
+    python3 tools/dyn-lab/dynlab.py colour --character opto --colour 50 --oversampling 4
+    python3 tools/dyn-lab/dynlab.py colour --character opto --colour 50 --oversampling 8
 
 ## Auto Release
 

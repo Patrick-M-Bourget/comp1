@@ -159,6 +159,7 @@ double colourful (double) { return 4.0; }
 
 void onVca (Settings& s) { s.character = Character::VCA; }
 void onFet (Settings& s) { s.character = Character::FET; }
+void onOpto (Settings& s) { s.character = Character::Opto; }
 // High Quality at 8x, which plays each rate's cap: Colour oversampled in the After section.
 void oversampledColour (Settings& s)
 {
@@ -442,6 +443,18 @@ const std::vector<Jump>& jumps()
         { "Character, Clean and FET",
           [] (Settings& s, bool b) { s.character = b ? Character::FET : Character::Clean; },
           { onFet, [] (Settings&) {} },
+          1,
+          colourful },
+        // And Clean's gain and Opto's loop, its two-stage release and its Colour.
+        { "Character, Clean and Opto",
+          [] (Settings& s, bool b) { s.character = b ? Character::Opto : Character::Clean; },
+          { onOpto, [] (Settings&) {} },
+          1,
+          colourful },
+        // And FET's loop and Colour and Opto's: Opto's parts start from FET's Gain Reduction.
+        { "Character, FET and Opto",
+          [] (Settings& s, bool b) { s.character = b ? Character::Opto : Character::FET; },
+          { onOpto, onFet },
           1,
           colourful },
         // In High Quality at the largest Oversampling allowed, where Colour is oversampled: VCA's and FET's Colour

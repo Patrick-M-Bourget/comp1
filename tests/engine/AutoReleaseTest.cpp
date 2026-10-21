@@ -32,6 +32,9 @@ struct Bursts
     std::string command; // the dyn-lab command that printed rows
     Settings settings;
     std::vector<Burst> rows;
+    // How long the quiet level plays after each burst, for Release's 90% to be reached: 0 for a second with Auto
+    // Release off and two with it on.
+    double quietSeconds = 0.0;
 };
 
 // Each table is the output of the dyn-lab command named with it, copied as printed.
@@ -91,6 +94,21 @@ const std::vector<Bursts>& allBursts()
             { 96000, 100, { 111.7812, 242.0417 }, { 157.5417, 343.1875 } },
             { 96000, 1000, { 111.7812, 242.0417 }, { 349.0625, 737.4375 } },
             { 96000, 3000, { 111.7812, 242.0417 }, { 454.3750, 938.8646 } } } },
+        // Opto, two parts: the slow one's time grows with Opto's history, so Release's 63% and 90% grow with the
+        // burst, Auto Release off and on; on, the fast part's pole is Auto Release's. Colour 0%, so the output's gain is
+        // the compressor's alone.
+        { "python3 tools/dyn-lab/dynlab.py bursts --character opto --lengths 100 1000 10000",
+          { .character = Character::Opto, .colour = 0.0 },
+          { { 44100, 100, { 205.3288, 881.1338 }, { 248.7755, 884.8753 } },
+            { 44100, 1000, { 297.1655, 2120.0454 }, { 607.8912, 2121.5646 } },
+            { 44100, 10000, { 463.0385, 4458.5488 }, { 1015.1927, 4458.5488 } },
+            { 48000, 100, { 205.3333, 881.1458 }, { 248.7708, 884.8750 } },
+            { 48000, 1000, { 297.1667, 2120.0417 }, { 607.8958, 2121.5625 } },
+            { 48000, 10000, { 463.0208, 4458.5417 }, { 1015.1875, 4458.5417 } },
+            { 96000, 100, { 205.3229, 881.1354 }, { 248.7604, 884.8646 } },
+            { 96000, 1000, { 297.1562, 2120.0208 }, { 607.8750, 2121.5312 } },
+            { 96000, 10000, { 463.0208, 4458.4896 }, { 1015.1562, 4458.4896 } } },
+          5.0 },
     };
     return all;
 }
@@ -142,6 +160,9 @@ void checkWithinOneSample (const Release& measured, const Release& expected, dou
     CHECK (std::abs (measured.release90 - expected.release90) <= tolerance);
 }
 
+// How long bursts' quiet level plays after each burst: its own, or otherwise seconds.
+double quietSecondsOf (const Bursts& bursts, double seconds) { return bursts.quietSeconds > 0.0 ? bursts.quietSeconds : seconds; }
+
 } // namespace
 
 TEST_CASE ("After each burst, Release matches dyn-lab's bursts within one sample, Auto Release off and on", "[sweep]")
@@ -152,9 +173,9 @@ TEST_CASE ("After each burst, Release matches dyn-lab's bursts within one sample
     const int loudSamples = static_cast<int> (std::lround (burst.lengthMs * burst.sampleRate / 1000.0));
     auto settings = bursts.settings;
     settings.autoRelease = false;
-    checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, 1.0), burst.off, burst.sampleRate);
+    checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, quietSecondsOf (bursts, 1.0)), burst.off, burst.sampleRate);
     settings.autoRelease = true;
-    checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, 2.0), burst.on, burst.sampleRate);
+    checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, quietSecondsOf (bursts, 2.0)), burst.on, burst.sampleRate);
 }
 
 TEST_CASE ("In High Quality too, after each burst, Release matches dyn-lab's bursts within one sample, Auto Release off and on", "[sweep]")
@@ -166,9 +187,9 @@ TEST_CASE ("In High Quality too, after each burst, Release matches dyn-lab's bur
     auto settings = bursts.settings;
     settings.processingMode = ProcessingMode::HighQuality;
     settings.autoRelease = false;
-    checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, 1.0), burst.off, burst.sampleRate);
+    checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, quietSecondsOf (bursts, 1.0)), burst.off, burst.sampleRate);
     settings.autoRelease = true;
-    checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, 2.0), burst.on, burst.sampleRate);
+    checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, quietSecondsOf (bursts, 2.0)), burst.on, burst.sampleRate);
 }
 
 TEST_CASE ("With Auto Release on, Release stays short after a transient and lengthens after sustained compression")
