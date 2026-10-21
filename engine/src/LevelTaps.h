@@ -21,8 +21,9 @@ namespace comp1
 {
 
 // The levels of the run in progress, gathered on the audio thread as the run is played: the peak Input Level and
-// Output Level over every channel, the most Gain Reduction, and the loudest Detection Level. take() makes the run's
-// record and starts the next run afresh.
+// Output Level over every channel, the compressor's, the Gate's and the Limiter's most Gain Reduction, and the loudest
+// Detection Level. The Gate and the Limiter note their gain, and take() works out each one's Gain Reduction once, from
+// the run's smallest gain. take() makes the run's record and starts the next run afresh.
 class RunLevels
 {
 public:

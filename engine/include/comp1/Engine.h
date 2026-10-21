@@ -25,9 +25,12 @@ struct ConstAudioBlock
 
 // The levels of one completed run of the Engine's 16-sample grid, each in dB, the floor (plugkit::levelFloorDb) for
 // silence. The level history holds one per run. Each level is the run's as its stage meets it: in High Quality, the
-// Input Level is of the input as it arrives, and the others are of audio the stages before them have delayed. The Gain
-// Reduction is the compressor's own, as the gain it applies, without Auto Gain or Output Gain; the Detection Level is
-// what the detector compares with Threshold, in dB where a full-scale sine reads 0.
+// Input Level is of the input as it arrives, and the others are of audio the stages before them have delayed. There
+// are three Gain Reductions, each 0 or more, and exactly 0 with none: the compressor's, as the gain it applies, without
+// Auto Gain or Output Gain; the Gate's, as the one gain it puts on every channel, its on/off share included; and the
+// Limiter's, as the one gain it puts on every channel after its on/off crossfade, on the Processing Mode path playing,
+// without Zero Latency's safety clip. The Detection Level is what the detector compares with Threshold, in dB where a
+// full-scale sine reads 0.
 struct LevelRecord
 {
     double inputDb = plugkit::levelFloorDb;          // the Input Level's sample peak, the louder channel's

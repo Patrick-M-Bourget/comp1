@@ -698,6 +698,49 @@ TEST_CASE ("The Gate's and the Limiter's Gain Reductions are the same, record fo
     }
 }
 
+TEST_CASE ("The Gate's and the Limiter's Gain Reductions are read on a reader thread while process() runs, and reading never allocates")
+{
+    // The audio thread plays a steady -10 dB on both channels. Gate Threshold 0 dB closes the Gate, which takes its
+    // Gate Range, 20 dB; the Limiter, at a Ceiling of -36 dB, takes the 6 dB left over it. The reader reads until it
+    // has seen both settle there; the audio plays until then, or for ten minutes of audio, when the test fails.
+    Engine engine;
+    engine.prepare (48000.0, 64, 2);
+    engine.setSettings ({ .gate = { .on = true, .thresholdDb = 0.0, .releaseMs = 10.0 }, .ratio = 1.0, .limiter = true, .ceilingDb = -36.0 });
+    std::atomic<bool> done { false };
+    std::thread audio ([&] {
+        const auto level = static_cast<float> (test::gainOf (-10.0));
+        test::Channels block (2, std::vector<float> (64));
+        float* main[] = { block[0].data(), block[1].data() };
+        for (int n = 0; n < 48000 * 600 / 64 && ! done; ++n)
+        {
+            for (auto& channel : block)
+                for (std::size_t i = 0; i < channel.size(); ++i)
+                    channel[i] = i % 2 == 0 ? level : -level;
+            engine.process ({ main, 2, 64 });
+        }
+        done = true;
+    });
+
+    std::vector<LevelRecord> records (static_cast<std::size_t> (engine.levelHistoryCapacity()));
+    LevelRecord last {};
+    std::size_t allocations = 0;
+    const auto settled = [] (double db, double target) { return std::abs (db - target) < 0.01; };
+    while (! done && ! (settled (last.gateGainReductionDb, 20.0) && settled (last.limiterGainReductionDb, 6.0)))
+    {
+        plugkit::test::AllocationGuard guard;
+        if (const int count = engine.readLevels (records.data(), static_cast<int> (records.size())); count > 0)
+            last = records[static_cast<std::size_t> (count - 1)];
+        allocations += guard.allocations();
+    }
+    done = true;
+    audio.join();
+
+    CHECK (allocations == 0);
+    CHECK_THAT (last.gateGainReductionDb, WithinAbs (20.0, 0.01));
+    CHECK_THAT (last.limiterGainReductionDb, WithinAbs (6.0, 0.01));
+    CHECK (last.gainReductionDb == 0.0);
+}
+
 TEST_CASE ("Under Global Bypass and Detection Audition the Gate and the Limiter report the Gain Reduction they apply underneath")
 {
     const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
