@@ -31,7 +31,7 @@ TEST_CASE ("With Internal, each main channel follows a detection channel of its 
     const ConstAudioBlock sidechain { sidechainChannels.data(), 2, numSamples };
 
     DetectionStage stage;
-    stage.prepare (numChannels, numSamples);
+    stage.prepare (48000.0, numChannels, numSamples);
     const auto detection = stage.process ({ internalChannels.data(), numChannels, numSamples }, withSidechain ? &sidechain : nullptr);
 
     REQUIRE (detection.numChannels == numChannels);
@@ -59,7 +59,7 @@ TEST_CASE ("With External, a mono main follows the louder of a stereo Sidechain'
     const ConstAudioBlock sidechain { sidechainChannels, 2, 4 };
 
     DetectionStage stage;
-    stage.prepare (1, 4);
+    stage.prepare (48000.0, 1, 4);
     stage.setSource (DetectionSource::External);
     const auto detection = stage.process ({ internalChannels, 1, 4 }, &sidechain);
 
