@@ -46,39 +46,7 @@ const std::vector<Estimate>& estimates()
     return all;
 }
 
-// dyn-lab's reference signal (tools/dyn-lab/USAGE.md, "autogain"), written again from its description: pink-like noise
-// from a 32-bit linear congruential generator (seed 1) through Paul Kellet's three-pole filter, 0.5 s at 48 kHz at
-// each Detection Level from -40 to 0 dB in 2 dB steps, lowest first, each segment at the power of a sine whose peak
-// reads its level.
-constexpr double referenceRate = 48000.0;
 constexpr double autoGainToleranceDb = 1.0; // dyn-lab's AUTO_GAIN_TOLERANCE
-
-std::vector<std::vector<float>> referenceSegments()
-{
-    std::uint32_t state = 1;
-    double b0 = 0.0, b1 = 0.0, b2 = 0.0;
-    std::vector<std::vector<float>> segments;
-    for (int levelDb = -40; levelDb <= 0; levelDb += 2)
-    {
-        std::vector<double> noise (static_cast<std::size_t> (0.5 * referenceRate));
-        double power = 0.0;
-        for (auto& x : noise)
-        {
-            state = 1664525u * state + 1013904223u;
-            const double w = state / 2147483648.0 - 1.0;
-            b0 = 0.99765 * b0 + 0.0990460 * w;
-            b1 = 0.96300 * b1 + 0.2965164 * w;
-            b2 = 0.57000 * b2 + 1.0526913 * w;
-            x = b0 + b1 + b2 + 0.1848 * w;
-            power += x * x;
-        }
-        const double scale = std::sqrt (std::pow (10.0, levelDb / 10.0) / 2.0 / (power / static_cast<double> (noise.size())));
-        auto& segment = segments.emplace_back();
-        for (const double x : noise)
-            segment.push_back (static_cast<float> (x * scale));
-    }
-    return segments;
-}
 
 } // namespace
 
@@ -103,25 +71,7 @@ TEST_CASE ("With Auto Gain on, the reference signal keeps its level within dyn-l
     settings.character = character;
     // The lab's check runs without Colour, which Auto Gain doesn't compensate.
     settings.colour = 0.0;
-    const auto segments = referenceSegments();
-    Engine engine;
-    engine.prepare (referenceRate, 512, 1);
-    engine.setSettings (settings);
-    // Each segment's level difference, output minus input, averaged in dB over the segments, as dyn-lab measures it.
-    double sumDb = 0.0;
-    for (const auto& segment : segments)
-    {
-        test::Channels audio { segment };
-        test::processInBlocks (engine, audio, { 512 });
-        double powerIn = 0.0, powerOut = 0.0;
-        for (std::size_t i = 0; i < segment.size(); ++i)
-        {
-            powerIn += static_cast<double> (segment[i]) * segment[i];
-            powerOut += static_cast<double> (audio.front()[i]) * audio.front()[i];
-        }
-        sumDb += 10.0 * std::log10 (powerOut / powerIn);
-    }
-    const double differenceDb = sumDb / static_cast<double> (segments.size());
+    const double differenceDb = test::referenceLevelDifferenceDb (settings);
     CAPTURE (differenceDb);
     CHECK (std::abs (differenceDb) <= autoGainToleranceDb);
 }

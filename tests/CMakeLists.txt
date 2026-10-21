@@ -24,6 +24,7 @@ add_executable(comp1_engine_tests
     engine/AutoReleaseTest.cpp
     engine/CharacterTest.cpp
     engine/ClickFreeTest.cpp
+    engine/CompFollowTest.cpp
     engine/ColourTest.cpp
     engine/DetectionAuditionTest.cpp
     engine/DetectionEqTest.cpp

@@ -24,7 +24,8 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
     plugkit::test::AllocationGuard guard;
     for (int block = 0; block < 64; ++block)
     {
-        // Every setting moving every block, Output Gain back to 0 dB every few, the Gate, Auto Release, Auto Gain,
+        // Every setting moving every block, Output Gain back to 0 dB every few, Comp Follow on and off every few,
+        // gliding and turning round, the Gate, Auto Release, Auto Gain,
         // Saturation and the Limiter on and off, Saturation moving Before and After, Detection Source, Detection
         // Audition and Stereo Placement moving every few, Stereo Link and every Detection EQ setting moving every
         // block, each band switching on and off, and changing Shape or Slope; the Character moving every few, each in
@@ -49,6 +50,8 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
                                         .releaseMs = 5.0 + 500.0 * (block % 10),
                                         .holdMs = 50.0 * (block % 10) },
                               .character = static_cast<Character> ((block / 3) % 4),
+                              .comp = 12.5 * (block % 9),
+                              .compFollow = block % 4 < 2,
                               .thresholdDb = -6.0 * (block % 10),
                               .ratio = block % 5 == 4 ? std::numeric_limits<double>::infinity() : 1.0 + block % 5,
                               .kneeDb = 8.0 * (block % 9),
