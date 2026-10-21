@@ -74,8 +74,12 @@ public:
                 return signal (internal.numChannels, internal);
             }
             assert (sidechain->numChannels <= static_cast<int> (maxSidechainChannels) && sidechain->numSamples == internal.numSamples);
+            // A non-finite Sidechain sample (nan, inf) is heard as silence, as a main input one is: it would hold the
+            // detector's Gain Reduction forever.
             for (int ch = 0; ch < sidechain->numChannels; ++ch)
-                std::copy_n (sidechain->channels[ch], internal.numSamples, storage[static_cast<std::size_t> (ch)].begin());
+                std::transform (sidechain->channels[ch], sidechain->channels[ch] + internal.numSamples,
+                                storage[static_cast<std::size_t> (ch)].begin(),
+                                [] (float s) { return std::isfinite (s) ? s : 0.0f; });
             return signal (sidechain->numChannels, internal);
         }
         for (int ch = 0; ch < internal.numChannels; ++ch)
