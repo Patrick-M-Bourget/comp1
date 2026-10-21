@@ -9,6 +9,7 @@ The scenes, and why each exists:
 - **Defaults**, with a ceiling: what most instances of comp1 cost, Clean in Zero Latency.
 - **Defaults, Threshold automated**, with a ceiling: settings published before every block, as the Plugin Shell publishes them while Host Automation moves a parameter, so the cost of taking new settings is measured with the block.
 - **Worst case**, with a ceiling: every stage on, at its most costly (`worstCaseSettings`): FET at Colour 100%, High Quality at 8x Oversampling (the cap at each rate: 4x at 96 kHz) with Lookahead 5 ms, Saturation on, the Gate on and closing on the quiet bursts, Dry and Wet both at 0 dB, and the Limiter on and limiting, Output Gain +12 dB driving the loud bursts over its Ceiling. This is the scene that prices the Limiter's 8x, 48-tap true-peak estimator. `tests/engine/RenderScenesTest.cpp` checks that its Limiter, compressor and Gate all reduce the gain on the bursts.
+- **Worst case, Limiter off**: the same settings with the Limiter off, so the gap to the Worst case is what the Limiter costs on, and the scene shows that off and settled it costs about nothing.
 - **Clean, VCA, FET and Opto, each at Colour 100%**, Zero Latency: what each Character's detector and Colour cost over Clean.
 - **High Quality, 2x Oversampling**: the default High Quality, its Oversampling sections and delays.
 - **Defaults, 32-sample blocks**: the per-block overhead, at the smallest block size hosts commonly use.
@@ -16,21 +17,29 @@ The scenes, and why each exists:
 
 | CPU scene | Ceiling 48 / 96 kHz | Apple M3 48 kHz | 96 kHz | CI Windows x64 48 kHz | 96 kHz | CI macOS 48 kHz | 96 kHz |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Defaults | 4% / 7% | 0.42% | 0.87% | 1.18% | 2.21% | 0.58% | 1.33% |
-| Defaults, Threshold automated | 4% / 7% | 0.42% | 0.88% | 1.14% | 2.25% | 0.76% | 1.35% |
-| Worst case | 17% / 28% | 2.81% | 4.60% | 5.51% | 9.30% | 4.06% | 8.32% |
-| Clean, Colour 100% | — | 0.43% | 0.87% | 1.11% | 2.21% | 0.57% | 1.38% |
-| VCA, Colour 100% | — | 0.56% | 1.13% | 1.75% | 3.49% | 1.11% | 2.48% |
-| FET, Colour 100% | — | 0.77% | 1.53% | 2.07% | 4.12% | 1.40% | 3.17% |
+| Defaults | 4% / 7% | 0.40% | 0.81% | 1.18% | 2.21% | 0.58% | 1.33% |
+| Defaults, Threshold automated | 4% / 7% | 0.40% | 0.85% | 1.14% | 2.25% | 0.76% | 1.35% |
+| Worst case | 17% / 28% | 2.81% | 4.57% | 5.51% | 9.30% | 4.06% | 8.32% |
+| Worst case, Limiter off | — | 1.94% | 2.84% | 5.00% | 7.33% | 2.98% | 4.43% |
+| Clean, Colour 100% | — | 0.40% | 0.81% | 1.11% | 2.21% | 0.57% | 1.38% |
+| VCA, Colour 100% | — | 0.53% | 1.07% | 1.75% | 3.49% | 1.11% | 2.48% |
+| FET, Colour 100% | — | 0.72% | 1.45% | 2.07% | 4.12% | 1.40% | 3.17% |
 | Opto, Colour 100% | — | 0.86% | 1.73% | 2.05% | 4.11% | 1.92% | 3.82% |
-| High Quality, 2x Oversampling | — | 0.73% | 1.47% | 1.61% | 3.21% | 1.16% | 2.80% |
-| Defaults, 32-sample blocks | — | 0.43% | 0.88% | 1.11% | 2.22% | 0.71% | 1.73% |
-| Worst case on silence | — | 1.62% | 2.40% | 3.98% | 6.47% | 2.55% | 5.23% |
-| Worst case on subnormal input | — | 1.39% | 2.09% | 3.76% | 5.97% | 2.38% | 4.42% |
+| High Quality, 2x Oversampling | — | 0.43% | 0.86% | 1.61% | 3.21% | 1.16% | 2.80% |
+| Defaults, 32-sample blocks | — | 0.40% | 0.82% | 1.11% | 2.22% | 0.71% | 1.73% |
+| Worst case on silence | — | 1.62% | 2.41% | 3.98% | 6.47% | 2.55% | 5.23% |
+| Worst case on subnormal input | — | 1.38% | 2.09% | 3.76% | 5.97% | 2.38% | 4.42% |
 
-The Apple M3 columns were measured 2026-10-21 on an 8-core Apple M3 with other agents' work light (load average 1.7 to 2.3), after this tree's own build had finished. The CI columns are GitHub's `windows-latest` and `macos-latest` (arm64) runners, from this PR's first CI run, 2026-10-21, read from the job summary where `scripts/check.sh cpu` writes the scene lines. Windows x64 was the slower runner on every scene, so the ceilings are about three times its figures, rounded up to a whole percent: Defaults' 1.18% and 2.21% give 4% and 7%, which the Threshold automated scene shares (1.14% and 2.25%), and the Worst case's 5.51% and 9.30% give 17% and 28%. The Opto row came later, measured the same way in its own PR, 2026-10-21: on the Apple M3 at load average 1.9, in a run where FET read 0.78% and 1.57%, and on CI from that PR's first run, where FET read 1.79% and 3.59% on Windows x64 and 1.80% and 3.38% on macOS. Opto costs a little more than FET: the same loop, solved over two parts, with its attack's pole worked out each sample.
+The Apple M3 columns were measured 2026-10-21 on an 8-core Apple M3 with other agents' work light (load average about 2), after this tree's own build had finished. The CI columns are GitHub's `windows-latest` and `macos-latest` (arm64) runners, from the first CI run of the PR that added the CPU budget, 2026-10-21, read from the job summary where `scripts/check.sh cpu` writes the scene lines. Windows x64 was the slower runner on every scene, so the ceilings are about three times its figures, rounded up to a whole percent: Defaults' 1.18% and 2.21% give 4% and 7%, which the Threshold automated scene shares (1.14% and 2.25%), and the Worst case's 5.51% and 9.30% give 17% and 28%. The Worst case, Limiter off row's CI figures come from the first CI run of the PR that made the Limiter rest while off, 2026-10-21, where the Worst case read 6.43% and 10.17% on Windows x64 and 4.38% and 5.91% on macOS; the other rows' CI figures were taken before it, so the scenes with the Limiter off (all but the worst cases) cost a little less on CI now than they show. The Opto row was measured the same way in its own PR, before the Limiter rested, 2026-10-21: on the Apple M3 at load average 1.9, in a run where FET read 0.78% and 1.57%, and on CI from that PR's first run, where FET read 1.79% and 3.59% on Windows x64 and 1.80% and 3.38% on macOS. Opto costs a little more than FET: the same loop, solved over two parts, with its attack's pole worked out each sample.
 
-The Limiter's share of the worst case: the Limiter runs whether on or off (its on/off crossfade needs both sides), so turning it off in the scene saves only the crossfade, about 1%. Timed on its own, outside the Engine, on the same bursts 12 dB up, High Quality's Limiter costs about 0.8% at 48 kHz and 1.6% at 96 kHz on the Apple M3: about a third of the worst case.
+The Limiter's share of the worst case: off and settled, its gain computer rests (High Quality's only delays the audio and feeds the estimator), so the Worst case, Limiter off scene prices the rest of the Engine. On the Apple M3, 2026-10-21, this tree and the one before the Limiter rested (main at `72ba1e7`), each run through the same scenes:
+
+| Worst case, Apple M3 | Limiter on 48 / 96 kHz | Limiter off 48 / 96 kHz | Saved by turning it off |
+| --- | --- | --- | --- |
+| Not resting (`72ba1e7`) | 2.80% / 4.60% | 2.78% / 4.53% | 0.02 / 0.07 points |
+| Resting while off | 2.81% / 4.57% | 1.94% / 2.84% | 0.87 / 1.73 points (31% / 38%) |
+
+So High Quality's Limiter, limiting, is about a third of the worst case, and off it costs about nothing. The CPU A/B of the two builds (`scripts/check.sh cpu`) read the Worst case unchanged (median 1.003) and Worst case, Limiter off at 0.699; every scene with the Limiter off got faster too, most of all High Quality, 2x Oversampling (0.608), and Zero Latency's by about 3%.
 
 **Ceilings.** Each ceiling is about three times the slowest CI runner's worst run, absolute, rounded up: high enough that runner noise doesn't fail the check, low enough to fail on a regression that multiplies the cost. They are absolute, not relative to a baseline, so a slow drift over many changes still trips them. The ceilings live in `CpuBudget.cpp` and in the table above, set from a PR's first CI run and a quiet-machine run, with their dates.
 
