@@ -171,9 +171,32 @@ inline Channels constantLevel (int numChannels, int numSamples, double levelDb)
 // stands for, and a level read off its output is this far over the square wave's.
 inline constexpr double sineCalibrationDb = 3.0102999566398120;
 
-// How far a Character's steady test signal sits from the level it stands for, in dB: VCA's a square wave
-// sineCalibrationDb under it, Clean's at it.
-inline double steadyLevelOffsetDb (Character character) { return character == Character::VCA ? -sineCalibrationDb : 0.0; }
+// Every Character, as the tests know it from dyn-lab's model (its LEVELS): how far its steady test signal sits from the
+// level it stands for, in dB. VCA reads an RMS level, so its signal is a square wave sineCalibrationDb under the level;
+// the others read the peak, so theirs is at it. Written here apart from the Engine's description of each Character.
+struct CharacterUnderTest
+{
+    Character character;
+    double steadyLevelOffsetDb;
+};
+
+inline const std::vector<CharacterUnderTest>& characters()
+{
+    static const std::vector<CharacterUnderTest> all {
+        { Character::Clean, 0.0 },
+        { Character::VCA, -sineCalibrationDb },
+        { Character::FET, 0.0 },
+        { Character::Opto, 0.0 },
+    };
+    return all;
+}
+
+// How far character's steady test signal sits from the level it stands for, in dB (characters()).
+inline double steadyLevelOffsetDb (Character character)
+{
+    const auto& all = characters();
+    return std::find_if (all.begin(), all.end(), [character] (const CharacterUnderTest& c) { return c.character == character; })->steadyLevelOffsetDb;
+}
 
 // The Gain Reduction in dB the Engine gave each sample: how far the output is under the input.
 inline std::vector<double> gainReductionDb (const std::vector<float>& input, const std::vector<float>& output)

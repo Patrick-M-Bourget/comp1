@@ -121,7 +121,7 @@ public:
         glideTo (colourShare, settings.colour / 100.0, snap);
         glideTo (colourThreshold, settings.thresholdDb, snap);
         placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
-        character = played (settings.character);
+        character = settings.character;
         source = settings.detectionSource;
         if (snap)
         {
@@ -271,10 +271,11 @@ private:
     void askGains (Voice& voice, const DetectionSignal& detection, int numChannels, int i, double link)
     {
         const auto gainOf = [] (double reduction) { return reduction > 0.0 ? plugkit::decibelsToGain (-reduction) : 1.0; };
+        const auto& described = describe (voice.character);
         if (voice.placement != plugkit::StereoPlacement::Stereo)
         {
             auto& detector = voice.detectors[0];
-            voice.reductionsDb[0] = detector.process (voice.character, source, detection.partFollowedBy (voice.placement)[i], curve, timing);
+            voice.reductionsDb[0] = detector.process (described, source, detection.partFollowedBy (voice.placement)[i], curve, timing);
             voice.levelsDb[0] = detector.detectionLevelDb();
             voice.gains[0] = gainOf (voice.reductionsDb[0]);
             return;
@@ -283,7 +284,7 @@ private:
         for (int ch = 0; ch < numChannels; ++ch)
         {
             const auto c = static_cast<std::size_t> (ch);
-            reductions[c] = voice.detectors[c].process (voice.character, source, detection.channelFollowedBy (ch)[i], curve, timing);
+            reductions[c] = voice.detectors[c].process (described, source, detection.channelFollowedBy (ch)[i], curve, timing);
             channelDb[c] = voice.detectors[c].detectionLevelDb();
             largest = std::max (largest, reductions[c]);
         }
@@ -310,13 +311,13 @@ private:
     // voice's Colour controls at sample i, for each part it compresses: from the Character's mapping of the Gain
     // Reduction applied to the part, after Stereo Link, and of Threshold as Colour tracks it, the weight scaled by share
     // (the Colour control, and any fade's share), and the drive's gain. Under Mid or Side there is the one part. A
-    // Character with no Colour (Clean) has a weight of exactly 0.
+    // Character with no Colour has a weight of exactly 0.
     static void colourControls (const Voice& voice, ColourVoice& colour, int i, double share, double thresholdDb)
     {
         const auto n = static_cast<std::size_t> (i);
         for (std::size_t p = 0; p < partsOf (voice); ++p)
         {
-            auto at = hasColour (voice.character) ? colourOf (voice.character, voice.reductionsDb[p], thresholdDb) : ColourAt {};
+            auto at = colourOf (describe (voice.character), voice.reductionsDb[p], thresholdDb);
             at.weight *= share;
             colour.weights[p][n] = at.weight;
             colour.gains[p][n] = plugkit::decibelsToGain (at.driveDb);
@@ -387,8 +388,8 @@ private:
     bool autoRelease = false;
     bool stereoTrack = false;
     plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo; // the Placement asked for
-    Character character = Character::Clean;                                // the Character asked for, as it plays
-    DetectionSource source = DetectionSource::Internal;                    // whether FET's detector is fed back
+    Character character = Character::Clean;                                // the Character asked for
+    DetectionSource source = DetectionSource::Internal;                    // whether a fed-back Character's detection is
     std::array<Voice, 2> voices;
     std::size_t playing = 0; // the voice heard, or fading in
     plugkit::Smoother fade;  // the share of the voice playing, while the other fades out
