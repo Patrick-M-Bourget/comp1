@@ -40,7 +40,7 @@ TEST_CASE ("Saturation, Drive and Saturation Position are host parameters, liste
     CHECK (position.getDefaultValue() == 1.0f);
     CHECK (position.isAutomatable());
     CHECK (position.getParameterIndex() == autoGain + 3);
-    CHECK (host::parameter (processor, "output_gain").getParameterIndex() == autoGain + 4);
+    CHECK (host::parameter (processor, "dry").getParameterIndex() == autoGain + 4);
 }
 
 TEST_CASE ("Saturation's settings survive save and load, and a session saved without them restores the defaults")
