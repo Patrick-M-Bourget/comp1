@@ -357,11 +357,15 @@ TEST_CASE ("Each level tap is read on a reader thread while process() runs, and 
 {
     // The audio thread plays a steady 0 dB on both channels at the defaults, which dyn-lab's transfer compresses by
     // 13.50 dB. The reader reads every tap until it has seen each one settle there; the audio plays until then, or for
-    // ten minutes of audio, when the test fails.
+    // ten minutes of audio, when the test fails. The reader starts at once, or once a second has played, as a reader
+    // the scheduler holds back would: its first read then spans the onset, before the Gain Reduction has attacked.
+    const int samplesBeforeReading = GENERATE (0, 48000);
+    CAPTURE (samplesBeforeReading);
     Engine engine;
     engine.prepare (48000.0, 64, 2);
     engine.setSettings ({});
     std::atomic<bool> done { false };
+    std::atomic<int> samplesPlayed { 0 };
     std::thread audio ([&] {
         test::Channels block (2, std::vector<float> (64));
         float* main[] = { block[0].data(), block[1].data() };
@@ -371,17 +375,24 @@ TEST_CASE ("Each level tap is read on a reader thread while process() runs, and 
                 for (std::size_t i = 0; i < channel.size(); ++i)
                     channel[i] = i % 2 == 0 ? 1.0f : -1.0f;
             engine.process ({ main, 2, 64 });
+            samplesPlayed += 64;
         }
         done = true;
     });
+    while (! done && samplesPlayed < samplesBeforeReading)
+        std::this_thread::yield();
 
     std::vector<LevelRecord> records (static_cast<std::size_t> (engine.levelHistoryCapacity()));
     LevelRecord last {};
     plugkit::OutputLevel output[2] {};
     std::size_t allocations = 0;
     const auto settled = [] (double db, double target) { return std::abs (db - target) < 0.01; };
-    while (! done
-           && ! (settled (last.gainReductionDb, 13.50) && settled (output[0].rmsDb, -13.50) && settled (output[1].rmsDb, -13.50)))
+    // A tap's Peak is the largest since its last read, so the one that spans the onset holds it near 0 dB: the reader
+    // waits for a Peak that has settled too, not just the RMS.
+    const auto outputSettled = [&] (const plugkit::OutputLevel& level) {
+        return settled (level.peakDb, -13.50) && settled (level.rmsDb, -13.50);
+    };
+    while (! done && ! (settled (last.gainReductionDb, 13.50) && outputSettled (output[0]) && outputSettled (output[1])))
     {
         plugkit::test::AllocationGuard guard;
         if (const int count = engine.readLevels (records.data(), static_cast<int> (records.size())); count > 0)
