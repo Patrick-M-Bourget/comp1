@@ -468,14 +468,15 @@ inline double levelForReductionDb (double reductionDb) { return reductionDb > 0.
 
 // The bin-centred tone in bin at levelDb, times scale, for lengths spectrumLengths, through an Engine with settings at
 // sampleRate, compressed by a steady Gain Reduction, as dyn-lab's colour holds it: an External Detection Source on a
-// Sidechain that is a square wave sineCalibrationDb under levelDb, which VCA reads at levelDb with no ripple at all. The
-// Gain Reduction settles over the first length (Attack 10 ms, the RMS level 5 ms), so the last is periodic.
+// Sidechain that is the Character's steady test signal for levelDb (steadyLevelOffsetDb), which it reads at levelDb with
+// no ripple at all. The Gain Reduction settles over the first length (Attack 10 ms, VCA's RMS level 5 ms), so the last
+// is periodic.
 inline std::vector<float> steadilyCompressedTone (Settings settings, double sampleRate, int bin, double levelDb, int lengths, double scale = 1.0)
 {
     auto tone = binCentredTone (bin, levelDb, lengths);
     for (auto& sample : tone)
         sample = static_cast<float> (scale * sample);
-    const auto sidechain = steadyLevel (1, static_cast<int> (tone.size()), levelDb - sineCalibrationDb);
+    const auto sidechain = steadyLevel (1, static_cast<int> (tone.size()), levelDb + steadyLevelOffsetDb (settings.character));
     settings.detectionSource = DetectionSource::External;
     return played (settings, sampleRate, { tone }, { 512 }, &sidechain).front();
 }

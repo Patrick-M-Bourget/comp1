@@ -37,6 +37,7 @@ struct Row
 struct Table
 {
     std::string command; // the dyn-lab command that printed rows
+    Character character;
     double colour;
     std::vector<Row> rows;
 };
@@ -46,6 +47,7 @@ const std::vector<Table>& tables()
 {
     static const std::vector<Table> all {
         { "python3 tools/dyn-lab/dynlab.py colour --character vca",
+          Character::VCA,
           100.0,
           { { 0.0, { absent, absent, absent, absent } },
             { 3.0, { absent, absent, absent, absent } },
@@ -54,6 +56,7 @@ const std::vector<Table>& tables()
             { 20.0, { absent, -38.38, absent, -51.77 } },
             { 30.0, { absent, -38.33, absent, -46.24 } } } },
         { "python3 tools/dyn-lab/dynlab.py colour --character vca --colour 50",
+          Character::VCA,
           50.0,
           { { 0.0, { absent, absent, absent, absent } },
             { 3.0, { absent, absent, absent, absent } },
@@ -61,6 +64,24 @@ const std::vector<Table>& tables()
             { 10.0, { absent, -56.79, absent, -69.01 } },
             { 20.0, { absent, -44.57, absent, -57.97 } },
             { 30.0, { absent, -44.63, absent, -52.54 } } } },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet",
+          Character::FET,
+          100.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -68.46, absent, -73.21 } },
+            { 10.0, { absent, -39.58, absent, -56.60 } },
+            { 20.0, { absent, -30.73, absent, -43.45 } },
+            { 30.0, { absent, -30.45, absent, -38.32 } } } },
+        { "python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50",
+          Character::FET,
+          50.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -74.48, absent, -79.23 } },
+            { 10.0, { absent, -45.68, absent, -62.71 } },
+            { 20.0, { absent, -37.18, absent, -49.90 } },
+            { 30.0, { absent, -37.16, absent, -45.03 } } } },
     };
     return all;
 }
@@ -71,12 +92,12 @@ constexpr double comparedOverDb = -100.0;
 
 } // namespace
 
-TEST_CASE ("On VCA, Colour follows the Gain Reduction: the harmonics match dyn-lab's colour within its tolerance")
+TEST_CASE ("On VCA and FET, Colour follows the Gain Reduction: the harmonics match dyn-lab's colour within its tolerance")
 {
     const auto& table = GENERATE (from_range (tables()));
     const auto& row = GENERATE_REF (from_range (table.rows));
     CAPTURE (table.command, row.reductionDb);
-    const auto spectrum = test::amplitudes (colouredTone ({ .character = Character::VCA, .colour = table.colour }, test::levelForReductionDb (row.reductionDb)));
+    const auto spectrum = test::amplitudes (colouredTone ({ .character = table.character, .colour = table.colour }, test::levelForReductionDb (row.reductionDb)));
     const auto bin = static_cast<std::size_t> (test::toneBin (1000.0, sampleRate));
     for (std::size_t h = 0; h < row.harmonicsDb.size(); ++h)
     {
@@ -135,19 +156,22 @@ TEST_CASE ("Clean has no Colour: its output is the same at every Colour, and Opt
     CHECK (test::played ({ .character = Character::Opto, .thresholdDb = -40.0 }, rate, input, cut) == clean);
 }
 
-TEST_CASE ("The detector never hears Colour: VCA's Gain Reduction is the same at Colour 0% and 100%")
+TEST_CASE ("The detector never hears Colour: VCA's and FET's Gain Reduction is the same at Colour 0% and 100%")
 {
+    // FET's loop too: it hears the detection signal times the gain, never the coloured output.
+    const auto character = GENERATE (Character::VCA, Character::FET);
+    CAPTURE (static_cast<int> (character));
     // Noise under deep compression, where Colour is at its most.
     const auto input = test::noise (2, 24000);
-    const auto off = test::levelHistory ({ .character = Character::VCA, .thresholdDb = -40.0, .colour = 0.0 }, sampleRate, input);
-    const auto full = test::levelHistory ({ .character = Character::VCA, .thresholdDb = -40.0, .colour = 100.0 }, sampleRate, input);
+    const auto off = test::levelHistory ({ .character = character, .thresholdDb = -40.0, .colour = 0.0 }, sampleRate, input);
+    const auto full = test::levelHistory ({ .character = character, .thresholdDb = -40.0, .colour = 100.0 }, sampleRate, input);
     REQUIRE (off.size() == full.size());
     bool same = true;
     for (std::size_t r = 0; r < off.size(); ++r)
         same = same && off[r].gainReductionDb == full[r].gainReductionDb && off[r].detectionLevelDb == full[r].detectionLevelDb;
     CHECK (same);
-    CHECK (test::played ({ .character = Character::VCA, .thresholdDb = -40.0, .colour = 0.0 }, sampleRate, input)
-           != test::played ({ .character = Character::VCA, .thresholdDb = -40.0, .colour = 100.0 }, sampleRate, input));
+    CHECK (test::played ({ .character = character, .thresholdDb = -40.0, .colour = 0.0 }, sampleRate, input)
+           != test::played ({ .character = character, .thresholdDb = -40.0, .colour = 100.0 }, sampleRate, input));
 }
 
 TEST_CASE ("Under Stereo Placement Mid or Side, Colour shapes only the part compressed and the other passes")
