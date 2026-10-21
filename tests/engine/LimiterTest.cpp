@@ -1,3 +1,5 @@
+#include "LevelTaps.h"
+#include "Limiter.h"
 #include "Measure.h"
 #include "comp1/Latency.h"
 
@@ -139,6 +141,51 @@ TEST_CASE ("High Quality's Limiter keeps the true peak of white noise and full-b
         const test::Channels input { signal.make (host.sampleRate, length) };
         const auto out = test::played (limiting (highQuality, ceilingDb, outputGainDb), host.sampleRate, input, host.cut);
         const double overDb = 20.0 * std::log10 (test::truePeak (out)) - ceilingDb;
+        CAPTURE (overDb);
+        CHECK (overDb <= 0.0);
+    }
+}
+
+namespace
+{
+
+// What each mode promises of a peak: the sample peak in Zero Latency, the true peak in High Quality, from sample from
+// on, the audio before it heard.
+double promisedPeak (ProcessingMode mode, const test::Channels& audio, int from = 0)
+{
+    if (mode == highQuality)
+        return test::truePeak (audio, from);
+    double peak = 0.0;
+    for (const auto& channel : audio)
+        for (auto i = static_cast<std::size_t> (from); i < channel.size(); ++i)
+            peak = std::max (peak, static_cast<double> (std::abs (channel[i])));
+    return peak;
+}
+
+} // namespace
+
+TEST_CASE ("Turned on mid-signal after resting off, each mode's Limiter holds its peak under the Ceiling once on", "[sweep]")
+{
+    // Off and settled, the gain computer rests; turned on in the middle of white noise and full-band signals far over
+    // the Ceiling, its Gain Reduction starts afresh and must be whole by the time the crossfade is over.
+    const auto mode = GENERATE (zeroLatency, highQuality);
+    const auto& host = GENERATE (from_range (hosts()));
+    const double ceilingDb = GENERATE (from_range (ceilings()));
+    CAPTURE (static_cast<int> (mode), host.sampleRate, host.cut, ceilingDb);
+    const int at = static_cast<int> (0.1 * host.sampleRate);
+    // The switch's crossfade settles on full share within 0.2 s (its two stages within 1e-6 of it after 17 of plugkit's
+    // 7 ms time constants, 0.12 s): until then the input's share passes unclipped. Past the latency, the audio heard
+    // came in after it.
+    const int settled = at + static_cast<int> (0.2 * host.sampleRate) + latencySamples (mode, host.sampleRate);
+    const int length = settled + 2 * test::limiterSignalSamples;
+    auto off = limiting (mode, ceilingDb, 12.0);
+    off.limiter = false;
+    for (const auto& signal : fullBandSignals())
+    {
+        CAPTURE (signal.name);
+        const test::Channels input { signal.make (host.sampleRate, length) };
+        const auto out = test::played (off, host.sampleRate, input, host.cut, nullptr, test::SettingsChange { .at = at, .settings = limiting (mode, ceilingDb, 12.0) });
+        const double overDb = 20.0 * std::log10 (promisedPeak (mode, out, settled)) - ceilingDb;
         CAPTURE (overDb);
         CHECK (overDb <= 0.0);
     }
@@ -346,23 +393,6 @@ TEST_CASE ("Back in High Quality, the Limiter doesn't hear what the path played 
         CHECK (std::vector<float> (out[ch].begin() + settled, out[ch].end()) == std::vector<float> (expected[ch].begin() + settled, expected[ch].end()));
 }
 
-namespace
-{
-
-// What each mode promises of a peak: the sample peak in Zero Latency, the true peak in High Quality, from sample from
-// on, the audio before it heard.
-double promisedPeak (ProcessingMode mode, const test::Channels& audio, int from = 0)
-{
-    if (mode == highQuality)
-        return test::truePeak (audio, from);
-    double peak = 0.0;
-    for (const auto& channel : audio)
-        for (auto i = static_cast<std::size_t> (from); i < channel.size(); ++i)
-            peak = std::max (peak, static_cast<double> (std::abs (channel[i])));
-    return peak;
-}
-
-} // namespace
 
 TEST_CASE ("While the Ceiling glides, no peak passes the higher of the two Ceilings, and once settled the new one holds")
 {
@@ -415,4 +445,52 @@ TEST_CASE ("At a sample rate comp1 doesn't support, the Limiter still plays, at 
     impulse[0][100] = 0.25f;
     const auto heard = test::played ({ .ratio = 1.0, .limiter = true, .processingMode = mode }, sampleRate, impulse);
     CHECK (heard == test::delayed (impulse, latencySamples (mode, sampleRate)));
+}
+
+namespace
+{
+
+// Plays audio through limiter on path, in blocks of 512, in place.
+void playLimiter (Limiter& limiter, ProcessingMode path, test::Channels& audio)
+{
+    RunLevels levels;
+    std::vector<float*> channels (audio.size());
+    const auto length = static_cast<int> (audio.front().size());
+    for (int start = 0; start < length; start += 512)
+    {
+        for (std::size_t ch = 0; ch < audio.size(); ++ch)
+            channels[ch] = audio[ch].data() + start;
+        limiter.process ({ channels.data(), static_cast<int> (audio.size()), std::min (512, length - start) }, path, levels);
+    }
+}
+
+} // namespace
+
+TEST_CASE ("Off and settled, the Limiter's gain computer does no work; turned on, it runs again")
+{
+    const auto mode = GENERATE (zeroLatency, highQuality);
+    const double sampleRate = 48000.0;
+    CAPTURE (static_cast<int> (mode));
+    Limiter limiter;
+    limiter.prepare (sampleRate, 2);
+    limiter.setCeiling (-30.0, true);
+    // Noise far over the Ceiling: the gain computer, running, would have Gain Reduction to work out on every sample.
+    auto audio = test::noise (2, 4800);
+    playLimiter (limiter, mode, audio);
+    CHECK (limiter.gainSamplesComputed() == 0);
+
+    limiter.setOn (true, false);
+    audio = test::noise (2, 4800);
+    playLimiter (limiter, mode, audio);
+    CHECK (limiter.gainSamplesComputed() == 4800);
+
+    // Off again: it works through the glide down, then stops once the share has settled at 0.
+    limiter.setOn (false, false);
+    audio = test::noise (2, static_cast<int> (sampleRate));
+    playLimiter (limiter, mode, audio);
+    const auto computed = limiter.gainSamplesComputed();
+    CHECK (computed > 4800);
+    audio = test::noise (2, 4800);
+    playLimiter (limiter, mode, audio);
+    CHECK (limiter.gainSamplesComputed() == computed);
 }
