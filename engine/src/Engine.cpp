@@ -2,6 +2,7 @@
 
 #include "Character.h"
 #include "Clean.h"
+#include "Crossfade.h"
 #include "DelayLine.h"
 #include "Detection.h"
 #include "Glide.h"
@@ -501,23 +502,8 @@ public:
         else
             delay.write ({ heard.channels, heard.numChannels, heard.numSamples });
 
-        // Let go and settled: the Wet path plays, bit for bit.
-        if (auditionShare.isSettled() && auditionShare.value() == 0.0)
-            return;
-        int i = 0;
-        for (; i < audio.numSamples && ! auditionShare.isSettled(); ++i)
-        {
-            const double share = auditionShare.next();
-            for (int ch = 0; ch < audio.numChannels; ++ch)
-            {
-                float& sample = audio.channels[ch][i];
-                sample = static_cast<float> ((1.0 - share) * sample + share * heard.channels[ch][i]);
-            }
-        }
-        if (auditionShare.value() == 0.0)
-            return;
-        for (int ch = 0; ch < audio.numChannels; ++ch)
-            std::copy (heard.channels[ch] + i, heard.channels[ch] + audio.numSamples, audio.channels[ch] + i);
+        // The Wet path fades toward the detection signal as heard; let go and settled, it plays bit for bit.
+        crossfade (auditionShare, audio, { heard.channels, heard.numChannels, heard.numSamples });
     }
 
 private:
@@ -544,6 +530,52 @@ private:
     DelayLine delay;                         // High Quality's, per output channel
 };
 
+// Global Bypass: crossfades the output to the reference, the input after the non-finite scrub, delayed by the latency
+// of the Processing Mode playing (comp1/Latency.h), so the processed output and the reference have the same delay and
+// the crossfade never comb-filters. The reference's delay is fed in both Processing Modes, so a switch to High
+// Quality starts from real recent audio.
+class GlobalBypass
+{
+public:
+    // Allocates for up to numChannels channels of up to a run a piece.
+    void prepare (double sampleRate, int numChannels)
+    {
+        share.configure (plugkit::glideTimeConstantSeconds * sampleRate, 1.0e-6);
+        share.reset (0.0);
+        const auto channels = static_cast<std::size_t> (std::max (numChannels, 0));
+        storage.assign (channels, std::vector<float> (static_cast<std::size_t> (plugkit::runSamples)));
+        pointers.assign (channels, nullptr);
+        for (std::size_t ch = 0; ch < channels; ++ch)
+            pointers[ch] = storage[ch].data();
+        delay.prepare (numChannels, latencySamples (ProcessingMode::HighQuality, sampleRate));
+    }
+
+    // With snap, it is on or off at once instead of crossfading.
+    void setOn (bool on, bool snap) { glideTo (share, on ? 1.0 : 0.0, snap); }
+
+    // Takes the piece of input, before anything processes it, as the reference for the same samples' output, delayed
+    // on path.
+    void takeInput (ConstAudioBlock input, ProcessingMode path)
+    {
+        const AudioBlock taken { pointers.data(), input.numChannels, input.numSamples };
+        for (int ch = 0; ch < input.numChannels; ++ch)
+            std::copy (input.channels[ch], input.channels[ch] + input.numSamples, taken.channels[ch]);
+        delay.process ({ taken.channels, taken.numChannels, taken.numSamples }, taken, path == ProcessingMode::HighQuality ? delay.getLength() : 0);
+    }
+
+    // Crossfades the processed piece of the same samples toward the reference.
+    void process (AudioBlock processed)
+    {
+        crossfade (share, processed, { pointers.data(), processed.numChannels, processed.numSamples });
+    }
+
+private:
+    plugkit::Smoother share;                 // 0 plays the processed output, 1 the reference
+    std::vector<std::vector<float>> storage; // per channel, the reference for the piece
+    std::vector<float*> pointers;            // per channel, into storage
+    DelayLine delay;                         // High Quality's, per channel
+};
+
 } // namespace
 
 struct Engine::Impl
@@ -568,6 +600,7 @@ struct Engine::Impl
     DelayLine oversamplingPadding, limiterPadding;
     ModeFade modeFade;
     Audition audition;
+    GlobalBypass globalBypass;
 
     // The Output Level, per channel. Fixed in size, so a reader never meets a tap a prepare() has moved.
     static constexpr int maxOutputLevelChannels = 2;
@@ -593,6 +626,7 @@ struct Engine::Impl
         audition.setPlacement (settings.stereoPlacement, snapToSettings);
         lookahead.setLookahead (settings.lookaheadMs, snapToSettings);
         glideTo (modeFade, settings.processingMode, snapToSettings);
+        globalBypass.setOn (settings.globalBypass, snapToSettings);
         snapToSettings = false;
     }
 
@@ -623,9 +657,12 @@ struct Engine::Impl
     //
     // In High Quality the audio is delayed by the Lookahead budget and the detection signal by less, so the compressor
     // meets the audio Lookahead early; then the Oversampling padding before the Dry/Wet sum, and the Limiter padding.
+    // Then Global Bypass, which crossfades to the input as it came in, delayed to match; it takes precedence over
+    // Detection Audition, and everything before it runs on while it is on, so turning it off has no restart transient.
     // Last, the mode fade, which swaps the paths in silence.
     void wetPath (AudioBlock wet, const ConstAudioBlock* sidechainPiece, ProcessingMode path)
     {
+        globalBypass.takeInput ({ wet.channels, wet.numChannels, wet.numSamples }, path);
         if (gridPosition == 0)
             saturation.startRun();
         saturation.process (SaturationPosition::Before, wet);
@@ -645,6 +682,7 @@ struct Engine::Impl
         outputGain.process (wet);
         if (highQuality)
             limiterPadding.process (wet);
+        globalBypass.process (wet);
         modeFade.process (wet);
     }
 
@@ -676,6 +714,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->limiterPadding.prepare (numChannels, limiterReserveSamples (sampleRate));
     impl->modeFade.prepare (sampleRate);
     impl->audition.prepare (sampleRate, numChannels);
+    impl->globalBypass.prepare (sampleRate, numChannels);
     const int outputLevelChannels = std::clamp (numChannels, 0, Impl::maxOutputLevelChannels);
     for (int ch = 0; ch < outputLevelChannels; ++ch)
         impl->outputLevels[static_cast<std::size_t> (ch)].prepare (sampleRate);

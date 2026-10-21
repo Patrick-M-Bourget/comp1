@@ -40,10 +40,11 @@ inline const juce::String stereoPlacementId { "stereo_placement" };
 inline const juce::String stereoLinkId { "stereo_link" };
 inline const juce::String processingModeId { "processing_mode" };
 inline const juce::String lookaheadId { "lookahead" };
+inline const juce::String globalBypassId { "global_bypass" };
 
 // Every host parameter, in the order hosts list them: Detection Source, the Detection EQ, Stereo Placement and Stereo
 // Link, then the compressor's, then Saturation's, then Output Gain, as the signal meets them; then the whole plugin's,
-// Processing Mode and Lookahead.
+// Processing Mode, Lookahead and Global Bypass.
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
 // The host parameters as Settings, each resolved once. Reads from any thread, with no allocation or lock.
@@ -85,6 +86,7 @@ private:
     std::atomic<float>* stereoLink;
     std::atomic<float>* processingMode;
     std::atomic<float>* lookahead;
+    std::atomic<float>* globalBypass;
 };
 
 } // namespace comp1::parameters

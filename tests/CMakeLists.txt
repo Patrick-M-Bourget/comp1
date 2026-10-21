@@ -29,6 +29,7 @@ add_executable(comp1_engine_tests
     engine/DetectionEqTest.cpp
     engine/DetectionSourceTest.cpp
     engine/DetectionStageTest.cpp
+    engine/GlobalBypassTest.cpp
     engine/LatencyTest.cpp
     engine/LevelTapsTest.cpp
     engine/LookaheadTest.cpp
@@ -62,6 +63,7 @@ if(COMP1_BUILD_PLUGIN)
     add_executable(comp1_plugin_tests
         plugin/AutoReleaseParameterTest.cpp
         plugin/ColourParameterTest.cpp
+        plugin/GlobalBypassParameterTest.cpp
         plugin/LatencyReportTest.cpp
         plugin/PluginShellTest.cpp
         plugin/SaturationParameterTest.cpp
