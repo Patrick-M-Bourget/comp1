@@ -63,17 +63,18 @@ public:
         history.reset();
         fastDb = slowDb = 0.0;
         following = false;
-        startSlowPole();
+        slowPoleStale = true;
     }
 
     // On every sample: whether the Transfer Curve asked for Gain Reduction.
     void hear (bool asked) { history.hear (asked); }
 
-    // At the start of each run: the history moves on by the run just heard, and the slow part's pole with it.
+    // At the start of each run: the history moves on by the run just heard, and the slow part's pole with it, worked out
+    // when Opto next steps.
     void startRun()
     {
         history.startRun();
-        startSlowPole();
+        slowPoleStale = true;
     }
 
     // Another Character moved the Gain Reduction this sample: the parts no longer follow it.
@@ -93,6 +94,11 @@ public:
             fastDb = fastShare * previousDb;
             slowDb = previousDb - fastDb;
             following = true;
+        }
+        if (slowPoleStale)
+        {
+            slowPole = std::exp (-1000.0 / ((slowFreshMs + (slowSeasonedMs - slowFreshMs) * history.value()) * sampleRate));
+            slowPoleStale = false;
         }
         const bool rising = wantedDb > previousDb;
         const double fastPole = rising ? std::pow (pole, 1.0 / attackScale (wantedDb - previousDb)) : pole;
@@ -121,17 +127,14 @@ public:
     }
 
 private:
-    // The slow part's pole as the history stands: its time from slowFreshMs to slowSeasonedMs.
-    void startSlowPole()
-    {
-        slowPole = std::exp (-1000.0 / ((slowFreshMs + (slowSeasonedMs - slowFreshMs) * history.value()) * sampleRate));
-    }
-
     double sampleRate = 44100.0;
     RunCharge history;
     double fastDb = 0.0, slowDb = 0.0;
     bool following = false; // the parts sum to the Gain Reduction the detector holds
+    // The slow part's pole as the history stands, its time from slowFreshMs to slowSeasonedMs, and whether the history
+    // has moved since it was worked out.
     double slowPole = 0.0;
+    bool slowPoleStale = true;
 };
 
 // Opto's Colour mapping, the gentlest: dyn-lab's OPTO_COLOUR_WEIGHT, OPTO_COLOUR_WEIGHT_DB and OPTO_COLOUR_DRIVE_DB.

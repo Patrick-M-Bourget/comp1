@@ -4,7 +4,11 @@
 // compression and stays short after transients. It sits beside a Character's detector, which asks it for the release
 // pole to use, so every Character can have it (ADR 0002).
 
+#include <plugkit/RunGrid.h>
+
+#include <array>
 #include <cmath>
+#include <cstddef>
 
 namespace comp1
 {
@@ -20,6 +24,11 @@ public:
     {
         charge = std::exp (-1000.0 / (chargeMs * sampleRate));
         discharge = std::exp (-1000.0 / (dischargeMs * sampleRate));
+        for (std::size_t n = 0; n < charged.size(); ++n)
+        {
+            charged[n] = std::pow (charge, static_cast<int> (n));
+            discharged[n] = std::pow (discharge, static_cast<int> (n));
+        }
         reset();
     }
 
@@ -39,15 +48,25 @@ public:
     // At the start of each run: the state moves on by the samples heard since the last.
     void startRun()
     {
-        state = 1.0 - (1.0 - state) * std::pow (charge, compressing);
-        state *= std::pow (discharge, heard - compressing);
+        state = 1.0 - (1.0 - state) * power (charged, charge, compressing);
+        state *= power (discharged, discharge, heard - compressing);
         heard = compressing = 0;
     }
 
     double value() const { return state; }
 
 private:
+    // A run's powers of a pole, worked out once: a run is plugkit::runSamples long but where the detector's delay moves,
+    // so a longer one works its power out.
+    using Powers = std::array<double, 2 * plugkit::runSamples + 1>;
+
+    static double power (const Powers& powers, double pole, int n)
+    {
+        return n < static_cast<int> (powers.size()) ? powers[static_cast<std::size_t> (n)] : std::pow (pole, n);
+    }
+
     double charge = 0.0, discharge = 0.0; // the state's poles, a sample each
+    Powers charged {}, discharged {};     // their powers, 0 to 2 runs' worth
     double state = 0.0;                   // 0 to 1
     int heard = 0;                        // this run's samples
     int compressing = 0;                  // and those of them that asked for Gain Reduction
