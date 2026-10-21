@@ -319,6 +319,12 @@ STEP_DB = 20.0
 # The fractions of a step the Engine's timing tests read: one time constant, and ln 10 of them.
 ONE_TIME_CONSTANT = 1 - 1 / math.e
 NINETY_PERCENT = 0.9
+# The Gain Reduction has begun to move once it is more than this fraction of the way: the Engine's tests read it off
+# float output, whose rounding is about 1e-6 dB, under 2e-7 of the smallest step they measure, and count the same way
+# (tests/engine/Measure.h, heldWithin). Clean's first step of Release is over it at every setting (1.04e-6 of the way
+# at 5000 ms and 192 kHz), so Clean's figures are as with no threshold; on VCA the RMS level leaves it slowly, so the
+# two must count alike.
+MOVED_WITHIN = 1.0e-6
 
 
 @dataclass
@@ -338,7 +344,7 @@ def _times(detector, level_db, start, end, fractions):
     while reached[-1] is None:
         n += 1
         moved = (detector.hear_steady(level_db) - start) / (end - start)
-        if held is None and moved > 0:
+        if held is None and moved > MOVED_WITHIN:
             held = n - 1
         for i, fraction in enumerate(fractions):
             if reached[i] is None and moved >= fraction:

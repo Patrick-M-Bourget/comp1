@@ -62,7 +62,8 @@ class StepResponse(unittest.TestCase):
     per branch, so 63% (1 - 1/e) of the way takes one time constant and 90% takes ln 10 of them."""
 
     def assertWithinOneSample(self, measured_ms, expected_ms, fs):
-        self.assertLessEqual(abs(measured_ms - expected_ms), 1000 / fs, f"at {fs} Hz")
+        # A time of exactly one sample's difference, worked in ms, can come out a hair over it.
+        self.assertLessEqual(abs(measured_ms - expected_ms), 1000 / fs + 1e-9, f"at {fs} Hz")
 
     def test_attack_and_release_reach_63_percent_in_one_time_constant(self):
         for fs in dynlab.SAMPLE_RATES:
