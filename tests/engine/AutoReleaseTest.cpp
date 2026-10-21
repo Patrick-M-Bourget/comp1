@@ -144,7 +144,7 @@ void checkWithinOneSample (const Release& measured, const Release& expected, dou
 
 } // namespace
 
-TEST_CASE ("After each burst, Release matches dyn-lab's bursts within one sample, Auto Release off and on")
+TEST_CASE ("After each burst, Release matches dyn-lab's bursts within one sample, Auto Release off and on", "[sweep]")
 {
     const auto& bursts = GENERATE (from_range (allBursts()));
     const auto& burst = GENERATE_REF (from_range (bursts.rows));
@@ -157,7 +157,7 @@ TEST_CASE ("After each burst, Release matches dyn-lab's bursts within one sample
     checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, 2.0), burst.on, burst.sampleRate);
 }
 
-TEST_CASE ("In High Quality too, after each burst, Release matches dyn-lab's bursts within one sample, Auto Release off and on")
+TEST_CASE ("In High Quality too, after each burst, Release matches dyn-lab's bursts within one sample, Auto Release off and on", "[sweep]")
 {
     const auto& bursts = GENERATE (from_range (allBursts()));
     const auto& burst = GENERATE_REF (from_range (bursts.rows));
@@ -240,7 +240,7 @@ constexpr double sustainedSeconds = 20.0;
 
 } // namespace
 
-TEST_CASE ("With Auto Release on, a step down from steady state matches dyn-lab's step within one sample")
+TEST_CASE ("With Auto Release on, a step down from steady state matches dyn-lab's step within one sample", "[sweep]")
 {
     const auto& steps = GENERATE (from_range (allSteps()));
     const auto& rate = GENERATE_REF (from_range (steps.rates));

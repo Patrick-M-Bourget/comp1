@@ -151,7 +151,7 @@ const std::vector<Case>& cases()
 
 } // namespace
 
-TEST_CASE ("Through Detection Audition, the detection signal's response is plugkit's design response of the bands that are on")
+TEST_CASE ("Through Detection Audition, the detection signal's response is plugkit's design response of the bands that are on", "[response]")
 {
     const auto& c = GENERATE (from_range (cases()));
     const double sampleRate = GENERATE (44100.0, 96000.0, 192000.0);

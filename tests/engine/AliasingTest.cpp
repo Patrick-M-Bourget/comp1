@@ -76,7 +76,7 @@ ProcessingMode atBaseRate() { return GENERATE (ProcessingMode::ZeroLatency, Proc
 
 } // namespace
 
-TEST_CASE ("At the base rate, the worst alias at each of dyn-lab's reference conditions is within its tolerance")
+TEST_CASE ("At the base rate, the worst alias at each of dyn-lab's reference conditions is within its tolerance", "[sweep]")
 {
     const auto& condition = GENERATE (from_range (baseRate()));
     const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
@@ -130,7 +130,7 @@ std::vector<Harmonic> harmonics()
 
 } // namespace
 
-TEST_CASE ("At the base rate, the in-band harmonics are within dyn-lab's tolerance of its ideal reference")
+TEST_CASE ("At the base rate, the in-band harmonics are within dyn-lab's tolerance of its ideal reference", "[sweep]")
 {
     const auto rows = harmonics();
     const auto& row = GENERATE_REF (from_range (rows));
@@ -181,7 +181,7 @@ constexpr double colourComparedOverDb = -100.0;
 
 } // namespace
 
-TEST_CASE ("At the base rate, VCA's worst alias at Colour 100% at each of dyn-lab's Colour conditions is under the ceiling")
+TEST_CASE ("At the base rate, VCA's worst alias at Colour 100% at each of dyn-lab's Colour conditions is under the ceiling", "[sweep]")
 {
     const auto& condition = GENERATE (from_range (colourConditions()));
     const auto mode = atBaseRate();

@@ -142,7 +142,7 @@ std::vector<double> gainReductionAfterStep (const Settings& settings, double sam
 
 } // namespace
 
-TEST_CASE ("Attack, Release and Hold match dyn-lab's step response within one sample, at every sample rate")
+TEST_CASE ("Attack, Release and Hold match dyn-lab's step response within one sample, at every sample rate", "[sweep]")
 {
     const auto& response = GENERATE (from_range (responses()));
     const auto& rate = GENERATE_REF (from_range (response.rates));
