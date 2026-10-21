@@ -55,6 +55,8 @@ public:
     // detects from the louder of a stereo Sidechain's two channels at each sample. A Sidechain contributes its first
     // two channels. A null one, one with no channels, or one with fewer samples than main counts as none connected,
     // and the detector then hears silence. A non-finite Sidechain sample is heard as silence too.
+    //
+    // The Detection EQ filters what the detector hears, and Detection Audition plays, never the processed sound.
     void process (AudioBlock main, const ConstAudioBlock* sidechain = nullptr);
 
 private:
