@@ -94,10 +94,11 @@ TEST_CASE ("On FET, High Quality at Lookahead 0 is Zero Latency's output delayed
     CAPTURE (sampleRate, cut);
     // FET's loop reads the detection signal times the gain of the same sample, which in High Quality is the input as
     // delayed for the detector: at Lookahead 0, the delayed audio itself. Compressed throughout, with Colour, Stereo
-    // Link and Hold at work.
+    // Link and Hold at work. At 1x, so Colour runs at the base rate there too.
     const Settings compressing { .character = Character::FET, .thresholdDb = -30.0, .attackMs = 0.1, .holdMs = 5.0, .stereoLink = 50.0 };
     auto highQualitySettings = compressing;
     highQualitySettings.processingMode = highQuality;
+    highQualitySettings.oversampling = Oversampling::x1;
     const auto input = test::noise (2, 4000);
     const auto zeroLatencyOutput = play (input, sampleRate, cut, compressing);
     CHECK (zeroLatencyOutput != input);

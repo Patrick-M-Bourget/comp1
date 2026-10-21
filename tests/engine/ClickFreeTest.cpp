@@ -158,6 +158,12 @@ double colourful (double) { return 4.0; }
 
 void onVca (Settings& s) { s.character = Character::VCA; }
 void onFet (Settings& s) { s.character = Character::FET; }
+// High Quality at 8x, which plays each rate's cap: Colour oversampled in the After section.
+void oversampledColour (Settings& s)
+{
+    s.processingMode = ProcessingMode::HighQuality;
+    s.oversampling = Oversampling::x8;
+}
 // The Limiter on, the tone (-12 dB) pushed 24 dB by Output Gain, 12 dB over the Ceiling's top, in mode.
 void limitingTone (Settings& s, ProcessingMode mode)
 {
@@ -412,6 +418,42 @@ const std::vector<Jump>& jumps()
           { onFet, [] (Settings&) {} },
           1,
           colourful },
+        // In High Quality at the largest Oversampling allowed, where Colour is oversampled: VCA's and FET's Colour
+        // crossfade in the After section, each worked out on the compressed signal.
+        { "Character, VCA and FET, oversampled",
+          [] (Settings& s, bool b) {
+              oversampledColour (s);
+              s.character = b ? Character::FET : Character::VCA;
+          },
+          { [] (Settings& s) {
+               oversampledColour (s);
+               onVca (s);
+           },
+            [] (Settings& s) {
+                oversampledColour (s);
+                onFet (s);
+            } },
+          1,
+          colourful },
+        // A Placement change on VCA, oversampled: the Colour of the Placement leaving crossfades into the arriving
+        // one's.
+        { "Stereo Placement, Stereo and Mid, VCA oversampled",
+          [] (Settings& s, bool b) {
+              oversampledColour (s);
+              onVca (s);
+              s.stereoPlacement = b ? StereoPlacement::Mid : StereoPlacement::Stereo;
+          },
+          { [] (Settings& s) {
+               oversampledColour (s);
+               onVca (s);
+           },
+            [] (Settings& s) {
+                oversampledColour (s);
+                onVca (s);
+                s.stereoPlacement = StereoPlacement::Mid;
+            } },
+          2,
+          colourful },
         // Dry and Wet, each from Off and from far below unity, with the other at 0 dB, so the two paths sum.
         { "Dry, Off and 0 dB", [] (Settings& s, bool b) { s.dryDb = b ? 0.0 : -infinity; } },
         { "Dry, -24 and +12 dB", [] (Settings& s, bool b) { s.dryDb = b ? 12.0 : -24.0; } },
@@ -620,26 +662,33 @@ TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click, at eve
     CHECK (discontinuity (output, host.sampleRate) < clickLimit * steady);
 }
 
-TEST_CASE ("An Oversampling change, each way between 1x and the largest allowed, mid-tone, with Saturation on, does not click", "[sweep]")
+TEST_CASE ("An Oversampling change, each way between 1x and the largest allowed, mid-tone, with Saturation or Colour on, does not click", "[sweep]")
 {
     const auto host = anyHost();
-    const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
-    CAPTURE (host.sampleRate, host.cut, static_cast<int> (position));
+    // Saturation Before and After, and Colour alone, on VCA and FET.
+    const int scene = GENERATE (0, 1, 2, 3);
+    CAPTURE (host.sampleRate, host.cut, scene);
     const auto largest = maxOversampling (host.sampleRate);
+    const bool colour = scene >= 2;
     // In High Quality, Saturation on at Drive 12 dB with the tone at -6 dB, 6 dB into the shape, and Ratio 1:1, so the
-    // shape works as hard at either position.
-    const auto saturatingAt = [position] (Settings& s, Oversampling oversampling) {
+    // shape works as hard at either position; or Colour, the tone compressed far enough for it to be heard.
+    const auto saturatingAt = [scene, colour] (Settings& s, Oversampling oversampling) {
         s.processingMode = ProcessingMode::HighQuality;
+        s.oversampling = oversampling;
+        if (colour)
+        {
+            s.character = scene == 2 ? Character::VCA : Character::FET;
+            return;
+        }
         s.ratio = 1.0;
         s.saturation = true;
         s.driveDb = 12.0;
-        s.saturationPosition = position;
-        s.oversampling = oversampling;
+        s.saturationPosition = scene == 0 ? SaturationPosition::Before : SaturationPosition::After;
     };
-    // Saturation's harmonics sharpen the tone's corners past a sine's, so the change is measured against the steady
-    // tone at each end.
+    // Saturation's and Colour's harmonics sharpen the tone's corners past a sine's, so the change is measured against
+    // the steady tone at each end.
     // Long enough for six changes after the onset.
-    const Envelope loud = [] (double) { return 2.0 * toneAmplitude; };
+    const Envelope loud = [colour] (double seconds) { return colour ? colourful (seconds) : 2.0 * toneAmplitude; };
     constexpr double seconds = onsetSeconds + 0.3;
     double steady = 1.0;
     for (const auto oversampling : { Oversampling::x1, largest })
