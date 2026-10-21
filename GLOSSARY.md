@@ -119,6 +119,18 @@ _Avoid_: Trigger, key
 The high-pass, low-pass and one free band that shape what the detector hears, without changing the processed sound.
 _Avoid_: Sidechain EQ, key filter, SC EQ
 
+**High-pass**:
+The Detection EQ's band that takes out what lies below its Frequency, at its Slope, so low notes push the compressor less.
+_Avoid_: Low cut (for the Detection EQ), HPF
+
+**Low-pass**:
+The Detection EQ's band that takes out what lies above its Frequency, at its Slope.
+_Avoid_: High cut (for the Detection EQ), LPF
+
+**Free band**:
+The Detection EQ's third band, a Bell, Low Shelf or High Shelf with its own Frequency, Gain and Q.
+_Avoid_: Mid band, peak band
+
 **Detection Audition**:
 Listening to the signal the detector hears instead of the plugin's output.
 _Avoid_: Sidechain solo, listen

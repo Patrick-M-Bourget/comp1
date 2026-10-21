@@ -456,6 +456,7 @@ struct Engine::Impl
         if (latest != nullptr)
             settings = *latest;
         detection.setSource (settings.detectionSource);
+        detection.setDetectionEq (settings.detectionEq, snapToSettings);
         compressor.setSettings (settings, snapToSettings);
         autoGain.setTargetDb (settings.autoGain ? clean::autoGainDb (curveOf (settings)) : 0.0, snapToSettings);
         saturation.setSettings (settings, snapToSettings);
@@ -478,7 +479,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->numChannels = numChannels;
     impl->gridPosition = 0;
     impl->subBlock.assign (static_cast<std::size_t> (std::max (numChannels, 0)), nullptr);
-    impl->detection.prepare (numChannels, plugkit::runSamples);
+    impl->detection.prepare (sampleRate, numChannels, plugkit::runSamples);
     impl->compressor.prepare (sampleRate, numChannels);
     impl->saturation.prepare (sampleRate, numChannels);
     impl->autoGain.prepare (sampleRate);

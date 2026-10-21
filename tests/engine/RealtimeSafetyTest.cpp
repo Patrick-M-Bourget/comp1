@@ -25,8 +25,21 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
     {
         // Every setting moving every block, Output Gain back to 0 dB every few, Auto Release, Auto Gain and Saturation
         // on and off, Saturation moving Before and After, Detection Source, Detection Audition and Stereo Placement
-        // moving every few, Stereo Link every block; blocks cutting the grid's runs; the Sidechain coming and going, and
+        // moving every few, Stereo Link and every Detection EQ setting moving every block, each band switching on and
+        // off, and changing Shape or Slope; blocks cutting the grid's runs; the Sidechain coming and going, and
         // changing between mono and stereo.
+        DetectionEq eq;
+        eq.highPass.on = block % 4 != 1;
+        eq.highPass.filter.frequency = 20.0 + 97.0 * block;
+        eq.highPass.filter.slope = 6.0 * (1 + block % 16);
+        eq.lowPass.on = block % 3 != 2;
+        eq.lowPass.filter.frequency = 20000.0 - 150.0 * block;
+        eq.lowPass.filter.slope = 6.0 * (1 + (block * 5) % 16);
+        eq.freeBand.on = block % 5 != 3;
+        eq.freeBand.filter.shape = shapeOf (static_cast<FreeBandShape> (block % 3));
+        eq.freeBand.filter.frequency = 30.0 + 211.0 * block;
+        eq.freeBand.filter.gain = -30.0 + block % 61;
+        eq.freeBand.filter.q = 0.025 + 0.6 * block;
         engine.setSettings ({ .thresholdDb = -6.0 * (block % 10),
                               .ratio = block % 5 == 4 ? std::numeric_limits<double>::infinity() : 1.0 + block % 5,
                               .kneeDb = 8.0 * (block % 9),
@@ -41,6 +54,7 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
                               .saturationPosition = block % 6 < 3 ? SaturationPosition::Before : SaturationPosition::After,
                               .outputGainDb = block % 4 == 3 ? 0.0 : 6.0 * (block % 7) - 18.0,
                               .detectionSource = block % 6 < 3 ? DetectionSource::External : DetectionSource::Internal,
+                              .detectionEq = eq,
                               .stereoPlacement = static_cast<StereoPlacement> ((block / 4) % 3),
                               .stereoLink = 12.5 * (block % 9),
                               .detectionAudition = block % 5 < 2 });

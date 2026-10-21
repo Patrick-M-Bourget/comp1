@@ -12,6 +12,8 @@ Stereo Link's range, 0 to 100%, is the Pro-C 3 manual's ("Sidechain section": th
 
 - **Stereo Link: default 100%.** Both channels share one Gain Reduction, so compressing a stereo track never shifts its image, which an unlinked compressor does whenever one side is louder than the other. A user who wants the channels to move apart turns it down.
 
+The Detection EQ's Slopes take their top from the Pro-C 3 manual, which gives its side chain filters "slopes up to 96 dB/oct and also the Brickwall slope" ("Side chain section") but not the steps between. comp1 steps them every 6 dB/oct from 6 dB/oct, a whole filter order each, and leaves out Brickwall. The manual gives no range for the side chain EQ's Frequency, Gain or Q, so those are comp1's own too; `parameterRanges` names each with its reason.
+
 The other ranges follow Pro-C 3's documentation: Ratio 1:1 to ∞, Knee 0 to 72 dB and Attack 0.005 to 250 ms from the manual, and Hold up to 500 ms from the Pro-C 3 product page (the manual gives no Hold range). dyn-lab (`tools/dyn-lab/dynlab.py`) names each range once and cites its source.
 
 ## Considered Options

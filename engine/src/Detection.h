@@ -1,9 +1,10 @@
 #pragma once
 
 // The detection stage: what the detector hears, worked out apart from the audio the compressor applies gain to, so
-// the audio can be delayed (High Quality's Lookahead, Lookahead.h) and the detection signal shaped (Detection EQ
-// #14, Stereo Placement) without touching the gain computer or the detector.
+// the audio can be delayed (High Quality's Lookahead, Lookahead.h) and the detection signal shaped (the Detection EQ,
+// DetectionEq.h, then Stereo Placement) without touching the gain computer or the detector.
 
+#include "DetectionEq.h"
 #include "comp1/Engine.h"
 
 #include <plugkit/Placement.h>
@@ -46,19 +47,26 @@ struct DetectionSignal
 // followed by every main channel, so a mono key, like a kick, ducks the whole track, and a mono main follows the
 // louder of a stereo Sidechain's two channels at each sample. With External and no Sidechain, the detection signal is
 // silence, a channel of it per main channel: no Gain Reduction starts, and any in progress returns at Release.
+//
+// The Detection EQ (DetectionEq.h) filters the detection source's channels, the Internal signal's or the
+// Sidechain's, before the stage routes them, so its filters run on without a break when Detection Source changes.
+// The stage keeps its own place in the 16-sample run grid for it: it is fed the pieces of each run in order, from
+// the grid's start at prepare(), and no piece crosses a run's end.
 class DetectionStage
 {
 public:
     // Allocates for up to numMainChannels channels of up to maxSamples samples a piece, and a stereo Sidechain.
-    void prepare (int numMainChannels, int maxSamples)
+    void prepare (double sampleRate, int numMainChannels, int maxSamples)
     {
+        eq.prepare (sampleRate);
         const auto mainChannels = static_cast<std::size_t> (std::max (numMainChannels, 0));
         const auto samples = static_cast<std::size_t> (std::max (maxSamples, 0));
         const auto channels = std::max (mainChannels, maxSidechainChannels);
         storage.assign (channels, std::vector<float> (samples));
         pointers.assign (channels, nullptr);
+        writable.assign (channels, nullptr);
         for (std::size_t ch = 0; ch < channels; ++ch)
-            pointers[ch] = storage[ch].data();
+            pointers[ch] = writable[ch] = storage[ch].data();
         louder.assign (samples, 0.0f);
         for (auto& part : parts)
             part.assign (samples, 0.0f);
@@ -66,6 +74,9 @@ public:
     }
 
     void setSource (DetectionSource newSource) { source = newSource; }
+
+    // With snap, the Detection EQ takes the settings at once instead of gliding.
+    void setDetectionEq (const DetectionEq& settings, bool snap) { eq.setTarget (settings, snap); }
 
     // internal holds at most the prepared channels and samples, and sidechain, when there is one, as many samples and
     // at most two channels. Never allocates.
@@ -80,7 +91,7 @@ public:
             {
                 for (int ch = 0; ch < internal.numChannels; ++ch)
                     std::fill_n (storage[static_cast<std::size_t> (ch)].begin(), internal.numSamples, 0.0f);
-                return signal (internal.numChannels, internal);
+                return filtered (internal.numChannels, internal);
             }
             assert (sidechain->numChannels <= static_cast<int> (maxSidechainChannels) && sidechain->numSamples == internal.numSamples);
             // A non-finite Sidechain sample (nan, inf) is heard as silence, as a main input one is: it would hold the
@@ -89,15 +100,22 @@ public:
                 std::transform (sidechain->channels[ch], sidechain->channels[ch] + internal.numSamples,
                                 storage[static_cast<std::size_t> (ch)].begin(),
                                 [] (float s) { return std::isfinite (s) ? s : 0.0f; });
-            return signal (sidechain->numChannels, internal);
+            return filtered (sidechain->numChannels, internal);
         }
         for (int ch = 0; ch < internal.numChannels; ++ch)
             std::copy_n (internal.channels[ch], internal.numSamples, storage[static_cast<std::size_t> (ch)].begin());
-        return signal (internal.numChannels, internal);
+        return filtered (internal.numChannels, internal);
     }
 
 private:
     static constexpr std::size_t maxSidechainChannels = 2;
+
+    // The first numChannels of storage through the Detection EQ, then routed by signal().
+    DetectionSignal filtered (int numChannels, ConstAudioBlock internal)
+    {
+        eq.process (writable.data(), numChannels, internal.numSamples);
+        return signal (numChannels, internal);
+    }
 
     // The detection signal of the first numChannels of storage, for the main channels of internal.
     DetectionSignal signal (int numChannels, ConstAudioBlock internal)
@@ -143,8 +161,10 @@ private:
     }
 
     DetectionSource source = DetectionSource::Internal;
+    DetectionEqStage eq;
     std::vector<std::vector<float>> storage; // per detection channel
     std::vector<const float*> pointers;      // per detection channel, into storage
+    std::vector<float*> writable;            // the same, for the Detection EQ to filter in place
     std::vector<float> louder;               // a mono main's, under a stereo detection signal
     std::vector<const float*> followed;      // per main channel, into storage or louder
     std::array<std::vector<float>, 2> parts; // a stereo detection signal's Mid and Side

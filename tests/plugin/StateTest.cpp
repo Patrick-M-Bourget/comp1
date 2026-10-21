@@ -5,6 +5,8 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <limits>
+#include <utility>
+#include <vector>
 
 TEST_CASE ("Saved state carries the state version")
 {
@@ -129,6 +131,50 @@ TEST_CASE ("Detection Source survives save and load, and a session without it re
     xml->removeChildElement (source, true);
     host::restore (restored, *xml);
     CHECK (host::value (restored, "detection_source") == 0.0f);
+}
+
+TEST_CASE ("Every Detection EQ setting survives save and load, and a session without them restores the defaults")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    const std::vector<std::pair<const char*, float>> moved { { "detection_high_pass_on", 1.0f },
+                                                             { "detection_high_pass_frequency", 250.0f },
+                                                             { "detection_high_pass_slope", 36.0f },
+                                                             { "detection_low_pass_on", 1.0f },
+                                                             { "detection_low_pass_frequency", 5000.0f },
+                                                             { "detection_low_pass_slope", 6.0f },
+                                                             { "detection_band_on", 1.0f },
+                                                             { "detection_band_shape", 1.0f },
+                                                             { "detection_band_frequency", 300.0f },
+                                                             { "detection_band_gain", 7.5f },
+                                                             { "detection_band_q", 0.5f } };
+    comp1::PluginProcessor saved, defaults;
+    for (const auto& [id, value] : moved)
+        host::set (saved, id, value);
+    const auto first = host::saved (saved);
+    comp1::PluginProcessor restored;
+    host::restore (restored, first);
+    for (const auto& [id, value] : moved)
+    {
+        CAPTURE (id);
+        CHECK (host::value (restored, id) == host::value (saved, id));
+        CHECK (host::value (restored, id) != host::value (defaults, id));
+    }
+    CHECK (host::saved (restored) == first);
+
+    auto xml = host::savedXml (saved);
+    REQUIRE (xml != nullptr);
+    for (const auto& [id, value] : moved)
+    {
+        auto* parameter = xml->getChildByAttribute ("id", id);
+        REQUIRE (parameter != nullptr);
+        xml->removeChildElement (parameter, true);
+    }
+    host::restore (restored, *xml);
+    for (const auto& [id, value] : moved)
+    {
+        CAPTURE (id);
+        CHECK (host::value (restored, id) == host::value (defaults, id));
+    }
 }
 
 TEST_CASE ("Detection Audition isn't saved, and restoring state lets go of it")

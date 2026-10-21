@@ -1,5 +1,8 @@
 #pragma once
 
+#include <plugkit/BandShape.h>
+#include <plugkit/ShapeDesign.h>
+
 #include <limits>
 
 namespace comp1
@@ -30,6 +33,12 @@ inline constexpr ParameterRange drive { 0.0, 24.0 };        // dB; comp1's own
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own
 inline constexpr ParameterRange lookahead { 0.0, 5.0 };     // ms; ADR 0001's budget for it
 inline constexpr ParameterRange stereoLink { 0.0, 100.0 };  // %
+// The Detection EQ's, which dyn-lab doesn't model. Pro-C 3's manual gives its side chain filters' Slopes up to
+// 96 dB/oct ("Side chain section"), and no other range of its side chain EQ, so the rest are comp1's own (ADR 0008).
+inline constexpr ParameterRange detectionFrequency { 10.0, 30000.0 }; // Hz; comp1's own: 20 Hz to 20 kHz with room each side
+inline constexpr ParameterRange detectionSlope { 6.0, 96.0 };         // dB/oct, in 6 dB/oct steps; the top Pro-C 3's
+inline constexpr ParameterRange detectionGain { -30.0, 30.0 };        // dB; comp1's own: plugkit's designs go no further
+inline constexpr ParameterRange detectionQ { 0.025, 40.0 };           // comp1's own: from a wide tilt to a narrow peak
 } // namespace parameterRanges
 
 // Where the Saturation stage sits on the Wet path. Hosts store it as a choice by index, so the order is frozen
@@ -47,6 +56,61 @@ enum class DetectionSource
     Internal,
     External,
 };
+
+// The Detection EQ's free band's Shapes. Saved by index, so the order is frozen.
+enum class FreeBandShape
+{
+    Bell,
+    LowShelf,
+    HighShelf,
+};
+
+// One Detection EQ band: whether it is on, and its filter, as plugkit's designs read it. Off, it passes the detection
+// signal unchanged and costs nothing.
+struct DetectionBand
+{
+    bool on = false;
+    plugkit::BandShape filter;
+
+#if defined(__GNUC__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wfloat-equal" // exactly equal: settings that changed nothing are skipped
+#endif
+    bool operator== (const DetectionBand& other) const
+    {
+        const auto& a = filter;
+        const auto& b = other.filter;
+        return on == other.on && a.shape == b.shape && a.slope == b.slope && a.brickwall == b.brickwall && a.gain == b.gain
+               && a.frequency == b.frequency && a.q == b.q;
+    }
+#if defined(__GNUC__)
+    #pragma GCC diagnostic pop
+#endif
+};
+
+// The Detection EQ: a high-pass, a low-pass and one free band, shaping the detection signal only, never the processed
+// sound. Each is off by default. The cuts are plain Butterworth (Q 0.71), with no Brickwall; the free band's shelves
+// are second-order (12 dB/oct).
+struct DetectionEq
+{
+    DetectionBand highPass { .filter = { .shape = plugkit::Shape::LowCut, .slope = 12.0, .frequency = 20.0, .q = plugkit::butterworthQ } };
+    DetectionBand lowPass { .filter = { .shape = plugkit::Shape::HighCut, .slope = 12.0, .frequency = 20000.0, .q = plugkit::butterworthQ } };
+    DetectionBand freeBand { .filter = { .shape = plugkit::Shape::Bell, .slope = 12.0, .gain = 0.0, .frequency = 1000.0, .q = 1.0 } };
+
+    bool operator== (const DetectionEq&) const = default;
+};
+
+// The plugkit Shape a free band's Shape designs as.
+inline plugkit::Shape shapeOf (FreeBandShape shape)
+{
+    switch (shape)
+    {
+        case FreeBandShape::Bell: return plugkit::Shape::Bell;
+        case FreeBandShape::LowShelf: return plugkit::Shape::LowShelf;
+        case FreeBandShape::HighShelf: return plugkit::Shape::HighShelf;
+    }
+    return plugkit::Shape::Bell;
+}
 
 // How the whole plugin trades latency against quality (ADR 0001); comp1/Latency.h gives each one's latency. Stored in
 // sessions in this order, which never changes (ADR 0003).
@@ -94,6 +158,8 @@ struct Settings
 
     // Detection Source: what the detection stage feeds the compressor's detector.
     DetectionSource detectionSource = DetectionSource::Internal;
+    // The Detection EQ, which filters the detection source's channels before the detector hears them.
+    DetectionEq detectionEq;
 
     // Where on a stereo track the compressor works: the part Stereo Placement picks, and with Stereo, Stereo Link in %
     // (0 to 100), how much the two channels share one Gain Reduction, from each channel's own at 0% to the larger of

@@ -15,8 +15,8 @@ juce::NormalisableRange<float> linearRange (ParameterRange range)
     return { static_cast<float> (range.low), static_cast<float> (range.high) };
 }
 
-// A range that moves evenly in log space, as times are heard: each doubling of Attack or Release takes the same
-// travel. The maths runs in double, so a value set by the host survives save and reload exactly.
+// A range that moves evenly in log space, as times, frequencies and Q are heard: each doubling of Attack, Release,
+// a Frequency or Q takes the same travel. The maths runs in double, so a value set by the host survives save and reload exactly.
 juce::NormalisableRange<float> logRange (ParameterRange range)
 {
     return { static_cast<float> (range.low),
@@ -28,6 +28,12 @@ juce::NormalisableRange<float> logRange (ParameterRange range)
                  return static_cast<float> (std::log (double { value } / start) / std::log (double { end } / start));
              },
              [] (float, float, float value) { return value; } };
+}
+
+// A range in steps of step from its low end, as the Detection EQ's Slopes move.
+juce::NormalisableRange<float> steppedRange (ParameterRange range, float step)
+{
+    return { static_cast<float> (range.low), static_cast<float> (range.high), step };
 }
 
 // A range from 0 that gives its low end more travel: halfway is centre.
@@ -99,10 +105,35 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { detectionSourceId, 1 },
                                                               "Detection Source",
                                                               juce::StringArray { "Internal", "External" },
-                                                              static_cast<int> (defaults.detectionSource)),
-                // Its choices are StereoPlacement's, in its order, which sessions save by index: comp1 offers Stereo, Mid
-                // and Side.
-                std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { stereoPlacementId, 1 },
+                                                              static_cast<int> (defaults.detectionSource)));
+    // The Detection EQ: the high-pass, the low-pass and the free band, each with its own on/off. The free band's
+    // Shapes are FreeBandShape's, in its order, which sessions save by index.
+    const auto& eq = defaults.detectionEq;
+    const auto onOff = [] (const juce::String& id, const juce::String& name, bool defaultValue) {
+        return std::make_unique<juce::AudioParameterBool> (juce::ParameterID { id, 1 }, name, defaultValue);
+    };
+    const auto frequency = [] (const juce::String& id, const juce::String& name, double defaultValue) {
+        return floatParameter (id, name, logRange (parameterRanges::detectionFrequency), defaultValue, withText (1, "Hz"));
+    };
+    const auto slope = [] (const juce::String& id, const juce::String& name, double defaultValue) {
+        return floatParameter (id, name, steppedRange (parameterRanges::detectionSlope, 6.0f), defaultValue, withText (0, "dB/oct"));
+    };
+    layout.add (onOff (detectionHighPassOnId, "Detection High-Pass", eq.highPass.on),
+                frequency (detectionHighPassFrequencyId, "Detection High-Pass Frequency", eq.highPass.filter.frequency),
+                slope (detectionHighPassSlopeId, "Detection High-Pass Slope", eq.highPass.filter.slope),
+                onOff (detectionLowPassOnId, "Detection Low-Pass", eq.lowPass.on),
+                frequency (detectionLowPassFrequencyId, "Detection Low-Pass Frequency", eq.lowPass.filter.frequency),
+                slope (detectionLowPassSlopeId, "Detection Low-Pass Slope", eq.lowPass.filter.slope),
+                onOff (detectionBandOnId, "Detection Free Band", eq.freeBand.on),
+                std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { detectionBandShapeId, 1 },
+                                                              "Detection Free Band Shape",
+                                                              juce::StringArray { "Bell", "Low Shelf", "High Shelf" },
+                                                              static_cast<int> (FreeBandShape::Bell)),
+                frequency (detectionBandFrequencyId, "Detection Free Band Frequency", eq.freeBand.filter.frequency),
+                floatParameter (detectionBandGainId, "Detection Free Band Gain", linearRange (parameterRanges::detectionGain), eq.freeBand.filter.gain, withText (2, "dB")),
+                floatParameter (detectionBandQId, "Detection Free Band Q", logRange (parameterRanges::detectionQ), eq.freeBand.filter.q, withText (3, {})));
+    // Its choices are StereoPlacement's, in its order, which sessions save by index: comp1 offers Stereo, Mid and Side.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { stereoPlacementId, 1 },
                                                               "Stereo Placement",
                                                               juce::StringArray { "Stereo", "Mid", "Side" },
                                                               static_cast<int> (defaults.stereoPlacement)),
@@ -154,6 +185,17 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       saturationPosition (parameters.getRawParameterValue (saturationPositionId)),
       outputGain (parameters.getRawParameterValue (outputGainId)),
       detectionSource (parameters.getRawParameterValue (detectionSourceId)),
+      highPassOn (parameters.getRawParameterValue (detectionHighPassOnId)),
+      highPassFrequency (parameters.getRawParameterValue (detectionHighPassFrequencyId)),
+      highPassSlope (parameters.getRawParameterValue (detectionHighPassSlopeId)),
+      lowPassOn (parameters.getRawParameterValue (detectionLowPassOnId)),
+      lowPassFrequency (parameters.getRawParameterValue (detectionLowPassFrequencyId)),
+      lowPassSlope (parameters.getRawParameterValue (detectionLowPassSlopeId)),
+      bandOn (parameters.getRawParameterValue (detectionBandOnId)),
+      bandShape (parameters.getRawParameterValue (detectionBandShapeId)),
+      bandFrequency (parameters.getRawParameterValue (detectionBandFrequencyId)),
+      bandGain (parameters.getRawParameterValue (detectionBandGainId)),
+      bandQ (parameters.getRawParameterValue (detectionBandQId)),
       stereoPlacement (parameters.getRawParameterValue (stereoPlacementId)),
       stereoLink (parameters.getRawParameterValue (stereoLinkId)),
       processingMode (parameters.getRawParameterValue (processingModeId)),
@@ -164,6 +206,22 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
 Settings SettingsReader::read() const
 {
     const auto plain = [] (const std::atomic<float>* value) { return static_cast<double> (value->load (std::memory_order_relaxed)); };
+    const auto on = [] (const std::atomic<float>* value) { return value->load (std::memory_order_relaxed) >= 0.5f; };
+    // Each band's filter starts from the defaults, which hold what no host parameter sets (the cuts' Q, the shelves'
+    // Slope).
+    DetectionEq eq;
+    eq.highPass.on = on (highPassOn);
+    eq.highPass.filter.frequency = plain (highPassFrequency);
+    eq.highPass.filter.slope = plain (highPassSlope);
+    eq.lowPass.on = on (lowPassOn);
+    eq.lowPass.filter.frequency = plain (lowPassFrequency);
+    eq.lowPass.filter.slope = plain (lowPassSlope);
+    eq.freeBand.on = on (bandOn);
+    const auto shapeIndex = std::clamp (static_cast<int> (std::lround (plain (bandShape))), 0, static_cast<int> (FreeBandShape::HighShelf));
+    eq.freeBand.filter.shape = shapeOf (static_cast<FreeBandShape> (shapeIndex));
+    eq.freeBand.filter.frequency = plain (bandFrequency);
+    eq.freeBand.filter.gain = plain (bandGain);
+    eq.freeBand.filter.q = plain (bandQ);
     return { .thresholdDb = plain (threshold),
              .ratio = plain (ratio),
              .kneeDb = plain (knee),
@@ -179,6 +237,7 @@ Settings SettingsReader::read() const
                                                                                                : SaturationPosition::After,
              .outputGainDb = plain (outputGain),
              .detectionSource = detectionSource->load (std::memory_order_relaxed) >= 0.5f ? DetectionSource::External : DetectionSource::Internal,
+             .detectionEq = eq,
              .stereoPlacement = static_cast<StereoPlacement> (std::clamp (static_cast<int> (std::lround (stereoPlacement->load (std::memory_order_relaxed))), 0, 2)),
              .stereoLink = plain (stereoLink),
              .processingMode = processingMode->load (std::memory_order_relaxed) >= 0.5f ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency,
