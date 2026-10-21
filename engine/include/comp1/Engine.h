@@ -2,6 +2,8 @@
 
 #include "comp1/Settings.h"
 
+#include <plugkit/OutputLevel.h>
+
 #include <memory>
 
 namespace comp1
@@ -31,8 +33,10 @@ struct ConstAudioBlock
 // Latency: in High Quality the output is delayed by comp1/Latency.h's latencySamples() for the sample rate, the same
 // whatever the other settings; what is said of the output below holds of it delayed so. Zero Latency has none.
 //
-// Analysis taps: none yet. The level taps (input level, output level, Gain Reduction and Detection Level) are read
-// here (#7).
+// The level taps: the Output Level is read with readOutputLevel(), from one reader thread while process() runs on the
+// audio thread. Reading never allocates, locks or does I/O, and stays safe through any prepare(), at any sample rate or
+// channel count: nothing a reader touches is freed or moved while the Engine lives. Silence, anything quieter than
+// plugkit::levelFloorDb, and NaN read the floor.
 class Engine
 {
 public:
@@ -56,6 +60,15 @@ public:
     // two channels. A null one, one with no channels, or one with fewer samples than main counts as none connected,
     // and the detector then hears silence. A non-finite Sidechain sample is heard as silence too.
     void process (AudioBlock main, const ConstAudioBlock* sidechain = nullptr);
+
+    // How many channels the Output Level has: one per channel the Engine was prepared with, up to two.
+    int outputLevelChannels() const;
+
+    // The Output Level of a channel (0 to outputLevelChannels() - 1): what process() sends on, after everything, so
+    // after Output Gain. Its peak is the sample peak since the last read, and reading resets it, so a peak between two
+    // reads is reported once, by the next; its RMS is over the last 300 ms on the run grid. Another channel reads the
+    // floor.
+    plugkit::OutputLevel readOutputLevel (int channel);
 
 private:
     struct Impl;

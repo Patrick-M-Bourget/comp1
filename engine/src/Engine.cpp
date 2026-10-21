@@ -9,12 +9,14 @@
 
 #include <plugkit/LatestValue.h>
 #include <plugkit/NoSubnormals.h>
+#include <plugkit/OutputLevelTap.h>
 #include <plugkit/RunGrid.h>
 #include <plugkit/Smoother.h>
 #include <plugkit/Units.h>
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -281,6 +283,11 @@ struct Engine::Impl
     ModeFade modeFade;
     Audition audition;
 
+    // The Output Level, per channel. Fixed in size, so a reader never meets a tap a prepare() has moved.
+    static constexpr int maxOutputLevelChannels = 2;
+    std::array<plugkit::OutputLevelTap, maxOutputLevelChannels> outputLevels;
+    std::atomic<int> outputLevelChannels { 0 };
+
     void applySettings()
     {
         const auto* latest = handoff.takeLatest();
@@ -319,6 +326,10 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->limiterPadding.prepare (numChannels, limiterReserveSamples (sampleRate));
     impl->modeFade.prepare (sampleRate);
     impl->audition.prepare (sampleRate, numChannels);
+    const int outputLevelChannels = std::clamp (numChannels, 0, Impl::maxOutputLevelChannels);
+    for (int ch = 0; ch < outputLevelChannels; ++ch)
+        impl->outputLevels[static_cast<std::size_t> (ch)].prepare (sampleRate);
+    impl->outputLevelChannels.store (outputLevelChannels, std::memory_order_release);
     impl->snapToSettings = true;
 }
 
@@ -385,11 +396,23 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         if (highQuality)
             impl->limiterPadding.process (wet);
         impl->modeFade.process (wet);
+        for (int ch = 0; ch < std::min (channels, Impl::maxOutputLevelChannels); ++ch)
+            impl->outputLevels[static_cast<std::size_t> (ch)].process (wet.channels[ch], count);
 
         impl->gridPosition += count;
         if (impl->gridPosition == plugkit::runSamples)
             impl->gridPosition = 0;
     }
+}
+
+int Engine::outputLevelChannels() const
+{
+    return impl->outputLevelChannels.load (std::memory_order_acquire);
+}
+
+plugkit::OutputLevel Engine::readOutputLevel (int channel)
+{
+    return channel >= 0 && channel < outputLevelChannels() ? impl->outputLevels[static_cast<std::size_t> (channel)].read() : plugkit::OutputLevel {};
 }
 
 } // namespace comp1
