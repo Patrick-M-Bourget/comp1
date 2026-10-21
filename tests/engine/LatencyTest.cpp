@@ -93,3 +93,26 @@ TEST_CASE ("Each Oversampling section's delay is half the Oversampling reserve")
     CHECK (oversamplingSectionSamples == 64);
     CHECK (2 * oversamplingSectionSamples == oversamplingReserveSamples);
 }
+
+TEST_CASE ("With every stage on, High Quality's impulse comes out at the reported latency, at every sample rate", "[sweep]")
+{
+    const double sampleRate = GENERATE (from_range (test::sampleRates()));
+    const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
+    CAPTURE (sampleRate, static_cast<int> (position));
+    // Ratio 1:1, so the compressor leaves the impulse whole; every other stage on and working: the Gate closed on the
+    // silence before it, Saturation driven hard at 8x (or the sample rate's cap), VCA's Colour, Lookahead's whole
+    // budget, the Limiter pulling the impulse, 0.5, down to its Ceiling, and Dry summed with Wet.
+    const Settings settings { .gate = { .on = true, .thresholdDb = -30.0, .rangeDb = 6.0 },
+                              .character = Character::VCA,
+                              .ratio = 1.0,
+                              .saturation = true,
+                              .driveDb = 24.0,
+                              .saturationPosition = position,
+                              .dryDb = 0.0,
+                              .limiter = true,
+                              .ceilingDb = -12.0,
+                              .processingMode = ProcessingMode::HighQuality,
+                              .lookaheadMs = parameterRanges::lookahead.high,
+                              .oversampling = Oversampling::x8 };
+    CHECK (test::impulseDelaySamples (settings, sampleRate) == latencySamples (ProcessingMode::HighQuality, sampleRate));
+}
