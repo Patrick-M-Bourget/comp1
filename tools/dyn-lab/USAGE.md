@@ -2,7 +2,7 @@
 
 A Python model of comp1's Characters. It prints the figures the Engine's tests check, so a ticket brief can cite a command and its output exactly. It needs only the standard library: no installs, no numpy. Run it from the repo root.
 
-It models the Clean and VCA Characters (see [VCA](#vca)), with High Quality's Lookahead and latency, the Saturation stage (see [Saturation](#saturation)), VCA's Colour (see [Colour](#colour)), the Limiter (see [Limiter](#limiter)) and the Gate (see [Gate](#gate)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
+It models the Clean and VCA Characters (see [VCA](#vca)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's Colour (see [Colour](#colour)) the Limiter (see [Limiter](#limiter)) and the Gate (see [Gate](#gate)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
 
 Hold freezes the Gain Reduction for Hold ms whenever it stops rising, mid-Attack included, before Release begins. Any rise restarts the count.
 
@@ -70,7 +70,7 @@ With `--auto-release`, the step down follows steady compression, so the sustain 
 
 Prints each Processing Mode's latency in whole host samples, at every sample rate comp1 supports (`plugkit.conf`'s `SAMPLE_RATES`, 44.1 to 192 kHz) or at the `--rates` given. Zero Latency reports 0. High Quality reports one fixed latency per rate, whatever the settings (ADR 0001), the sum of three parts, each a named constant in `dynlab.py` with its reason:
 
-- the Oversampling reserve (`OVERSAMPLING_RESERVE_SAMPLES`), 128 samples at every rate, reserved for Oversampling's filters (#10);
+- the Oversampling reserve (`OVERSAMPLING_RESERVE_SAMPLES`), 128 samples at every rate, the delay of Oversampling's two sections (see [`oversampling`](#oversampling));
 - the Lookahead budget (`LOOKAHEAD_BUDGET_MS`), Lookahead's top of 5 ms, rounded up;
 - the Limiter reserve (`LIMITER_RESERVE_MS`), 1 ms rounded up, the Limiter's own lookahead in High Quality: its true-peak estimator's delay and its lookahead window fill it exactly (see [Limiter](#limiter)).
 
@@ -78,6 +78,32 @@ It also prints `MODE_FADE_MS`: a Processing Mode switch fades the output out ove
 
     python3 tools/dyn-lab/dynlab.py latency
     python3 tools/dyn-lab/dynlab.py latency --rates 44100 48000
+
+## `oversampling`
+
+Prints, at every sample rate comp1 supports or at the `--rates` given, the Oversampling factors allowed there and, for each, its filters. It exits non-zero when a factor's filters overrun their section.
+
+**The cap:** Oversampling offers 1x, 2x, 4x and 8x (`OVERSAMPLING_FACTORS`), and a factor is allowed where the internal rate, the rate times the factor, is at or under 384 kHz (`MAX_INTERNAL_RATE_HZ`, ADR 0001): 8x at 44.1 and 48 kHz, 4x at 88.2 and 96 kHz, and 2x at 176.4 and 192 kHz. A setting over the cap plays the largest allowed factor under it.
+
+**The sections (ADR 0009):** only a nonlinear stage's residual, f(u) − u, is oversampled, never its linear part. High Quality has two oversampled sections, one ahead of the detection stage and one after the compressor, and each delays its linear part by exactly 64 host samples (`OVERSAMPLING_SECTION_SAMPLES`, half the Oversampling reserve). Its residual goes up through the filters, is worked out at the oversampled rate, comes back down, and is padded to the same 64. So nothing in the Wet path's delay moves with the factor.
+
+**The filters:** each 2x step is a linear-phase half-band FIR with a Kaiser window, cascaded for 4x and 8x. Up and down use the same design. A half-band's transition is centred on the lower rate's Nyquist, so it is set by the passband edge alone, and every other tap is 0.
+
+- **`OVERSAMPLING_PASSBAND_EDGE`, 0.8 of the host's Nyquist** (17.64 kHz at 44.1 kHz). Only the residual passes through the filters, so the edge can sit below 20 kHz without dulling the signal. Below it the residual's harmonics pass flat. Above it, at 44.1 and 48 kHz, they are at the top of hearing, and at the higher rates the edge is far above 20 kHz. A higher edge needs more taps for the same attenuation: 0.85 makes the first stage 87 taps instead of 67.
+- **`OVERSAMPLING_STOPBAND_DB`, 100 dB**, which every stage reaches. What the filters let through then sits 100 dB under the residual's own images and out-of-band harmonics, far under every alias ADAA leaves at the oversampled rate (see [`aliasing`](#aliasing)) and near the float audio's own rounding. A deeper stopband buys nothing measurable.
+- **`KAISER_BETA`, 10.06:** Kaiser's formula for over 50 dB of attenuation, 0.1102 (A − 8.7). Each stage is then the shortest half-band, 4m − 1 taps, whose measured stopband reaches 100 dB.
+
+Each row gives each stage's taps, first stage first, and:
+
+- **delay:** the up and down filters' delay together, in host samples. A stage of N taps delays by (N − 1) / 2 samples at its own rate, each way. At 4x and 8x the total falls between host samples, so **internal** padding, counted in samples at the oversampled rate, rounds it up to whole host samples.
+- **padding:** what the section adds to make 64, in host samples.
+- **stopband dB:** the cascade's least attenuation, measured over every band within the passband edge of a multiple of the host rate, up to the oversampled Nyquist. Going up, the host band's images land there. Coming down, what lies there folds back into the passband.
+- **passband Hz:** the highest frequency the cascade stays within 0.001 dB of unity up to (`PASSBAND_FLAT_DB`), just above the design's edge.
+
+The filters' figures are the same at every rate in host terms: the designs are fractions of the rate, and the cap keeps the oversampled rate's stages the same. 8x, at 44.1 and 48 kHz, has stages of 67, 27 and 23 taps and a delay of 43, so its section pads 21.
+
+    python3 tools/dyn-lab/dynlab.py oversampling
+    python3 tools/dyn-lab/dynlab.py oversampling --rates 44100 96000
 
 ## `autogain`
 
@@ -158,13 +184,13 @@ The last is the Engine's Before and After test. At the defaults the compressor's
 
 ### `aliasing`
 
-Prints the worst alias at each reference condition, for the naive shaper and for ADAA, and checks it against `ALIASING_TOLERANCE`. Then it prints ADAA's in-band harmonics beside an ideal reference's, and checks them against `HARMONIC_TOLERANCE_DB`. It exits non-zero when a row fails.
+Prints the worst alias at each reference condition, for the naive shaper and for ADAA, and checks it against `ALIASING_TOLERANCE`. Then it prints ADAA's in-band harmonics beside an ideal reference's, and checks them against `HARMONIC_TOLERANCE_DB`, and last ADAA's fundamental beside the ideal's, which isn't checked. It exits non-zero when a row fails. `--oversampling N` (1 by default) runs the same conditions through High Quality's oversampled section at N: see [Oversampled](#oversampled).
 
 **The reference conditions** are each rate (44.1 and 48 kHz by default, `--rates`), tone (1, 3, 5 and 10 kHz) and Drive (6, 12, 18 and 24 dB, `--drive`), at 0 dBFS. Each tone is a sine with an odd whole number of cycles over 4096 samples (`ALIAS_SAMPLES`), so it is bin-centred: a rectangular window has no leakage, and no alias of a harmonic lands on a harmonic's own bin, since the shape is odd. It runs for two lengths, and the second is measured, after ADAA's state has settled. The worst alias is the loudest bin holding no in-band harmonic, in dB relative to the fundamental. There is one level, full scale: Drive is level-compensated, so every figure relative to the fundamental depends only on the level plus the Drive, and a quieter level is the same as a lower Drive. Full scale gives each Drive its hardest case.
 
 **`ALIASING_TOLERANCE`** has two parts:
 
-- **The ceiling, −24 dB:** ADAA's worst alias is at most 24 dB under the fundamental at every reference condition. The worst is −25.5 dB (10 kHz at Drive 18 dB, at 48 kHz). Below 10 kHz, ADAA's aliases are all at least 24 dB down, and below 5 kHz at least 30 dB. First-order ADAA alone at the base rate can't do much better on a tone this high this hard driven: a tighter ceiling needs Oversampling (#10), whose rows extend the table.
+- **The ceiling, −24 dB:** ADAA's worst alias is at most 24 dB under the fundamental at every reference condition. The worst is −25.5 dB (10 kHz at Drive 18 dB, at 48 kHz). Below 10 kHz, ADAA's aliases are all at least 24 dB down, and below 5 kHz at least 30 dB. First-order ADAA alone at the base rate can't do much better on a tone this high this hard driven: Oversampling's rows, below, go further.
 - **The improvement, 15 dB:** at the hardest condition, the highest tone at the top of Drive's range (10 kHz at 24 dB, `HARDEST`), ADAA's worst alias is at least 15 dB under the naive shaper's. The naive shaper's is −9.8 dB there, ADAA's −32.6 dB at 44.1 kHz and −29.5 dB at 48 kHz, so it improves by 22.8 and 19.7 dB. 15 dB leaves room for small changes to the shape, and fails at once if the residual isn't anti-aliased. The tolerance is for the base rates it names: at 96 kHz a 10 kHz tone is a milder case, its naive aliases are already lower, and ADAA improves on them by only 11.5 dB, so `--rates 96000` fails it.
 
 Lower tones gain less: 4.5 to 9 dB at 1 kHz, where the aliases are already 50 dB or more down, and 5 to 13 dB at 3 and 5 kHz.
@@ -178,6 +204,20 @@ The offset moves the fundamental too, since the residual cancels part of it as t
     python3 tools/dyn-lab/dynlab.py aliasing
     python3 tools/dyn-lab/dynlab.py aliasing --drive 12
     python3 tools/dyn-lab/dynlab.py aliasing --drive 6 24 --rates 44100
+
+#### Oversampled
+
+With `--oversampling N`, each condition's tone also goes through High Quality's oversampled section at N (see [`oversampling`](#oversampling)): the linear part delayed by the section, and the residual through the up filters, ADAA at the oversampled rate, and the down filters. Each row prints ADAA's worst alias at 1x, at N, and at N below the passband edge (`OVERSAMPLING_PASSBAND_EDGE`, 0.8 of Nyquist). The harmonics and the fundamental are those at N. N must be allowed at every rate given.
+
+The worst alias anywhere falls little at the highest tones. It is a residual harmonic just over the host's Nyquist, which the half-band's transition, centred on Nyquist, lets partly through, folding back to just under it: between the passband edge and Nyquist, above 17.6 kHz at 44.1 kHz. At 5 kHz at Drive 24 dB at 48 kHz it is −31.0 dB at 2x, −28.2 dB at 4x and −27.3 dB at 8x, against −26.2 dB at 1x. Below the passband edge, where the filters are flat, every factor clears the aliases far more.
+
+**`ALIASING_TOLERANCE`'s figures per factor** (`passband_ceilings`): below the passband edge, the worst alias is at most −45 dB at 2x, −60 dB at 4x and −75 dB at 8x, at every reference condition. Anywhere, it is no worse than ADAA's at 1x. The worst below the edge are −48.1 dB at 2x (10 kHz at Drive 24 dB, 48 kHz), −62.8 dB at 4x and −79.9 dB at 8x (10 kHz at Drive 24 dB, 44.1 kHz). So each ceiling leaves about 3 dB of room, and each factor's ceiling fails the factor below it. The closest to 1x is 5 kHz at Drive 24 dB at 48 kHz, 1.0 dB under it at 8x.
+
+The harmonics are within 0.9 dB of the ideal at 2x, 0.2 dB at 4x and 0.05 dB at 8x. The fundamental's shortfall at 5 kHz at Drive 24 dB, 7.6 dB at 1x at 44.1 kHz, is 3.5 dB at 2x, 1.2 dB at 4x and 0.3 dB at 8x.
+
+    python3 tools/dyn-lab/dynlab.py aliasing --oversampling 2
+    python3 tools/dyn-lab/dynlab.py aliasing --oversampling 4
+    python3 tools/dyn-lab/dynlab.py aliasing --oversampling 8
 
 ## Colour
 
@@ -203,7 +243,7 @@ Prints, for a Character at a Colour (`--colour`, 100% by default) and at the com
 
 Then it prints Colour's worst alias for bin-centred tones at the rates and frequencies `aliasing` uses (`--rates`), at 10, 20 and 30 dB of Gain Reduction (`COLOUR_ALIAS_REDUCTIONS`), each at the level whose Gain Reduction it is, for the naive shaper and for ADAA. It checks each against `ALIASING_TOLERANCE`'s ceiling and exits non-zero when a row is over it.
 
-**`ALIASING_TOLERANCE` for Colour:** the ceiling holds by a wide margin. The worst alias at Colour 100% is −47.4 dB (10 kHz at 30 dB of Gain Reduction, at 48 kHz), since the residual's weight is small. The improvement over the naive shaper does not hold everywhere: it is 23.4 and 19.8 dB at 10 kHz at 10 dB of Gain Reduction, but 14.6 and 10.7 dB at 20 dB and 12.1 and 9.1 dB at 30 dB (44.1 and 48 kHz), under the 15 dB Saturation's hardest condition meets. There the driven signal is 12 to 16 dB over the knee, where first-order ADAA at the base rate gains least, as Saturation's own milder Drives do. The improvement is printed and not checked: the ceiling, which is what is heard, holds with 23 dB to spare. Oversampling (#10) adds rows of its own.
+**`ALIASING_TOLERANCE` for Colour:** the ceiling holds by a wide margin. The worst alias at Colour 100% is −47.4 dB (10 kHz at 30 dB of Gain Reduction, at 48 kHz), since the residual's weight is small. The improvement over the naive shaper does not hold everywhere: it is 23.4 and 19.8 dB at 10 kHz at 10 dB of Gain Reduction, but 14.6 and 10.7 dB at 20 dB and 12.1 and 9.1 dB at 30 dB (44.1 and 48 kHz), under the 15 dB Saturation's hardest condition meets. There the driven signal is 12 to 16 dB over the knee, where first-order ADAA at the base rate gains least, as Saturation's own milder Drives do. The improvement is printed and not checked: the ceiling, which is what is heard, holds with 23 dB to spare. Oversampled, Colour's residual gains far more at 10 kHz: the PR for Oversampling gives the lab's figures, and Colour still runs at the host rate.
 
     python3 tools/dyn-lab/dynlab.py colour
     python3 tools/dyn-lab/dynlab.py colour --character vca

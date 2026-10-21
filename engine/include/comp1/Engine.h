@@ -65,9 +65,10 @@ public:
     // from call to call. The output doesn't depend on how the host cuts the audio into blocks, sample for sample: the
     // Engine moves on a grid of 16-sample runs that starts at prepare() and carries across calls. While Detection
     // Audition isn't held, with no Gain Reduction (Ratio 1:1, Range 0 dB, or a level below the Knee), Auto Gain off,
-    // Saturation off (or the level below its knee: full scale at Drive 0 dB) and 0 dB Output Gain, the output is the
-    // input times the Dry and Wet levels summed: bit for bit the input at Wet 0 dB and Dry Off, or at Dry 0 dB and Wet
-    // Off, and twice it at both 0 dB. A non-finite input sample plays as silence, on both paths.
+    // Saturation off (or the level below its knee: full scale at Drive 0 dB, between samples too when Oversampling
+    // rebuilds them) and 0 dB Output Gain, the output is the input times the Dry and Wet levels summed: bit for bit the
+    // input at Wet 0 dB and Dry Off, or at Dry 0 dB and Wet Off, and twice it at both 0 dB. A non-finite input sample
+    // plays as silence, on both paths.
     //
     // The Gate comes first, on the main input before the Dry/Wet split, so it lowers the Dry and the Wet path alike: it
     // keys from the Detection Source after the Detection EQ, never from its own output, and puts one gain on every

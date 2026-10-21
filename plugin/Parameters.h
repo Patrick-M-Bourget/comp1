@@ -50,11 +50,12 @@ inline const juce::String gateRangeId { "gate_range" };
 inline const juce::String gateAttackId { "gate_attack" };
 inline const juce::String gateReleaseId { "gate_release" };
 inline const juce::String gateHoldId { "gate_hold" };
+inline const juce::String oversamplingId { "oversampling" };
 inline const juce::String globalBypassId { "global_bypass" };
 
 // Every host parameter, in the order hosts list them: Detection Source, the Detection EQ, Stereo Placement and Stereo
-// Link, then the Gate's, then the compressor's, then Saturation's, then Dry and Wet, then Output Gain and the Limiter's, as the signal
-// meets them; then the whole plugin's, Processing Mode, Lookahead and Global Bypass.
+// Link, then the Gate's, then the compressor's, then Saturation's, then Dry and Wet, then Output Gain and the Limiter's,
+// as the signal meets them; then the whole plugin's, Processing Mode, Lookahead, Oversampling and Global Bypass.
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
 // The host parameters as Settings, each resolved once. Reads from any thread, with no allocation or lock.
@@ -106,6 +107,7 @@ private:
     std::atomic<float>* stereoLink;
     std::atomic<float>* processingMode;
     std::atomic<float>* lookahead;
+    std::atomic<float>* oversampling;
     std::atomic<float>* globalBypass;
 };
 
