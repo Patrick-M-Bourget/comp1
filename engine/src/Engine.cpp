@@ -67,9 +67,11 @@ plugkit::StereoPlacement routed (StereoPlacement placement)
 // Gain Reduction itself, after the detectors, where a step a run would put a corner in the gain every run. Colour glides
 // as a fraction, 0 to 1, a sample at a time too, as it shapes the waveform.
 //
-// A change of Placement never jumps. At the start of a run, the new Placement starts with detectors of its own and
-// fades in over the glide time as the old one fades out, its detectors still running; a change asked for during a fade
-// starts once the fade is over.
+// A voice is a Placement and a Character, and a change of either never jumps. At the start of a run, the new voice
+// starts with detectors and Colour of its own and fades in over the glide time as the old one fades out, its detectors
+// still running, so the applied gain and Colour crossfade; a change asked for during a fade starts once the fade is
+// over. A new Placement's detectors start from no Gain Reduction, as they hear another part. A new Character's, on the
+// same Placement, start from the outgoing ones' state, so from the Gain Reduction the outgoing Character was producing.
 class Compressor
 {
 public:
@@ -123,7 +125,7 @@ public:
     }
 
     // At the start of each run: the settings move on by a run, and the gain computer and detector take them. Then a
-    // change of Placement starts its fade.
+    // change of voice, a Placement or a Character, starts its fade.
     void startRun()
     {
         bool moving = false;
@@ -135,12 +137,21 @@ public:
             }
         if (moving)
             update();
-        if (! fading && placement != voices[playing].placement)
+        if (! fading && (placement != voices[playing].placement || character != voices[playing].character))
         {
+            const auto& leaving = voices[playing];
+            auto& starting = voices[1 - playing];
+            if (placement == leaving.placement)
+                std::copy (leaving.detectors.begin(), leaving.detectors.end(), starting.detectors.begin());
+            else
+                for (auto& detector : starting.detectors)
+                    detector.reset();
+            starting.placement = placement;
+            starting.character = character;
+            for (auto& colour : starting.colours)
+                colour.reset();
+            std::fill (starting.colourChanges.begin(), starting.colourChanges.end(), 0.0);
             playing = 1 - playing;
-            voices[playing].placement = placement;
-            for (auto& detector : voices[playing].detectors)
-                detector.reset();
             fade.reset (0.0);
             fade.setTarget (1.0);
             fading = true;
@@ -150,8 +161,8 @@ public:
     // Applies gain to audio, sample for sample, from the detection signal of the same samples: each main channel's
     // Detection Level comes from what it follows, or the Mid or the Side, never from the audio. Each sample's
     // Detection Level, as the Placement heard reads it, and Gain Reduction, as the gain applied (after Stereo Link),
-    // go to levels, taken where the detector reads them, so they follow whatever it hears. During a Placement's fade
-    // the gain applied is each Placement's gain weighted by its share, exactly so where both compress the same part.
+    // go to levels, taken where the detector reads them, so they follow whatever it hears. During a voice's fade the
+    // gain applied is each voice's gain weighted by its share, exactly so where both compress the same part.
     //
     // At each start of a run of the detection signal's own grid, which High Quality's delay moves off the audio's, each
     // detector heard's Auto Release moves on by the run just heard, so Auto Release runs on the samples the detector
@@ -185,7 +196,7 @@ public:
                 const double gain = in * gainOn (heard, ch) + (1.0 - in) * gainOn (leaving, ch);
                 levels.noteDetection (heard.levelsDb[partOf (heard, ch)], gain < 1.0 ? -plugkit::gainToDecibels (gain) : 0.0);
             }
-            // Each Placement's change to the sample, weighted by its share of the fade.
+            // Each voice's change to the sample, its gain and Colour, weighted by its share of the fade.
             const float left = audio.channels[0][i];
             const float right = audio.numChannels > 1 ? audio.channels[1][i] : left;
             for (int ch = 0; ch < audio.numChannels; ++ch)
