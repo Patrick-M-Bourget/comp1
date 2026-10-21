@@ -440,22 +440,7 @@ public:
             delay.write ({ heard.channels, heard.numChannels, heard.numSamples });
 
         // Let go and settled: the Wet path plays, bit for bit.
-        if (auditionShare.isSettled() && auditionShare.value() == 0.0)
-            return;
-        int i = 0;
-        for (; i < audio.numSamples && ! auditionShare.isSettled(); ++i)
-        {
-            const double share = auditionShare.next();
-            for (int ch = 0; ch < audio.numChannels; ++ch)
-            {
-                float& sample = audio.channels[ch][i];
-                sample = static_cast<float> ((1.0 - share) * sample + share * heard.channels[ch][i]);
-            }
-        }
-        if (auditionShare.value() == 0.0)
-            return;
-        for (int ch = 0; ch < audio.numChannels; ++ch)
-            std::copy (heard.channels[ch] + i, heard.channels[ch] + audio.numSamples, audio.channels[ch] + i);
+        crossfade (auditionShare, audio, { heard.channels, heard.numChannels, heard.numSamples });
     }
 
 private:
