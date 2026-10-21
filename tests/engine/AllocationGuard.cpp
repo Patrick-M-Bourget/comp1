@@ -1,3 +1,4 @@
+// Copied from eq1's tests/engine/AllocationGuard.cpp (eq1 at dbb1127); see AllocationGuard.h.
 #include "AllocationGuard.h"
 
 #include <cstdlib>

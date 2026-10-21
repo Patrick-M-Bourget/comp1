@@ -44,11 +44,11 @@ TEST_CASE ("A session from a newer version loads the settings this version knows
     comp1::PluginProcessor processor;
     host::restore (processor, *xml);
     CHECK (host::value (processor, "output_gain") == 9.0f);
-    // Saved again, it is this version's state: the unknown parts are dropped.
+    // Saved again, it carries this version's number, and keeps what this version doesn't know.
     const auto resaved = host::savedXml (processor);
     CHECK (resaved->getIntAttribute ("version", -1) == comp1::PluginProcessor::stateVersion);
-    CHECK (resaved->getChildByName ("SomethingNew") == nullptr);
-    CHECK (resaved->getChildByAttribute ("id", "from_the_future") == nullptr);
+    CHECK (resaved->getChildByName ("SomethingNew") != nullptr);
+    CHECK (resaved->getChildByAttribute ("id", "from_the_future") != nullptr);
 }
 
 TEST_CASE ("A saved value outside its range, or not a number, restores clamped, or as the default")

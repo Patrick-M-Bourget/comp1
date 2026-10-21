@@ -32,7 +32,7 @@ bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
-    // Host Automation arrives on the audio thread, so the snapshot is taken here, once per block, and handed over
+    // Host Automation arrives on the audio thread, so the Settings are read here, once per block, and handed over
     // only when it differs from the last one.
     const auto settings = reader.read();
     if (! publishedSincePrepare || settings != publishedSettings)
@@ -65,6 +65,11 @@ void migrate (juce::ValueTree& state)
         state.setProperty (versionProperty, 1, nullptr);
 }
 
+double defaultPlainValue (const juce::RangedAudioParameter& parameter)
+{
+    return static_cast<double> (parameter.convertFrom0to1 (parameter.getDefaultValue()));
+}
+
 // The plain value a saved one restores to: itself within the parameter's range, the nearer end when it is a finite
 // number outside it, and the default when it isn't a finite number (nan, inf). Read in double, so a value a float
 // can't hold ("1e39") is still a finite one to clamp. Text that isn't a number reads as 0, as juce::var converts it.
@@ -73,7 +78,7 @@ double restoredValue (const juce::RangedAudioParameter& parameter, const juce::v
     const auto& range = parameter.getNormalisableRange();
     const double value = static_cast<double> (saved);
     if (! std::isfinite (value))
-        return static_cast<double> (parameter.convertFrom0to1 (parameter.getDefaultValue()));
+        return defaultPlainValue (parameter);
     return juce::jlimit (static_cast<double> (range.start), static_cast<double> (range.end), value);
 }
 } // namespace
@@ -91,22 +96,29 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     const auto xml = getXmlFromBinary (data, sizeInBytes);
     if (xml == nullptr || ! xml->hasTagName (parameters.state.getType()))
         return;
-    auto saved = juce::ValueTree::fromXml (*xml);
-    migrate (saved);
-    // The state rebuilt from what this version knows: every parameter, at its saved value restored, or at its
-    // default when the session has none. Anything else a session holds (a newer version's settings) is left out.
-    juce::ValueTree state (parameters.state.getType());
+    auto state = juce::ValueTree::fromXml (*xml);
+    migrate (state);
+    state.removeProperty (versionProperty, nullptr);
+    // Every parameter this version knows reaches it at its saved value, restored, or at its default when the
+    // session has none. Whatever else a session holds (a newer version's settings) is kept as it is, and saved
+    // again, as eq1 keeps it.
     for (auto* p : getParameters())
     {
         const auto* ranged = dynamic_cast<const juce::RangedAudioParameter*> (p);
         if (ranged == nullptr)
             continue;
-        const auto setting = saved.getChildWithProperty (idProperty, ranged->getParameterID());
-        const auto value = setting.hasType (parameterType) && setting.hasProperty (valueProperty)
-                               ? restoredValue (*ranged, setting.getProperty (valueProperty))
-                               : static_cast<double> (ranged->convertFrom0to1 (ranged->getDefaultValue()));
-        state.appendChild (juce::ValueTree (parameterType).setProperty (idProperty, ranged->getParameterID(), nullptr).setProperty (valueProperty, value, nullptr),
-                           nullptr);
+        auto setting = state.getChildWithProperty (idProperty, ranged->getParameterID());
+        if (! setting.hasType (parameterType))
+        {
+            setting = juce::ValueTree (parameterType).setProperty (idProperty, ranged->getParameterID(), nullptr);
+            setting.setProperty (valueProperty, defaultPlainValue (*ranged), nullptr);
+            state.appendChild (setting, nullptr);
+            continue;
+        }
+        // A value that restores as itself is left untouched, so its text saves again byte for byte.
+        const auto saved = setting.getProperty (valueProperty);
+        if (const double restored = restoredValue (*ranged, saved); ! setting.hasProperty (valueProperty) || ! juce::exactlyEqual (restored, static_cast<double> (saved)))
+            setting.setProperty (valueProperty, restored, nullptr);
     }
     parameters.replaceState (state);
 }

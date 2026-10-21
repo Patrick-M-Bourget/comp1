@@ -1,5 +1,8 @@
 #pragma once
 
+// Copied from eq1's tests/engine/AllocationGuard.h (eq1 at dbb1127). plugkit doesn't hold it, so this copy is
+// comp1's against ADR 0006 until it moves there.
+
 #include <cstddef>
 
 namespace comp1::test

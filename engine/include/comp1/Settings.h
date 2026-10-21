@@ -16,8 +16,8 @@ namespace parameterRanges
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB
 } // namespace parameterRanges
 
-// Everything the Engine plays, as one snapshot: the Plugin Shell builds it from the host parameters and hands it
-// over whole (Engine::setSettings). Later tickets add the compressor's settings here.
+// Everything the Engine plays, in one value: the Plugin Shell builds it from the host parameters and hands it over
+// whole (Engine::setSettings). The compressor's own settings join it with the Clean compressor (#6).
 struct Settings
 {
     // Output Gain, in dB: applied to the whole output after Dry and Wet are summed, before the Limiter.
@@ -25,7 +25,7 @@ struct Settings
 
 #if defined(__GNUC__)
     #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wfloat-equal" // exactly equal: a snapshot that changed nothing is skipped
+    #pragma GCC diagnostic ignored "-Wfloat-equal" // exactly equal: settings that changed nothing are skipped
 #endif
     bool operator== (const Settings&) const = default;
 #if defined(__GNUC__)

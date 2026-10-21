@@ -8,8 +8,8 @@
 namespace comp1
 {
 
-// The Plugin Shell: the JUCE processor around the Engine. It turns the host parameters into a Settings snapshot
-// once a block, and saves and restores them.
+// The Plugin Shell: the JUCE processor around the Engine. It turns the host parameters into Settings once a
+// block, and saves and restores them.
 class PluginProcessor final : public juce::AudioProcessor
 {
 public:
@@ -49,7 +49,7 @@ private:
     juce::AudioProcessorValueTreeState parameters;
     parameters::SettingsReader reader { parameters }; // read on the audio thread
     Engine engine;
-    // The last snapshot handed to the Engine, kept on the audio thread; the first block after prepareToPlay()
+    // The last Settings handed to the Engine, kept on the audio thread; the first block after prepareToPlay()
     // hands over whatever it reads.
     Settings publishedSettings;
     bool publishedSincePrepare = false;

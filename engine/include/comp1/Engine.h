@@ -28,8 +28,8 @@ struct ConstAudioBlock
 // Threads: process() runs on the audio thread. setSettings() may run on another thread, but only one thread at a
 // time may call it; the newest settings are taken at the start of each process().
 //
-// Analysis taps: none yet. The level taps (input level, output level, Gain Reduction and Detection Level) are
-// read here once the Engine publishes them.
+// Analysis taps: none yet. The level taps (input level, output level, Gain Reduction and Detection Level) are read
+// here (#7).
 class Engine
 {
 public:
@@ -38,7 +38,7 @@ public:
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels);
 
-    // A full snapshot of every setting, replacing the last one.
+    // Every setting at once, replacing the last ones.
     void setSettings (const Settings& settings);
 
     // Processes main in place. sidechain may be null when nothing is connected. Blocks may be of any size, changing
