@@ -54,6 +54,27 @@ const std::vector<Response>& responses()
           { { 44100, { -1.4785, -0.8435, 50.0227, 115.1474, 20.0000 } },
             { 48000, { -1.5000, -0.8333, 50.0000, 115.1458, 20.0000 } },
             { 96000, { -1.5000, -0.8438, 50.0104, 115.1354, 20.0000 } } } },
+        // FET's loop reads the detection signal Lookahead early, times the gain it applies in that sample, so it acts
+        // ahead of the delayed audio: its Gain Reduction is 63% of the way before the step is heard. Colour 0%, so the
+        // output's gain is the compressor's alone.
+        { "python3 tools/dyn-lab/dynlab.py step --character fet --lookahead 5",
+          { .character = Character::FET, .colour = 0.0, .processingMode = highQuality, .lookaheadMs = 5.0 },
+          15.0,
+          { { 44100, { -2.4830, 0.7823, 100.0227, 230.2721, 0.0000 } },
+            { 48000, { -2.4792, 0.7917, 100.0208, 230.2708, 0.0000 } },
+            { 96000, { -2.4896, 0.7708, 100.0104, 230.2604, 0.0000 } } } },
+        { "python3 tools/dyn-lab/dynlab.py step --character fet --lookahead 2 --attack 0.5 --release 50 --hold 20",
+          { .character = Character::FET,
+            .attackMs = 0.5,
+            .releaseMs = 50.0,
+            .holdMs = 20.0,
+            .colour = 0.0,
+            .processingMode = highQuality,
+            .lookaheadMs = 2.0 },
+          15.0,
+          { { 44100, { -1.8639, -1.6825, 50.0227, 115.1474, 20.0000 } },
+            { 48000, { -1.8542, -1.6875, 50.0000, 115.1458, 20.0000 } },
+            { 96000, { -1.8646, -1.6979, 50.0104, 115.1354, 20.0000 } } } },
     };
     return all;
 }
