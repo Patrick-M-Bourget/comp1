@@ -74,7 +74,7 @@ TEST_CASE ("An Oversampling over the sample rate's cap plays the cap")
         CHECK (test::played (at (settings, static_cast<Oversampling> (static_cast<int> (cap) - 1)), sampleRate, input) != atCap);
 }
 
-// What Dry/Wet's exact null (#11) rests on: with nothing nonlinear, the Wet path is linear and aligned at every
+// What Dry/Wet's exact null rests on (DryWetTest's nullRows() holds it at each factor): with nothing nonlinear, the Wet path is linear and aligned at every
 // Oversampling (ADR 0009).
 TEST_CASE ("With Saturation off, High Quality at every Oversampling is High Quality at 1x, and at Ratio 1:1 the input delayed by the reported latency, bit for bit")
 {

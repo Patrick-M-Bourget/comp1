@@ -63,7 +63,7 @@ inline int lookaheadBudgetSamples (double sampleRate) { return wholeSamples (loo
 inline int limiterReserveSamples (double sampleRate) { return wholeSamples (limiterReserveMs, sampleRate); }
 
 // The Wet path's delay up to the Dry/Wet sum: the Oversampling reserve and the Lookahead budget in High Quality, 0 in
-// Zero Latency. What the Dry path is delayed by (#11).
+// Zero Latency. What the Dry path is delayed by.
 inline int wetPathLatencySamples (ProcessingMode mode, double sampleRate)
 {
     return mode == ProcessingMode::HighQuality ? oversamplingReserveSamples + lookaheadBudgetSamples (sampleRate) : 0;

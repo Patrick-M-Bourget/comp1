@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace comp1::parameters
 {
@@ -61,6 +62,29 @@ juce::NormalisableRange<float> ratioRange()
              [] (float, float, float value) { return value; } };
 }
 
+// A level in dB down to Off, Dry's and Wet's: the travel is even in dB from levelTravelFloorDb at its bottom to the
+// range's top, and its bottom is Off (-inf), reached exactly, so a host's 0 is Off. At the floor, a path summed with
+// the other at unity moves the level by under 0.03 dB. The floor makes the span 64 dB, a power of two, so 0 dB, the
+// default Wet, and every quarter dB sit at travel a float holds exactly, and pass through it unrounded. The maths
+// runs in double, as logRange's does.
+constexpr double levelTravelFloorDb = -52.0;
+juce::NormalisableRange<float> levelRange (ParameterRange range)
+{
+    const double span = range.high - levelTravelFloorDb;
+    return { static_cast<float> (range.low),
+             static_cast<float> (range.high),
+             [span] (float, float, float normalised) {
+                 return normalised <= 0.0f ? -std::numeric_limits<float>::infinity()
+                                           : static_cast<float> (levelTravelFloorDb + span * double { normalised });
+             },
+             [span] (float, float, float value) {
+                 if (value <= levelTravelFloorDb)
+                     return 0.0f;
+                 return static_cast<float> (std::min (1.0, (double { value } - levelTravelFloorDb) / span));
+             },
+             [] (float, float, float value) { return value <= levelTravelFloorDb ? -std::numeric_limits<float>::infinity() : value; } };
+}
+
 // Fixed-precision text, so value -> text -> value -> text round-trips.
 juce::AudioParameterFloatAttributes withText (int decimals, const juce::String& label)
 {
@@ -81,6 +105,20 @@ juce::AudioParameterFloatAttributes ratioText()
             const auto trimmed = text.trim();
             if (trimmed == infinitySign || trimmed.equalsIgnoreCase ("inf"))
                 return std::numeric_limits<float>::infinity();
+            return trimmed.getFloatValue();
+        });
+}
+
+// A level's text: Off at -inf, which "Off" and "-inf" read as too; dB elsewhere.
+juce::AudioParameterFloatAttributes levelText()
+{
+    return juce::AudioParameterFloatAttributes()
+        .withLabel ("dB")
+        .withStringFromValueFunction ([] (float value, int) { return std::isinf (value) ? juce::String ("Off") : juce::String (value, 2); })
+        .withValueFromStringFunction ([] (const juce::String& text) {
+            const auto trimmed = text.trim();
+            if (trimmed.equalsIgnoreCase ("off") || trimmed.equalsIgnoreCase ("-inf"))
+                return -std::numeric_limits<float>::infinity();
             return trimmed.getFloatValue();
         });
 }
@@ -165,6 +203,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                                               "Saturation Position",
                                                               juce::StringArray { "Before", "After" },
                                                               static_cast<int> (defaults.saturationPosition)));
+    // Dry and Wet, the levels the two paths are summed at.
+    layout.add (floatParameter (dryId, "Dry", levelRange (parameterRanges::dry), defaults.dryDb, levelText()),
+                floatParameter (wetId, "Wet", levelRange (parameterRanges::wet), defaults.wetDb, levelText()));
     // Linear in dB, symmetric about 0 dB, which is the default and the range's exact centre: the default passes audio
     // through bit for bit.
     layout.add (floatParameter (outputGainId, "Output Gain", linearRange (parameterRanges::outputGain), defaults.outputGainDb, withText (2, "dB")));
@@ -203,6 +244,8 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       saturation (parameters.getRawParameterValue (saturationId)),
       drive (parameters.getRawParameterValue (driveId)),
       saturationPosition (parameters.getRawParameterValue (saturationPositionId)),
+      dry (parameters.getRawParameterValue (dryId)),
+      wet (parameters.getRawParameterValue (wetId)),
       outputGain (parameters.getRawParameterValue (outputGainId)),
       detectionSource (parameters.getRawParameterValue (detectionSourceId)),
       highPassOn (parameters.getRawParameterValue (detectionHighPassOnId)),
@@ -259,6 +302,8 @@ Settings SettingsReader::read() const
              .saturation = on (saturation),
              .driveDb = plain (drive),
              .saturationPosition = choice (saturationPosition, SaturationPosition::After),
+             .dryDb = plain (dry),
+             .wetDb = plain (wet),
              .outputGainDb = plain (outputGain),
              .detectionSource = choice (detectionSource, DetectionSource::External),
              .detectionEq = eq,

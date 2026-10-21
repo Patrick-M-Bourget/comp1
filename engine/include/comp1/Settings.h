@@ -30,6 +30,11 @@ inline constexpr ParameterRange release { 5.0, 5000.0 };    // ms; comp1's own
 inline constexpr ParameterRange hold { 0.0, 500.0 };        // ms
 inline constexpr ParameterRange range { 0.0, 60.0 };        // dB; comp1's own: its top sets no limit
 inline constexpr ParameterRange drive { 0.0, 24.0 };        // dB; comp1's own
+// Dry and Wet, each from Off (-inf) up. Pro-C 3's help ("Time controls") names its Dry Gain and Wet Gain knobs but
+// gives no range, so these are comp1's own (ADR 0008): +12 dB of boost over unity, enough to bring a quiet parallel
+// path up level with a heavily compressed one.
+inline constexpr ParameterRange dry { -inf, 12.0 };         // dB; comp1's own
+inline constexpr ParameterRange wet { -inf, 12.0 };         // dB; comp1's own
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own
 inline constexpr ParameterRange lookahead { 0.0, 5.0 };     // ms; ADR 0001's budget for it
 inline constexpr ParameterRange stereoLink { 0.0, 100.0 };  // %
@@ -163,6 +168,12 @@ struct Settings
     bool saturation = false;
     double driveDb = 6.0;
     SaturationPosition saturationPosition = SaturationPosition::After;
+
+    // Dry and Wet, in dB, -parameterRanges::inf for Off: the levels the Dry path (the input, delayed to match the Wet
+    // path) and the Wet path are summed at, before Output Gain. The defaults, Dry Off and Wet 0 dB, play the Wet path
+    // alone, bit for bit.
+    double dryDb = -parameterRanges::inf;
+    double wetDb = 0.0;
 
     // Output Gain, in dB: applied to the whole output after Dry and Wet are summed, before the Limiter.
     double outputGainDb = 0.0;

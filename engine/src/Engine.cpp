@@ -4,6 +4,7 @@
 #include "Crossfade.h"
 #include "DelayLine.h"
 #include "Detection.h"
+#include "DryWet.h"
 #include "Glide.h"
 #include "LevelTaps.h"
 #include "Lookahead.h"
@@ -550,6 +551,7 @@ struct Engine::Impl
     DelayLine limiterPadding;
     ModeFade modeFade;
     Audition audition;
+    DryWet dryWet;
     GlobalBypass globalBypass;
 
     // The Output Level, per channel. Fixed in size, so a reader never meets a tap a prepare() has moved.
@@ -571,6 +573,7 @@ struct Engine::Impl
         compressor.setSettings (settings, snapToSettings);
         autoGain.setTargetDb (settings.autoGain ? clean::autoGainDb (curveOf (settings)) : 0.0, snapToSettings);
         saturation.setSettings (settings, snapToSettings);
+        dryWet.setLevels (settings.dryDb, settings.wetDb, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
         audition.setHeld (settings.detectionAudition, snapToSettings);
         audition.setPlacement (settings.stereoPlacement, snapToSettings);
@@ -600,8 +603,9 @@ struct Engine::Impl
     }
 
     // The Wet path, on a piece of a run, in place, with the Sidechain's piece (or none), on path: Saturation Before,
-    // the detection stage, fed the compressor's input as the Internal signal, then the compressor, Saturation After,
-    // Auto Gain, Detection Audition and Output Gain; Saturation runs at one of its two positions. The compressor's
+    // the detection stage, fed the compressor's input as the Internal signal, then the compressor, Saturation After
+    // and Auto Gain; then the Dry/Wet sum, Detection Audition and Output Gain. Saturation runs at one of its two
+    // positions. The compressor's
     // settings step at the start of each run, wherever the host's blocks fall; Saturation, Auto Gain, Detection
     // Audition and Output Gain glide a sample at a time with next(), so where the pieces fall changes nothing either.
     // From the sample a new setting is taken (the start of the host's block, so the host decides when a change lands),
@@ -611,10 +615,11 @@ struct Engine::Impl
     // In High Quality, Saturation runs in its Oversampling section, Before or After (ADR 0009), each delaying the audio
     // by a section whether Saturation is in it or not, the Sidechain delayed with the Before one. Colour (#19) goes in
     // the After section, ahead of Saturation. The audio is delayed by the Lookahead budget and the detection signal by
-    // less, so the compressor meets the audio Lookahead early; then the Limiter padding. Then Global Bypass, which
-    // crossfades to the input as it came in, delayed to match; it takes precedence over Detection Audition, and
-    // everything before it runs on while it is on, so turning it off has no restart transient. Last, the mode fade,
-    // which swaps the paths in silence.
+    // less, so the compressor meets the audio Lookahead early; the two sections and the budget are the Wet path's delay
+    // up to the Dry/Wet sum. Then the Limiter padding after Output Gain. Then Global Bypass, which crossfades to the
+    // input as it came in, delayed to match; it takes precedence over Detection Audition, and everything before it runs
+    // on while it is on, so turning it off has no restart transient.
+    // Last, the mode fade, which swaps the paths in silence.
     void wetPath (AudioBlock wet, const ConstAudioBlock* sidechainPiece, ProcessingMode path)
     {
         globalBypass.takeInput ({ wet.channels, wet.numChannels, wet.numSamples }, path);
@@ -636,6 +641,7 @@ struct Engine::Impl
         compressor.process (lookahead.process (detected, wet, highQuality), wet, runLevels);
         oversampledSaturation (afterSection, SaturationPosition::After, wet, highQuality);
         autoGain.process (wet);
+        dryWet.sum (wet);
         audition.process (detected, wet, highQuality);
         outputGain.process (wet);
         if (highQuality)
@@ -719,6 +725,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->limiterPadding.prepare (numChannels, limiterReserveSamples (sampleRate));
     impl->modeFade.prepare (sampleRate);
     impl->audition.prepare (sampleRate, numChannels);
+    impl->dryWet.prepare (sampleRate, numChannels, plugkit::runSamples);
     impl->globalBypass.prepare (sampleRate, numChannels);
     const int outputLevelChannels = std::clamp (numChannels, 0, Impl::maxOutputLevelChannels);
     for (int ch = 0; ch < outputLevelChannels; ++ch)
@@ -752,6 +759,9 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         const auto path = impl->modeFade.startPiece();
         count = std::min ({ plugkit::runSamples - impl->gridPosition, main.numSamples - start, impl->modeFade.pieceLimit() });
         const auto wet = impl->sanitisedInput (main, channels, start, count);
+        // The split: the input, scrubbed of non-finite samples, is copied as the Dry path before the Wet path touches
+        // it. The Gate (#17) will sit ahead of it, so it gates both paths.
+        impl->dryWet.split ({ wet.channels, wet.numChannels, wet.numSamples }, path);
         for (int ch = 0; ch < sidechainChannels; ++ch)
             sidechainPiece[static_cast<std::size_t> (ch)] = sidechain->channels[ch] + start;
         const ConstAudioBlock sidechainBlock { sidechainPiece.data(), sidechainChannels, count };

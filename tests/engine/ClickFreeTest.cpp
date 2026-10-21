@@ -280,6 +280,17 @@ const std::vector<Jump>& jumps()
         placementJump (StereoPlacement::Stereo, StereoPlacement::Mid, "Stereo Placement, Stereo and Mid"),
         placementJump (StereoPlacement::Mid, StereoPlacement::Side, "Stereo Placement, Mid and Side"),
         placementJump (StereoPlacement::Side, StereoPlacement::Stereo, "Stereo Placement, Side and Stereo"),
+        // Dry and Wet, each from Off and from far below unity, with the other at 0 dB, so the two paths sum.
+        { "Dry, Off and 0 dB", [] (Settings& s, bool b) { s.dryDb = b ? 0.0 : -infinity; } },
+        { "Dry, -24 and +12 dB", [] (Settings& s, bool b) { s.dryDb = b ? 12.0 : -24.0; } },
+        { "Wet, Off and 0 dB", [] (Settings& s, bool b) {
+             s.dryDb = 0.0;
+             s.wetDb = b ? 0.0 : -infinity;
+         } },
+        { "Wet, -24 and +12 dB", [] (Settings& s, bool b) {
+             s.dryDb = 0.0;
+             s.wetDb = b ? 12.0 : -24.0;
+         } },
     };
     return all;
 }
@@ -449,9 +460,12 @@ TEST_CASE ("While a compressor setting glides, the output is the same however th
 TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click, at every Oversampling")
 {
     const auto host = anyHost();
+    // Dry Off, and Dry and Wet both at 0 dB, so both paths fade.
+    const double dryDb = GENERATE (-infinity, 0.0);
     const auto oversampling = GENERATE (Oversampling::x1, Oversampling::x2, Oversampling::x4, Oversampling::x8);
-    CAPTURE (host.sampleRate, host.blockSize, static_cast<int> (oversampling));
-    const auto output = playTone (host, [oversampling] (double time, Settings& s) {
+    CAPTURE (host.sampleRate, host.blockSize, dryDb, static_cast<int> (oversampling));
+    const auto output = playTone (host, [dryDb, oversampling] (double time, Settings& s) {
+        s.dryDb = dryDb;
         s.processingMode = alternating (time) ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency;
         s.oversampling = oversampling;
     });
