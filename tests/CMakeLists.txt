@@ -62,6 +62,7 @@ if(COMP1_BUILD_PLUGIN)
     add_executable(comp1_plugin_tests
         plugin/AutoReleaseParameterTest.cpp
         plugin/LatencyReportTest.cpp
+        plugin/OversamplingParameterTest.cpp
         plugin/PluginShellTest.cpp
         plugin/SaturationParameterTest.cpp
         plugin/SessionTest.cpp

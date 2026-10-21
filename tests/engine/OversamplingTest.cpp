@@ -56,6 +56,24 @@ TEST_CASE ("An impulse comes out at exactly the reported latency at every Oversa
            == latencySamples (highQuality, sampleRate));
 }
 
+TEST_CASE ("An Oversampling over the sample rate's cap plays the cap")
+{
+    const double sampleRate = GENERATE (from_range (test::sampleRates()));
+    const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
+    CAPTURE (sampleRate, static_cast<int> (position));
+    auto input = test::noise (2, 6000);
+    for (auto& channel : input)
+        for (auto& sample : channel)
+            sample *= 3.0f;
+    const auto settings = saturating (compressing, position);
+    const auto cap = maxOversampling (sampleRate);
+    const auto atCap = test::played (at (settings, cap), sampleRate, input);
+    CHECK (test::played (at (settings, Oversampling::x8), sampleRate, input) == atCap);
+    // And the factors under it differ from it.
+    if (cap != Oversampling::x1)
+        CHECK (test::played (at (settings, static_cast<Oversampling> (static_cast<int> (cap) - 1)), sampleRate, input) != atCap);
+}
+
 // What Dry/Wet's exact null (#11) rests on: with nothing nonlinear, the Wet path is linear and aligned at every
 // Oversampling (ADR 0009).
 TEST_CASE ("With Saturation off, High Quality at every Oversampling is High Quality at 1x, and at Ratio 1:1 the input delayed by the reported latency, bit for bit")
