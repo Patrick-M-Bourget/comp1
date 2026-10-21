@@ -589,3 +589,42 @@ TEST_CASE ("In Zero Latency the Limiter's Gain Reduction brings the sample peak 
         REQUIRE_THAT (records[r].limiterGainReductionDb, WithinAbs (6.0, 0.01));
     }
 }
+
+TEST_CASE ("In High Quality the Limiter's Gain Reduction brings the true peak to the headroom under the Ceiling")
+{
+    // dyn-lab's limiter: High Quality aims the true peak 0.3 dB (LIMITER_TRUE_PEAK_HEADROOM_DB) under the Ceiling, so
+    // a sine whose true peak is 6 dB over the Ceiling takes 6.3 dB, once the Limiter reserve has filled.
+    const auto records = limitedRecords (limited (ProcessingMode::HighQuality), limiterSine (ceilingDb + 6.0));
+    for (std::size_t r = records.size() / 2; r < records.size(); ++r)
+    {
+        CAPTURE (r);
+        REQUIRE_THAT (records[r].limiterGainReductionDb, WithinAbs (6.3, 0.01));
+    }
+}
+
+TEST_CASE ("Under the Ceiling once released, and off once settled, the Limiter's Gain Reduction is exactly none")
+{
+    const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
+    CAPTURE (mode);
+    // Over the Ceiling for half a second, then 1 dB under it for 5 s: 200 ms of release (LIMITER_RELEASE_MS) brings
+    // 6.3 dB under LIMITER_SETTLED_DB, 1e-7 dB, within 4 s.
+    auto input = limiterSine (ceilingDb + 6.0);
+    for (int i = 0; i < 10; ++i)
+    {
+        const auto under = limiterSine (ceilingDb - 1.0);
+        input.insert (input.end(), under.begin(), under.end());
+    }
+    const auto released = limitedRecords (limited (mode), input);
+    REQUIRE (released.size() == input.size() / 16);
+    for (std::size_t r = released.size() * 9 / 10; r < released.size(); ++r)
+    {
+        CAPTURE (r);
+        REQUIRE (released[r].limiterGainReductionDb == 0.0);
+    }
+    // Off and settled, at any level.
+    auto off = limited (mode);
+    off.limiter = false;
+    for (const double levelDb : { ceilingDb - 1.0, ceilingDb + 6.0, 0.0 })
+        for (const auto& record : limitedRecords (off, limiterSine (levelDb)))
+            REQUIRE (record.limiterGainReductionDb == 0.0);
+}
