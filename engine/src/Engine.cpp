@@ -164,6 +164,63 @@ private:
     plugkit::Smoother gain;
 };
 
+// Detection Audition: plays the detection signal in place of the Wet path, fading between the two over the Smoother's
+// glide time, so holding it and letting go never jump. Mapping the detection channels to the output's: a stereo
+// detection signal plays each channel on its own output channel, a mono one on every output channel, and a stereo one
+// on a mono output as the average of its two channels.
+class Audition
+{
+public:
+    void prepare (double sampleRate)
+    {
+        mix.configure (plugkit::glideTimeConstantSeconds * sampleRate, 1.0e-6);
+        mix.reset (0.0);
+    }
+
+    // With snap, it is held or let go at once instead of fading.
+    void setHeld (bool held, bool snap)
+    {
+        if (snap)
+            mix.reset (held ? 1.0 : 0.0);
+        else
+            mix.setTarget (held ? 1.0 : 0.0);
+    }
+
+    void process (const DetectionSignal& detection, AudioBlock audio)
+    {
+        // Let go and settled: the Wet path plays, bit for bit, with no work.
+        if (mix.isSettled() && mix.value() == 0.0)
+            return;
+        int i = 0;
+        for (; i < audio.numSamples && ! mix.isSettled(); ++i)
+        {
+            const double m = mix.next();
+            for (int ch = 0; ch < audio.numChannels; ++ch)
+            {
+                float& sample = audio.channels[ch][i];
+                sample = static_cast<float> ((1.0 - m) * sample + m * detectionSample (detection, audio.numChannels, ch, i));
+            }
+        }
+        if (mix.value() == 0.0)
+            return;
+        for (int ch = 0; ch < audio.numChannels; ++ch)
+            for (int n = i; n < audio.numSamples; ++n)
+                audio.channels[ch][n] = detectionSample (detection, audio.numChannels, ch, n);
+    }
+
+private:
+    static float detectionSample (const DetectionSignal& detection, int outputChannels, int ch, int i)
+    {
+        if (detection.numChannels == 1)
+            return detection.channels[0][i];
+        if (outputChannels == 1)
+            return 0.5f * (detection.channels[0][i] + detection.channels[1][i]);
+        return detection.channels[ch][i];
+    }
+
+    plugkit::Smoother mix; // 0 plays the Wet path, 1 the detection signal
+};
+
 } // namespace
 
 struct Engine::Impl
@@ -182,6 +239,7 @@ struct Engine::Impl
     DetectionStage detection;
     Compressor compressor;
     GlidingGain autoGain, outputGain;
+    Audition audition;
 
     void applySettings()
     {
@@ -194,6 +252,7 @@ struct Engine::Impl
         compressor.setSettings (settings, snapToSettings);
         autoGain.setTargetDb (settings.autoGain ? clean::autoGainDb (curveOf (settings)) : 0.0, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
+        audition.setHeld (settings.detectionAudition, snapToSettings);
         snapToSettings = false;
     }
 };
@@ -210,6 +269,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->compressor.prepare (sampleRate, numChannels);
     impl->autoGain.prepare (sampleRate);
     impl->outputGain.prepare (sampleRate);
+    impl->audition.prepare (sampleRate);
     impl->snapToSettings = true;
 }
 
@@ -247,9 +307,10 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         const ConstAudioBlock sidechainBlock { sidechainPiece.data(), sidechainChannels, count };
 
         // The Wet path: the detection stage, fed the compressor's input as the Internal signal, then the compressor,
-        // then Auto Gain, then Output Gain. The compressor's settings step at the start of each run, wherever the
-        // host's blocks fall; Auto Gain and Output Gain glide a sample at a time with next(), so where the pieces fall
-        // changes nothing either. From the sample a new setting is taken (the start of the host's block, so the host
+        // then Auto Gain, then Detection Audition, then Output Gain. The compressor's settings step at the start of
+        // each run, wherever the host's blocks fall; Auto Gain, Detection Audition and Output Gain glide a sample at a
+        // time with next(), so where the pieces fall changes nothing either. The detector runs while Detection
+        // Audition is held, so letting go doesn't restart compression from zero. From the sample a new setting is taken (the start of the host's block, so the host
         // decides when a change lands), the output is the same sample for sample however the audio is cut.
         const AudioBlock wet { impl->subBlock.data(), channels, count };
         const auto detected = impl->detection.process ({ wet.channels, wet.numChannels, wet.numSamples },
@@ -258,6 +319,7 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
             impl->compressor.startRun();
         impl->compressor.process (detected, wet);
         impl->autoGain.process (wet);
+        impl->audition.process (detected, wet);
         impl->outputGain.process (wet);
 
         impl->gridPosition += count;

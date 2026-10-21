@@ -105,6 +105,8 @@ const std::vector<Jump>& jumps()
         { "Hold", [] (Settings& s, bool b) { s.holdMs = b ? 500.0 : 0.0; } },
         { "Range", [] (Settings& s, bool b) { s.rangeDb = b ? 60.0 : 0.0; } },
         { "Auto Gain", [] (Settings& s, bool b) { s.autoGain = b; } },
+        // Held, the uncompressed input plays in place of the compressed one.
+        { "Detection Audition", [] (Settings& s, bool b) { s.detectionAudition = b; } },
     };
     return all;
 }

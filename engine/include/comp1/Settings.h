@@ -58,6 +58,10 @@ struct Settings
     // Detection Source: what the detection stage feeds the compressor's detector.
     DetectionSource detectionSource = DetectionSource::Internal;
 
+    // Detection Audition: not a host parameter, and never saved. Held while the editor holds it, it plays the
+    // detection signal in place of the Dry and Wet sum, before Output Gain.
+    bool detectionAudition = false;
+
 #if defined(__GNUC__)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wfloat-equal" // exactly equal: settings that changed nothing are skipped
