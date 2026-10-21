@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <random>
 #include <vector>
 
@@ -56,6 +57,49 @@ inline Channels steadyLevel (int numChannels, int numSamples, double levelDb)
         for (std::size_t i = 0; i < channel.size(); ++i)
             channel[i] = i % 2 == 0 ? magnitude : -magnitude;
     return channels;
+}
+
+// The Gain Reduction in dB the Engine gave each sample: how far the output is under the input.
+inline std::vector<double> gainReductionDb (const std::vector<float>& input, const std::vector<float>& output)
+{
+    std::vector<double> reduction;
+    for (std::size_t i = 0; i < input.size(); ++i)
+        reduction.push_back (-20.0 * std::log10 (static_cast<double> (output[i]) / static_cast<double> (input[i])));
+    return reduction;
+}
+
+// The fractions of a move the timing tests read, as dyn-lab does: one time constant (1 - 1/e), and ln 10 of them.
+inline constexpr double oneTimeConstant = 1.0 - 0.36787944117144233;
+inline constexpr double ninetyPercent = 0.9;
+
+// As dyn-lab measures a step: the samples taken, from the first one at the new level (reduction[from]), for the Gain
+// Reduction to move each fraction of the way from start to end, and the samples before it first moved at all. The
+// output is float, so a Gain Reduction read off it carries up to about 1e-6 dB of rounding, which differs between
+// input levels: a sample held at the new level can read a hair off a start read at the old one. So it has moved once
+// it is more than heldWithin of the way, far under the first step of any Release the tests measure (1e-5 of the
+// way at 500 ms and 192 kHz).
+inline constexpr double heldWithin = 3.0e-6;
+
+struct Crossings
+{
+    std::optional<int> sixtyThree, ninety;
+    int held = -1;
+};
+
+inline Crossings crossings (const std::vector<double>& reduction, double start, double end, std::size_t from = 0)
+{
+    Crossings c;
+    for (int n = 1; from + static_cast<std::size_t> (n) <= reduction.size() && ! c.ninety; ++n)
+    {
+        const double moved = (reduction[from + static_cast<std::size_t> (n - 1)] - start) / (end - start);
+        if (c.held < 0 && moved > heldWithin)
+            c.held = n - 1;
+        if (! c.sixtyThree && moved >= oneTimeConstant)
+            c.sixtyThree = n;
+        if (! c.ninety && moved >= ninetyPercent)
+            c.ninety = n;
+    }
+    return c;
 }
 
 // The output level in dB, on every channel, after seconds of a steady level through an Engine with settings: the

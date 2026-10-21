@@ -5,7 +5,6 @@
 #include <catch2/generators/catch_generators_range.hpp>
 
 #include <cmath>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -65,8 +64,6 @@ const std::vector<Response>& responses()
 }
 
 constexpr double stepDb = 20.0;
-constexpr double oneTimeConstant = 1.0 - 0.36787944117144233; // 1 - 1/e
-constexpr double ninetyPercent = 0.9;
 
 // The Gain Reduction in dB on each sample of a steady level held for seconds, then of another, through one Engine:
 // the first level settles it, the second is the step.
@@ -81,34 +78,7 @@ std::vector<double> gainReductionAfterStep (const Settings& settings, double sam
     engine.setSettings (settings);
     test::processInBlocks (engine, before, { 512 });
     test::processInBlocks (engine, after, { 512 });
-    std::vector<double> reduction;
-    for (std::size_t i = 0; i < input.size(); ++i)
-        reduction.push_back (-20.0 * std::log10 (static_cast<double> (after.front()[i]) / static_cast<double> (input[i])));
-    return reduction;
-}
-
-// As dyn-lab measures a step: the samples taken, from the first one at the new level, for the Gain Reduction to
-// move each fraction of the way from start to end, and the samples before it first moved at all.
-struct Crossings
-{
-    std::optional<int> sixtyThree, ninety;
-    int held = -1;
-};
-
-Crossings crossings (const std::vector<double>& reduction, double start, double end)
-{
-    Crossings c;
-    for (int n = 1; n <= static_cast<int> (reduction.size()) && ! c.ninety; ++n)
-    {
-        const double moved = (reduction[static_cast<std::size_t> (n - 1)] - start) / (end - start);
-        if (c.held < 0 && moved > 0.0)
-            c.held = n - 1;
-        if (! c.sixtyThree && moved >= oneTimeConstant)
-            c.sixtyThree = n;
-        if (! c.ninety && moved >= ninetyPercent)
-            c.ninety = n;
-    }
-    return c;
+    return test::gainReductionDb (input, after.front());
 }
 
 } // namespace
@@ -123,13 +93,13 @@ TEST_CASE ("Attack, Release and Hold match dyn-lab's step response within one sa
     const double quiet = settings.thresholdDb - stepDb, loud = settings.thresholdDb + stepDb;
 
     // Up from no Gain Reduction (the quiet level is below the Knee) to the full amount, for Attack.
-    const auto attack = crossings (gainReductionAfterStep (settings, rate.sampleRate, quiet, loud, 1.0), 0.0, response.gainReductionDb);
+    const auto attack = test::crossings (gainReductionAfterStep (settings, rate.sampleRate, quiet, loud, 1.0), 0.0, response.gainReductionDb);
     REQUIRE (attack.ninety);
     CHECK (std::abs (*attack.sixtyThree * sampleMs - rate.step.attack63) <= sampleMs);
     CHECK (std::abs (*attack.ninety * sampleMs - rate.step.attack90) <= sampleMs);
 
     // And back down, for Hold and Release.
-    const auto release = crossings (gainReductionAfterStep (settings, rate.sampleRate, loud, quiet, 2.0), response.gainReductionDb, 0.0);
+    const auto release = test::crossings (gainReductionAfterStep (settings, rate.sampleRate, loud, quiet, 2.0), response.gainReductionDb, 0.0);
     REQUIRE (release.ninety);
     CHECK (std::abs (release.held * sampleMs - rate.step.hold) <= sampleMs);
     CHECK (std::abs ((*release.sixtyThree - release.held) * sampleMs - rate.step.release63) <= sampleMs);

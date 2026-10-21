@@ -47,6 +47,9 @@ struct Settings
     double kneeDb = 6.0;
     double attackMs = 10.0;
     double releaseMs = 100.0;
+    // Auto Release: Release lengthens after sustained compression, up to 5 times as long, and stays short after
+    // transients (dyn-lab's USAGE.md, "Auto Release").
+    bool autoRelease = false;
     double holdMs = 0.0;
     double rangeDb = 60.0; // the most Gain Reduction the compressor applies
     // Auto Gain, on the Wet path after the compressor: estimated from Threshold, Ratio, Knee and Range.
