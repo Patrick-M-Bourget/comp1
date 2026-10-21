@@ -23,6 +23,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <vector>
 
 namespace comp1
@@ -95,10 +96,12 @@ public:
     // With snap, the settings take effect at once instead of gliding.
     void setSettings (const Settings& settings, bool snap)
     {
-        const double targets[] = { settings.thresholdDb, 1.0 / settings.ratio, settings.kneeDb, settings.rangeDb,
-                                   std::log (settings.attackMs), std::log (settings.releaseMs), settings.holdMs };
-        for (std::size_t s = 0; s < count; ++s)
-            glideTo (glides[s], targets[s], snap);
+        const auto target = curveOf (settings);
+        for (std::size_t s = 0; s < std::size (curveGlides); ++s)
+            glideTo (glides[s], target.*curveGlides[s], snap);
+        glideTo (glides[logAttack], std::log (settings.attackMs), snap);
+        glideTo (glides[logRelease], std::log (settings.releaseMs), snap);
+        glideTo (glides[hold], settings.holdMs, snap);
         glideTo (stereoLink, settings.stereoLink / 100.0, snap);
         placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
         if (snap)
@@ -288,16 +291,17 @@ private:
     }
 
     enum Glide : std::size_t { threshold, inverseRatio, knee, range, logAttack, logRelease, hold, count };
+    // The gain computer's settings, each gliding as the Glide of its index.
+    static constexpr double clean::Curve::* curveGlides[] = { &clean::Curve::thresholdDb, &clean::Curve::inverseRatio, &clean::Curve::kneeDb,
+                                                              &clean::Curve::rangeDb };
     // Close enough to count as arrived, in each glide's units (dB, 1/Ratio, log ms, ms, a fraction): far below what
     // can be heard.
     static constexpr double arrivalTolerance = 1.0e-7;
 
     void update()
     {
-        curve = { .thresholdDb = glides[threshold].value(),
-                  .inverseRatio = glides[inverseRatio].value(),
-                  .kneeDb = glides[knee].value(),
-                  .rangeDb = glides[range].value() };
+        for (std::size_t s = 0; s < std::size (curveGlides); ++s)
+            curve.*curveGlides[s] = glides[s].value();
         releaseMs = std::exp (glides[logRelease].value());
         timing = clean::timing (std::exp (glides[logAttack].value()), releaseMs, glides[hold].value(), sampleRate);
     }
