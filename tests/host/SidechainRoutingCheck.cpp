@@ -1,7 +1,7 @@
 // Loads a built comp1 the way a host does, through its format wrapper (VST3 or AU), and checks every main layout
 // with every Sidechain: mono and stereo main, each with no, a mono or a stereo Sidechain. Each layout must load and
-// play its main input with Output Gain applied, the Sidechain unheard in the output; through AU, no Sidechain is
-// not applicable (see main()). Run by plugkit's check harness (validate).
+// play its main input with Output Gain applied, the Sidechain unheard in the output, at Ratio 1:1 so the compressor
+// leaves the level alone; through AU, no Sidechain is not applicable (see main()). Run by plugkit's check harness (validate).
 //
 //   comp1_sidechain_routing_check <path to comp1.vst3>
 //   comp1_sidechain_routing_check AU   (the AU must be installed and registered)
@@ -160,7 +160,7 @@ int main (int argc, char* argv[])
                 continue;
             }
             plugin->prepareToPlay (sampleRate, blockSize);
-            if (! set (*plugin, "Output Gain", "-12"))
+            if (! set (*plugin, "Ratio", "1") || ! set (*plugin, "Output Gain", "-12"))
                 return 1;
             expect (description + ", main input alone", gainDb (*plugin, false, -12.0), -12.0);
             expect (description + ", Sidechain playing", gainDb (*plugin, true, -12.0), -12.0);

@@ -71,12 +71,15 @@ double defaultPlainValue (const juce::RangedAudioParameter& parameter)
 }
 
 // The plain value a saved one restores to: itself within the parameter's range, the nearer end when it is a finite
-// number outside it, and the default when it isn't a finite number (nan, inf). Read in double, so a value a float
-// can't hold ("1e39") is still a finite one to clamp. Text that isn't a number reads as 0, as juce::var converts it.
+// number outside it, and the default when it isn't a number (nan) or is an infinity the range doesn't end at (Ratio's
+// ends at ∞:1). Read in double, so a value a float can't hold ("1e39") is still a finite one to clamp. Text that
+// isn't a number reads as 0, as juce::var converts it.
 double restoredValue (const juce::RangedAudioParameter& parameter, const juce::var& saved)
 {
     const auto& range = parameter.getNormalisableRange();
     const double value = static_cast<double> (saved);
+    if (std::isinf (value) && (juce::exactlyEqual (value, static_cast<double> (range.start)) || juce::exactlyEqual (value, static_cast<double> (range.end))))
+        return value;
     if (! std::isfinite (value))
         return defaultPlainValue (parameter);
     return juce::jlimit (static_cast<double> (range.start), static_cast<double> (range.end), value);

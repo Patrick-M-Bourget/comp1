@@ -3,6 +3,7 @@
 #include "comp1/Engine.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <random>
 #include <vector>
@@ -38,6 +39,35 @@ inline void processInBlocks (Engine& engine, Channels& audio, const std::vector<
         engine.process ({ main.data(), static_cast<int> (main.size()), count });
         start += count;
     }
+}
+
+// A steady Detection Level: a square wave whose peak reads levelDb, the same magnitude every sample, so the peak
+// detector reads levelDb throughout.
+inline Channels steadyLevel (int numChannels, int numSamples, double levelDb)
+{
+    const auto magnitude = static_cast<float> (std::pow (10.0, levelDb / 20.0));
+    Channels channels (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (numSamples)));
+    for (auto& channel : channels)
+        for (std::size_t i = 0; i < channel.size(); ++i)
+            channel[i] = i % 2 == 0 ? magnitude : -magnitude;
+    return channels;
+}
+
+// The output level in dB, on every channel, after seconds of a steady level through an Engine with settings: the
+// input level plus the gain the last sample got. NaN when the channels differ.
+inline double steadyOutputDb (const Settings& settings, double levelDb, double sampleRate, int numChannels = 1, double seconds = 0.5)
+{
+    const auto input = steadyLevel (numChannels, static_cast<int> (seconds * sampleRate), levelDb);
+    auto output = input;
+    Engine engine;
+    engine.prepare (sampleRate, 512, numChannels);
+    engine.setSettings (settings);
+    processInBlocks (engine, output, { 512 });
+    const double gain = static_cast<double> (output.front().back()) / static_cast<double> (input.front().back());
+    for (const auto& channel : output)
+        if (channel.back() != output.front().back())
+            return std::nan ("");
+    return levelDb + 20.0 * std::log10 (gain);
 }
 
 // Every sample rate comp1 supports: plugkit.conf's SAMPLE_RATES, which pluginval runs at, as tests/CMakeLists.txt

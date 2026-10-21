@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <limits>
 
@@ -70,6 +71,33 @@ TEST_CASE ("A saved value outside its range, or not a number, restores clamped, 
     gain->setAttribute ("value", -std::numeric_limits<double>::infinity());
     host::restore (processor, *xml);
     CHECK (host::value (processor, "output_gain") == 0.0f);
+}
+
+TEST_CASE ("Every compressor setting survives save and load, Ratio infinity:1 included")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    comp1::PluginProcessor saved;
+    const auto ratio = GENERATE (2.5f, std::numeric_limits<float>::infinity());
+    CAPTURE (ratio);
+    host::set (saved, "threshold", -31.5f);
+    host::set (saved, "ratio", ratio);
+    host::set (saved, "knee", 20.0f);
+    host::set (saved, "attack", 0.5f);
+    host::set (saved, "release", 50.0f);
+    host::set (saved, "hold", 20.0f);
+    host::set (saved, "range", 6.0f);
+    host::set (saved, "auto_gain", 1.0f);
+    const auto first = host::saved (saved);
+
+    comp1::PluginProcessor restored;
+    host::restore (restored, first);
+    for (const auto* id : { "threshold", "ratio", "knee", "attack", "release", "hold", "range", "auto_gain" })
+    {
+        CAPTURE (id);
+        CHECK (host::value (restored, id) == host::value (saved, id));
+    }
+    CHECK (host::value (restored, "ratio") == ratio);
+    CHECK (host::saved (restored) == first);
 }
 
 TEST_CASE ("A session missing a parameter restores it to its default")

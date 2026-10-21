@@ -14,14 +14,16 @@ TEST_CASE ("Settings set on another thread while audio runs reach the output")
     constexpr int blockSize = 64;
     Engine engine;
     engine.prepare (48000.0, blockSize, 1);
+    // At Ratio 1:1 throughout, so the output is the Output Gain applied.
+    engine.setSettings ({ .ratio = 1.0, .outputGainDb = 0.0 });
 
     // The writer alternates between two Output Gains, then settles on one: while it writes, every sample plays a
     // gain between the two, and once it has stopped, the last one set plays.
     std::atomic<bool> done { false };
     std::thread writer ([&] {
         for (int i = 0; i < 20000; ++i)
-            engine.setSettings ({ .outputGainDb = i % 2 == 0 ? -6.0 : 0.0 });
-        engine.setSettings ({ .outputGainDb = -6.0 });
+            engine.setSettings ({ .ratio = 1.0, .outputGainDb = i % 2 == 0 ? -6.0 : 0.0 });
+        engine.setSettings ({ .ratio = 1.0, .outputGainDb = -6.0 });
         done = true;
     });
 
