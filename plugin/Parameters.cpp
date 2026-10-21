@@ -94,6 +94,15 @@ std::unique_ptr<juce::AudioParameterFloat> floatParameter (const juce::String& i
     return std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { id, 1 }, name, range, static_cast<float> (defaultValue), attributes);
 }
 
+// The choice index of the free band's Shape that designs as shape.
+int freeBandShapeIndex (plugkit::Shape shape)
+{
+    for (const auto choice : { FreeBandShape::Bell, FreeBandShape::LowShelf, FreeBandShape::HighShelf })
+        if (shapeOf (choice) == shape)
+            return static_cast<int> (choice);
+    return static_cast<int> (FreeBandShape::Bell);
+}
+
 } // namespace
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
@@ -128,7 +137,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { detectionBandShapeId, 1 },
                                                               "Detection Free Band Shape",
                                                               juce::StringArray { "Bell", "Low Shelf", "High Shelf" },
-                                                              static_cast<int> (FreeBandShape::Bell)),
+                                                              freeBandShapeIndex (eq.freeBand.filter.shape)),
                 frequency (detectionBandFrequencyId, "Detection Free Band Frequency", eq.freeBand.filter.frequency),
                 floatParameter (detectionBandGainId, "Detection Free Band Gain", linearRange (parameterRanges::detectionGain), eq.freeBand.filter.gain, withText (2, "dB")),
                 floatParameter (detectionBandQId, "Detection Free Band Q", logRange (parameterRanges::detectionQ), eq.freeBand.filter.q, withText (3, {})));
