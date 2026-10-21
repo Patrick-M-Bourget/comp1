@@ -445,6 +445,92 @@ class Aliasing(unittest.TestCase):
         self.assertAlmostEqual(row.adaa - row.ideal, 20 * math.log10(math.sin(x) / x), delta=0.25)
 
 
+class Gate(unittest.TestCase):
+    """The Gate: a hard gate on its key level, open at Gate Threshold and closed GATE_HYSTERESIS_DB under it, asking
+    for no Gain Reduction open and exactly Gate Range closed, each move one pole in dB."""
+
+    def assertWithinOneSample(self, measured_ms, expected_ms, fs):
+        self.assertLessEqual(abs(measured_ms - expected_ms), 1000 / fs + 1e-9, f"at {fs} Hz")
+
+    def test_closed_it_lowers_by_exactly_gate_range(self):
+        for gate_range in (6, 20, 60):
+            self.assertAlmostEqual(dynlab.gate_step(dynlab.Gate(range=gate_range), 48000).depth, gate_range, places=9)
+
+    def test_gate_release_begins_after_gate_hold_and_the_key_hold(self):
+        for fs in dynlab.SAMPLE_RATES:
+            for hold in (0, 20, 500):
+                step = dynlab.gate_step(dynlab.Gate(hold=hold), fs)
+                self.assertWithinOneSample(step.release_begins, hold + dynlab.GATE_KEY_HOLD_MS, fs)
+
+    def test_gate_attack_and_gate_release_reach_63_percent_in_one_time_constant(self):
+        # The slowest settings once: settling a 5000 ms Gate Release for the depth is long.
+        cases = [(fs, attack, release) for fs in dynlab.SAMPLE_RATES for attack, release in ((1, 100), (0.5, 50))]
+        for fs, attack, release in cases + [(44100, 250, 5000)]:
+            with self.subTest(fs=fs, attack=attack, release=release):
+                    step = dynlab.gate_step(dynlab.Gate(attack=attack, release=release), fs)
+                    self.assertWithinOneSample(step.attack_63, attack, fs)
+                    self.assertWithinOneSample(step.attack_90, attack * math.log(10), fs)
+                    self.assertWithinOneSample(step.release_63, release, fs)
+                    self.assertWithinOneSample(step.release_90, release * math.log(10), fs)
+
+    def test_gate_range_0_has_nothing_to_measure(self):
+        self.assertIsNone(dynlab.gate_step(dynlab.Gate(range=0), 48000))
+
+    def test_between_the_closing_level_and_gate_threshold_it_stays_as_it_is(self):
+        gate = dynlab.Gate(hold=0)
+        between = gate.threshold - dynlab.GATE_HYSTERESIS_DB / 2
+        opened = dynlab.GateDetector(gate, 48000)
+        closed = dynlab.GateDetector(gate, 48000, gate.range, is_open=False)
+        for _ in range(48000):
+            self.assertEqual(opened.process(between), 0.0)
+            closed.process(between)
+        self.assertAlmostEqual(closed.gain_reduction, gate.range, places=9)
+        self.assertFalse(closed.is_open)
+
+    def test_a_key_back_above_the_closing_level_restarts_gate_hold(self):
+        fs = 48000
+        gate = dynlab.Gate(hold=20)
+        detector = dynlab.GateDetector(gate, fs)
+        quiet, between = gate.threshold - 20, gate.threshold - dynlab.GATE_HYSTERESIS_DB / 2
+        key_hold = round(dynlab.GATE_KEY_HOLD_MS * fs / 1000)
+        for _ in range(key_hold + 1):
+            detector.process(gate.threshold + 20)
+        # 15 ms under the closing level, past the key hold but within Gate Hold, then one sample back between.
+        for _ in range(key_hold + round(0.015 * fs)):
+            detector.process(quiet)
+        detector.process(between)
+        # A whole key hold and Gate Hold again before Gate Release begins.
+        for n in range(key_hold + round(0.020 * fs)):
+            self.assertEqual(detector.process(quiet), 0.0, n)
+        self.assertGreater(detector.process(quiet), 0.0)
+
+    def test_with_no_key_it_opens_at_gate_attack_and_stays_open(self):
+        fs = 48000
+        gate = dynlab.Gate()
+        detector = dynlab.GateDetector(gate, fs, gate.range, is_open=False)
+        reductions = [detector.process(None) for _ in range(fs)]
+        attack_63 = next(n for n, r in enumerate(reductions) if r <= gate.range / math.e)
+        self.assertLessEqual(abs(attack_63 + 1 - gate.attack * fs / 1000), 1)
+        self.assertEqual(reductions[-1], 0.0)
+
+    def test_open_and_settled_it_asks_for_no_gain_reduction_exactly(self):
+        gate = dynlab.Gate()
+        detector = dynlab.GateDetector(gate, 48000, gate.range, is_open=False)
+        reductions = [detector.process(gate.threshold) for _ in range(48000)]
+        self.assertEqual(reductions[-1], 0.0)
+
+    def test_the_constants_are_the_trade_offs_choice_and_keep_every_signal_steady(self):
+        rows = dynlab.gate_trade_off()
+        self.assertEqual(dynlab.chosen_gate_constants(rows), (dynlab.GATE_KEY_HOLD_MS, dynlab.GATE_HYSTERESIS_DB))
+        # With no key hold every low signal ripples, and how late a stop closes is the key hold.
+        for row in rows:
+            if row.key_hold == 0:
+                self.assertFalse(row.steady)
+            self.assertAlmostEqual(row.stop, row.key_hold, delta=1000 / dynlab.GATE_TRADE_OFF_RATE)
+            self.assertAlmostEqual(row.fade, row.key_hold + 1000 * row.hysteresis / dynlab.GATE_FADE_DB_PER_S,
+                                   delta=1000 / dynlab.GATE_TRADE_OFF_RATE)
+
+
 LAB = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(LAB))
 
@@ -477,14 +563,19 @@ class CommandLine(unittest.TestCase):
                   "lookahead": dynlab.LOOKAHEAD_RANGE, "drive": dynlab.DRIVE_RANGE, "ceiling": dynlab.CEILING_RANGE}
         defaults = {**vars(dynlab.Settings()), "lookahead": dynlab.LOOKAHEAD_DEFAULT, "drive": dynlab.Saturation().drive,
                     "ceiling": dynlab.CEILING_DEFAULT}
+        # The Gate's, under the compressor's ranges of the same names.
+        gate = dynlab.Gate()
+        for name, (low_high, _) in dynlab.GATE_PARAMETERS.items():
+            ranges[f"gate {name}"] = low_high
+            defaults[f"gate {name}"] = getattr(gate, name)
         with open(os.path.join(LAB, "USAGE.md")) as doc:
-            rows = {cells[0]: cells[1:] for cells in
+            rows = {cells[0].lower(): cells[1:] for cells in
                     ([cell.strip() for cell in line.strip().strip("|").split("|")] for line in doc)
                     if cells[0].lower() in ranges}
-        self.assertEqual(set(rows), {name.capitalize() for name in ranges})
+        self.assertEqual(set(rows), set(ranges))
         for name, (low, high) in ranges.items():
             with self.subTest(name):
-                shown_range, shown_default = rows[name.capitalize()]
+                shown_range, shown_default = rows[name]
                 shown_low, shown_high = shown_range.split(" to ")
                 self.assertEqual((number(shown_low), number(shown_high)), (low, high))
                 self.assertEqual(number(shown_default), defaults[name])
@@ -501,7 +592,12 @@ class CommandLine(unittest.TestCase):
                             (("saturation", "--drive", "25"), ("Drive", "0", "24")),
                             (("aliasing", "--drive", "-1"), ("Drive", "0", "24")),
                             (("step", "--lookahead", "6"), ("Lookahead", "0", "5")),
-                            (("limiter", "--ceiling", "1"), ("Ceiling", "-30", "0"))):
+                            (("limiter", "--ceiling", "1"), ("Ceiling", "-30", "0")),
+                            (("gate", "--gate-threshold", "-61"), ("Gate threshold", "-60", "0")),
+                            (("gate", "--gate-range", "61"), ("Gate range", "0", "60")),
+                            (("gate", "--gate-attack", "0"), ("Gate attack", "0.005", "250")),
+                            (("gate", "--gate-release", "1"), ("Gate release", "5", "5000")),
+                            (("gate", "--gate-hold", "501"), ("Gate hold", "0", "500"))):
             with self.subTest(args):
                 result = run(*args)
                 self.assertNotEqual(result.returncode, 0)
