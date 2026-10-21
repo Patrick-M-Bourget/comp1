@@ -223,6 +223,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                                               static_cast<int> (defaults.processingMode),
                                                               juce::AudioParameterChoiceAttributes().withAutomatable (false)),
                 floatParameter (lookaheadId, "Lookahead", linearRange (parameterRanges::lookahead), defaults.lookaheadMs, withText (2, "ms")));
+    // Oversampling's choices are stored by index too, so their order never changes (ADR 0003). The setting is kept as
+    // stored at any sample rate; one over the rate's cap plays the cap (comp1/Latency.h's maxOversampling). Hosts can't
+    // automate it: a change fades the nonlinear stages' residual out and in.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { oversamplingId, 1 },
+                                                              "Oversampling",
+                                                              juce::StringArray { "1x", "2x", "4x", "8x" },
+                                                              static_cast<int> (defaults.oversampling),
+                                                              juce::AudioParameterChoiceAttributes().withAutomatable (false)));
     // Not JUCE's bypass parameter (the processor doesn't override getBypassParameter()), so the host's own bypass
     // stays separate from it.
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { globalBypassId, 1 }, "Global Bypass", defaults.globalBypass));
@@ -264,6 +272,7 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       stereoLink (parameters.getRawParameterValue (stereoLinkId)),
       processingMode (parameters.getRawParameterValue (processingModeId)),
       lookahead (parameters.getRawParameterValue (lookaheadId)),
+      oversampling (parameters.getRawParameterValue (oversamplingId)),
       globalBypass (parameters.getRawParameterValue (globalBypassId))
 {
 }
@@ -314,6 +323,7 @@ Settings SettingsReader::read() const
              .stereoLink = plain (stereoLink),
              .processingMode = choice (processingMode, ProcessingMode::HighQuality),
              .lookaheadMs = plain (lookahead),
+             .oversampling = choice (oversampling, Oversampling::x8),
              .globalBypass = on (globalBypass) };
 }
 

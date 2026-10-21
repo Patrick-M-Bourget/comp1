@@ -1,10 +1,12 @@
 #include "Measure.h"
+#include "comp1/Latency.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
 
 #include <cmath>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <vector>
@@ -33,8 +35,8 @@ struct Condition
     std::optional<double> naiveDb; // the hardest condition's
 };
 
-// The rows `python3 tools/dyn-lab/dynlab.py aliasing` prints, copied as printed. Oversampling (#10) adds tables of its
-// own; Colour's is below.
+// The rows `python3 tools/dyn-lab/dynlab.py aliasing` prints, copied as printed. Oversampling's tables and Colour's
+// are below.
 const std::vector<Condition>& baseRate()
 {
     static const std::vector<Condition> all {
@@ -59,19 +61,29 @@ const std::vector<Condition>& baseRate()
 }
 
 // The tone's spectrum through the Engine, at Ratio 1:1 so only Saturation shapes it, at a Saturation Position and in a
-// Processing Mode: two lengths of it, the second measured, as dyn-lab measures it. High Quality's latency is far under
-// a length, so its second is steady too.
-std::vector<double> saturatedSpectrum (double sampleRate, int bin, double driveDb, SaturationPosition position, ProcessingMode mode)
+// Processing Mode, at an Oversampling: two lengths of it, the second measured, as dyn-lab measures it. High Quality's
+// latency is far under a length, so its second is steady too.
+std::vector<double> saturatedSpectrum (double sampleRate,
+                                       int bin,
+                                       double driveDb,
+                                       SaturationPosition position,
+                                       ProcessingMode mode,
+                                       Oversampling oversampling = Oversampling::x1)
 {
     test::Channels audio { test::binCentredTone (bin, 0.0) };
     Engine engine;
     engine.prepare (sampleRate, 512, 1);
-    engine.setSettings ({ .ratio = 1.0, .saturation = true, .driveDb = driveDb, .saturationPosition = position, .processingMode = mode });
+    engine.setSettings ({ .ratio = 1.0,
+                          .saturation = true,
+                          .driveDb = driveDb,
+                          .saturationPosition = position,
+                          .processingMode = mode,
+                          .oversampling = oversampling });
     test::processInBlocks (engine, audio, { 512 });
     return test::amplitudes (audio.front());
 }
 
-// Zero Latency, and High Quality, which runs at the base rate until Oversampling (#10).
+// Zero Latency, and High Quality at 1x, which runs Saturation at the base rate too.
 ProcessingMode atBaseRate() { return GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality); }
 
 } // namespace
@@ -88,6 +100,139 @@ TEST_CASE ("At the base rate, the worst alias at each of dyn-lab's reference con
     CHECK (std::abs (worst - condition.labDb) <= labWithinDb);
     if (condition.naiveDb)
         CHECK (*condition.naiveDb - worst >= improvementDb);
+}
+
+namespace
+{
+
+// dyn-lab's ALIASING_TOLERANCE passband_ceilings: oversampled, the worst alias below the passband edge is at most its
+// factor's ceiling, and the worst anywhere no worse than ADAA's at 1x.
+constexpr double passbandCeilingDb (Oversampling oversampling)
+{
+    return oversampling == Oversampling::x2 ? -45.0 : oversampling == Oversampling::x4 ? -60.0 : -75.0;
+}
+// dyn-lab's OVERSAMPLING_PASSBAND_EDGE, of Nyquist: the band below it is the one the filters keep flat.
+constexpr double passbandEdge = 0.8;
+// Under this the lab's figures meet the float audio's own rounding, so the Engine's are only checked against the
+// ceiling there.
+constexpr double comparedAboveDb = -110.0;
+
+// One reference condition oversampled: the worst alias dyn-lab gives for it anywhere, and below the passband edge.
+struct Oversampled
+{
+    double sampleRate;
+    double frequency; // nominal
+    double driveDb;
+    double labDb;
+    double passbandDb;
+};
+
+// The rows `python3 tools/dyn-lab/dynlab.py aliasing --oversampling N` prints, copied as printed: each factor's
+// worst alias anywhere and below the passband edge (1x's column is baseRate()'s).
+const std::vector<Oversampled>& oversampledRows (Oversampling oversampling)
+{
+    static const std::vector<Oversampled> x2 {
+        { 44100.0, 1000.0, 6.0, -109.27, -148.55 }, { 44100.0, 1000.0, 12.0, -88.42, -127.78 },
+        { 44100.0, 1000.0, 18.0, -66.19, -112.89 }, { 44100.0, 1000.0, 24.0, -62.23, -87.26 },
+        { 44100.0, 3000.0, 6.0, -109.19, -115.82 }, { 44100.0, 3000.0, 12.0, -87.74, -104.25 },
+        { 44100.0, 3000.0, 18.0, -65.31, -73.92 }, { 44100.0, 3000.0, 24.0, -62.58, -69.85 },
+        { 44100.0, 5000.0, 6.0, -81.14, -92.52 }, { 44100.0, 5000.0, 12.0, -70.17, -83.54 },
+        { 44100.0, 5000.0, 18.0, -60.04, -64.33 }, { 44100.0, 5000.0, 24.0, -50.53, -50.53 },
+        { 44100.0, 10000.0, 6.0, -83.46, -83.95 }, { 44100.0, 10000.0, 12.0, -56.80, -67.49 },
+        { 44100.0, 10000.0, 18.0, -41.10, -55.29 }, { 44100.0, 10000.0, 24.0, -39.45, -54.52 },
+        { 48000.0, 1000.0, 6.0, -114.60, -150.55 }, { 48000.0, 1000.0, 12.0, -105.65, -130.18 },
+        { 48000.0, 1000.0, 18.0, -69.62, -115.76 }, { 48000.0, 1000.0, 24.0, -70.74, -90.26 },
+        { 48000.0, 3000.0, 6.0, -98.54, -112.68 }, { 48000.0, 3000.0, 12.0, -80.29, -98.87 },
+        { 48000.0, 3000.0, 18.0, -69.47, -80.64 }, { 48000.0, 3000.0, 24.0, -62.01, -71.18 },
+        { 48000.0, 5000.0, 6.0, -52.52, -107.11 }, { 48000.0, 5000.0, 12.0, -41.48, -81.44 },
+        { 48000.0, 5000.0, 18.0, -31.29, -65.29 }, { 48000.0, 5000.0, 24.0, -31.01, -56.35 },
+        { 48000.0, 10000.0, 6.0, -80.13, -80.13 }, { 48000.0, 10000.0, 12.0, -61.76, -61.76 },
+        { 48000.0, 10000.0, 18.0, -57.00, -57.00 }, { 48000.0, 10000.0, 24.0, -48.07, -48.07 },
+    };
+    static const std::vector<Oversampled> x4 {
+        { 44100.0, 1000.0, 6.0, -108.45, -178.84 }, { 44100.0, 1000.0, 12.0, -87.62, -166.26 },
+        { 44100.0, 1000.0, 18.0, -65.39, -142.05 }, { 44100.0, 1000.0, 24.0, -61.30, -127.64 },
+        { 44100.0, 3000.0, 6.0, -148.51, -148.51 }, { 44100.0, 3000.0, 12.0, -123.51, -123.51 },
+        { 44100.0, 3000.0, 18.0, -110.67, -111.00 }, { 44100.0, 3000.0, 24.0, -88.48, -88.48 },
+        { 44100.0, 5000.0, 6.0, -80.06, -128.37 }, { 44100.0, 5000.0, 12.0, -68.74, -110.18 },
+        { 44100.0, 5000.0, 18.0, -58.25, -92.83 }, { 44100.0, 5000.0, 24.0, -56.77, -76.71 },
+        { 44100.0, 10000.0, 6.0, -117.44, -117.44 }, { 44100.0, 10000.0, 12.0, -85.70, -85.70 },
+        { 44100.0, 10000.0, 18.0, -70.01, -70.01 }, { 44100.0, 10000.0, 24.0, -62.80, -62.80 },
+        { 48000.0, 1000.0, 6.0, -113.93, -184.28 }, { 48000.0, 1000.0, 12.0, -104.74, -166.90 },
+        { 48000.0, 1000.0, 18.0, -68.82, -152.78 }, { 48000.0, 1000.0, 24.0, -69.81, -126.88 },
+        { 48000.0, 3000.0, 6.0, -97.65, -152.35 }, { 48000.0, 3000.0, 12.0, -79.33, -131.61 },
+        { 48000.0, 3000.0, 18.0, -68.23, -109.08 }, { 48000.0, 3000.0, 24.0, -60.12, -97.05 },
+        { 48000.0, 5000.0, 6.0, -51.61, -135.50 }, { 48000.0, 5000.0, 12.0, -40.28, -113.72 },
+        { 48000.0, 5000.0, 18.0, -29.76, -89.06 }, { 48000.0, 5000.0, 24.0, -28.17, -73.50 },
+        { 48000.0, 10000.0, 6.0, -107.79, -108.51 }, { 48000.0, 10000.0, 12.0, -82.20, -87.84 },
+        { 48000.0, 10000.0, 18.0, -66.04, -70.62 }, { 48000.0, 10000.0, 24.0, -57.08, -65.68 },
+    };
+    static const std::vector<Oversampled> x8 {
+        { 44100.0, 1000.0, 6.0, -108.26, -199.75 }, { 44100.0, 1000.0, 12.0, -87.43, -182.09 },
+        { 44100.0, 1000.0, 18.0, -65.19, -171.17 }, { 44100.0, 1000.0, 24.0, -61.07, -156.81 },
+        { 44100.0, 3000.0, 6.0, -159.13, -159.13 }, { 44100.0, 3000.0, 12.0, -140.61, -140.61 },
+        { 44100.0, 3000.0, 18.0, -128.55, -128.55 }, { 44100.0, 3000.0, 24.0, -118.80, -120.71 },
+        { 44100.0, 5000.0, 6.0, -79.79, -157.44 }, { 44100.0, 5000.0, 12.0, -68.39, -136.26 },
+        { 44100.0, 5000.0, 18.0, -57.78, -118.70 }, { 44100.0, 5000.0, 24.0, -55.71, -100.69 },
+        { 44100.0, 10000.0, 6.0, -138.41, -139.89 }, { 44100.0, 10000.0, 12.0, -120.21, -124.13 },
+        { 44100.0, 10000.0, 18.0, -95.24, -95.24 }, { 44100.0, 10000.0, 24.0, -79.86, -79.86 },
+        { 48000.0, 1000.0, 6.0, -113.76, -199.33 }, { 48000.0, 1000.0, 12.0, -104.52, -182.15 },
+        { 48000.0, 1000.0, 18.0, -68.63, -170.68 }, { 48000.0, 1000.0, 24.0, -69.59, -156.66 },
+        { 48000.0, 3000.0, 6.0, -97.44, -173.39 }, { 48000.0, 3000.0, 12.0, -79.10, -155.38 },
+        { 48000.0, 3000.0, 18.0, -67.93, -144.61 }, { 48000.0, 3000.0, 24.0, -59.61, -122.63 },
+        { 48000.0, 5000.0, 6.0, -51.39, -161.41 }, { 48000.0, 5000.0, 12.0, -39.98, -147.59 },
+        { 48000.0, 5000.0, 18.0, -29.37, -134.22 }, { 48000.0, 5000.0, 24.0, -27.26, -100.56 },
+        { 48000.0, 10000.0, 6.0, -126.26, -126.26 }, { 48000.0, 10000.0, 12.0, -117.01, -117.01 },
+        { 48000.0, 10000.0, 18.0, -97.85, -97.85 }, { 48000.0, 10000.0, 24.0, -82.15, -82.15 },
+    };
+    return oversampling == Oversampling::x2 ? x2 : oversampling == Oversampling::x4 ? x4 : x8;
+}
+
+// The same condition's row at the base rate.
+const Condition& atBase (const Oversampled& row)
+{
+    for (const auto& condition : baseRate())
+        if (condition.sampleRate == row.sampleRate && condition.frequency == row.frequency && condition.driveDb == row.driveDb)
+            return condition;
+    FAIL ("no base-rate row for the condition");
+    return baseRate().front();
+}
+
+struct OversampledCondition
+{
+    Oversampling oversampling;
+    Oversampled row;
+};
+
+std::vector<OversampledCondition> oversampledConditions()
+{
+    std::vector<OversampledCondition> all;
+    for (const auto oversampling : { Oversampling::x2, Oversampling::x4, Oversampling::x8 })
+        for (const auto& row : oversampledRows (oversampling))
+            all.push_back ({ oversampling, row });
+    return all;
+}
+
+} // namespace
+
+TEST_CASE ("Oversampled, the worst alias at each of dyn-lab's reference conditions is within its factor's tolerance and no worse than at 1x", "[sweep]")
+{
+    const auto conditions = oversampledConditions();
+    const auto& [oversampling, row] = GENERATE_REF (from_range (conditions));
+    // One position: both run the same oversampled section, and the base-rate rows check both.
+    const auto position = SaturationPosition::After;
+    CAPTURE (factorOf (oversampling), row.sampleRate, row.frequency, row.driveDb);
+    const int bin = test::toneBin (row.frequency, row.sampleRate);
+    const auto spectrum = saturatedSpectrum (row.sampleRate, bin, row.driveDb, position, ProcessingMode::HighQuality, oversampling);
+    const double worst = test::worstAliasDb (spectrum, bin);
+    const auto top = static_cast<std::size_t> (passbandEdge * test::spectrumLength / 2);
+    const double passband = test::worstAliasDb ({ spectrum.begin(), spectrum.begin() + static_cast<std::ptrdiff_t> (top + 1) }, bin);
+    CHECK (passband <= passbandCeilingDb (oversampling));
+    CHECK (worst <= atBase (row).labDb);
+    if (row.labDb > comparedAboveDb)
+        CHECK (std::abs (worst - row.labDb) <= labWithinDb);
+    if (row.passbandDb > comparedAboveDb)
+        CHECK (std::abs (passband - row.passbandDb) <= labWithinDb);
 }
 
 namespace
@@ -160,7 +305,7 @@ struct ColourCondition
 
 // The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca` and `--character fet` print, copied as
 // printed. Only the ceiling is checked: the improvement over the naive shaper doesn't hold for Colour at 20 and 30 dB of
-// Gain Reduction (tools/dyn-lab/USAGE.md, "colour"). Oversampling (#10) adds its rows.
+// Gain Reduction (tools/dyn-lab/USAGE.md, "colour").
 const std::vector<ColourCondition>& colourConditions()
 {
     static const std::vector<ColourCondition> all {

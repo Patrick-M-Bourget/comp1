@@ -37,6 +37,8 @@ add_executable(comp1_engine_tests
     engine/LookaheadTest.cpp
     engine/NonFiniteInputTest.cpp
     engine/OutputGainTest.cpp
+    engine/OversamplerTest.cpp
+    engine/OversamplingTest.cpp
     engine/ProcessingModeTest.cpp
     engine/RealtimeSafetyTest.cpp
     engine/SaturationTest.cpp
@@ -69,6 +71,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/GlobalBypassParameterTest.cpp
         plugin/LatencyReportTest.cpp
         plugin/LimiterParameterTest.cpp
+        plugin/OversamplingParameterTest.cpp
         plugin/PluginShellTest.cpp
         plugin/SaturationParameterTest.cpp
         plugin/SessionTest.cpp

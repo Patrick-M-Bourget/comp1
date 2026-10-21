@@ -5,6 +5,7 @@
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
 
+#include <utility>
 #include <vector>
 
 using namespace comp1;
@@ -56,4 +57,39 @@ TEST_CASE ("The Wet path's delay up to the Dry/Wet sum is the Oversampling reser
     CAPTURE (row.sampleRate);
     CHECK (wetPathLatencySamples (ProcessingMode::ZeroLatency, row.sampleRate) == 0);
     CHECK (wetPathLatencySamples (ProcessingMode::HighQuality, row.sampleRate) == row.oversampling + row.lookahead);
+}
+
+namespace
+{
+
+// The largest Oversampling allowed at each sample rate, from python3 tools/dyn-lab/dynlab.py oversampling, copied as
+// printed: the internal rate at or under 384 kHz (ADR 0001).
+const std::vector<std::pair<double, Oversampling>>& oversamplingCaps()
+{
+    static const std::vector<std::pair<double, Oversampling>> rows {
+        { 44100, Oversampling::x8 }, { 48000, Oversampling::x8 },   { 88200, Oversampling::x4 },
+        { 96000, Oversampling::x4 }, { 176400, Oversampling::x2 }, { 192000, Oversampling::x2 },
+    };
+    return rows;
+}
+
+} // namespace
+
+TEST_CASE ("The largest Oversampling allowed is dyn-lab's at every sample rate")
+{
+    std::vector<double> rates;
+    for (const auto& [sampleRate, cap] : oversamplingCaps())
+    {
+        CAPTURE (sampleRate);
+        CHECK (maxOversampling (sampleRate) == cap);
+        rates.push_back (sampleRate);
+    }
+    CHECK (rates == test::sampleRates());
+}
+
+TEST_CASE ("Each Oversampling section's delay is half the Oversampling reserve")
+{
+    // dyn-lab's OVERSAMPLING_SECTION_SAMPLES: the two sections together take the whole reserve.
+    CHECK (oversamplingSectionSamples == 64);
+    CHECK (2 * oversamplingSectionSamples == oversamplingReserveSamples);
 }

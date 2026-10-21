@@ -154,7 +154,7 @@ How the whole plugin trades latency against quality: Zero Latency, or High Quali
 _Avoid_: Phase mode, quality setting
 
 **Oversampling**:
-Running the processing at a multiple of the host's sample rate, in High Quality only.
+Running the nonlinear stages' residual at a multiple of the host's sample rate, in High Quality only: 1x, 2x, 4x or 8x, capped so the internal rate stays at or under about 384 kHz (ADR 0001, ADR 0009).
 _Avoid_: Upsampling, HQ factor
 
 **Lookahead**:
