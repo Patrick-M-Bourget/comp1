@@ -27,6 +27,7 @@ inline constexpr ParameterRange release { 5.0, 5000.0 };    // ms; comp1's own
 inline constexpr ParameterRange hold { 0.0, 500.0 };        // ms
 inline constexpr ParameterRange range { 0.0, 60.0 };        // dB; comp1's own: its top sets no limit
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own
+inline constexpr ParameterRange lookahead { 0.0, 5.0 };     // ms; ADR 0001's budget for it
 } // namespace parameterRanges
 
 // What the compressor's detection listens to: the main input (Internal), or the Sidechain (External). Saved by index,
@@ -35,6 +36,14 @@ enum class DetectionSource
 {
     Internal,
     External,
+};
+
+// How the whole plugin trades latency against quality (ADR 0001); comp1/Latency.h gives each one's latency. Stored in
+// sessions in this order, which never changes (ADR 0003).
+enum class ProcessingMode
+{
+    ZeroLatency,
+    HighQuality,
 };
 
 // Everything the Engine plays, in one value: the Plugin Shell builds it from the host parameters and hands it over
@@ -64,6 +73,10 @@ struct Settings
     // Detection Audition: not a host parameter, and never saved. Held while the editor holds it, it plays the
     // detection signal in place of the Dry and Wet sum, before Output Gain.
     bool detectionAudition = false;
+
+    // Whole-plugin: the Processing Mode, and Lookahead in ms, which High Quality alone reads.
+    ProcessingMode processingMode = ProcessingMode::ZeroLatency;
+    double lookaheadMs = 0.0;
 
 #if defined(__GNUC__)
     #pragma GCC diagnostic push

@@ -112,6 +112,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 // Linear in dB, symmetric about 0 dB, which is the default and the range's exact centre: the default
                 // passes audio through bit for bit.
                 floatParameter (outputGainId, "Output Gain", linearRange (parameterRanges::outputGain), defaults.outputGainDb, withText (2, "dB")));
+    // Processing Mode's choices are stored in sessions by index, so their order never changes (ADR 0003). Hosts can't
+    // automate it: a switch changes the latency the host compensates for, and fades the output out and in.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { processingModeId, 1 },
+                                                              "Processing Mode",
+                                                              juce::StringArray { "Zero Latency", "High Quality" },
+                                                              static_cast<int> (defaults.processingMode),
+                                                              juce::AudioParameterChoiceAttributes().withAutomatable (false)),
+                floatParameter (lookaheadId, "Lookahead", linearRange (parameterRanges::lookahead), defaults.lookaheadMs, withText (2, "ms")));
     return layout;
 }
 
@@ -126,7 +134,9 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       range (parameters.getRawParameterValue (rangeId)),
       autoGain (parameters.getRawParameterValue (autoGainId)),
       outputGain (parameters.getRawParameterValue (outputGainId)),
-      detectionSource (parameters.getRawParameterValue (detectionSourceId))
+      detectionSource (parameters.getRawParameterValue (detectionSourceId)),
+      processingMode (parameters.getRawParameterValue (processingModeId)),
+      lookahead (parameters.getRawParameterValue (lookaheadId))
 {
 }
 
@@ -143,7 +153,9 @@ Settings SettingsReader::read() const
              .rangeDb = plain (range),
              .autoGain = autoGain->load (std::memory_order_relaxed) >= 0.5f,
              .outputGainDb = plain (outputGain),
-             .detectionSource = detectionSource->load (std::memory_order_relaxed) >= 0.5f ? DetectionSource::External : DetectionSource::Internal };
+             .detectionSource = detectionSource->load (std::memory_order_relaxed) >= 0.5f ? DetectionSource::External : DetectionSource::Internal,
+             .processingMode = processingMode->load (std::memory_order_relaxed) >= 0.5f ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency,
+             .lookaheadMs = plain (lookahead) };
 }
 
 } // namespace comp1::parameters

@@ -1,5 +1,7 @@
 #include "Measure.h"
 
+#include "comp1/Latency.h"
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
@@ -69,6 +71,22 @@ TEST_CASE ("With Detection Audition held, External and no Sidechain, the output 
 {
     const auto output = play (compressing (DetectionSource::External, true), test::noise (2, numSamples));
     CHECK (output == test::Channels (2, std::vector<float> (numSamples, 0.0f)));
+}
+
+TEST_CASE ("In High Quality, Detection Audition is delayed by the reported latency, as the compressed signal is")
+{
+    const double sampleRate = GENERATE (44100.0, 96000.0);
+    CAPTURE (sampleRate);
+    auto settings = compressing (DetectionSource::Internal, true);
+    settings.processingMode = ProcessingMode::HighQuality;
+    settings.lookaheadMs = 2.0;
+    const auto input = test::noise (2, numSamples);
+    auto output = input;
+    Engine engine;
+    engine.prepare (sampleRate, 512, 2);
+    engine.setSettings (settings);
+    test::processInBlocks (engine, output, { 512 });
+    CHECK (output == test::delayed (input, latencySamples (ProcessingMode::HighQuality, sampleRate)));
 }
 
 TEST_CASE ("Output Gain applies to Detection Audition")

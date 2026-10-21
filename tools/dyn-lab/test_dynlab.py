@@ -1,5 +1,5 @@
-"""Tests for dyn-lab, at its five seams: the gain computer, the step response, Auto Release, Auto Gain and the
-command line.
+"""Tests for dyn-lab, at its six seams: the gain computer, the step response, Auto Release, Auto Gain, the latency
+and the command line.
 
     python3 tools/dyn-lab/test_dynlab.py
 """
@@ -93,6 +93,22 @@ class StepResponse(unittest.TestCase):
 
     def test_range_0_has_no_gain_reduction_to_measure(self):
         self.assertIsNone(dynlab.step_response(dynlab.Settings(range=0), 48000))
+
+    def test_lookahead_brings_attack_forward_against_the_delayed_audio(self):
+        # The detector meets the step Lookahead ms before the listener does: Attack's times, measured from the step in
+        # the delayed audio, come Lookahead earlier, and Hold and Release, counted as before, don't move.
+        for fs in dynlab.SAMPLE_RATES:
+            step = dynlab.step_response(dynlab.Settings(attack=10, release=100, hold=20), fs, lookahead=5)
+            self.assertWithinOneSample(step.attack_63, 10 - 5, fs)
+            self.assertWithinOneSample(step.attack_90, 10 * math.log(10) - 5, fs)
+            self.assertWithinOneSample(step.hold, 20, fs)
+            self.assertWithinOneSample(step.release_63, 100, fs)
+
+    def test_a_lookahead_longer_than_attack_reduces_gain_before_the_step_is_heard(self):
+        for fs in dynlab.SAMPLE_RATES:
+            step = dynlab.step_response(dynlab.Settings(attack=0.5, release=50, hold=20), fs, lookahead=2)
+            self.assertWithinOneSample(step.attack_63, 0.5 - 2, fs)
+            self.assertLess(step.attack_63, 0)
 
 
 class AutoRelease(unittest.TestCase):
@@ -208,6 +224,31 @@ class AutoGain(unittest.TestCase):
         self.assertLess(dynlab.level_difference(defaults, auto_gain_db=0), -dynlab.AUTO_GAIN_TOLERANCE)
 
 
+class Latency(unittest.TestCase):
+    def test_zero_latency_reports_0(self):
+        for fs in dynlab.supported_rates():
+            self.assertEqual(dynlab.latency("zero latency", fs), 0)
+
+    def test_high_quality_is_its_three_parts_in_whole_host_samples(self):
+        # Worked by hand. At 44.1 kHz, 5 ms is 220.5 samples and 1 ms is 44.1, each rounded up; at 48 and 192 kHz
+        # both are whole.
+        for fs, parts, total in ((44100, (128, 221, 45), 394), (48000, (128, 240, 48), 416),
+                                 (192000, (128, 960, 192), 1280)):
+            with self.subTest(fs):
+                self.assertEqual(dynlab.high_quality_parts(fs), parts)
+                self.assertEqual(dynlab.latency("high quality", fs), total)
+
+    def test_the_rates_are_plugkit_confs(self):
+        self.assertEqual(dynlab.supported_rates(), (44100, 48000, 88200, 96000, 176400, 192000))
+
+    def test_the_lookahead_budget_is_the_top_of_lookaheads_range_rounded_up(self):
+        for fs in dynlab.supported_rates():
+            with self.subTest(fs):
+                _, budget, _ = dynlab.high_quality_parts(fs)
+                top = dynlab.LOOKAHEAD_RANGE[1] * fs / 1000
+                self.assertTrue(top <= budget < top + 1)
+
+
 LAB = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(LAB))
 
@@ -234,18 +275,21 @@ class CommandLine(unittest.TestCase):
             text = text.replace("−", "-").split()[0]
             return math.inf if text == "∞" else float(text)
 
+        # The compressor's settings, and Lookahead, which is Processing Mode's and kept out of Settings.
+        ranges = {**{name: low_high for name, (low_high, _) in dynlab.PARAMETERS.items()},
+                  "lookahead": dynlab.LOOKAHEAD_RANGE}
+        defaults = {**vars(dynlab.Settings()), "lookahead": dynlab.LOOKAHEAD_DEFAULT}
         with open(os.path.join(LAB, "USAGE.md")) as doc:
             rows = {cells[0]: cells[1:] for cells in
                     ([cell.strip() for cell in line.strip().strip("|").split("|")] for line in doc)
-                    if cells[0].lower() in dynlab.PARAMETERS}
-        self.assertEqual(set(rows), {name.capitalize() for name in dynlab.PARAMETERS})
-        defaults = dynlab.Settings()
-        for name, ((low, high), _) in dynlab.PARAMETERS.items():
+                    if cells[0].lower() in ranges}
+        self.assertEqual(set(rows), {name.capitalize() for name in ranges})
+        for name, (low, high) in ranges.items():
             with self.subTest(name):
                 shown_range, shown_default = rows[name.capitalize()]
                 shown_low, shown_high = shown_range.split(" to ")
                 self.assertEqual((number(shown_low), number(shown_high)), (low, high))
-                self.assertEqual(number(shown_default), getattr(defaults, name))
+                self.assertEqual(number(shown_default), defaults[name])
 
     def test_out_of_range_settings_exit_non_zero_naming_the_parameter_and_its_range(self):
         for args, named in ((("step", "--attack", "300"), ("Attack", "0.005", "250")),
@@ -255,7 +299,8 @@ class CommandLine(unittest.TestCase):
                             (("transfer", "--ratio", "0.5"), ("Ratio", "1", "∞")),
                             (("transfer", "--knee", "80"), ("Knee", "0", "72")),
                             (("step", "--range", "61"), ("Range", "0", "60")),
-                            (("autogain", "--range", "-1"), ("Range", "0", "60"))):
+                            (("autogain", "--range", "-1"), ("Range", "0", "60")),
+                            (("step", "--lookahead", "6"), ("Lookahead", "0", "5"))):
             with self.subTest(args):
                 result = run(*args)
                 self.assertNotEqual(result.returncode, 0)
@@ -267,6 +312,15 @@ class CommandLine(unittest.TestCase):
         result = run("autogain", "--threshold", "-60", "--ratio", "inf")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("outside", result.stdout)
+
+    def test_latency_prints_a_row_for_every_supported_rate_and_the_mode_fade(self):
+        result = run("latency")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = [line.split() for line in result.stdout.splitlines() if line.split() and line.split()[0].isdigit()]
+        self.assertEqual([float(row[0]) for row in rows], list(dynlab.supported_rates()))
+        # 44.1 kHz's row, worked by hand above: Zero Latency, High Quality, then its three parts.
+        self.assertEqual(rows[0][1:], ["0", "394", "128", "221", "45"])
+        self.assertIn(f"{dynlab.MODE_FADE_MS:g} ms", result.stdout)
 
     def test_bursts_prints_off_and_on_for_every_length_and_rate(self):
         result = run("bursts", "--lengths", "1", "1000", "--rates", "48000", "96000")

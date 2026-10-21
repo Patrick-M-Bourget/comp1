@@ -28,6 +28,9 @@ struct ConstAudioBlock
 // Threads: process() runs on the audio thread. setSettings() may run on another thread, but only one thread at a
 // time may call it; the newest settings are taken at the start of each process().
 //
+// Latency: in High Quality the output is delayed by comp1/Latency.h's latencySamples() for the sample rate, the same
+// whatever the other settings; what is said of the output below holds of it delayed so. Zero Latency has none.
+//
 // Analysis taps: none yet. The level taps (input level, output level, Gain Reduction and Detection Level) are read
 // here (#7).
 class Engine

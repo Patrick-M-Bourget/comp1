@@ -16,6 +16,7 @@ class PluginProcessor final : public juce::AudioProcessor
 {
 public:
     PluginProcessor();
+    ~PluginProcessor() override;
 
     void prepareToPlay (double sampleRate, int maximumExpectedSamplesPerBlock) override;
     void releaseResources() override {}
@@ -61,6 +62,19 @@ private:
     Settings publishedSettings;
     bool publishedSincePrepare = false;
     std::atomic<bool> heldDetectionAudition { false };
+
+    // Reports to the host the latency of the Processing Mode the host parameter holds (comp1/Latency.h), at the
+    // sample rate last prepared: at prepareToPlay(), whenever Processing Mode changes (from the editor, or a host that
+    // sets it anyway), and after a state restore. Any thread may call it: setLatencySamples() is safe from any, as
+    // JUCE's wrappers pass the change to the host on the message thread.
+    void reportLatency();
+    std::atomic<double> preparedSampleRate { 0.0 };
+    struct ProcessingModeListener final : juce::AudioProcessorValueTreeState::Listener
+    {
+        explicit ProcessingModeListener (PluginProcessor& p) : processor (p) {}
+        void parameterChanged (const juce::String&, float) override { processor.reportLatency(); }
+        PluginProcessor& processor;
+    } processingModeListener { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

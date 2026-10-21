@@ -30,8 +30,9 @@ Settings external()
 // The main input: a steady -30 dB, below Threshold, so only the Sidechain can move it.
 constexpr double mainDb = -30.0;
 
-// The gain in dB each main channel's last sample got, after seconds of a steady main input with sidechainSamples on
-// the Sidechain (none when null).
+// The gain in dB each main channel's last sample got (its magnitude, so a delay of an odd number of samples in High
+// Quality, which flips the steady level's sign, reads the same), after seconds of a steady main input with
+// sidechainSamples on the Sidechain (none when null).
 std::vector<double> gainsDb (const Settings& settings, double sampleRate, int mainChannels, const test::Channels* sidechainSamples, double seconds = 0.5)
 {
     const int numSamples = static_cast<int> (seconds * sampleRate);
@@ -43,7 +44,7 @@ std::vector<double> gainsDb (const Settings& settings, double sampleRate, int ma
     test::processInBlocks (engine, output, { 512 }, sidechainSamples);
     std::vector<double> gains;
     for (std::size_t ch = 0; ch < output.size(); ++ch)
-        gains.push_back (20.0 * std::log10 (static_cast<double> (output[ch].back()) / static_cast<double> (input[ch].back())));
+        gains.push_back (20.0 * std::log10 (std::abs (static_cast<double> (output[ch].back()) / static_cast<double> (input[ch].back()))));
     return gains;
 }
 
@@ -172,7 +173,12 @@ TEST_CASE ("With External, a stereo Sidechain and a mono main, the main is compr
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     // The louder channel on either side: following one side alone, or the two's average, takes off less.
     const auto levelsDb = GENERATE (std::vector<double> { 0.0, -6.0 }, std::vector<double> { -6.0, 0.0 });
-    CAPTURE (sampleRate, levelsDb);
+    // In High Quality too, whose Lookahead delays what the main follows rather than the Sidechain's two channels.
+    const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
+    CAPTURE (sampleRate, levelsDb, mode);
+    auto settings = external();
+    settings.processingMode = mode;
+    settings.lookaheadMs = 2.0;
     const auto sidechainSamples = steadySidechain (levelsDb, sampleRate);
-    CHECK (gainsDb (external(), sampleRate, 1, &sidechainSamples)[0] == Catch::Approx (-18.0).margin (0.1));
+    CHECK (gainsDb (settings, sampleRate, 1, &sidechainSamples)[0] == Catch::Approx (-18.0).margin (0.1));
 }
