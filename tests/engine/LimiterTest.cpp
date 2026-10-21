@@ -365,3 +365,21 @@ TEST_CASE ("Once the Limiter has switched on, the Ceiling holds")
     CHECK (promisedPeak (mode, out) > test::gainOf (0.0));
     CHECK (promisedPeak (mode, out, at + static_cast<int> (0.1 * sampleRate) + latencySamples (mode, sampleRate)) <= test::gainOf (-6.0));
 }
+
+TEST_CASE ("At a sample rate comp1 doesn't support, the Limiter still plays, at the latency each mode reports")
+{
+    // Hosts and validators try rates down to 1 kHz, where the Limiter reserve, 1 ms rounded up, is shorter than the
+    // estimator's delay: the Limiter keeps the reserve, with no window, and the output stays finite.
+    const double sampleRate = GENERATE (1000.0, 4000.0, 7999.0, 768000.0);
+    const auto mode = GENERATE (zeroLatency, highQuality);
+    CAPTURE (sampleRate, static_cast<int> (mode));
+    const auto out = test::played (limiting (mode, -6.0, 12.0), sampleRate, test::noise (2, 4000));
+    for (const auto& channel : out)
+        for (const float sample : channel)
+            REQUIRE (std::isfinite (sample));
+    // An impulse under the Ceiling comes out whole at the latency.
+    test::Channels impulse { std::vector<float> (4000) };
+    impulse[0][100] = 0.25f;
+    const auto heard = test::played ({ .ratio = 1.0, .limiter = true, .processingMode = mode }, sampleRate, impulse);
+    CHECK (heard == test::delayed (impulse, latencySamples (mode, sampleRate)));
+}

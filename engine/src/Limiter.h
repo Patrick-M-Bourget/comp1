@@ -64,7 +64,7 @@ public:
         releasePole = std::exp (-1000.0 / (releaseMs * sampleRate));
         // The whole Limiter reserve, the estimator's delay and the window.
         reserve = limiterReserveSamples (sampleRate);
-        span = reserve - estimatorDelay + 1;
+        span = std::max (reserve - estimatorDelay, 0) + 1;
         // Before the Limiter, High Quality's other delays after the compressor hold what the path last played; when it
         // starts again, the estimator hears silence in their place (startPath).
         staleSamples = latencySamples (ProcessingMode::HighQuality, sampleRate) - lookaheadBudgetSamples (sampleRate) - reserve;
