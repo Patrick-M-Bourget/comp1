@@ -54,6 +54,15 @@ inline Channels steadyLevel (int numChannels, int numSamples, double levelDb)
     return channels;
 }
 
+// A steady level that doesn't alternate: the same sample value, levelDb, every sample. Saturation's ADAA averages the
+// residual between neighbouring samples, and a square wave's two values average out (the residual is odd), so a
+// steady level through Saturation is this one, as dyn-lab's static curve is.
+inline Channels constantLevel (int numChannels, int numSamples, double levelDb)
+{
+    const auto magnitude = static_cast<float> (std::pow (10.0, levelDb / 20.0));
+    return Channels (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (numSamples), magnitude));
+}
+
 // The Gain Reduction in dB the Engine gave each sample: how far the output is under the input.
 inline std::vector<double> gainReductionDb (const std::vector<float>& input, const std::vector<float>& output)
 {
@@ -99,9 +108,15 @@ inline Crossings crossings (const std::vector<double>& reduction, double start, 
 
 // The output level in dB, on every channel, after seconds of a steady level through an Engine with settings: the
 // input level plus the gain the last sample got. NaN when the channels differ.
-inline double steadyOutputDb (const Settings& settings, double levelDb, double sampleRate, int numChannels = 1, double seconds = 0.5)
+// level makes the steady level: steadyLevel, or constantLevel.
+inline double steadyOutputDb (const Settings& settings,
+                              double levelDb,
+                              double sampleRate,
+                              int numChannels = 1,
+                              double seconds = 0.5,
+                              Channels (*level) (int, int, double) = steadyLevel)
 {
-    const auto input = steadyLevel (numChannels, static_cast<int> (seconds * sampleRate), levelDb);
+    const auto input = level (numChannels, static_cast<int> (seconds * sampleRate), levelDb);
     auto output = input;
     Engine engine;
     engine.prepare (sampleRate, 512, numChannels);
@@ -131,5 +146,7 @@ inline const std::vector<std::vector<int>>& blockCuts()
     static const std::vector<std::vector<int>> cuts { { 512 }, { 1 }, { 7 }, { 16 }, { 17, 3, 64, 1000 }, { 4096 }, { 33, 1, 15, 128 } };
     return cuts;
 }
+
+
 
 } // namespace comp1::test

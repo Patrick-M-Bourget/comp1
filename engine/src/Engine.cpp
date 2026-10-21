@@ -2,6 +2,7 @@
 
 #include "Clean.h"
 #include "Detection.h"
+#include "SaturationStage.h"
 
 #include <plugkit/LatestValue.h>
 #include <plugkit/NoSubnormals.h>
@@ -191,6 +192,7 @@ struct Engine::Impl
 
     DetectionStage detection;
     Compressor compressor;
+    SaturationStage saturation;
     GlidingGain autoGain, outputGain;
 
     void applySettings()
@@ -202,6 +204,7 @@ struct Engine::Impl
             settings = *latest;
         compressor.setSettings (settings, snapToSettings);
         autoGain.setTargetDb (settings.autoGain ? clean::autoGainDb (curveOf (settings)) : 0.0, snapToSettings);
+        saturation.setSettings (settings, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
         snapToSettings = false;
     }
@@ -217,6 +220,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->subBlock.assign (static_cast<std::size_t> (std::max (numChannels, 0)), nullptr);
     impl->detection.prepare (numChannels, plugkit::runSamples);
     impl->compressor.prepare (sampleRate, numChannels);
+    impl->saturation.prepare (sampleRate, numChannels);
     impl->autoGain.prepare (sampleRate);
     impl->outputGain.prepare (sampleRate);
     impl->snapToSettings = true;
@@ -255,17 +259,22 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
             sidechainPiece[static_cast<std::size_t> (ch)] = sidechain->channels[ch] + start;
         const ConstAudioBlock sidechainBlock { sidechainPiece.data(), sidechainChannels, count };
 
-        // The Wet path: the detection stage, fed the compressor's input as the Internal signal, then the compressor,
-        // then Auto Gain, then Output Gain. The compressor's settings step at the start of each run, wherever the
+        // The Wet path: Saturation Before, the detection stage, fed the compressor's input as the Internal signal,
+        // then the compressor, Saturation After, Auto Gain and Output Gain; Saturation runs at one of its two
+        // positions. The compressor's settings step at the start of each run, wherever the
         // host's blocks fall; Auto Gain and Output Gain glide a sample at a time with next(), so where the pieces fall
         // changes nothing either. From the sample a new setting is taken (the start of the host's block, so the host
         // decides when a change lands), the output is the same sample for sample however the audio is cut.
         const AudioBlock wet { impl->subBlock.data(), channels, count };
+        if (impl->gridPosition == 0)
+            impl->saturation.startRun();
+        impl->saturation.process (SaturationPosition::Before, wet);
         const auto detected = impl->detection.process ({ wet.channels, wet.numChannels, wet.numSamples },
                                                        sidechainConnected ? &sidechainBlock : nullptr);
         if (impl->gridPosition == 0)
             impl->compressor.startRun();
         impl->compressor.process (detected, wet);
+        impl->saturation.process (SaturationPosition::After, wet);
         impl->autoGain.process (wet);
         impl->outputGain.process (wet);
 

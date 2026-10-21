@@ -44,8 +44,9 @@ public:
     // Processes main in place. sidechain may be null when nothing is connected. Blocks may be of any size, changing
     // from call to call. The output doesn't depend on how the host cuts the audio into blocks, sample for sample: the
     // Engine moves on a grid of 16-sample runs that starts at prepare() and carries across calls. With no Gain
-    // Reduction (Ratio 1:1, Range 0 dB, or a level below the Knee), Auto Gain off and 0 dB Output Gain, the output is
-    // the input, bit for bit; a non-finite input sample plays as silence.
+    // Reduction (Ratio 1:1, Range 0 dB, or a level below the Knee), Auto Gain off, Saturation off (or the level below
+    // its knee: full scale at Drive 0 dB) and 0 dB Output Gain, the output is the input, bit for bit; a non-finite
+    // input sample plays as silence.
     void process (AudioBlock main, const ConstAudioBlock* sidechain = nullptr);
 
 private:
