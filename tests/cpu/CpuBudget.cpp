@@ -95,9 +95,9 @@ Settings highQuality()
 std::vector<Scene> scenes()
 {
     return {
-        { .name = "Defaults", .settings = {}, .ceiling = Ceiling { 3.0, 6.0 } },
-        { .name = "Defaults, Threshold automated", .settings = {}, .automate = automateThreshold, .ceiling = Ceiling { 3.0, 6.0 } },
-        { .name = "Worst case", .settings = test::worstCaseSettings(), .ceiling = Ceiling { 100.0, 100.0 }, .quietReference = true },
+        { .name = "Defaults", .settings = {}, .ceiling = Ceiling { 4.0, 7.0 } },
+        { .name = "Defaults, Threshold automated", .settings = {}, .automate = automateThreshold, .ceiling = Ceiling { 4.0, 7.0 } },
+        { .name = "Worst case", .settings = test::worstCaseSettings(), .ceiling = Ceiling { 17.0, 28.0 }, .quietReference = true },
         { .name = "Clean, Colour 100%", .settings = withCharacter (Character::Clean) },
         { .name = "VCA, Colour 100%", .settings = withCharacter (Character::VCA) },
         { .name = "FET, Colour 100%", .settings = withCharacter (Character::FET) },

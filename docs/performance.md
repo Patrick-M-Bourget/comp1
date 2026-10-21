@@ -16,18 +16,18 @@ The scenes, and why each exists:
 
 | CPU scene | Ceiling 48 / 96 kHz | Apple M3 48 kHz | 96 kHz | CI Windows x64 48 kHz | 96 kHz | CI macOS 48 kHz | 96 kHz |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Defaults | 3% / 6% | 0.39% | 0.79% | pending | pending | pending | pending |
-| Defaults, Threshold automated | 3% / 6% | 0.40% | 0.81% | pending | pending | pending | pending |
-| Worst case | 100% / 100% | 2.58% | 4.48% | pending | pending | pending | pending |
-| Clean, Colour 100% | — | 0.39% | 0.79% | pending | pending | pending | pending |
-| VCA, Colour 100% | — | 0.66% | 1.32% | pending | pending | pending | pending |
-| FET, Colour 100% | — | 0.85% | 1.70% | pending | pending | pending | pending |
-| High Quality, 2x Oversampling | — | 0.69% | 1.39% | pending | pending | pending | pending |
-| Defaults, 32-sample blocks | — | 0.40% | 0.80% | pending | pending | pending | pending |
-| Worst case on silence | — | 1.51% | 2.36% | pending | pending | pending | pending |
-| Worst case on subnormal input | — | 1.36% | 2.05% | pending | pending | pending | pending |
+| Defaults | 4% / 7% | 0.39% | 0.79% | 1.18% | 2.21% | 0.58% | 1.33% |
+| Defaults, Threshold automated | 4% / 7% | 0.40% | 0.81% | 1.14% | 2.25% | 0.76% | 1.35% |
+| Worst case | 17% / 28% | 2.58% | 4.48% | 5.51% | 9.30% | 4.06% | 8.32% |
+| Clean, Colour 100% | — | 0.39% | 0.79% | 1.11% | 2.21% | 0.57% | 1.38% |
+| VCA, Colour 100% | — | 0.66% | 1.32% | 1.75% | 3.49% | 1.11% | 2.48% |
+| FET, Colour 100% | — | 0.85% | 1.70% | 2.07% | 4.12% | 1.40% | 3.17% |
+| High Quality, 2x Oversampling | — | 0.69% | 1.39% | 1.61% | 3.21% | 1.16% | 2.80% |
+| Defaults, 32-sample blocks | — | 0.40% | 0.80% | 1.11% | 2.22% | 0.71% | 1.73% |
+| Worst case on silence | — | 1.51% | 2.36% | 3.98% | 6.47% | 2.55% | 5.23% |
+| Worst case on subnormal input | — | 1.36% | 2.05% | 3.76% | 5.97% | 2.38% | 4.42% |
 
-The Apple M3 columns were measured 2026-10-21 on an 8-core Apple M3 with other agents' work light (load average 2.4 to 3.4), after this tree's own build had finished. The CI columns are GitHub's `windows-latest` and `macos-latest` runners, from the job summary where `scripts/check.sh cpu` writes the scene lines.
+The Apple M3 columns were measured 2026-10-21 on an 8-core Apple M3 with other agents' work light (load average 2.4 to 3.4), after this tree's own build had finished. The CI columns are GitHub's `windows-latest` and `macos-latest` (arm64) runners, from this PR's first CI run, 2026-10-21, read from the job summary where `scripts/check.sh cpu` writes the scene lines. Windows x64 was the slower runner on every scene, so the ceilings are about three times its figures, rounded up to a whole percent: Defaults' 1.18% and 2.21% give 4% and 7%, which the Threshold automated scene shares (1.14% and 2.25%), and the Worst case's 5.51% and 9.30% give 17% and 28%.
 
 The Limiter's share of the worst case: the Limiter runs whether on or off (its on/off crossfade needs both sides), so turning it off in the scene saves only the crossfade, about 1%. Timed on its own, outside the Engine, on the same bursts 12 dB up, High Quality's Limiter costs about 0.8% at 48 kHz and 1.6% at 96 kHz on the Apple M3: about a third of the worst case.
 
