@@ -172,9 +172,13 @@ TEST_CASE ("A Processing Mode switch falls to silence and rises again within the
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto [from, to] = GENERATE (table<ProcessingMode, ProcessingMode> ({ { zeroLatency, highQuality }, { highQuality, zeroLatency } }));
-    // The Limiter on, at its Ceiling's top, which the noise never reaches: it changes nothing on either path.
-    const bool limiter = GENERATE (false, true);
-    CAPTURE (sampleRate, static_cast<int> (to), limiter);
+    // Dry Off, the Wet path alone; and Dry and Wet both at 0 dB, so each path plays the input twice over. And the
+    // Limiter on, the Wet path alone, at its Ceiling's top, which the noise never reaches: it changes nothing on either
+    // path.
+    const auto [dryDb, gain, limiter] = GENERATE (table<double, float, bool> ({ { -std::numeric_limits<double>::infinity(), 1.0f, false },
+                                                                                { 0.0, 2.0f, false },
+                                                                                { -std::numeric_limits<double>::infinity(), 1.0f, true } }));
+    CAPTURE (sampleRate, static_cast<int> (to), dryDb, limiter);
     const int fade = static_cast<int> (std::lround (modeFadeMs * sampleRate / 1000.0));
     // Into High Quality, the silence lasts while its delays after the compressor, the reserves' padding, fill with the
     // new path's audio, so the fade-in starts from it: High Quality's latency less the Lookahead budget.
@@ -182,11 +186,18 @@ TEST_CASE ("A Processing Mode switch falls to silence and rises again within the
     // Part-way through a run, once the old path has played long enough to fill its delays.
     const int switchAt = 4003;
     const auto input = test::noise (2, switchAt + 2 * fade + padding + 3000);
-    const Settings before { .ratio = 1.0, .limiter = limiter, .processingMode = from }, after { .ratio = 1.0, .limiter = limiter, .processingMode = to };
+    Settings before { .ratio = 1.0, .limiter = limiter, .processingMode = from }, after { .ratio = 1.0, .limiter = limiter, .processingMode = to };
+    before.dryDb = after.dryDb = dryDb;
     const auto reference = play (input, sampleRate, { 4096 }, before, after, switchAt);
 
-    const auto oldPath = test::delayed (input, latencySamples (from, sampleRate));
-    const auto newPath = test::delayed (input, latencySamples (to, sampleRate));
+    const auto scaled = [gain] (test::Channels audio) {
+        for (auto& channel : audio)
+            for (auto& sample : channel)
+                sample *= gain;
+        return audio;
+    };
+    const auto oldPath = scaled (test::delayed (input, latencySamples (from, sampleRate)));
+    const auto newPath = scaled (test::delayed (input, latencySamples (to, sampleRate)));
     const auto at = [] (int i) { return static_cast<std::size_t> (i); };
     for (std::size_t ch = 0; ch < input.size(); ++ch)
     {

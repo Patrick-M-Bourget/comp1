@@ -316,6 +316,17 @@ const std::vector<Jump>& jumps()
         placementJump (StereoPlacement::Stereo, StereoPlacement::Mid, "Stereo Placement, Stereo and Mid"),
         placementJump (StereoPlacement::Mid, StereoPlacement::Side, "Stereo Placement, Mid and Side"),
         placementJump (StereoPlacement::Side, StereoPlacement::Stereo, "Stereo Placement, Side and Stereo"),
+        // Dry and Wet, each from Off and from far below unity, with the other at 0 dB, so the two paths sum.
+        { "Dry, Off and 0 dB", [] (Settings& s, bool b) { s.dryDb = b ? 0.0 : -infinity; } },
+        { "Dry, -24 and +12 dB", [] (Settings& s, bool b) { s.dryDb = b ? 12.0 : -24.0; } },
+        { "Wet, Off and 0 dB", [] (Settings& s, bool b) {
+             s.dryDb = 0.0;
+             s.wetDb = b ? 0.0 : -infinity;
+         } },
+        { "Wet, -24 and +12 dB", [] (Settings& s, bool b) {
+             s.dryDb = 0.0;
+             s.wetDb = b ? 12.0 : -24.0;
+         } },
         limiterJump (ProcessingMode::ZeroLatency, "Limiter"),
         limiterJump (ProcessingMode::HighQuality, "Limiter, High Quality"),
         ceilingJump (ProcessingMode::ZeroLatency, "Ceiling"),
@@ -489,10 +500,13 @@ TEST_CASE ("While a compressor setting glides, the output is the same however th
 TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click")
 {
     const auto host = anyHost();
-    // With the Limiter on, the tone pushed into it: measured against the steady tone limited in each mode.
+    // Dry Off, and Dry and Wet both at 0 dB, so both paths fade; and with the Limiter on, the tone pushed into it,
+    // measured against the steady tone limited in each mode.
+    const double dryDb = GENERATE (-infinity, 0.0);
     const bool limiter = GENERATE (false, true);
-    CAPTURE (host.sampleRate, host.blockSize, limiter);
-    const auto pushed = [limiter] (Settings& s, ProcessingMode mode) {
+    CAPTURE (host.sampleRate, host.blockSize, dryDb, limiter);
+    const auto pushed = [dryDb, limiter] (Settings& s, ProcessingMode mode) {
+        s.dryDb = dryDb;
         if (limiter)
             limitingTone (s, mode);
         s.processingMode = mode;
