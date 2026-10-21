@@ -22,15 +22,16 @@ namespace comp1
 class LookaheadStage
 {
 public:
-    // Allocates for up to numChannels audio channels, and as many detection channels as the detection stage gives, of
-    // up to maxSamples samples a piece.
+    // Allocates for up to numChannels audio channels, what each follows, and the Mid and Side, of up to maxSamples
+    // samples a piece.
     void prepare (double newSampleRate, int numChannels, int maxSamples)
     {
         sampleRate = newSampleRate;
         budget = lookaheadBudgetSamples (sampleRate);
         audioDelay.prepare (numChannels, budget);
-        detectionDelay.prepare (DetectionStage::maxChannels, budget);
-        const auto channels = static_cast<std::size_t> (DetectionStage::maxChannels);
+        const auto channels = static_cast<std::size_t> (std::max (numChannels, 0)) + 2;
+        detectionDelay.prepare (static_cast<int> (channels), budget);
+        inputs.assign (channels, nullptr);
         storage.assign (channels, std::vector<float> (static_cast<std::size_t> (std::max (maxSamples, 0))));
         pointers.assign (channels, nullptr);
         for (std::size_t ch = 0; ch < channels; ++ch)
@@ -57,13 +58,21 @@ public:
             lookahead.skip (plugkit::runSamples);
     }
 
-    // Feeds the audio and its detection signal, the same piece of a run, into the delays, in both Processing Modes, so
-    // a switch to High Quality starts from the latest audio. In High Quality, delays audio in place and returns the
-    // detection signal to compress it by, Lookahead ahead of it; in Zero Latency, leaves audio alone and returns
-    // detected. The detection signal returned holds until the next process().
+    // Feeds the audio and what each of its channels follows in its detection signal, then the Mid and the Side, the
+    // same piece of a run, into the delays, in both Processing Modes, so a switch to High Quality starts from the latest
+    // audio. In High Quality, delays audio in place and returns the detection signal to compress it by, Lookahead ahead
+    // of it: one channel per audio channel, each followed by its own, and its Mid and Side; in Zero Latency, leaves
+    // audio alone and returns detected. The detection signal returned holds until the next process().
     DetectionSignal process (const DetectionSignal& detected, AudioBlock audio, bool highQuality)
     {
-        const ConstAudioBlock detectedBlock { detected.channels, detected.numChannels, detected.numSamples };
+        // What the compressor follows, a channel per audio channel: a stereo Sidechain under a mono main is followed
+        // as the louder of its two, so its two channels can't be delayed in its place. Then the Mid and the Side.
+        std::copy_n (detected.followed, audio.numChannels, inputs.begin());
+        const auto parts = static_cast<std::size_t> (audio.numChannels);
+        inputs[parts] = detected.mid != nullptr ? detected.mid : inputs.front();
+        inputs[parts + 1] = detected.side != nullptr ? detected.side : inputs.front();
+        const bool withParts = audio.numChannels > 0;
+        const ConstAudioBlock detectedBlock { inputs.data(), withParts ? audio.numChannels + 2 : 0, detected.numSamples };
         if (! highQuality)
         {
             audioDelay.write ({ audio.channels, audio.numChannels, audio.numSamples });
@@ -75,13 +84,13 @@ public:
         // samples, never a level between two of them. While Lookahead glides, the delay steps by a sample or two a
         // run; the detector, smoothing with Attack and Release, makes no click of it.
         const int delay = std::clamp (budget - static_cast<int> (std::lround (lookahead.value())), 0, budget);
-        detectionDelay.process (detectedBlock, { pointers.data(), detected.numChannels, detected.numSamples }, delay);
+        detectionDelay.process (detectedBlock, { pointers.data(), detectedBlock.numChannels, detectedBlock.numSamples }, delay);
         return { .channels = pointers.data(),
-                 .numChannels = detected.numChannels,
-                 .numSamples = detected.numSamples,
-                 .followedBy = detected.followedBy,
-                 .midChannel = detected.midChannel,
-                 .sideChannel = detected.sideChannel };
+                 .numChannels = audio.numChannels,
+                 .numSamples = detectedBlock.numSamples,
+                 .followed = pointers.data(),
+                 .mid = withParts ? pointers[parts] : nullptr,
+                 .side = withParts ? pointers[parts + 1] : nullptr };
     }
 
 private:
@@ -89,8 +98,9 @@ private:
     int budget = 0; // the Lookahead budget, in samples
     DelayLine audioDelay, detectionDelay;
     plugkit::Smoother lookahead;             // in samples
-    std::vector<std::vector<float>> storage; // per detection channel, the delayed detection signal
-    std::vector<float*> pointers;            // per detection channel, into storage
+    std::vector<const float*> inputs;        // per audio channel what it follows, then the Mid and the Side
+    std::vector<std::vector<float>> storage; // the same, delayed
+    std::vector<float*> pointers;            // into storage
 };
 
 } // namespace comp1

@@ -161,6 +161,72 @@ TEST_CASE ("Output Gain is a host parameter in dB, -36 to +36, defaulting to 0 d
     CHECK (gain.getText (gain.convertTo0to1 (-4.5f), 100) == "-4.50");
 }
 
+TEST_CASE ("Detection Source is a host parameter, Internal or External, Internal by default")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    comp1::PluginProcessor processor;
+    auto& source = host::parameter (processor, "detection_source");
+    CHECK (source.getName (100) == "Detection Source");
+    CHECK (source.getNumSteps() == 2);
+    CHECK (source.getDefaultValue() == 0.0f);
+    CHECK (source.getText (0.0f, 100) == "Internal");
+    CHECK (source.getText (1.0f, 100) == "External");
+    CHECK (source.isAutomatable());
+}
+
+TEST_CASE ("With Detection Source External, the Sidechain compresses the main")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    comp1::PluginProcessor processor;
+    REQUIRE (processor.setBusesLayout (host::layout (stereo, mono)));
+    // A steady -30 dB main, below Threshold, under a full-scale Sidechain, at settings that hold its peak: 18 dB of
+    // Gain Reduction at Threshold -18, Ratio ∞:1 and Knee 0 (python3 tools/dyn-lab/dynlab.py transfer --threshold -18
+    // --ratio inf --knee 0).
+    host::set (processor, "ratio", infinity);
+    host::set (processor, "knee", 0.0f);
+    host::set (processor, "attack", 0.005f);
+    host::set (processor, "release", 5000.0f);
+    host::set (processor, "hold", 500.0f);
+    host::set (processor, "detection_source", 1.0f);
+    constexpr int blockSize = 512, blocks = 47;
+    processor.prepareToPlay (48000.0, blockSize);
+    const auto main = comp1::test::steadyLevel (2, blockSize, -30.0);
+    const auto sidechainSamples = comp1::test::steadyLevel (1, blockSize, 0.0);
+    juce::AudioBuffer<float> buffer (3, blockSize);
+    juce::MidiBuffer midi;
+    for (int b = 0; b < blocks; ++b)
+    {
+        for (int ch = 0; ch < 2; ++ch)
+            buffer.copyFrom (ch, 0, main[static_cast<std::size_t> (ch)].data(), blockSize);
+        buffer.copyFrom (2, 0, sidechainSamples[0].data(), blockSize);
+        processor.processBlock (buffer, midi);
+    }
+    for (int ch = 0; ch < 2; ++ch)
+        CHECK (juce::Decibels::gainToDecibels (std::abs (buffer.getSample (ch, blockSize - 1))) == Catch::Approx (-48.0).margin (0.1));
+}
+
+TEST_CASE ("Detection Audition is held through the Plugin Shell, not as a host parameter, and plays the detection signal")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    comp1::PluginProcessor processor;
+    REQUIRE (processor.setBusesLayout (host::layout (stereo, none)));
+    for (auto* p : processor.getParameters())
+        CHECK_FALSE (p->getName (100).containsIgnoreCase ("Audition"));
+    CHECK_FALSE (processor.detectionAudition());
+    host::set (processor, "threshold", -40.0f); // the noise is compressed, unless auditioned
+    juce::AudioBuffer<float> input;
+    REQUIRE_FALSE (sameSamples (play (processor, input), input));
+
+    processor.setDetectionAudition (true);
+    CHECK (processor.detectionAudition());
+    // Held before playing starts, it plays from the first sample, with no fade: Internal's detection signal is the
+    // main input.
+    const auto output = play (processor, input);
+    CHECK (sameSamples (output, input));
+    processor.setDetectionAudition (false);
+    CHECK_FALSE (processor.detectionAudition());
+}
+
 TEST_CASE ("At Ratio 1:1 the plugin passes the main input through bit for bit, on every supported layout")
 {
     juce::ScopedJuceInitialiser_GUI juce;

@@ -1,7 +1,9 @@
 // Loads a built comp1 the way a host does, through its format wrapper (VST3 or AU), and checks every main layout
 // with every Sidechain: mono and stereo main, each with no, a mono or a stereo Sidechain. Each layout must load and
 // play its main input with Output Gain applied, the Sidechain unheard in the output, at Ratio 1:1 so the compressor
-// leaves the level alone; through AU, no Sidechain is not applicable (see main()). Run by plugkit's check harness (validate).
+// leaves the level alone. With Detection Source External, a playing Sidechain must then duck the main by the Transfer
+// Curve's Gain Reduction, and a silent one leave it alone. Through AU, no Sidechain is not applicable (see main()). Run
+// by plugkit's check harness (validate).
 //
 //   comp1_sidechain_routing_check <path to comp1.vst3>
 //   comp1_sidechain_routing_check AU   (the AU must be installed and registered)
@@ -14,6 +16,7 @@
 #include <iostream>
 #include <memory>
 #include <numbers>
+#include <utility>
 
 namespace
 {
@@ -160,10 +163,22 @@ int main (int argc, char* argv[])
                 continue;
             }
             plugin->prepareToPlay (sampleRate, blockSize);
-            if (! set (*plugin, "Ratio", "1") || ! set (*plugin, "Output Gain", "-12"))
+            if (! set (*plugin, "Detection Source", "Internal") || ! set (*plugin, "Ratio", "1") || ! set (*plugin, "Output Gain", "-12"))
                 return 1;
             expect (description + ", main input alone", gainDb (*plugin, false, -12.0), -12.0);
             expect (description + ", Sidechain playing", gainDb (*plugin, true, -12.0), -12.0);
+
+            // Detection Source External, at settings that hold the Sidechain's peak: a full-scale one takes 18 dB off
+            // at Threshold -18, Ratio ∞:1 and Knee 0 (python3 tools/dyn-lab/dynlab.py transfer --threshold -18
+            // --ratio inf --knee 0), and a silent one nothing, though the main input is over Threshold. The silent
+            // case goes first: Release, at 5 s, would still be giving back the playing case's Gain Reduction.
+            for (const auto& [name, text] : { std::pair { "Detection Source", "External" }, { "Threshold", "-18" }, { "Ratio", "inf" },
+                                              { "Knee", "0" }, { "Attack", "0.005" }, { "Release", "5000" }, { "Hold", "500" } })
+                if (! set (*plugin, name, text))
+                    return 1;
+            expect (description + ", External, Sidechain silent", gainDb (*plugin, false, -12.0), -12.0);
+            if (! sidechain.isDisabled())
+                expect (description + ", External, Sidechain playing", gainDb (*plugin, true, -30.0), -30.0);
             plugin->releaseResources();
         }
     std::cout << (failures == 0 ? "SUCCESS\n" : "FAILED\n");
