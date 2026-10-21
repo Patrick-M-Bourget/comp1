@@ -97,7 +97,8 @@ double discontinuity (const test::Channels& output, double sampleRate)
     return worst;
 }
 
-constexpr double threshold = 2.0;
+// A discontinuity() at or over this is a click.
+constexpr double clickLimit = 2.0;
 
 // False until the onset has passed, then flips every 50 ms.
 bool alternating (double seconds) { return seconds >= onsetSeconds && static_cast<int> ((seconds - onsetSeconds) / 0.05) % 2 == 0; }
@@ -307,7 +308,7 @@ TEST_CASE ("Jumps in each compressor setting do not click")
     for (const auto& settings : jump.steady)
         steady = std::max (steady, discontinuity (play ([&settings] (double, Settings& s) { settings (s); }), host.sampleRate));
     CAPTURE (steady);
-    CHECK (discontinuity (output, host.sampleRate) < threshold * steady);
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit * steady);
 }
 
 namespace
@@ -386,7 +387,7 @@ TEST_CASE ("Jumps in each Detection EQ setting do not click in Detection Auditio
         s.detectionAudition = true;
         jump.set (s, alternating (time));
     });
-    CHECK (discontinuity (output, host.sampleRate) < threshold);
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }
 
 TEST_CASE ("Jumps in Stereo Placement do not click in Detection Audition")
@@ -403,7 +404,7 @@ TEST_CASE ("Jumps in Stereo Placement do not click in Detection Audition")
         [] (double) { return toneAmplitude; },
         toneSeconds,
         jump.numChannels);
-    CHECK (discontinuity (output, host.sampleRate) < threshold);
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }
 
 TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
@@ -425,7 +426,7 @@ TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
         },
         midReleaseAmplitude,
         cycles * cycleSeconds);
-    CHECK (discontinuity (output, host.sampleRate) < threshold);
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }
 
 TEST_CASE ("While a compressor setting glides, the output is the same however the audio is cut into blocks")
@@ -453,5 +454,5 @@ TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click")
     const auto output = playTone (host, [] (double time, Settings& s) {
         s.processingMode = alternating (time) ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency;
     });
-    CHECK (discontinuity (output, host.sampleRate) < threshold);
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }

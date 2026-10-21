@@ -376,8 +376,8 @@ public:
     void prepare (double sampleRate, int numChannels)
     {
         stereoTrack = numChannels == 2;
-        mix.configure (plugkit::glideTimeConstantSeconds * sampleRate, 1.0e-6);
-        mix.reset (0.0);
+        auditionShare.configure (plugkit::glideTimeConstantSeconds * sampleRate, 1.0e-6);
+        auditionShare.reset (0.0);
         placementFade.configure (plugkit::glideTimeConstantSeconds * sampleRate, 1.0e-6);
         placementFade.reset (1.0);
         placementFading = false;
@@ -392,7 +392,7 @@ public:
     // With snap, it is held or let go at once instead of fading.
     void setHeld (bool held, bool snap)
     {
-        glideTo (mix, held ? 1.0 : 0.0, snap);
+        glideTo (auditionShare, held ? 1.0 : 0.0, snap);
     }
 
     // With snap, the new Placement plays at once instead of fading in. A mono track plays as Stereo.
@@ -439,19 +439,19 @@ public:
             delay.write ({ heard.channels, heard.numChannels, heard.numSamples });
 
         // Let go and settled: the Wet path plays, bit for bit.
-        if (mix.isSettled() && mix.value() == 0.0)
+        if (auditionShare.isSettled() && auditionShare.value() == 0.0)
             return;
         int i = 0;
-        for (; i < audio.numSamples && ! mix.isSettled(); ++i)
+        for (; i < audio.numSamples && ! auditionShare.isSettled(); ++i)
         {
-            const double m = mix.next();
+            const double share = auditionShare.next();
             for (int ch = 0; ch < audio.numChannels; ++ch)
             {
                 float& sample = audio.channels[ch][i];
-                sample = static_cast<float> ((1.0 - m) * sample + m * heard.channels[ch][i]);
+                sample = static_cast<float> ((1.0 - share) * sample + share * heard.channels[ch][i]);
             }
         }
-        if (mix.value() == 0.0)
+        if (auditionShare.value() == 0.0)
             return;
         for (int ch = 0; ch < audio.numChannels; ++ch)
             std::copy (heard.channels[ch] + i, heard.channels[ch] + audio.numSamples, audio.channels[ch] + i);
@@ -469,7 +469,7 @@ private:
         return detection.channels[ch][i];
     }
 
-    plugkit::Smoother mix; // 0 plays the Wet path, 1 the detection signal
+    plugkit::Smoother auditionShare; // 0 plays the Wet path, 1 the detection signal
     bool stereoTrack = false;
     plugkit::StereoPlacement asked = plugkit::StereoPlacement::Stereo;     // the Placement asked for
     plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo; // the one playing, or fading in
