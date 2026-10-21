@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>
 
 using namespace comp1;
 
@@ -31,4 +32,32 @@ TEST_CASE ("A non-finite input sample never reaches the output, which plays on a
         test::processInBlocks (engine, *audio, { 512 });
     }
     CHECK (broken == silenced);
+}
+
+TEST_CASE ("A non-finite Sidechain sample never reaches the output, nor sticks in the detector: it is heard as silence")
+{
+    const int sidechainChannels = GENERATE (1, 2);
+    const int mainChannels = GENERATE (1, 2);
+    CAPTURE (sidechainChannels, mainChannels);
+    const Settings settings { .detectionSource = DetectionSource::External };
+    const auto input = test::noise (mainChannels, 4096);
+    const auto sidechainSamples = test::noise (sidechainChannels, 4096, 3);
+    auto broken = sidechainSamples, silenced = sidechainSamples;
+    for (const std::size_t at : { 100u, 101u, 2000u, 3001u })
+        for (std::size_t ch = 0; ch < broken.size(); ++ch)
+        {
+            broken[ch][at] = at % 2 == 0 ? std::numeric_limits<float>::quiet_NaN() : std::numeric_limits<float>::infinity();
+            silenced[ch][at] = 0.0f;
+        }
+    broken.back()[3001] = -std::numeric_limits<float>::infinity();
+    auto fromBroken = input, fromSilenced = input;
+    for (auto [audio, sidechain] : { std::pair { &fromBroken, &broken }, std::pair { &fromSilenced, &silenced } })
+    {
+        Engine engine;
+        engine.prepare (48000.0, 512, mainChannels);
+        engine.setSettings (settings);
+        test::processInBlocks (engine, *audio, { 512 }, sidechain);
+    }
+    REQUIRE (fromSilenced != input); // compressed
+    CHECK (fromBroken == fromSilenced);
 }

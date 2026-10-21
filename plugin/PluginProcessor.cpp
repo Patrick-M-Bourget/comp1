@@ -50,8 +50,9 @@ bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     // Host Automation arrives on the audio thread, so the Settings are read here, once per block, and handed over
-    // only when it differs from the last one.
-    const auto settings = reader.read();
+    // only when it differs from the last one. Detection Audition, held by the editor, rides along.
+    auto settings = reader.read();
+    settings.detectionAudition = detectionAudition();
     if (! publishedSincePrepare || settings != publishedSettings)
     {
         publishedSettings = settings;
@@ -116,6 +117,7 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     const auto xml = getXmlFromBinary (data, sizeInBytes);
     if (xml == nullptr || ! xml->hasTagName (parameters.state.getType()))
         return;
+    setDetectionAudition (false);
     auto state = juce::ValueTree::fromXml (*xml);
     migrate (state);
     state.removeProperty (versionProperty, nullptr);
