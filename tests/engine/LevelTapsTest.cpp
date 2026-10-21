@@ -467,3 +467,307 @@ TEST_CASE ("The level taps can be read while the host prepares the Engine again 
     reader.join();
     CHECK (engine.outputLevelChannels() == 2);
 }
+
+namespace
+{
+
+// The Gate on at gate's settings, with Ratio 1:1, so the compressor applies no Gain Reduction.
+Settings gated (Settings::Gate gate = {})
+{
+    gate.on = true;
+    return { .gate = gate, .ratio = 1.0 };
+}
+
+} // namespace
+
+TEST_CASE ("Settled closed, the Gate's Gain Reduction is Gate Range, and settled open, exactly none")
+{
+    // dyn-lab's gate: closed and settled, the depth is Gate Range, 20 dB at the defaults; open, none. A steady level
+    // 20 dB under Gate Threshold closes it, and one 20 dB over it keeps it open. A Gate Release of 10 ms settles well
+    // within the half second played.
+    const double rangeDb = GENERATE (20.0, 45.0);
+    CAPTURE (rangeDb);
+    const auto settings = gated ({ .rangeDb = rangeDb, .releaseMs = 10.0 });
+    const auto closed = steadyRecords (settings, { -60.0 });
+    CHECK_THAT (closed.back().gateGainReductionDb, WithinAbs (rangeDb, 0.01));
+    const auto open = steadyRecords (settings, { -20.0 });
+    for (const auto& record : open)
+        REQUIRE (record.gateGainReductionDb == 0.0);
+}
+
+TEST_CASE ("Settled off, the Gate's Gain Reduction is exactly none at a level that would close it")
+{
+    for (const auto& record : steadyRecords ({ .ratio = 1.0 }, { -60.0 }))
+        REQUIRE (record.gateGainReductionDb == 0.0);
+}
+
+TEST_CASE ("Across a Gate step and an on/off glide the Gate's Gain Reduction records follow the Engine's own, run for run")
+{
+    // dyn-lab's gate step at the defaults: 20 dB under Gate Threshold, 20 dB over it, and under again. Then the Gate
+    // glides off and on again while it is closed, so its on/off share is heard too.
+    constexpr double sampleRate = 48000.0;
+    constexpr int length = 24000;
+    std::vector<float> input;
+    for (const double level : { -60.0, -20.0, -60.0, -60.0 })
+    {
+        const auto more = test::steadyLevel (1, length, level).front();
+        input.insert (input.end(), more.begin(), more.end());
+    }
+    test::Channels audio { input };
+    Engine engine;
+    engine.prepare (sampleRate, 512, 1);
+    engine.setSettings (gated());
+    std::vector<LevelRecord> records;
+    test::Channels piece (1);
+    for (int start = 0; start < static_cast<int> (input.size()); start += length / 2)
+    {
+        if (start == 3 * length)
+            engine.setSettings ({ .ratio = 1.0 });
+        if (start == 3 * length + length / 2)
+            engine.setSettings (gated());
+        piece.front().assign (audio.front().begin() + start, audio.front().begin() + start + length / 2);
+        const auto read = playAndRead (engine, piece, { 512 });
+        records.insert (records.end(), read.begin(), read.end());
+        std::copy (piece.front().begin(), piece.front().end(), audio.front().begin() + start);
+    }
+
+    const auto heard = test::gainReductionDb (input, audio.front());
+    REQUIRE (records.size() == heard.size() / 16);
+    bool closed = false, glided = false;
+    for (std::size_t r = 0; r < records.size(); ++r)
+    {
+        CAPTURE (r);
+        const auto run = heard.begin() + static_cast<std::ptrdiff_t> (r * 16);
+        const double most = std::max (*std::max_element (run, run + 16), 0.0);
+        REQUIRE_THAT (records[r].gateGainReductionDb, WithinAbs (most, 0.01));
+        closed = closed || most > 19.5;
+        glided = glided || (r * 16 > 3 * length && most > 1.0 && most < 19.0);
+    }
+    CHECK (closed);
+    CHECK (glided);
+}
+
+namespace
+{
+
+constexpr double ceilingDb = -12.0;
+
+// The Limiter on at ceilingDb in mode, with Ratio 1:1, so the compressor applies no Gain Reduction.
+Settings limited (ProcessingMode mode)
+{
+    return { .ratio = 1.0, .limiter = true, .ceilingDb = ceilingDb, .processingMode = mode };
+}
+
+// Half a second of a 1500 Hz sine at 48 kHz, its peak at levelDb: 32 samples a cycle, from a phase of 0, so every run
+// of 16 holds one sample at the peak, and its sample peak is its true peak.
+std::vector<float> limiterSine (double levelDb)
+{
+    std::vector<float> sine (24000);
+    for (std::size_t n = 0; n < sine.size(); ++n)
+        sine[n] = static_cast<float> (test::gainOf (levelDb) * std::sin (2.0 * std::numbers::pi * static_cast<double> (n) / 32.0));
+    return sine;
+}
+
+std::vector<LevelRecord> limitedRecords (const Settings& settings, std::vector<float> input)
+{
+    test::Channels audio { std::move (input) };
+    Engine engine;
+    engine.prepare (48000.0, 512, 1);
+    engine.setSettings (settings);
+    return playAndRead (engine, audio, { 512 });
+}
+
+} // namespace
+
+TEST_CASE ("In Zero Latency the Limiter's Gain Reduction brings the sample peak to the Ceiling")
+{
+    // A sine whose sample peak is 6 dB over the Ceiling: each run's peak sample takes 6 dB, from the first run on.
+    const auto records = limitedRecords (limited (ProcessingMode::ZeroLatency), limiterSine (ceilingDb + 6.0));
+    for (std::size_t r = 0; r < records.size(); ++r)
+    {
+        CAPTURE (r);
+        REQUIRE_THAT (records[r].limiterGainReductionDb, WithinAbs (6.0, 0.01));
+    }
+}
+
+TEST_CASE ("In High Quality the Limiter's Gain Reduction brings the true peak to the headroom under the Ceiling")
+{
+    // dyn-lab's limiter: High Quality aims the true peak 0.3 dB (LIMITER_TRUE_PEAK_HEADROOM_DB) under the Ceiling, so
+    // a sine whose true peak is 6 dB over the Ceiling takes 6.3 dB, once the Limiter reserve has filled.
+    const auto records = limitedRecords (limited (ProcessingMode::HighQuality), limiterSine (ceilingDb + 6.0));
+    for (std::size_t r = records.size() / 2; r < records.size(); ++r)
+    {
+        CAPTURE (r);
+        REQUIRE_THAT (records[r].limiterGainReductionDb, WithinAbs (6.3, 0.01));
+    }
+}
+
+TEST_CASE ("Under the Ceiling once released, and off once settled, the Limiter's Gain Reduction is exactly none")
+{
+    const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
+    CAPTURE (mode);
+    // Over the Ceiling for half a second, then 1 dB under it for 5 s: 200 ms of release (LIMITER_RELEASE_MS) brings
+    // 6.3 dB under LIMITER_SETTLED_DB, 1e-7 dB, within 4 s.
+    auto input = limiterSine (ceilingDb + 6.0);
+    for (int i = 0; i < 10; ++i)
+    {
+        const auto under = limiterSine (ceilingDb - 1.0);
+        input.insert (input.end(), under.begin(), under.end());
+    }
+    const auto released = limitedRecords (limited (mode), input);
+    REQUIRE (released.size() == input.size() / 16);
+    for (std::size_t r = released.size() * 9 / 10; r < released.size(); ++r)
+    {
+        CAPTURE (r);
+        REQUIRE (released[r].limiterGainReductionDb == 0.0);
+    }
+    // Off and settled, at any level.
+    auto off = limited (mode);
+    off.limiter = false;
+    for (const double levelDb : { ceilingDb - 1.0, ceilingDb + 6.0, 0.0 })
+        for (const auto& record : limitedRecords (off, limiterSine (levelDb)))
+            REQUIRE (record.limiterGainReductionDb == 0.0);
+}
+
+namespace
+{
+
+// The compressor, the Gate and the Limiter all at work on bursts in mode: the Gate opening on each burst and closing
+// between them, and the Limiter's Ceiling under the bursts' peaks.
+Settings everyStage (ProcessingMode mode)
+{
+    return { .gate = { .on = true, .thresholdDb = -30.0, .releaseMs = 20.0, .holdMs = 0.0 },
+             .thresholdDb = -30.0,
+             .autoGain = true,
+             .limiter = true,
+             .ceilingDb = -12.0,
+             .processingMode = mode };
+}
+
+// Noise (test::noise, its peaks near -6 dB) in bursts of 50 ms, 60 dB quieter for 50 ms between them.
+test::Channels bursts (int numChannels, int numSamples, std::uint32_t seed)
+{
+    auto audio = test::noise (numChannels, numSamples, seed);
+    for (auto& channel : audio)
+        for (std::size_t i = 0; i < channel.size(); ++i)
+            if ((i / 2400) % 2 == 1)
+                channel[i] *= 0.001f;
+    return audio;
+}
+
+} // namespace
+
+TEST_CASE ("The Gate's and the Limiter's Gain Reductions are the same, record for record, however the host cuts the audio into blocks", "[sweep]")
+{
+    const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
+    const int numChannels = GENERATE (1, 2);
+    CAPTURE (mode, numChannels);
+    const auto input = bursts (numChannels, 48000, 3);
+    const auto recordsCutBy = [&] (const std::vector<int>& blockSizes) {
+        auto audio = input;
+        Engine engine;
+        engine.prepare (48000.0, 4096, numChannels);
+        engine.setSettings (everyStage (mode));
+        return playAndRead (engine, audio, blockSizes);
+    };
+    const auto reference = recordsCutBy ({ 512 });
+    REQUIRE (reference.size() == 3000);
+    const auto most = [&] (double LevelRecord::* field) {
+        double m = 0.0;
+        for (const auto& record : reference)
+            m = std::max (m, record.*field);
+        return m;
+    };
+    CHECK (most (&LevelRecord::gainReductionDb) > 1.0);
+    CHECK (most (&LevelRecord::gateGainReductionDb) > 1.0);
+    CHECK (most (&LevelRecord::limiterGainReductionDb) > 1.0);
+    for (const auto& cut : test::blockCuts())
+    {
+        const auto records = recordsCutBy (cut);
+        REQUIRE (records.size() == reference.size());
+        for (std::size_t r = 0; r < records.size(); ++r)
+        {
+            CAPTURE (cut, r);
+            REQUIRE (records[r].inputDb == reference[r].inputDb);
+            REQUIRE (records[r].outputDb == reference[r].outputDb);
+            REQUIRE (records[r].gainReductionDb == reference[r].gainReductionDb);
+            REQUIRE (records[r].detectionLevelDb == reference[r].detectionLevelDb);
+            REQUIRE (records[r].gateGainReductionDb == reference[r].gateGainReductionDb);
+            REQUIRE (records[r].limiterGainReductionDb == reference[r].limiterGainReductionDb);
+        }
+    }
+}
+
+TEST_CASE ("The Gate's and the Limiter's Gain Reductions are read on a reader thread while process() runs, and reading never allocates")
+{
+    // The audio thread plays a steady -10 dB on both channels. Gate Threshold 0 dB closes the Gate, which takes its
+    // Gate Range, 20 dB; the Limiter, at a Ceiling of -36 dB, takes the 6 dB left over it. The reader reads until it
+    // has seen both settle there; the audio plays until then, or for ten minutes of audio, when the test fails.
+    Engine engine;
+    engine.prepare (48000.0, 64, 2);
+    engine.setSettings ({ .gate = { .on = true, .thresholdDb = 0.0, .releaseMs = 10.0 }, .ratio = 1.0, .limiter = true, .ceilingDb = -36.0 });
+    std::atomic<bool> done { false };
+    std::thread audio ([&] {
+        const auto level = static_cast<float> (test::gainOf (-10.0));
+        test::Channels block (2, std::vector<float> (64));
+        float* main[] = { block[0].data(), block[1].data() };
+        for (int n = 0; n < 48000 * 600 / 64 && ! done; ++n)
+        {
+            for (auto& channel : block)
+                for (std::size_t i = 0; i < channel.size(); ++i)
+                    channel[i] = i % 2 == 0 ? level : -level;
+            engine.process ({ main, 2, 64 });
+        }
+        done = true;
+    });
+
+    std::vector<LevelRecord> records (static_cast<std::size_t> (engine.levelHistoryCapacity()));
+    LevelRecord last {};
+    std::size_t allocations = 0;
+    const auto settled = [] (double db, double target) { return std::abs (db - target) < 0.01; };
+    while (! done && ! (settled (last.gateGainReductionDb, 20.0) && settled (last.limiterGainReductionDb, 6.0)))
+    {
+        plugkit::test::AllocationGuard guard;
+        if (const int count = engine.readLevels (records.data(), static_cast<int> (records.size())); count > 0)
+            last = records[static_cast<std::size_t> (count - 1)];
+        allocations += guard.allocations();
+    }
+    done = true;
+    audio.join();
+
+    CHECK (allocations == 0);
+    CHECK_THAT (last.gateGainReductionDb, WithinAbs (20.0, 0.01));
+    CHECK_THAT (last.limiterGainReductionDb, WithinAbs (6.0, 0.01));
+    CHECK (last.gainReductionDb == 0.0);
+}
+
+TEST_CASE ("Under Global Bypass and Detection Audition the Gate and the Limiter report the Gain Reduction they apply underneath")
+{
+    const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
+    CAPTURE (mode);
+    const auto recordsWith = [&] (Settings settings) {
+        auto audio = bursts (2, 24000, 5);
+        Engine engine;
+        engine.prepare (48000.0, 512, 2);
+        engine.setSettings (settings);
+        return playAndRead (engine, audio, { 512 });
+    };
+    const auto plain = recordsWith (everyStage (mode));
+    auto bypassed = everyStage (mode);
+    bypassed.globalBypass = true;
+    auto auditioned = everyStage (mode);
+    auditioned.detectionAudition = true;
+    for (const auto& settings : { bypassed, auditioned })
+    {
+        const auto records = recordsWith (settings);
+        REQUIRE (records.size() == plain.size());
+        bool limited = false;
+        for (std::size_t r = 0; r < records.size(); ++r)
+        {
+            CAPTURE (settings.globalBypass, r);
+            REQUIRE (records[r].gateGainReductionDb == plain[r].gateGainReductionDb);
+            limited = limited || records[r].limiterGainReductionDb > 1.0;
+        }
+        CHECK (limited);
+    }
+}

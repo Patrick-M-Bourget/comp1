@@ -710,7 +710,7 @@ struct Engine::Impl
         dryWet.sum (wet);
         audition.process (detected, wet, highQuality);
         outputGain.process (wet);
-        limiter.process (wet, path);
+        limiter.process (wet, path, runLevels);
         globalBypass.process (wet);
         modeFade.process (wet);
     }
@@ -834,7 +834,7 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         // The Gate, ahead of the split, so it lowers the Dry and the Wet path alike.
         if (impl->gridPosition == 0)
             impl->gate.startRun();
-        impl->gate.process (wet, sidechainPieceOrNone);
+        impl->gate.process (wet, sidechainPieceOrNone, impl->runLevels);
         // The split: the gated input is copied as the Dry path before the Wet path touches it.
         impl->dryWet.split ({ wet.channels, wet.numChannels, wet.numSamples }, path);
         impl->wetPath (wet, sidechainPieceOrNone, path);

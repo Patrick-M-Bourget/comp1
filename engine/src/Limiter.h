@@ -20,6 +20,7 @@
 
 #include "Bessel.h"
 #include "Glide.h"
+#include "LevelTaps.h"
 #include "comp1/Engine.h"
 #include "comp1/Latency.h"
 
@@ -91,8 +92,9 @@ public:
 
     void setCeiling (double ceilingDb, bool snap) { glideTo (ceiling, plugkit::decibelsToGain (ceilingDb), snap); }
 
-    // Limits block in place, on path: High Quality's delays it by the Limiter reserve.
-    void process (AudioBlock block, ProcessingMode path)
+    // Limits block in place, on path: High Quality's delays it by the Limiter reserve. It notes the gain it applies
+    // at each sample in levels.
+    void process (AudioBlock block, ProcessingMode path, RunLevels& levels)
     {
         if (path != playing)
         {
@@ -103,24 +105,23 @@ public:
         {
             const double share = onShare.isSettled() ? onShare.value() : onShare.next();
             const double ceilingGain = ceiling.isSettled() ? ceiling.value() : ceiling.next();
-            if (path == ProcessingMode::HighQuality)
-                highQualitySample (block, i, share, ceilingGain);
-            else
-                zeroLatencySample (block, i, share, ceilingGain);
+            levels.noteLimiterGain (path == ProcessingMode::HighQuality ? highQualitySample (block, i, share, ceilingGain)
+                                                                       : zeroLatencySample (block, i, share, ceilingGain));
         }
     }
 
 private:
     // --- Zero Latency ---
 
-    void zeroLatencySample (AudioBlock block, int i, double share, double ceilingGain)
+    // Each sample returns the gain it applied, after the on/off crossfade.
+    double zeroLatencySample (AudioBlock block, int i, double share, double ceilingGain)
     {
         double peak = 0.0;
         for (int ch = 0; ch < block.numChannels; ++ch)
             peak = std::max (peak, static_cast<double> (std::abs (block.channels[ch][i])));
         zeroLatencyReduction = settled (std::max (overDb (peak, ceilingGain), releasePole * zeroLatencyReduction));
         if (share == 0.0)
-            return;
+            return 1.0;
         const double gain = gainOf (zeroLatencyReduction);
         // The largest float at or under the Ceiling, so a clipped sample never rounds past it.
         auto clip = static_cast<float> (ceilingGain);
@@ -135,11 +136,12 @@ private:
             else if (share != 0.0)
                 sample = static_cast<float> (share * limited + (1.0 - share) * sample);
         }
+        return share * gain + (1.0 - share);
     }
 
     // --- High Quality ---
 
-    void highQualitySample (AudioBlock block, int i, double share, double ceilingGain)
+    double highQualitySample (AudioBlock block, int i, double share, double ceilingGain)
     {
         // The estimate for the sample estimatorDelay ago: the loudest of its segment and the one before, on every
         // channel.
@@ -172,6 +174,7 @@ private:
             block.channels[ch][i] = gain == 1.0 ? out : static_cast<float> (gain * out);
         }
         position = position + 1 == reserve ? 0 : position + 1;
+        return gain;
     }
 
     // The loudest of the sample at the middle of the estimatorTaps samples from window and the estimator's points
