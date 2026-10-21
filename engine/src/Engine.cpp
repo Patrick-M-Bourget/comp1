@@ -221,7 +221,14 @@ void Engine::process (AudioBlock main, const ConstAudioBlock*)
         // The rest of the grid's run, or of the block where it ends first, leaving the run open.
         count = std::min (plugkit::runSamples - impl->gridPosition, main.numSamples - start);
         for (int ch = 0; ch < channels; ++ch)
-            impl->subBlock[static_cast<std::size_t> (ch)] = main.channels[ch] + start;
+        {
+            float* samples = main.channels[ch] + start;
+            impl->subBlock[static_cast<std::size_t> (ch)] = samples;
+            // A non-finite input sample (nan, inf) never reaches the output, nor the detector, whose Gain Reduction
+            // it would hold forever: it plays as silence.
+            for (int i = 0; i < count; ++i)
+                samples[i] = std::isfinite (samples[i]) ? samples[i] : 0.0f;
+        }
 
         // The Wet path, the compressor then Auto Gain, then Output Gain. The compressor's settings step at the start of
         // each run, wherever the host's blocks fall; Auto Gain and Output Gain glide a sample at a time with next(),

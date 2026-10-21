@@ -21,6 +21,7 @@ include(Catch)
 add_executable(comp1_engine_tests
     engine/AutoGainTest.cpp
     engine/ClickFreeTest.cpp
+    engine/NonFiniteInputTest.cpp
     engine/OutputGainTest.cpp
     engine/RealtimeSafetyTest.cpp
     engine/SettingsHandoffTest.cpp
