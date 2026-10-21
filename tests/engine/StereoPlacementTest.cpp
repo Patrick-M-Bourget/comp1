@@ -107,17 +107,17 @@ namespace
 
 // A Sidechain whose loud part is a steady -6 dB: on the Mid (both channels alike), on the Side (one the other's
 // negative), or a mono one.
-enum class Key
+enum class SidechainPart
 {
     loudMid,
     loudSide,
     mono,
 };
 
-test::Channels sidechainOf (Key key)
+test::Channels sidechainOf (SidechainPart loud)
 {
-    auto channels = test::steadyLevel (key == Key::mono ? 1 : 2, numSamples, -6.0);
-    if (key == Key::loudSide)
+    auto channels = test::steadyLevel (loud == SidechainPart::mono ? 1 : 2, numSamples, -6.0);
+    if (loud == SidechainPart::loudSide)
         for (auto& sample : channels[1])
             sample = -sample;
     return channels;
@@ -127,19 +127,19 @@ test::Channels sidechainOf (Key key)
 
 TEST_CASE ("With External, a stereo Sidechain's Mid or Side drives Stereo Placement Mid or Side, and a mono one drives every Placement")
 {
-    const auto key = GENERATE (Key::loudMid, Key::loudSide, Key::mono);
+    const auto loud = GENERATE (SidechainPart::loudMid, SidechainPart::loudSide, SidechainPart::mono);
     const auto placement = GENERATE (StereoPlacement::Mid, StereoPlacement::Side);
-    CAPTURE (key, placement);
+    CAPTURE (loud, placement);
     // The main input's Mid and Side are steady and far under Threshold, so only the Sidechain moves them.
     const auto input = decoded (test::steadyLevel (1, numSamples, -30.0).front(), test::steadyLevel (1, numSamples, -36.0).front());
-    const auto sidechainSamples = sidechainOf (key);
+    const auto sidechainSamples = sidechainOf (loud);
     const auto output = test::played ({ .detectionSource = DetectionSource::External, .stereoPlacement = placement }, sampleRate, input, { 512 }, &sidechainSamples);
 
     // The Placement's part takes the Transfer Curve's 9 dB at the Sidechain's -6 dB (python3 tools/dyn-lab/dynlab.py
     // transfer) when its part of the Sidechain is the loud one, or the Sidechain is mono, and none otherwise; the
     // other part passes.
     const bool mid = placement == StereoPlacement::Mid;
-    const bool driven = key == Key::mono || (key == Key::loudMid) == mid;
+    const bool driven = loud == SidechainPart::mono || (loud == SidechainPart::loudMid) == mid;
     CHECK (std::abs (partGainDb (input, output, mid) + (driven ? 9.0 : 0.0)) <= 0.01);
     CHECK (std::abs (partGainDb (input, output, ! mid)) <= 0.01);
 }

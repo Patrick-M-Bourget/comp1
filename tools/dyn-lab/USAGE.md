@@ -100,7 +100,7 @@ Only the residual is anti-aliased (ADR 0005), with first-order antiderivative an
 
 ### `saturation`
 
-Prints the static curve at a Drive (6 dB by default): the output level for each steady input level, from −36 to +6 dB in 3 dB steps, plus the level where the shape leaves the line. A steady input is a constant sample value whose magnitude reads its level, so ADAA's two samples are equal and it gives the residual itself. Then it prints the steady output level and the Gain Reduction of the compressor with Saturation, at a steady input level (`--level`, 0 dB by default), for Saturation off, Before and After:
+Prints the steady-level curve at a Drive (6 dB by default): the output level for each steady input level, from −36 to +6 dB in 3 dB steps, plus the level where the shape leaves the line. A steady input is a constant sample value whose magnitude reads its level, so ADAA's two samples are equal and it gives the residual itself. Then it prints the steady output level and the Gain Reduction of the compressor with Saturation, at a steady input level (`--level`, 0 dB by default), for Saturation off, Before and After:
 
 - **Before:** the compressor hears the saturated signal (the Internal detection signal is its input).
 - **After:** the compressor hears the input, as with Saturation off, so its Gain Reduction is the same, and Saturation shapes its output.

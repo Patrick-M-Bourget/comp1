@@ -49,7 +49,7 @@ struct DetectionSignal
 // With Detection Source Internal there is one detection channel per main channel, carrying the Internal signal sample
 // for sample, and each main channel follows its own; the Sidechain changes nothing. With External the detection
 // channels are the Sidechain's: each main channel follows the Sidechain channel of its own index, a mono Sidechain is
-// followed by every main channel, so a mono key, like a kick, ducks the whole track, and a mono main follows the
+// followed by every main channel, so a mono Sidechain, like a kick, ducks the whole track, and a mono main follows the
 // louder of a stereo Sidechain's two channels at each sample. With External and no Sidechain, the detection signal is
 // silence, a channel of it per main channel: no Gain Reduction starts, and any in progress returns at Release.
 //

@@ -159,7 +159,7 @@ inline Channels steadyLevel (int numChannels, int numSamples, double levelDb)
 
 // A steady level that doesn't alternate: the same sample value, levelDb, every sample. Saturation's ADAA averages the
 // residual between neighbouring samples, and a square wave's two values average out (the residual is odd), so a
-// steady level through Saturation is this one, as dyn-lab's static curve is.
+// steady level through Saturation is this one, as dyn-lab's steady-level curve for Saturation is.
 inline Channels constantLevel (int numChannels, int numSamples, double levelDb)
 {
     const auto magnitude = static_cast<float> (std::pow (10.0, levelDb / 20.0));

@@ -34,7 +34,7 @@ Settings saturatedAt (double driveDb)
     return { .ratio = 1.0, .saturation = true, .driveDb = driveDb };
 }
 
-// Each table is the static curve the dyn-lab command named with it printed, copied as printed (to 0.01 dB).
+// Each table is the steady-level curve the dyn-lab command named with it printed, copied as printed (to 0.01 dB).
 const std::vector<StaticCurve>& staticCurves()
 {
     static const std::vector<StaticCurve> all {
@@ -57,7 +57,7 @@ const std::vector<StaticCurve>& staticCurves()
 
 } // namespace
 
-TEST_CASE ("At a steady level the Saturation stage follows dyn-lab's static curve within 0.01 dB")
+TEST_CASE ("At a steady level the Saturation stage follows dyn-lab's steady-level curve within 0.01 dB")
 {
     const auto& curve = GENERATE (from_range (staticCurves()));
     const int numChannels = GENERATE (1, 2);
@@ -74,7 +74,7 @@ TEST_CASE ("At a steady level the Saturation stage follows dyn-lab's static curv
 TEST_CASE ("Before the compressor, Saturation feeds its detection; after it, the compressor hears the input")
 {
     // python3 tools/dyn-lab/dynlab.py saturation --drive 12 --level 12: at the compressor's defaults, a steady +12 dB
-    // input. After's figure is the static curve of Saturation off's output: the same Gain Reduction, then the shape.
+    // input. After's figure is the steady-level curve of Saturation off's output: the same Gain Reduction, then the shape.
     // Before's Gain Reduction is the saturated signal's, less.
     const double sampleRate = GENERATE (44100.0, 96000.0);
     CAPTURE (sampleRate);
