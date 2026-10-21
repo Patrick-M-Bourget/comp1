@@ -26,6 +26,12 @@ const std::vector<test::NullRow>& nullRows()
 {
     static const std::vector<test::NullRow> rows {
         { "Clean", [] (Settings&) {} },
+        // The Gate on and open: the noise is far over its lowest Gate Threshold.
+        { "Gate open",
+          [] (Settings& s) {
+              s.gate.on = true;
+              s.gate.thresholdDb = parameterRanges::threshold.low;
+          } },
     };
     return rows;
 }

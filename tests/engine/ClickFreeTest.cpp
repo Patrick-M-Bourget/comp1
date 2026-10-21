@@ -202,6 +202,61 @@ Jump ceilingJump (ProcessingMode mode, std::string setting)
              { atBottom } };
 }
 
+// The Gate on, at a Gate Threshold the tone (-12 dB) sits 12 dB under, past the closing level: closed on it.
+void gateClosed (Settings& s)
+{
+    s.gate.on = true;
+    s.gate.thresholdDb = 0.0;
+}
+
+// The tone in and out of the Gate: 80 ms 18 dB over its Gate Threshold, then 80 ms 18 dB under it, each change a 5 ms
+// raised cosine, so it opens and closes on the tone. Each cycle is an odd length against the jumps' 50 ms, so they
+// land at a different point of the opening and closing each time.
+constexpr double gatingThresholdDb = -30.0;
+double gatingAmplitude (double seconds)
+{
+    constexpr double held = 0.08, change = 0.005;
+    const double loud = toneAmplitude, quiet = toneAmplitude * std::pow (10.0, -36.0 / 20.0);
+    const double t = std::fmod (seconds, 2.0 * (held + change));
+    const auto fade = [] (double from, double to, double x) { return from + (to - from) * (1.0 - std::cos (std::numbers::pi * x)) / 2.0; };
+    if (t < held)
+        return loud;
+    if (t < held + change)
+        return fade (loud, quiet, (t - held) / change);
+    if (t < 2.0 * held + change)
+        return quiet;
+    return fade (quiet, loud, (t - 2.0 * held - change) / change);
+}
+
+// The Gate opening and closing on the tone, with Gate Hold 0 ms so it closes well within each quiet part.
+void gating (Settings& s)
+{
+    s.gate.on = true;
+    s.gate.thresholdDb = gatingThresholdDb;
+    s.gate.holdMs = 0.0;
+}
+
+// A jump in one of the Gate's times while it opens and closes on the tone: set (s, b) sets the time, a when b is
+// false. Measured against the tone gated steadily at each, whose openings and closings are corners of their own.
+Jump gateTimeJump (std::string setting, void (*set) (Settings&, bool))
+{
+    return { std::move (setting),
+             [set] (Settings& s, bool b) {
+                 gating (s);
+                 set (s, b);
+             },
+             { [set] (Settings& s) {
+                  gating (s);
+                  set (s, false);
+              },
+               [set] (Settings& s) {
+                   gating (s);
+                   set (s, true);
+               } },
+             1,
+             gatingAmplitude };
+}
+
 Jump placementJump (StereoPlacement a, StereoPlacement b, std::string setting)
 {
     return onStereo (std::move (setting), [a, b] (Settings& s, bool toB) { s.stereoPlacement = toB ? b : a; });
@@ -210,6 +265,29 @@ Jump placementJump (StereoPlacement a, StereoPlacement b, std::string setting)
 const std::vector<Jump>& jumps()
 {
     static const std::vector<Jump> all {
+        // The Gate's, first: on and off while it closes on the tone; its Gate Threshold across the tone and its Gate
+        // Range from none to the most while it is closed; its times while it opens and closes on the tone.
+        { "Gate", [] (Settings& s, bool b) {
+             gateClosed (s);
+             s.gate.on = b;
+         } },
+        // Across the tone the Gate opens and closes on it by 20 dB, each one pole, which starts moving at full speed:
+        // at the default Gate Attack (1 ms) and Gate Release (100 ms) that start is itself a corner over the limit at
+        // 88.2 kHz and up, whatever the glide. How fast the Gate opens and closes is those settings' job, so the row
+        // sets them slower.
+        { "Gate Threshold", [] (Settings& s, bool b) {
+             gateClosed (s);
+             s.gate.attackMs = 10.0;
+             s.gate.releaseMs = 300.0;
+             s.gate.thresholdDb = b ? 0.0 : -40.0;
+         } },
+        { "Gate Range", [] (Settings& s, bool b) {
+             gateClosed (s);
+             s.gate.rangeDb = b ? 60.0 : 0.0;
+         } },
+        gateTimeJump ("Gate Attack", [] (Settings& s, bool b) { s.gate.attackMs = b ? 50.0 : 1.0; }),
+        gateTimeJump ("Gate Release", [] (Settings& s, bool b) { s.gate.releaseMs = b ? 2000.0 : 20.0; }),
+        gateTimeJump ("Gate Hold", [] (Settings& s, bool b) { s.gate.holdMs = b ? 500.0 : 0.0; }),
         { "Threshold", [] (Settings& s, bool b) { s.thresholdDb = b ? -40.0 : 0.0; } },
         { "Ratio", [] (Settings& s, bool b) { s.ratio = b ? infinity : 1.0; } },
         { "Knee", [] (Settings& s, bool b) { s.kneeDb = b ? 72.0 : 0.0; } },
