@@ -20,8 +20,7 @@ constexpr auto zeroLatency = ProcessingMode::ZeroLatency;
 constexpr auto highQuality = ProcessingMode::HighQuality;
 constexpr double off = -std::numeric_limits<double>::infinity();
 
-// The settings the null must hold under, one row each. Oversampling (#10) adds a row per factor, Colour (#19) a row
-// per Colour.
+// The settings the null must hold under, one row each. Oversampling (#10) adds a row per factor.
 const std::vector<test::NullRow>& nullRows()
 {
     static const std::vector<test::NullRow> rows {
