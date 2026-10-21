@@ -127,7 +127,7 @@ TEST_CASE ("The Style table is dyn-lab's, row for row")
 
 TEST_CASE ("Clean's row is a default Settings in every field it writes")
 {
-    CHECK (styled (Style::Clean, everythingMoved()) == styled (Style::Clean));
+    // With the next test, which applies it over every setting moved, every field it writes is the default's.
     CHECK (styled (Style::Clean) == Settings {});
 }
 
