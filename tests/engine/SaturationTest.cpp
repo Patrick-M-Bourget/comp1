@@ -99,15 +99,6 @@ test::Channels loudNoise (int numSamples)
     return audio;
 }
 
-test::Channels played (const Settings& settings, double sampleRate, const std::vector<int>& cut, test::Channels audio)
-{
-    Engine engine;
-    engine.prepare (sampleRate, 4096, 2);
-    engine.setSettings (settings);
-    test::processInBlocks (engine, audio, cut);
-    return audio;
-}
-
 } // namespace
 
 TEST_CASE ("With Saturation off, the output is the same at any Drive or Saturation Position, bit for bit")
@@ -116,12 +107,12 @@ TEST_CASE ("With Saturation off, the output is the same at any Drive or Saturati
     const auto& cut = GENERATE (from_range (test::blockCuts()));
     CAPTURE (sampleRate, cut);
     const auto input = loudNoise (6000);
-    const auto reference = played ({}, sampleRate, cut, input);
+    const auto reference = test::played ({}, sampleRate, input, cut);
     for (const double driveDb : { 0.0, 24.0 })
         for (const auto position : { SaturationPosition::Before, SaturationPosition::After })
         {
             CAPTURE (driveDb, static_cast<int> (position));
-            CHECK (played ({ .saturation = false, .driveDb = driveDb, .saturationPosition = position }, sampleRate, cut, input) == reference);
+            CHECK (test::played ({ .saturation = false, .driveDb = driveDb, .saturationPosition = position }, sampleRate, input, cut) == reference);
         }
 }
 
@@ -143,8 +134,8 @@ TEST_CASE ("At Drive 0 dB, Saturation passes anything at or below full scale thr
         channel[101] = -1.0f;
         channel[2000] = -1.0f;
     }
-    const auto off = played ({ .processingMode = mode }, sampleRate, cut, input);
-    CHECK (played ({ .saturation = true, .driveDb = 0.0, .saturationPosition = position, .processingMode = mode }, sampleRate, cut, input) == off);
+    const auto off = test::played ({ .processingMode = mode }, sampleRate, input, cut);
+    CHECK (test::played ({ .saturation = true, .driveDb = 0.0, .saturationPosition = position, .processingMode = mode }, sampleRate, input, cut) == off);
 }
 
 TEST_CASE ("Saturation never makes a non-finite output, from a non-finite input or a near-equal pair of samples")
@@ -164,7 +155,7 @@ TEST_CASE ("Saturation never makes a non-finite output, from a non-finite input 
             channel[i] = i % 2 == 0 ? 0.75f : std::nextafter (0.75f, 1.0f);
         channel[1500] = channel[1501] = -3.0f;
     }
-    const auto output = played ({ .ratio = 1.0, .saturation = true, .driveDb = 24.0, .saturationPosition = position }, 48000.0, { 64 }, input);
+    const auto output = test::played ({ .ratio = 1.0, .saturation = true, .driveDb = 24.0, .saturationPosition = position }, 48000.0, input, { 64 });
     for (const auto& channel : output)
         for (const float sample : channel)
             REQUIRE (std::isfinite (sample));

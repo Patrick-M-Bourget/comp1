@@ -23,25 +23,12 @@ constexpr auto highQuality = ProcessingMode::HighQuality;
 test::Channels play (const test::Channels& audio, double sampleRate, const std::vector<int>& cut, const Settings& settings,
                      const Settings& later, int switchAt)
 {
-    auto first = audio, second = audio;
-    for (auto& channel : first)
-        channel.resize (static_cast<std::size_t> (switchAt));
-    for (auto& channel : second)
-        channel.erase (channel.begin(), channel.begin() + switchAt);
-    Engine engine;
-    engine.prepare (sampleRate, 4096, static_cast<int> (audio.size()));
-    engine.setSettings (settings);
-    test::processInBlocks (engine, first, cut);
-    engine.setSettings (later);
-    test::processInBlocks (engine, second, cut);
-    for (std::size_t ch = 0; ch < audio.size(); ++ch)
-        first[ch].insert (first[ch].end(), second[ch].begin(), second[ch].end());
-    return first;
+    return test::played (settings, sampleRate, audio, cut, nullptr, test::SettingsChange { .at = switchAt, .settings = later });
 }
 
 test::Channels play (const test::Channels& audio, double sampleRate, const std::vector<int>& cut, const Settings& settings)
 {
-    return play (audio, sampleRate, cut, settings, settings, 0);
+    return test::played (settings, sampleRate, audio, cut);
 }
 
 } // namespace

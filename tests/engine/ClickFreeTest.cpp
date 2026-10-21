@@ -382,22 +382,12 @@ TEST_CASE ("While a compressor setting glides, the output is the same however th
     CAPTURE (jump.setting, cut);
     // Noise, loud enough to be compressed throughout.
     const auto input = test::noise (2, 20000);
-    auto whole = input, cutUp = input;
-    for (auto* audio : { &whole, &cutUp })
-    {
-        Engine engine;
-        engine.prepare (48000.0, 4096, 2);
-        Settings settings;
-        jump.set (settings, false);
-        engine.setSettings (settings);
-        // The jump lands 100 samples in, part-way through a run.
-        auto lead = test::noise (2, 100, 9);
-        test::processInBlocks (engine, lead, { 100 });
-        jump.set (settings, true);
-        engine.setSettings (settings);
-        test::processInBlocks (engine, *audio, audio == &whole ? wholeCut : cut);
-    }
-    CHECK (cutUp == whole);
+    Settings before, after;
+    jump.set (before, false);
+    jump.set (after, true);
+    // The jump lands 100 samples in, part-way through a run.
+    const test::SettingsChange jumped { .at = 100, .settings = after };
+    CHECK (test::played (before, 48000.0, input, cut, nullptr, jumped) == test::played (before, 48000.0, input, wholeCut, nullptr, jumped));
 }
 
 TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click")

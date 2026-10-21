@@ -22,13 +22,9 @@ Settings compressing (DetectionSource source, bool audition)
 
 // The output of an Engine given settings from the start, so Detection Audition is held from the first sample with no
 // fade, for main and the Sidechain samples given (none when null).
-test::Channels play (const Settings& settings, test::Channels main, const test::Channels* sidechainSamples = nullptr)
+test::Channels play (const Settings& settings, const test::Channels& main, const test::Channels* sidechainSamples = nullptr)
 {
-    Engine engine;
-    engine.prepare (48000.0, 512, static_cast<int> (main.size()));
-    engine.setSettings (settings);
-    test::processInBlocks (engine, main, { 512 }, sidechainSamples);
-    return main;
+    return test::played (settings, 48000.0, main, { 512 }, sidechainSamples);
 }
 
 } // namespace

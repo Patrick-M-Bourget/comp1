@@ -10,6 +10,7 @@
 #include <numbers>
 #include <optional>
 #include <random>
+#include <utility>
 #include <vector>
 
 namespace comp1::test
@@ -48,6 +49,53 @@ inline void processInBlocks (Engine& engine, Channels& audio, const std::vector<
         engine.process ({ main.data(), static_cast<int> (main.size()), count }, sidechainSamples != nullptr ? &sidechainBlock : nullptr);
         start += count;
     }
+}
+
+// A change of settings part-way through what an Engine plays: from sample at on, it plays with settings. at is the
+// start of a host block, so the change lands on that sample.
+struct SettingsChange
+{
+    int at = 0;
+    Settings settings;
+};
+
+// audio through a fresh Engine at sampleRate, with settings from the start (so they apply at once, with no glide), cut
+// into blocks as given and with the samples of sidechainSamples, as long as audio, on the Sidechain when it isn't
+// null; and from change's sample on, with its settings, when there is one. Each side of the change is cut afresh.
+inline Channels played (const Settings& settings,
+                        double sampleRate,
+                        Channels audio,
+                        const std::vector<int>& cut = { 512 },
+                        const Channels* sidechainSamples = nullptr,
+                        const std::optional<SettingsChange>& change = std::nullopt)
+{
+    const auto split = [] (const Channels& whole, std::size_t from, std::size_t to) {
+        Channels piece;
+        for (const auto& channel : whole)
+            piece.emplace_back (channel.begin() + static_cast<std::ptrdiff_t> (from), channel.begin() + static_cast<std::ptrdiff_t> (to));
+        return piece;
+    };
+    const std::size_t length = audio.front().size();
+    const std::size_t at = change ? std::min (static_cast<std::size_t> (change->at), length) : length;
+    Engine engine;
+    engine.prepare (sampleRate, *std::max_element (cut.begin(), cut.end()), static_cast<int> (audio.size()));
+    engine.setSettings (settings);
+    const auto play = [&] (std::size_t from, std::size_t to) {
+        auto piece = split (audio, from, to);
+        const auto sidechainPiece = sidechainSamples != nullptr ? std::optional { split (*sidechainSamples, from, to) } : std::nullopt;
+        if (from < to)
+            processInBlocks (engine, piece, cut, sidechainPiece ? &*sidechainPiece : nullptr);
+        return piece;
+    };
+    auto out = play (0, at);
+    if (change)
+    {
+        engine.setSettings (change->settings);
+        const auto rest = play (at, length);
+        for (std::size_t ch = 0; ch < out.size(); ++ch)
+            out[ch].insert (out[ch].end(), rest[ch].begin(), rest[ch].end());
+    }
+    return out;
 }
 
 // audio delayed by samples, the start filled with silence and the end cut off, so it keeps its length.
@@ -144,11 +192,7 @@ inline double steadyOutputDb (const Settings& settings,
                               Channels (*level) (int, int, double) = steadyLevel)
 {
     const auto input = level (numChannels, static_cast<int> (seconds * sampleRate), levelDb);
-    auto output = input;
-    Engine engine;
-    engine.prepare (sampleRate, 512, numChannels);
-    engine.setSettings (settings);
-    processInBlocks (engine, output, { 512 });
+    const auto output = played (settings, sampleRate, input);
     const double gain = static_cast<double> (output.front().back()) / static_cast<double> (input.front().back());
     for (const auto& channel : output)
         if (channel.back() != output.front().back())
@@ -161,11 +205,7 @@ inline double steadyOutputDb (const Settings& settings,
 inline std::vector<double> steadyOutputsDb (const Settings& settings, const std::vector<double>& levelsDb, double sampleRate, double seconds = 0.5)
 {
     const auto input = steadyLevels (levelsDb, static_cast<int> (seconds * sampleRate));
-    auto output = input;
-    Engine engine;
-    engine.prepare (sampleRate, 512, static_cast<int> (input.size()));
-    engine.setSettings (settings);
-    processInBlocks (engine, output, { 512 });
+    const auto output = played (settings, sampleRate, input);
     std::vector<double> outputDb;
     for (std::size_t ch = 0; ch < input.size(); ++ch)
         outputDb.push_back (levelsDb[ch] + 20.0 * std::log10 (static_cast<double> (output[ch].back()) / static_cast<double> (input[ch].back())));
@@ -210,10 +250,7 @@ inline std::vector<double> heardGainReduction (const Settings& settings, double 
     const auto after = steadyLevel (1, length, toDb);
     audio.front().insert (audio.front().end(), after.front().begin(), after.front().end());
     const auto input = audio.front();
-    Engine engine;
-    engine.prepare (sampleRate, 512, 1);
-    engine.setSettings (settings);
-    processInBlocks (engine, audio, { 512 });
+    audio = played (settings, sampleRate, audio);
     const auto from = static_cast<std::ptrdiff_t> (length);
     const std::vector<float> carried (input.begin() + from - latency, input.end() - latency);
     return gainReductionDb (carried, { audio.front().begin() + from, audio.front().end() });
@@ -230,10 +267,7 @@ inline int impulseDelaySamples (const Settings& settings, double sampleRate, int
     Channels audio (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (length)));
     for (auto& channel : audio)
         channel[100] = 0.5f;
-    Engine engine;
-    engine.prepare (sampleRate, blockSize, numChannels);
-    engine.setSettings (settings);
-    processInBlocks (engine, audio, { blockSize });
+    audio = played (settings, sampleRate, audio, { blockSize });
     int delay = -1;
     for (const auto& channel : audio)
     {
