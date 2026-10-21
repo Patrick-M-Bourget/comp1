@@ -87,15 +87,16 @@ TEST_CASE ("High Quality at Lookahead 0 is Zero Latency's output delayed by the 
     CHECK (play (input, sampleRate, cut, highQualitySettings) == test::delayed (zeroLatencyOutput, latencySamples (highQuality, sampleRate)));
 }
 
-TEST_CASE ("On FET, High Quality at Lookahead 0 is Zero Latency's output delayed by the reported latency, bit for bit", "[sweep]")
+TEST_CASE ("On FET and Opto, High Quality at Lookahead 0 is Zero Latency's output delayed by the reported latency, bit for bit", "[sweep]")
 {
+    const auto character = GENERATE (Character::FET, Character::Opto);
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
-    CAPTURE (sampleRate, cut);
-    // FET's loop reads the detection signal times the gain of the same sample, which in High Quality is the input as
+    CAPTURE (character, sampleRate, cut);
+    // The loop reads the detection signal times the gain of the same sample, which in High Quality is the input as
     // delayed for the detector: at Lookahead 0, the delayed audio itself. Compressed throughout, with Colour, Stereo
     // Link and Hold at work. At 1x, so Colour runs at the base rate there too.
-    const Settings compressing { .character = Character::FET, .thresholdDb = -30.0, .attackMs = 0.1, .holdMs = 5.0, .stereoLink = 50.0 };
+    const Settings compressing { .character = character, .thresholdDb = -30.0, .attackMs = 0.1, .holdMs = 5.0, .stereoLink = 50.0 };
     auto highQualitySettings = compressing;
     highQualitySettings.processingMode = highQuality;
     highQualitySettings.oversampling = Oversampling::x1;

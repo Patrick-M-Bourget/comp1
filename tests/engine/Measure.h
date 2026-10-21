@@ -341,14 +341,14 @@ inline double samplePeak (const Channels& audio)
 // --- Step response -----------------------------------------------------------------------------------------------
 
 // The Gain Reduction in dB the listener hears on each sample, as an Engine with settings at sampleRate plays a steady
-// level held for seconds, then another for as long: each output sample against the input sample latency samples
+// level held for seconds, then another for toSeconds (as long by default): each output sample against the input sample latency samples
 // earlier, the one it carries. Index 0 is the first output sample after the first level's seconds, so the step itself
 // is heard at index latency.
-inline std::vector<double> heardGainReduction (const Settings& settings, double sampleRate, double fromDb, double toDb, double seconds, int latency)
+inline std::vector<double> heardGainReduction (const Settings& settings, double sampleRate, double fromDb, double toDb, double seconds, int latency, double toSeconds = 0.0)
 {
     const int length = static_cast<int> (seconds * sampleRate);
     auto audio = steadyLevel (1, length, fromDb);
-    const auto after = steadyLevel (1, length, toDb);
+    const auto after = steadyLevel (1, static_cast<int> ((toSeconds > 0.0 ? toSeconds : seconds) * sampleRate), toDb);
     audio.front().insert (audio.front().end(), after.front().begin(), after.front().end());
     const auto input = audio.front();
     audio = played (settings, sampleRate, audio);

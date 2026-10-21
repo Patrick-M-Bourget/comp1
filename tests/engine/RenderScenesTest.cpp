@@ -117,9 +117,9 @@ TEST_CASE ("Render scenes play every host parameter off its default, where it is
 
 TEST_CASE ("Render scenes play every Character, each at a Colour off its default too, and every Stereo Placement", "[render]")
 {
-    for (const auto character : { Character::Clean, Character::VCA, Character::FET })
-        CHECK (someScenePlays ([character] (const Settings& s) { return s.character == character; }));
-    for (const auto character : { Character::VCA, Character::FET })
+    for (const auto& character : test::characters())
+        CHECK (someScenePlays ([&character] (const Settings& s) { return s.character == character.character; }));
+    for (const auto character : { Character::VCA, Character::FET, Character::Opto })
         CHECK (someScenePlays ([character] (const Settings& s) { return s.character == character && s.colour != Settings {}.colour; }));
     for (const auto placement : test::stereoPlacements())
         CHECK (someScenePlays ([placement] (const Settings& s) { return s.stereoPlacement == placement; }));

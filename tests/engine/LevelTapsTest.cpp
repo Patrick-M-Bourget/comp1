@@ -259,14 +259,16 @@ TEST_CASE ("At a steady level the Gain Reduction is the gain the Engine applies,
     }
 }
 
-TEST_CASE ("On FET the Detection Level is the detection signal's, before the feedback, while its Gain Reduction is its own")
+TEST_CASE ("On FET and Opto the Detection Level is the detection signal's, before the feedback, while the Gain Reduction is their own")
 {
-    // FET's loop compares the level less the Gain Reduction with Threshold, but what the level taps report is the
-    // detection signal's level: Clean's, record for record, on the same noise. FET's faster attack moves its Gain
-    // Reduction off Clean's.
+    // The loop compares the level less the Gain Reduction with Threshold, but what the level taps report is the
+    // detection signal's level: Clean's, record for record, on the same noise. The loop's faster attack, and on Opto its
+    // own timing, move the Gain Reduction off Clean's.
+    const auto character = GENERATE (Character::FET, Character::Opto);
+    CAPTURE (character);
     const auto input = test::noise (2, 9600);
     const auto clean = test::levelHistory ({ .thresholdDb = -30.0 }, 48000.0, input);
-    const auto fet = test::levelHistory ({ .character = Character::FET, .thresholdDb = -30.0 }, 48000.0, input);
+    const auto fet = test::levelHistory ({ .character = character, .thresholdDb = -30.0 }, 48000.0, input);
     REQUIRE (fet.size() == clean.size());
     bool sameLevels = true, sameReductions = true;
     for (std::size_t r = 0; r < fet.size(); ++r)

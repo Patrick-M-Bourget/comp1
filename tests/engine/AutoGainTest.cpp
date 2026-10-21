@@ -82,10 +82,10 @@ std::vector<std::vector<float>> referenceSegments()
 
 } // namespace
 
-TEST_CASE ("Auto Gain adds dyn-lab's estimate within 0.01 dB, worked out from the settings, on Clean, VCA and FET")
+TEST_CASE ("Auto Gain adds dyn-lab's estimate within 0.01 dB, worked out from the settings, on every Character")
 {
     const auto& estimate = GENERATE (from_range (estimates()));
-    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET);
+    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET, Character::Opto);
     CAPTURE (estimate.command, static_cast<int> (character));
     auto settings = estimate.settings;
     settings.character = character;
@@ -94,10 +94,10 @@ TEST_CASE ("Auto Gain adds dyn-lab's estimate within 0.01 dB, worked out from th
     CHECK (std::abs (gainDb - estimate.autoGainDb) <= 0.01);
 }
 
-TEST_CASE ("With Auto Gain on, the reference signal keeps its level within dyn-lab's tolerance, on Clean, VCA and FET", "[sweep]")
+TEST_CASE ("With Auto Gain on, the reference signal keeps its level within dyn-lab's tolerance, on every Character", "[sweep]")
 {
     const auto& estimate = GENERATE (from_range (estimates()));
-    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET);
+    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET, Character::Opto);
     CAPTURE (estimate.command, static_cast<int> (character));
     auto settings = estimate.settings;
     settings.character = character;

@@ -33,6 +33,10 @@ struct Response
     std::vector<Rate> rates;
     double seconds = 1.0; // how long each level of the step up plays, and twice that of the step down
     bool subMillisecond = false; // whether Attack's 90% comes in under 1 ms
+    double overDb = 20.0;        // how far over Threshold the step goes (dyn-lab's step --over)
+    // On Opto, whose release depends on how long it compressed, how long the step down's loud level plays from a fresh
+    // Engine, as dyn-lab's OPTO_STEP_HOLD_MS, and how long its quiet level then plays. 0: twice seconds, each.
+    double loudSeconds = 0.0, quietSeconds = 0.0;
 };
 
 // Each table is the output of the dyn-lab command named with it, copied as printed.
@@ -118,19 +122,64 @@ const std::vector<Response>& responses()
             { 192000, { 0.0104, 0.0156, 100.0000, 230.2604, 0.0000 } } },
           0.5,
           true },
+        // Opto: FET's loop, its Attack scaled by the overshoot, so a smaller step attacks more slowly and a larger one
+        // faster, and its Release in two parts after a second of compression, the slow one's 90% far past Release's.
+        { "python3 tools/dyn-lab/dynlab.py step --character opto",
+          { .character = Character::Opto, .colour = 0.0 },
+          15.0,
+          { { 44100, { 2.7438, 8.6621, 297.1655, 2120.0454, 0.0000 } },
+            { 48000, { 2.7292, 8.6667, 297.1667, 2120.0417, 0.0000 } },
+            { 96000, { 2.7292, 8.6562, 297.1562, 2120.0208, 0.0000 } } },
+          0.5,
+          false,
+          20.0,
+          1.0,
+          3.0 },
+        { "python3 tools/dyn-lab/dynlab.py step --character opto --attack 1 --release 50 --hold 20",
+          { .character = Character::Opto, .attackMs = 1.0, .releaseMs = 50.0, .holdMs = 20.0, .colour = 0.0 },
+          15.0,
+          { { 44100, { 0.2721, 0.8844, 199.5465, 2115.1020, 20.0000 } },
+            { 48000, { 0.2917, 0.8750, 199.5417, 2115.0833, 20.0000 } },
+            { 96000, { 0.2812, 0.8750, 199.5417, 2115.0625, 20.0000 } } },
+          0.5,
+          false,
+          20.0,
+          1.0,
+          3.0 },
+        { "python3 tools/dyn-lab/dynlab.py step --character opto --over 5",
+          { .character = Character::Opto, .colour = 0.0 },
+          3.75,
+          { { 44100, { 4.7392, 11.2245, 297.1655, 2120.0454, 0.0000 } },
+            { 48000, { 4.7500, 11.2292, 297.1667, 2120.0417, 0.0000 } },
+            { 96000, { 4.7292, 11.2083, 297.1562, 2120.0208, 0.0000 } } },
+          0.5,
+          false,
+          5.0,
+          1.0,
+          3.0 },
+        { "python3 tools/dyn-lab/dynlab.py step --character opto --over 30",
+          { .character = Character::Opto, .colour = 0.0 },
+          22.5,
+          { { 44100, { 2.0635, 7.4150, 297.1655, 2120.0454, 0.0000 } },
+            { 48000, { 2.0625, 7.4167, 297.1667, 2120.0417, 0.0000 } },
+            { 96000, { 2.0625, 7.4167, 297.1562, 2120.0208, 0.0000 } } },
+          0.5,
+          false,
+          30.0,
+          1.0,
+          3.0 },
     };
     return all;
 }
 
 constexpr double stepDb = 20.0;
 
-// The Gain Reduction in dB on each sample of a steady level held for seconds, then of another, through one Engine:
-// the first level settles it, the second is the step.
-std::vector<double> gainReductionAfterStep (const Settings& settings, double sampleRate, double fromDb, double toDb, double seconds)
+// The Gain Reduction in dB on each sample of a steady level held for seconds, then of another for toSeconds (seconds
+// by default), through one Engine: the first level settles it, the second is the step.
+std::vector<double> gainReductionAfterStep (const Settings& settings, double sampleRate, double fromDb, double toDb, double seconds, double toSeconds = 0.0)
 {
-    const int length = static_cast<int> (seconds * sampleRate);
-    auto before = test::steadyLevel (1, length, fromDb);
-    auto after = test::steadyLevel (1, length, toDb);
+    auto before = test::steadyLevel (1, static_cast<int> (seconds * sampleRate), fromDb);
+    auto after = test::steadyLevel (1, static_cast<int> ((toSeconds > 0.0 ? toSeconds : seconds) * sampleRate), toDb);
     const auto input = after.front();
     Engine engine;
     engine.prepare (sampleRate, 512, 1);
@@ -150,7 +199,7 @@ TEST_CASE ("Attack, Release and Hold match dyn-lab's step response within one sa
     const double sampleMs = 1000.0 / rate.sampleRate;
     const auto& settings = response.settings;
     const double offset = test::steadyLevelOffsetDb (settings.character);
-    const double quiet = settings.thresholdDb - stepDb + offset, loud = settings.thresholdDb + stepDb + offset;
+    const double quiet = settings.thresholdDb - stepDb + offset, loud = settings.thresholdDb + response.overDb + offset;
 
     // Up from no Gain Reduction (the quiet level is below the Knee) to the full amount, for Attack.
     const auto attack = test::crossings (gainReductionAfterStep (settings, rate.sampleRate, quiet, loud, response.seconds), 0.0, response.gainReductionDb);
@@ -160,21 +209,24 @@ TEST_CASE ("Attack, Release and Hold match dyn-lab's step response within one sa
     if (response.subMillisecond)
         CHECK (*attack.ninety * sampleMs < 1.0);
 
-    // And back down, for Hold and Release.
-    const auto release = test::crossings (gainReductionAfterStep (settings, rate.sampleRate, loud, quiet, 2.0 * response.seconds), response.gainReductionDb, 0.0);
+    // And back down, for Hold and Release: from a fresh Engine, loud for twice seconds, or on Opto for loudSeconds.
+    const double loudSeconds = response.loudSeconds > 0.0 ? response.loudSeconds : 2.0 * response.seconds;
+    const double quietSeconds = response.quietSeconds > 0.0 ? response.quietSeconds : 2.0 * response.seconds;
+    const auto release = test::crossings (gainReductionAfterStep (settings, rate.sampleRate, loud, quiet, loudSeconds, quietSeconds), response.gainReductionDb, 0.0);
     REQUIRE (release.ninety);
     CHECK (std::abs (release.held * sampleMs - rate.step.hold) <= sampleMs);
     CHECK (std::abs ((*release.sixtyThree - release.held) * sampleMs - rate.step.release63) <= sampleMs);
     CHECK (std::abs ((*release.ninety - release.held) * sampleMs - rate.step.release90) <= sampleMs);
 }
 
-TEST_CASE ("FET's loop stays stable at the fastest Attack and an infinite Ratio, on a step and on full-scale noise, at every rate", "[sweep]")
+TEST_CASE ("FET's and Opto's loop stays stable at the fastest Attack and an infinite Ratio, on a step and on full-scale noise, at every rate", "[sweep]")
 {
     // A loop that heard its gain a sample late would overshoot here, its Gain Reduction swinging from sample to
     // sample. Solved within the sample, it rises straight to its steady state and stays there.
+    const auto character = GENERATE (Character::FET, Character::Opto);
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
-    CAPTURE (sampleRate);
-    const Settings settings { .character = Character::FET, .ratio = parameterRanges::inf, .attackMs = parameterRanges::attack.low, .colour = 0.0 };
+    CAPTURE (character, sampleRate);
+    const Settings settings { .character = character, .ratio = parameterRanges::inf, .attackMs = parameterRanges::attack.low, .colour = 0.0 };
 
     // A step from under the Knee to full scale: the Gain Reduction never falls on its way up, and settles at 18 dB.
     const auto reduction = gainReductionAfterStep (settings, sampleRate, -40.0, 0.0, 0.01);
