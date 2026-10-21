@@ -1,5 +1,7 @@
 #pragma once
 
+#include "comp1/CompCurve.h"
+
 #include <plugkit/BandShape.h>
 #include <plugkit/ShapeDesign.h>
 
@@ -22,6 +24,7 @@ namespace parameterRanges
 {
 inline constexpr double inf = std::numeric_limits<double>::infinity();
 
+inline constexpr ParameterRange comp { 0.0, 100.0 };        // %; from compressing nothing to the Comp Curve's end
 inline constexpr ParameterRange threshold { -60.0, 0.0 };   // dB; comp1's own
 inline constexpr ParameterRange ratio { 1.0, inf };         // :1, up to ∞:1
 inline constexpr ParameterRange knee { 0.0, 72.0 };         // dB
@@ -47,6 +50,10 @@ inline constexpr ParameterRange detectionSlope { 6.0, 96.0 };         // dB/oct,
 inline constexpr ParameterRange detectionGain { -30.0, 30.0 };        // dB; comp1's own: plugkit's designs go no further
 inline constexpr ParameterRange detectionQ { 0.025, 40.0 };           // comp1's own: from a wide tilt to a narrow peak
 } // namespace parameterRanges
+
+// How long turning Comp Follow on or off glides over, in ms: dyn-lab's COMP_FOLLOW_GLIDE_MS, with its reasons
+// (tools/dyn-lab/USAGE.md, "Comp"). A fixed time, so playback reproduces it (ADR 0004).
+inline constexpr double compFollowGlideMs = 300.0;
 
 // The Characters: the four Styles that carry DSP (ADR 0002), in Style's order, Style's first four, so frozen with it
 // (ADR 0003). The Engine always plays a Character, never a Style: the Plugin Shell maps Style to one (comp1/Style.h).
@@ -188,6 +195,14 @@ struct Settings
     // The compressor's Character: how it detects, and its Colour. Not a host parameter: the Style host parameter sets
     // it (comp1/Style.h).
     Character character = Character::Clean;
+    // Comp, in % (parameterRanges::comp), and Comp Follow (ADR 0004): while Comp Follow is on, the compressor takes
+    // Threshold and Ratio from the Comp Curve at Comp, in place of the stored ones, and Auto Gain is on, whatever
+    // autoGain holds. Off, the default, it plays the stored settings. Turning it on or off glides over a fixed time.
+    // The Comp Curve is not a host parameter, as the Character isn't: the Plugin Shell fills it from Style
+    // (comp1/Style.h's compCurveOf). The defaults are Clean's, its default Comp and its curve.
+    double comp = 50.0;
+    bool compFollow = false;
+    CompCurve compCurve { { CompPoint { 0.0, 0.0, 1.0 }, CompPoint { 50.0, -18.0, 4.0 }, CompPoint { 100.0, -36.0, 8.0 } } };
     // The compressor, in parameterRanges' units, with dyn-lab's defaults.
     double thresholdDb = -18.0;
     double ratio = 4.0; // parameterRanges::inf for ∞:1
@@ -202,7 +217,8 @@ struct Settings
     // Colour, in % (0 to 100): how much of its Character's own distortion, which grows with the Gain Reduction, the
     // compressor adds (dyn-lab's USAGE.md, "Colour"). Clean has none, at any Colour.
     double colour = 100.0;
-    // Auto Gain, on the Wet path after the compressor: estimated from Threshold, Ratio, Knee and Range.
+    // Auto Gain, on the Wet path after the compressor: estimated from Threshold, Ratio, Knee and Range, the derived
+    // ones while Comp Follow is on, which turns it on.
     bool autoGain = false;
     // Saturation, on the Wet path: one soft-clip shape, Drive dB into it, level-compensated, so below the shape's knee
     // (full scale at Drive 0 dB) it passes the signal through bit for bit (dyn-lab's USAGE.md, "Saturation").
