@@ -148,6 +148,25 @@ TEST_CASE ("With External, Gain Reduction returns at Release once the Sidechain 
     CHECK (play (sidechainLength, &sidechainSamples) == Catch::Approx (-18.0).margin (0.1));
 }
 
+TEST_CASE ("With External, the output is the same however the audio is cut into blocks")
+{
+    const auto& cut = GENERATE (from_range (test::blockCuts()));
+    const int sidechainChannels = GENERATE (1, 2);
+    CAPTURE (cut, sidechainChannels);
+    const auto input = test::noise (2, 20000);
+    const auto sidechainSamples = test::noise (sidechainChannels, 20000, 4);
+    auto whole = input, cutUp = input;
+    for (auto* audio : { &whole, &cutUp })
+    {
+        Engine engine;
+        engine.prepare (48000.0, 20000, 2);
+        engine.setSettings ({ .thresholdDb = -30.0, .ratio = 8.0, .attackMs = 1.0, .detectionSource = DetectionSource::External });
+        test::processInBlocks (engine, *audio, audio == &whole ? std::vector<int> { 20000 } : cut, &sidechainSamples);
+    }
+    REQUIRE (whole != input); // compressed
+    CHECK (cutUp == whole);
+}
+
 TEST_CASE ("With External, a stereo Sidechain and a mono main, the main is compressed by the louder Sidechain channel")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
