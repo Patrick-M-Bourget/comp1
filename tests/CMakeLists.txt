@@ -6,6 +6,15 @@ FetchContent_Declare(Catch2
 FetchContent_MakeAvailable(Catch2)
 add_compile_options(${comp1_compile_options})
 
+# The sample rates the tests run at (tests/engine/Measure.h) are plugkit.conf's SAMPLE_RATES, the ones pluginval
+# runs at: one list for both, read here (a changed plugkit.conf reconfigures).
+file(STRINGS "${PROJECT_SOURCE_DIR}/plugkit.conf" comp1_sample_rates REGEX "^SAMPLE_RATES=")
+string(REPLACE "SAMPLE_RATES=" "" comp1_sample_rates "${comp1_sample_rates}")
+if(NOT comp1_sample_rates MATCHES "^[0-9]+(,[0-9]+)*$")
+    message(FATAL_ERROR "plugkit.conf's SAMPLE_RATES is '${comp1_sample_rates}': it must be whole numbers of Hz, comma-separated")
+endif()
+add_compile_definitions("COMP1_SAMPLE_RATES=${comp1_sample_rates}")
+
 include(Catch)
 
 # One source per line, sorted, so tickets adding tests in parallel merge cleanly.

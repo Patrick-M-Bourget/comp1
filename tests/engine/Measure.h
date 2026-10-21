@@ -40,10 +40,11 @@ inline void processInBlocks (Engine& engine, Channels& audio, const std::vector<
     }
 }
 
-// Every sample rate comp1 supports (plugkit.conf's SAMPLE_RATES, which pluginval runs at).
+// Every sample rate comp1 supports: plugkit.conf's SAMPLE_RATES, which pluginval runs at, as tests/CMakeLists.txt
+// reads it.
 inline const std::vector<double>& sampleRates()
 {
-    static const std::vector<double> rates { 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0 };
+    static const std::vector<double> rates { COMP1_SAMPLE_RATES };
     return rates;
 }
 
