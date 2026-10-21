@@ -20,7 +20,7 @@ The scenes, and why each exists:
 | Defaults | 4% / 7% | 0.40% | 0.81% | 1.18% | 2.21% | 0.58% | 1.33% |
 | Defaults, Threshold automated | 4% / 7% | 0.40% | 0.85% | 1.14% | 2.25% | 0.76% | 1.35% |
 | Worst case | 17% / 28% | 2.81% | 4.57% | 5.51% | 9.30% | 4.06% | 8.32% |
-| Worst case, Limiter off | — | 1.94% | 2.84% | — | — | — | — |
+| Worst case, Limiter off | — | 1.94% | 2.84% | 5.00% | 7.33% | 2.98% | 4.43% |
 | Clean, Colour 100% | — | 0.40% | 0.81% | 1.11% | 2.21% | 0.57% | 1.38% |
 | VCA, Colour 100% | — | 0.53% | 1.07% | 1.75% | 3.49% | 1.11% | 2.48% |
 | FET, Colour 100% | — | 0.72% | 1.45% | 2.07% | 4.12% | 1.40% | 3.17% |
@@ -29,7 +29,7 @@ The scenes, and why each exists:
 | Worst case on silence | — | 1.62% | 2.41% | 3.98% | 6.47% | 2.55% | 5.23% |
 | Worst case on subnormal input | — | 1.38% | 2.09% | 3.76% | 5.97% | 2.38% | 4.42% |
 
-The Apple M3 columns were measured 2026-10-21 on an 8-core Apple M3 with other agents' work light (load average about 2), after this tree's own build had finished. The CI columns are GitHub's `windows-latest` and `macos-latest` (arm64) runners, from this PR's first CI run, 2026-10-21, read from the job summary where `scripts/check.sh cpu` writes the scene lines. Windows x64 was the slower runner on every scene, so the ceilings are about three times its figures, rounded up to a whole percent: Defaults' 1.18% and 2.21% give 4% and 7%, which the Threshold automated scene shares (1.14% and 2.25%), and the Worst case's 5.51% and 9.30% give 17% and 28%. The Worst case, Limiter off row's CI figures come from a later PR's first CI run, the one that made the Limiter rest while off; the other rows' CI figures were taken before it, so the scenes with the Limiter off (all but the worst cases) cost a little less on CI now than they show.
+The Apple M3 columns were measured 2026-10-21 on an 8-core Apple M3 with other agents' work light (load average about 2), after this tree's own build had finished. The CI columns are GitHub's `windows-latest` and `macos-latest` (arm64) runners, from the first CI run of the PR that added the CPU budget, 2026-10-21, read from the job summary where `scripts/check.sh cpu` writes the scene lines. Windows x64 was the slower runner on every scene, so the ceilings are about three times its figures, rounded up to a whole percent: Defaults' 1.18% and 2.21% give 4% and 7%, which the Threshold automated scene shares (1.14% and 2.25%), and the Worst case's 5.51% and 9.30% give 17% and 28%. The Worst case, Limiter off row's CI figures come from the first CI run of the PR that made the Limiter rest while off, 2026-10-21, where the Worst case read 6.43% and 10.17% on Windows x64 and 4.38% and 5.91% on macOS; the other rows' CI figures were taken before it, so the scenes with the Limiter off (all but the worst cases) cost a little less on CI now than they show.
 
 The Limiter's share of the worst case: off and settled, its gain computer rests (High Quality's only delays the audio and feeds the estimator), so the Worst case, Limiter off scene prices the rest of the Engine. On the Apple M3, 2026-10-21, this tree and the one before the Limiter rested (main at `72ba1e7`), each run through the same scenes:
 
