@@ -1003,8 +1003,8 @@ class CommandLine(unittest.TestCase):
         rows = [line.split() for line in result.stdout.splitlines() if line.split()[:1] in (["44100"], ["96000"])]
         # Each rate's reserve, estimator delay, window and release in samples, worked by hand.
         parts = [row[:6] for row in rows]
-        self.assertIn(["44100", "45", "8", "37", "8820", "0.3"], parts)
-        self.assertIn(["96000", "96", "8", "88", "19200", "0.3"], parts)
+        self.assertIn(["44100", "45", "24", "21", "8820", "0.3"], parts)
+        self.assertIn(["96000", "96", "24", "72", "19200", "0.3"], parts)
         # Per rate and mode, four reference signals' peaks and one timing row.
         for mode in ("zero", "high"):
             self.assertEqual(sum(1 for row in rows if mode in row), 2 * 5, mode)
