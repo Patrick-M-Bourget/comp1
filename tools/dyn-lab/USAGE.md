@@ -2,7 +2,7 @@
 
 A Python model of comp1's Characters. It prints the figures the Engine's tests check, so a ticket brief can cite a command and its output exactly. It needs only the standard library: no installs, no numpy. Run it from the repo root.
 
-It models the Clean Character, with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)) and the Limiter (see [Limiter](#limiter)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
+It models the Clean and VCA Characters (see [VCA](#vca)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's Colour (see [Colour](#colour)) and the Limiter (see [Limiter](#limiter)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
 
 Hold freezes the Gain Reduction for Hold ms whenever it stops rising, mid-Attack included, before Release begins. Any rise restarts the count.
 
@@ -10,7 +10,7 @@ Auto Release, when on, lengthens Release after sustained compression and leaves 
 
 Range caps the Gain Reduction the gain computer asks for, before the detector smooths it. So the Transfer Curve rises with the input again, Range below it, once the Gain Reduction reaches Range, and Attack, Release and Hold take the same times over a smaller step. At 60 dB, its top, Range sets no limit (ADR 0008).
 
-Every option has a default, and a setting outside its range exits with an error that names the range. The ranges are named once in `dynlab.py` (`THRESHOLD_RANGE`, `RATIO_RANGE` and so on), each with its source: Pro-C 3's documentation, ADR 0008 for Threshold, Release, Range and Drive, ADR 0001 for Lookahead, or comp1's own reasons for the Limiter's Ceiling (`CEILING_RANGE`). Lookahead is a Processing Mode setting, read in High Quality only, not one of the compressor's. The check harness's `docs` stage fails when one differs from the plugin's, `engine/include/comp1/Settings.h`'s `parameterRanges` (`LAB_RANGES` in `plugkit.conf`).
+Every option has a default, and a setting outside its range exits with an error that names the range. The ranges are named once in `dynlab.py` (`THRESHOLD_RANGE`, `RATIO_RANGE` and so on), each with its source: Pro-C 3's documentation, ADR 0008 for Threshold, Release, Range, Drive and Colour, ADR 0001 for Lookahead, or comp1's own reasons for the Limiter's Ceiling (`CEILING_RANGE`). Lookahead is a Processing Mode setting, read in High Quality only, not one of the compressor's. The check harness's `docs` stage fails when one differs from the plugin's, `engine/include/comp1/Settings.h`'s `parameterRanges` (`LAB_RANGES` in `plugkit.conf`).
 
 | Setting | Range | Default |
 |---|---|---|
@@ -22,9 +22,13 @@ Every option has a default, and a setting outside its range exits with an error 
 | Hold | 0 to 500 ms | 0 ms |
 | Range | 0 to 60 dB | 60 dB |
 | Drive | 0 to 24 dB | 6 dB |
+| Colour | 0 to 100 % | 100 % |
 | Auto Release | off or on (`--auto-release`) | off |
 | Lookahead | 0 to 5 ms | 0 ms |
 | Ceiling | −30 to 0 dBFS | 0 dBFS |
+| Character | `clean` or `vca` (`--character`) | `clean` |
+
+`--character` is taken by `transfer`, `step`, `bursts`, `autogain` and `colour`. Clean's figures are the same with it as without.
 
 ## `transfer`
 
@@ -119,6 +123,38 @@ These are the settings the check covers, the Engine's tests too:
     python3 tools/dyn-lab/dynlab.py autogain --threshold -30 --ratio inf
     python3 tools/dyn-lab/dynlab.py autogain --threshold -6 --ratio 2
 
+## VCA
+
+VCA is Clean with an RMS Detection Level. On each detection channel, a one-pole mean-square average of the detection signal, with time constant `VCA_RMS_MS`, is read sine-calibrated: 10·log10(2 · mean square) dB, so a sine reads its peak level, as it does on Clean. That level feeds Clean's gain computer and detector unchanged, so Threshold, Ratio, Knee, Range, Attack, Release, Hold and Auto Release all work as on Clean, and the Transfer Curve is Clean's. Auto Gain's estimate is the Transfer Curve's, so it is Clean's too.
+
+**`VCA_RMS_MS`, 5 ms:** the averaging window, and so the shortest response the RMS stage allows. A step's level takes about one window to reach 63%, which lengthens the detector's own times. At the defaults, Attack's 63% is 12.1 ms rather than 10 ms, and Release's 111.8 ms rather than 100 ms. At Attack 0.5 ms the RMS stage sets the pace: 63% takes 1.7 ms. A longer window would lengthen every fast Attack further. A shorter one lets the level ripple more on bass: a sine's mean square ripples at twice its frequency, and 5 ms holds that ripple to +0.6/−0.7 dB at 100 Hz and ±0.07 dB at 1 kHz, before the detector's own Attack and Release smooth it.
+
+**The steady test signal** is a square wave (the same magnitude every sample) whose peak is `SINE_CALIBRATION_DB`, 3.0103 dB, under the level it stands for. Its mean square is that of a sine at the level, with no ripple at all, so it reads that level exactly once settled. A constant-magnitude signal reads 3.01 dB above its peak level on VCA. The Engine's Transfer Curve, step and burst tests on VCA play this signal, and add 3.0103 dB back to the output level they read. `step` and `bursts` start from steady state, the mean square settled at the starting level. After the step down the Gain Reduction leaves its level slowly, as the RMS level falls away, so Hold reads a few samples, 0.04 to 0.06 ms, even at Hold 0 ms: it counts until the Gain Reduction has moved more than `MOVED_WITHIN`, 10⁻⁶ of the way, as the Engine's tests count off float output.
+
+    python3 tools/dyn-lab/dynlab.py transfer --character vca
+    python3 tools/dyn-lab/dynlab.py transfer --character vca --ratio inf
+    python3 tools/dyn-lab/dynlab.py transfer --character vca --knee 0
+    python3 tools/dyn-lab/dynlab.py transfer --character vca --knee 72
+    python3 tools/dyn-lab/dynlab.py transfer --character vca --range 6
+    python3 tools/dyn-lab/dynlab.py step --character vca
+    python3 tools/dyn-lab/dynlab.py step --character vca --attack 0.5 --release 50 --hold 20
+    python3 tools/dyn-lab/dynlab.py bursts --character vca
+
+**Auto Release on VCA** releases a little later after a transient than on Clean: the RMS level falls away over its window after the burst ends, and the Transfer Curve keeps asking for Gain Reduction meanwhile, so a 1 ms burst releases in 106.7 ms with Auto Release on, 6.7% past Release, where Clean's is within `AUTO_RELEASE_TRANSIENT_MARGIN`. The margin is Clean's figure; VCA's is what the lab prints.
+
+**Auto Gain on VCA:** the measured check runs the reference signal through the VCA model, without Colour, whose distortion Auto Gain doesn't compensate. It holds at every setting `autogain` lists, VCA's output coming out 0.09 to 0.65 dB quieter than the input: the RMS stage reads the noise's own level rather than holding near its peaks. It holds at Threshold −40 dB, Ratio ∞ too (−0.82 dB), where Clean's overshoots.
+
+    python3 tools/dyn-lab/dynlab.py autogain --character vca
+    python3 tools/dyn-lab/dynlab.py autogain --character vca --ratio inf
+    python3 tools/dyn-lab/dynlab.py autogain --character vca --knee 0
+    python3 tools/dyn-lab/dynlab.py autogain --character vca --knee 72
+    python3 tools/dyn-lab/dynlab.py autogain --character vca --range 6
+    python3 tools/dyn-lab/dynlab.py autogain --character vca --threshold -30
+    python3 tools/dyn-lab/dynlab.py autogain --character vca --threshold -30 --ratio inf
+    python3 tools/dyn-lab/dynlab.py autogain --character vca --threshold -6 --ratio 2
+
+**A proposed default Knee for VCA, 3 dB** (for the Style defaults of #24; nothing applies it yet): firmer than Clean's 6 dB, for the precise, controlled onset VCA compression is chosen for on buses and drums. It needn't be harder: the RMS stage already rounds a transient's onset over its 5 ms, and a hard knee on a level held near Threshold would switch compression in and out at each small change of level.
+
 ## Saturation
 
 The Saturation stage is one soft-clip shape, f(u), with level-compensated Drive. The shape is exactly linear for |u| ≤ 1. Above that it is 1 + tanh(|u| − 1), with u's sign, so it leaves the line with the same slope (1) and curvature (0): it is C²-smooth, and it saturates toward 2. Its nonlinear residual is r(u) = f(u) − u, which is 0 for |u| ≤ 1 and tanh(t) − t, with u's sign, above it, where t = |u| − 1. The residual's antiderivative is R(u) = ln cosh t − t²/2 above the knee, and 0 below it. Drive, in dB, gives g = 10^(Drive/20), and the stage's output is x + r(g·x)/g. So below the knee the output is the input exactly, and the knee sits at full scale at Drive 0 dB and Drive dB under it above that. The output saturates toward 2/g.
@@ -177,6 +213,37 @@ The harmonics are within 0.9 dB of the ideal at 2x, 0.2 dB at 4x and 0.05 dB at 
     python3 tools/dyn-lab/dynlab.py aliasing --oversampling 2
     python3 tools/dyn-lab/dynlab.py aliasing --oversampling 4
     python3 tools/dyn-lab/dynlab.py aliasing --oversampling 8
+
+## Colour
+
+Colour is a Character's own distortion, which grows with its Gain Reduction. Clean has none, at any setting. VCA's is the Saturation stage's shape and its anti-aliased residual (above), unchanged, driven by the Gain Reduction applied to each channel. After the compressor applies its gain, each compressed sample y becomes y + w · r(g · y) / g, with r the residual anti-aliased (ADR 0005), so the linear part passes sample-aligned. The weight w and the drive g follow the Gain Reduction, sample by sample:
+
+- the weight is Colour × `VCA_COLOUR_WEIGHT` × (1 − e^(−GR / `VCA_COLOUR_WEIGHT_DB`));
+- the drive, in dB, is Drive's top, 24 dB, × (1 − e^(−GR / `VCA_COLOUR_DRIVE_DB`)), never above it.
+
+Each is exactly 0 with no Gain Reduction, so then, or at Colour 0%, the output is the compressed signal exactly. Each rises smoothly with the Gain Reduction, with no corner as compression starts.
+
+The constants, named once in `dynlab.py`:
+
+- **`VCA_COLOUR_DRIVE_DB`, 5 dB:** the drive is 10.8 dB at 3 dB of Gain Reduction, 20.8 dB at 10 dB and 23.6 dB at 20 dB, so the harder the compressor works, the further its output is pushed into the shape. The shape is linear up to its knee, which the drive sets at full scale less the drive, so Colour is heard only where the compressed signal comes within the drive of full scale: at the defaults, from about 6 dB of Gain Reduction. A quieter compressed signal (a low Threshold) gets less Colour at the same Gain Reduction.
+- **`VCA_COLOUR_WEIGHT`, 0.11, and `VCA_COLOUR_WEIGHT_DB`, 10 dB:** the residual's weight rises to 63% of its most at 10 dB of Gain Reduction and nears it by 30 dB. Together with the drive, they make Colour slight: 0.30% THD at 10 dB of Gain Reduction at Colour 100%, at the defaults, rising to 1.2% at 20 dB and 1.3% at 30 dB. That is a hint of density, well under where distortion reads as an effect, and leaves heavy distortion to Saturation.
+
+The even harmonics are absent, as the shape is odd and a steady Gain Reduction is symmetric.
+
+### `colour`
+
+Prints, for a Character at a Colour (`--colour`, 100% by default) and at the compressor options `transfer` takes, how its Colour follows the Gain Reduction: the residual's weight and the drive at each steady Gain Reduction (`COLOUR_REDUCTIONS`, 0, 3, 6, 10, 20 and 30 dB), and the 2nd to 5th harmonics, in dB relative to the fundamental, and their THD, of a steady bin-centred sine compressed by that much. The sine is the bin-centred tone nearest 1 kHz at 48 kHz (`COLOUR_TONE`), at the level whose Gain Reduction it is on the Transfer Curve (`COLOUR_BELOW_KNEE_DB`, 12 dB under the Knee, for none), and its Gain Reduction is held steady, as an External Detection Source holding a steady Sidechain gives it. A row the settings never reach (past Range) says so. Clean prints that it has no Colour.
+
+**`COLOUR_HARMONIC_TOLERANCE_DB`, ±0.1 dB:** the Engine's harmonics, played that way with the Sidechain a steady square wave, are within 0.1 dB of the lab's. The two compute the same thing, the Engine in float at its input and output: they agree within 0.005 dB, the lab's rounding as printed. A harmonic more than 100 dB under the fundamental is lost in float's rounding, and isn't compared.
+
+Then it prints Colour's worst alias for bin-centred tones at the rates and frequencies `aliasing` uses (`--rates`), at 10, 20 and 30 dB of Gain Reduction (`COLOUR_ALIAS_REDUCTIONS`), each at the level whose Gain Reduction it is, for the naive shaper and for ADAA. It checks each against `ALIASING_TOLERANCE`'s ceiling and exits non-zero when a row is over it.
+
+**`ALIASING_TOLERANCE` for Colour:** the ceiling holds by a wide margin. The worst alias at Colour 100% is −47.4 dB (10 kHz at 30 dB of Gain Reduction, at 48 kHz), since the residual's weight is small. The improvement over the naive shaper does not hold everywhere: it is 23.4 and 19.8 dB at 10 kHz at 10 dB of Gain Reduction, but 14.6 and 10.7 dB at 20 dB and 12.1 and 9.1 dB at 30 dB (44.1 and 48 kHz), under the 15 dB Saturation's hardest condition meets. There the driven signal is 12 to 16 dB over the knee, where first-order ADAA at the base rate gains least, as Saturation's own milder Drives do. The improvement is printed and not checked: the ceiling, which is what is heard, holds with 23 dB to spare. Oversampling (#10) adds rows of its own.
+
+    python3 tools/dyn-lab/dynlab.py colour
+    python3 tools/dyn-lab/dynlab.py colour --character vca
+    python3 tools/dyn-lab/dynlab.py colour --character vca --colour 50
+    python3 tools/dyn-lab/dynlab.py colour --character vca --rates 44100
 
 ## Auto Release
 

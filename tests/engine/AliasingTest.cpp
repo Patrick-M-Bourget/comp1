@@ -35,8 +35,8 @@ struct Condition
     std::optional<double> naiveDb; // the hardest condition's
 };
 
-// The rows `python3 tools/dyn-lab/dynlab.py aliasing` prints, copied as printed. Oversampling adds tables of its own
-// below, and Colour (#19) will.
+// The rows `python3 tools/dyn-lab/dynlab.py aliasing` prints, copied as printed. Oversampling's tables and Colour's
+// are below.
 const std::vector<Condition>& baseRate()
 {
     static const std::vector<Condition> all {
@@ -287,4 +287,58 @@ TEST_CASE ("At the base rate, the in-band harmonics are within dyn-lab's toleran
     CHECK (std::abs (levelDb - row.idealDb) <= harmonicToleranceDb);
     // The even harmonics are absent, as the shape is odd.
     CHECK (20.0 * std::log10 (spectrum[static_cast<std::size_t> (2 * bin)] / spectrum[static_cast<std::size_t> (bin)]) < -100.0);
+}
+
+namespace
+{
+
+// One of dyn-lab's Colour conditions: a bin-centred tone through VCA at Colour 100%, at the level whose Gain Reduction
+// it is, that Gain Reduction held steady, and the worst alias dyn-lab gives for it with ADAA.
+struct ColourCondition
+{
+    double sampleRate;
+    double frequency; // nominal: the tone is the bin-centred one nearest it
+    double reductionDb;
+    double labDb;
+};
+
+// The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca` prints, copied as printed. Only the
+// ceiling is checked: the improvement over the naive shaper doesn't hold for Colour at 20 and 30 dB of Gain Reduction
+// (tools/dyn-lab/USAGE.md, "colour"). Oversampling (#10) adds its rows.
+const std::vector<ColourCondition>& colourConditions()
+{
+    static const std::vector<ColourCondition> all {
+        { 44100.0, 1000.0, 10.0, -122.47 }, { 44100.0, 1000.0, 20.0, -101.65 }, { 44100.0, 1000.0, 30.0, -99.94 },
+        { 44100.0, 3000.0, 10.0, -89.66 },  { 44100.0, 3000.0, 20.0, -72.30 },  { 44100.0, 3000.0, 30.0, -74.29 },
+        { 44100.0, 5000.0, 10.0, -69.31 },  { 44100.0, 5000.0, 20.0, -59.05 },  { 44100.0, 5000.0, 30.0, -52.28 },
+        { 44100.0, 10000.0, 10.0, -74.05 }, { 44100.0, 10000.0, 20.0, -52.87 }, { 44100.0, 10000.0, 30.0, -50.32 },
+        { 48000.0, 1000.0, 10.0, -125.93 }, { 48000.0, 1000.0, 20.0, -112.54 }, { 48000.0, 1000.0, 30.0, -98.77 },
+        { 48000.0, 3000.0, 10.0, -88.55 },  { 48000.0, 3000.0, 20.0, -71.18 },  { 48000.0, 3000.0, 30.0, -72.84 },
+        { 48000.0, 5000.0, 10.0, -68.06 },  { 48000.0, 5000.0, 20.0, -57.61 },  { 48000.0, 5000.0, 30.0, -51.12 },
+        { 48000.0, 10000.0, 10.0, -70.40 }, { 48000.0, 10000.0, 20.0, -49.00 }, { 48000.0, 10000.0, 30.0, -47.36 },
+    };
+    return all;
+}
+
+// Under this the float input and output's rounding is too near the alias for the Engine's figure to be compared with
+// the lab's; it is still checked against the ceiling.
+constexpr double colourComparedOverDb = -100.0;
+
+} // namespace
+
+TEST_CASE ("At the base rate, VCA's worst alias at Colour 100% at each of dyn-lab's Colour conditions is under the ceiling")
+{
+    const auto& condition = GENERATE (from_range (colourConditions()));
+    const auto mode = atBaseRate();
+    CAPTURE (condition.sampleRate, condition.frequency, condition.reductionDb, static_cast<int> (mode));
+    const int bin = test::toneBin (condition.frequency, condition.sampleRate);
+    const auto output = test::steadilyCompressedTone ({ .character = Character::VCA, .processingMode = mode },
+                                                      condition.sampleRate,
+                                                      bin,
+                                                      test::levelForReductionDb (condition.reductionDb),
+                                                      8);
+    const double worst = test::worstAliasDb (test::amplitudes (output), bin);
+    CHECK (worst <= ceilingDb);
+    if (condition.labDb > colourComparedOverDb)
+        CHECK (std::abs (worst - condition.labDb) <= labWithinDb);
 }

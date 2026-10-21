@@ -1,5 +1,5 @@
-"""Tests for dyn-lab, at its seams: the gain computer, the step response, Auto Release, Auto Gain, the latency, the
-Limiter, Saturation, its aliasing, Oversampling and the command line.
+"""Tests for dyn-lab, at its seams: the gain computer, the step response, Auto Release, Auto Gain, VCA's RMS
+Detection Level, the latency, the Limiter, Saturation, its aliasing, Colour, Oversampling and the command line.
 
     python3 tools/dyn-lab/test_dynlab.py
 """
@@ -64,7 +64,8 @@ class StepResponse(unittest.TestCase):
     per branch, so 63% (1 - 1/e) of the way takes one time constant and 90% takes ln 10 of them."""
 
     def assertWithinOneSample(self, measured_ms, expected_ms, fs):
-        self.assertLessEqual(abs(measured_ms - expected_ms), 1000 / fs, f"at {fs} Hz")
+        # A time of exactly one sample's difference, worked in ms, can come out a hair over it.
+        self.assertLessEqual(abs(measured_ms - expected_ms), 1000 / fs + 1e-9, f"at {fs} Hz")
 
     def test_attack_and_release_reach_63_percent_in_one_time_constant(self):
         for fs in dynlab.SAMPLE_RATES:
@@ -224,6 +225,110 @@ class AutoGain(unittest.TestCase):
         # The check can fail: the same signal compressed without Auto Gain loses about the estimate.
         defaults = dynlab.Settings()
         self.assertLess(dynlab.level_difference(defaults, auto_gain_db=0), -dynlab.AUTO_GAIN_TOLERANCE)
+
+
+class Vca(unittest.TestCase):
+    """VCA: an RMS Detection Level, sine-calibrated, into Clean's gain computer and detector."""
+
+    def test_a_sine_reads_its_peak_level_and_a_square_wave_3_db_over_its_peak(self):
+        fs = 48000
+        # A sine high enough that the mean square's ripple, at twice its frequency, is far under 0.01 dB.
+        sine = dynlab.RmsLevel(fs, -math.inf)
+        amplitude = 10 ** (-10 / 20)
+        for n in range(fs // 2):
+            level = sine.sample(amplitude * math.sin(2 * math.pi * 12000 * n / fs))
+        self.assertAlmostEqual(level, -10, delta=0.01)
+        square = dynlab.RmsLevel(fs, -math.inf)
+        for n in range(fs // 2):
+            level = square.sample(amplitude if n % 2 else -amplitude)
+        self.assertAlmostEqual(level, -10 + 3.0103, places=4)
+        self.assertAlmostEqual(dynlab.SINE_CALIBRATION_DB, 3.0103, places=4)
+
+    def test_the_mean_square_covers_63_percent_of_a_step_in_its_time_constant(self):
+        fs = 48000
+        rms = dynlab.RmsLevel(fs, -math.inf)
+        samples = round(dynlab.VCA_RMS_MS * fs / 1000)
+        for _ in range(samples):
+            rms.steady(0.0)
+        self.assertAlmostEqual(2 * rms.mean_square, 1 - 1 / math.e, places=3)
+
+    def test_clean_is_the_default_and_its_figures_are_unchanged_by_the_option(self):
+        self.assertEqual(dynlab.Settings().character, "clean")
+        self.assertEqual(run("step").stdout, run("step", "--character", "clean").stdout)
+
+    def test_vca_shares_cleans_transfer_curve(self):
+        clean, vca = dynlab.Settings(), dynlab.Settings(character="vca")
+        self.assertEqual(dynlab.transfer_curve(clean), dynlab.transfer_curve(vca))
+
+    def test_the_rms_stage_lengthens_attack_and_release_by_about_its_time_constant(self):
+        for fs in dynlab.SAMPLE_RATES:
+            clean = dynlab.step_response(dynlab.Settings(), fs)
+            vca = dynlab.step_response(dynlab.Settings(character="vca"), fs)
+            self.assertGreater(vca.attack_63, clean.attack_63)
+            self.assertLess(vca.attack_63, clean.attack_63 + dynlab.VCA_RMS_MS)
+            self.assertGreater(vca.release_63, clean.release_63)
+            self.assertLess(vca.release_63, clean.release_63 + 3 * dynlab.VCA_RMS_MS)
+
+    def test_hold_still_runs_first(self):
+        for fs in dynlab.SAMPLE_RATES:
+            step = dynlab.step_response(dynlab.Settings(character="vca", hold=20), fs)
+            self.assertLessEqual(abs(step.hold - 20), 1000 / fs)
+
+    def test_with_auto_gain_the_reference_signal_keeps_its_level(self):
+        self.assertLessEqual(abs(dynlab.level_difference(dynlab.Settings(character="vca"))), dynlab.AUTO_GAIN_TOLERANCE)
+
+
+class Colour(unittest.TestCase):
+    """Colour: the Character's own distortion, the Saturation shape's residual weighted and driven by the Gain
+    Reduction."""
+
+    def test_clean_has_no_colour(self):
+        for reduction in (0, 10, 60):
+            self.assertIsNone(dynlab.colour_at(dynlab.Settings(), reduction))
+        self.assertIn("no Colour", run("colour").stdout)
+
+    def test_with_no_gain_reduction_the_weight_and_the_drive_are_exactly_0(self):
+        colour = dynlab.colour_at(dynlab.Settings(character="vca"), 0)
+        self.assertEqual((colour.weight, colour.drive), (0.0, 0.0))
+        x = dynlab.tone(dynlab.tone_bin(1000, 48000), 0.0)
+        self.assertEqual(dynlab.coloured(x, 0, colour, dynlab.AntiAliased()), x)
+
+    def test_the_weight_and_the_drive_rise_with_the_gain_reduction_and_the_drive_stays_within_drives_range(self):
+        vca = dynlab.Settings(character="vca")
+        previous = dynlab.colour_at(vca, 0)
+        for reduction in (0.1, 1, 3, 6, 10, 20, 30, 60):
+            colour = dynlab.colour_at(vca, reduction)
+            self.assertGreater(colour.weight, previous.weight)
+            self.assertGreater(colour.drive, previous.drive)
+            self.assertLessEqual(colour.drive, dynlab.DRIVE_RANGE[1])
+            previous = colour
+
+    def test_colour_scales_the_weight_and_leaves_the_drive(self):
+        full = dynlab.colour_at(dynlab.Settings(character="vca"), 10)
+        half = dynlab.colour_at(dynlab.Settings(character="vca", colour=50), 10)
+        self.assertAlmostEqual(half.weight, full.weight / 2, places=12)
+        self.assertEqual(half.drive, full.drive)
+        self.assertEqual(dynlab.colour_at(dynlab.Settings(character="vca", colour=0), 10).weight, 0.0)
+
+    def test_colour_is_slight_at_10_db_of_gain_reduction(self):
+        row = dynlab.colour_row(dynlab.Settings(character="vca"), 10, dynlab.tone_bin(*dynlab.COLOUR_TONE))
+        self.assertAlmostEqual(row.thd, 0.3, delta=0.02)
+        # The shape is odd and the Gain Reduction steady, so the even harmonics are absent.
+        self.assertEqual(row.harmonics[0], -math.inf)
+        self.assertEqual(row.harmonics[2], -math.inf)
+
+    def test_the_sine_sits_at_the_level_whose_gain_reduction_it_is(self):
+        vca = dynlab.Settings(character="vca")
+        for reduction in (3, 10, 20):
+            self.assertAlmostEqual(dynlab.gain_reduction(dynlab.colour_level(vca, reduction), vca), reduction, places=9)
+        self.assertEqual(dynlab.gain_reduction(dynlab.colour_level(vca, 0), vca), 0)
+        self.assertIsNone(dynlab.colour_level(dynlab.Settings(character="vca", range=6), 10))
+
+    def test_every_aliasing_row_is_under_the_ceiling(self):
+        rows = dynlab.colour_aliases(dynlab.Settings(character="vca"))
+        self.assertEqual(len(rows), len(dynlab.ALIAS_RATES) * len(dynlab.ALIAS_FREQUENCIES) * 3)
+        self.assertTrue(all(row.within for row in rows))
+        self.assertFalse(dynlab.ColourAlias(48000, 10000, 30, -10.0, dynlab.ALIASING_TOLERANCE.ceiling + 0.01).within)
 
 
 class Latency(unittest.TestCase):
@@ -591,6 +696,7 @@ class CommandLine(unittest.TestCase):
                             (("saturation", "--drive", "25"), ("Drive", "0", "24")),
                             (("aliasing", "--drive", "-1"), ("Drive", "0", "24")),
                             (("step", "--lookahead", "6"), ("Lookahead", "0", "5")),
+                            (("colour", "--colour", "101"), ("Colour", "0", "100")),
                             (("limiter", "--ceiling", "1"), ("Ceiling", "-30", "0"))):
             with self.subTest(args):
                 result = run(*args)
@@ -646,6 +752,15 @@ class CommandLine(unittest.TestCase):
         result = run("bursts", "--lengths", "0")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("burst", result.stderr)
+
+    def test_character_is_clean_or_vca(self):
+        for command in ("transfer", "step", "bursts", "autogain", "colour"):
+            with self.subTest(command):
+                self.assertEqual(run(command, "--character", "vca", *(("--lengths", "1") if command == "bursts" else ()))
+                                 .returncode, 0)
+                result = run(command, "--character", "fet")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("character", result.stderr)
 
     def test_limiter_prints_its_parts_and_each_modes_peaks_and_timing_for_every_rate(self):
         result = run("limiter", "--ceiling", "-6", "--rates", "44100", "96000")

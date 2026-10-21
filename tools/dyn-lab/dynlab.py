@@ -4,8 +4,9 @@
 Models the Clean Character after Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor
 Design — A Tutorial and Analysis" (J. Audio Eng. Soc. 60(6)): feedforward, with a soft-knee gain computer
 and a smooth branching peak detector in the log domain, with Hold, Auto Release and Range, and Auto Gain after it;
-High Quality's Lookahead and fixed latency; Saturation; and the Limiter. Standard library only. See
-tools/dyn-lab/USAGE.md for every command.
+the VCA Character, an RMS Detection Level into Clean's gain computer and detector, and its Colour; High Quality's
+Lookahead and fixed latency; Saturation; and the Limiter. Standard library only. See tools/dyn-lab/USAGE.md for every
+command.
 """
 
 import argparse
@@ -35,6 +36,8 @@ RELEASE_RANGE = (5, 5000)
 HOLD_RANGE = (0, 500)
 # ADR 0008: FabFilter publishes no Range limits; 60 dB is the most the lowest Threshold at Ratio ∞ can take off.
 RANGE_RANGE = (0, 60)
+# ADR 0008 (as amended): FabFilter publishes no Colour; comp1's runs from none to the Character's tuned amount.
+COLOUR_RANGE = (0, 100)
 # ADR 0001: High Quality's fixed latency holds 5 ms of Lookahead. A Processing Mode setting, not a Character's, so it
 # stays out of Settings.
 LOOKAHEAD_RANGE = (0, 5)
@@ -59,8 +62,8 @@ def command(name, options=lambda parser: None):
 
 @dataclass
 class Settings:
-    """The compressor controls the Clean Character reads: dB, :1 (math.inf for ∞), ms and Auto Release on or off.
-    Range 60 dB, its top, sets no limit."""
+    """The compressor controls a Character reads: dB, :1 (math.inf for ∞), ms, Auto Release on or off and Colour in %;
+    and the Character, one of CHARACTERS. Range 60 dB, its top, sets no limit."""
     threshold: float = -18.0
     ratio: float = 4.0
     knee: float = 6.0
@@ -69,6 +72,8 @@ class Settings:
     hold: float = 0.0
     range: float = 60.0
     auto_release: bool = False
+    character: str = "clean"
+    colour: float = 100.0
 
 
 # Each Settings field's range and the unit it's shown in.
@@ -80,6 +85,7 @@ PARAMETERS = {
     "release": (RELEASE_RANGE, " ms"),
     "hold": (HOLD_RANGE, " ms"),
     "range": (RANGE_RANGE, " dB"),
+    "colour": (COLOUR_RANGE, "%"),
 }
 
 
@@ -96,10 +102,13 @@ def check_range(name, value, value_range, unit):
 
 
 def check_ranges(settings):
-    """Raises ValueError naming the first setting outside its range, and the range. A switch has no range."""
+    """Raises ValueError naming the first setting outside its range, and the range. A switch has no range, and the
+    Character is one of CHARACTERS."""
+    if settings.character not in CHARACTERS:
+        raise ValueError(f"Character {settings.character!r} is not one of {', '.join(CHARACTERS)}")
     for field in fields(settings):
         value = getattr(settings, field.name)
-        if isinstance(value, bool):
+        if isinstance(value, (bool, str)):
             continue
         value_range, unit = PARAMETERS[field.name]
         check_range(field.name, value, value_range, unit)
@@ -130,16 +139,22 @@ def transfer(level_db, settings):
     return level_db - gain_reduction(level_db, settings)
 
 
-def range_edge(settings):
-    """The input level in dB at which the Gain Reduction reaches Range, or None when it never does."""
+def level_for_reduction(settings, reduction_db):
+    """The input level in dB at which the Transfer Curve's Gain Reduction reaches reduction_db (above 0), or None when
+    it never does: at Ratio 1:1, or past Range."""
     slope = 1 - 1 / settings.ratio
-    if settings.range <= 0 or slope == 0:
+    if reduction_db <= 0 or slope == 0 or reduction_db > settings.range:
         return None
     half_knee = settings.knee / 2
-    over = settings.range / slope  # above the Knee, Gain Reduction is slope * over
+    over = reduction_db / slope  # above the Knee, Gain Reduction is slope * over
     if over < half_knee:  # inside it, slope * (over + W/2)^2 / 2W
-        over = math.sqrt(2 * settings.knee * settings.range / slope) - half_knee
+        over = math.sqrt(2 * settings.knee * reduction_db / slope) - half_knee
     return settings.threshold + over
+
+
+def range_edge(settings):
+    """The input level in dB at which the Gain Reduction reaches Range, or None when it never does."""
+    return level_for_reduction(settings, settings.range)
 
 
 # --- Auto Release ---------------------------------------------------------------------------------
@@ -188,6 +203,59 @@ class AutoRelease:
         return release_ms * (1 + (AUTO_RELEASE_MULTIPLIER - 1) * self.sustain)
 
 
+# --- The Characters' Detection Levels -------------------------------------------------------------
+
+# The Characters dyn-lab models. FET and Opto (#20, #21) aren't modelled yet.
+CHARACTERS = ("clean", "vca")
+# VCA's RMS time constant: the one-pole mean-square average covers 1 - 1/e of a step in this many ms. USAGE.md gives
+# the reasons.
+VCA_RMS_MS = 5.0
+# A sine's peak is its RMS level plus this, 10·log10(2) dB, so a sine-calibrated RMS level, 10·log10(2·mean square),
+# reads a sine's peak level. A constant-magnitude signal (a square wave) reads this much above its peak level.
+SINE_CALIBRATION_DB = 10 * math.log10(2)
+
+
+def _power(level_db):
+    """The mean square of a sine whose peak reads level_db, times 2: 10^(level/10)."""
+    return 10 ** (level_db / 10)
+
+
+class PeakLevel:
+    """Clean's Detection Level: each sample's peak level, 20·log10|x|. A steady level reads itself."""
+
+    def __init__(self, fs, level_db):
+        pass
+
+    def steady(self, level_db):
+        return level_db
+
+    def sample(self, x):
+        return 20 * math.log10(abs(x)) if x != 0 else -math.inf
+
+
+class RmsLevel:
+    """VCA's Detection Level: a one-pole mean-square average of the detection signal, with time constant VCA_RMS_MS,
+    read sine-calibrated, 10·log10(2·mean square) dB, so a sine reads its peak level, as on Clean. It starts settled at
+    level_db. A steady level is a signal of that RMS, such as a square wave SINE_CALIBRATION_DB under it."""
+
+    def __init__(self, fs, level_db):
+        self.pole = _pole(VCA_RMS_MS, fs)
+        self.mean_square = _power(level_db) / 2
+
+    def _level(self, square):
+        self.mean_square = self.pole * self.mean_square + (1 - self.pole) * square
+        return 10 * math.log10(2 * self.mean_square) if self.mean_square > 0 else -math.inf
+
+    def steady(self, level_db):
+        return self._level(_power(level_db) / 2)
+
+    def sample(self, x):
+        return self._level(x * x)
+
+
+LEVELS = {"clean": PeakLevel, "vca": RmsLevel}
+
+
 # --- Clean: detector ------------------------------------------------------------------------------
 
 
@@ -199,10 +267,15 @@ class Detector:
     Release on, Release is AutoRelease's, taken at the start of each run; Hold runs first either way.
 
     Not the paper's decoupled detector (eq. 17), whose release runs through the attack pole too and so
-    gives back gain more slowly than Release says."""
+    gives back gain more slowly than Release says.
 
-    def __init__(self, settings, fs, gain_reduction=0.0, auto_release=None):
-        """auto_release is the AutoRelease state to start from: empty by default."""
+    Every Character's: its Detection Level (LEVELS) feeds the gain computer, and this detector smooths what that asks
+    for, so hear_steady() and hear_sample() take the detection signal, and process() a Detection Level."""
+
+    def __init__(self, settings, fs, gain_reduction=0.0, auto_release=None, level_db=-math.inf):
+        """auto_release is the AutoRelease state to start from: empty by default. The Character's Detection Level
+        starts settled at level_db."""
+        self.level = LEVELS[settings.character](fs, level_db)
         self.settings = settings
         self.fs = fs
         self.attack = _pole(settings.attack, fs)
@@ -233,6 +306,14 @@ class Detector:
         self.gain_reduction = pole * self.gain_reduction + (1 - pole) * wanted
         return self.gain_reduction
 
+    def hear_steady(self, level_db):
+        """One sample of a steady level, sine-calibrated, through the Character's Detection Level and the detector."""
+        return self.process(self.level.steady(level_db))
+
+    def hear_sample(self, x):
+        """One sample of the detection signal through the Character's Detection Level and the detector."""
+        return self.process(self.level.sample(x))
+
 
 # --- Clean: step response -------------------------------------------------------------------------
 
@@ -240,6 +321,12 @@ STEP_DB = 20.0
 # The fractions of a step the Engine's timing tests read: one time constant, and ln 10 of them.
 ONE_TIME_CONSTANT = 1 - 1 / math.e
 NINETY_PERCENT = 0.9
+# The Gain Reduction has begun to move once it is more than this fraction of the way: the Engine's tests read it off
+# float output, whose rounding is about 1e-6 dB, under 2e-7 of the smallest step they measure, and count the same way
+# (tests/engine/Measure.h, heldWithin). Clean's first step of Release is over it at every setting (1.04e-6 of the way
+# at 5000 ms and 192 kHz), so Clean's figures are as with no threshold; on VCA the RMS level leaves it slowly, so the
+# two must count alike.
+MOVED_WITHIN = 1.0e-6
 
 
 @dataclass
@@ -258,8 +345,8 @@ def _times(detector, level_db, start, end, fractions):
     reached, held, n = [None] * len(fractions), None, 0
     while reached[-1] is None:
         n += 1
-        moved = (detector.process(level_db) - start) / (end - start)
-        if held is None and moved > 0:
+        moved = (detector.hear_steady(level_db) - start) / (end - start)
+        if held is None and moved > MOVED_WITHIN:
             held = n - 1
         for i, fraction in enumerate(fractions):
             if reached[i] is None and moved >= fraction:
@@ -283,9 +370,9 @@ def step_response(settings, fs, lookahead=LOOKAHEAD_DEFAULT):
         return None
     ms = 1000 / fs
     fractions = (ONE_TIME_CONSTANT, NINETY_PERCENT)
-    (attack_63, attack_90), _ = _times(Detector(settings, fs, low), loud, low, high, fractions)
+    (attack_63, attack_90), _ = _times(Detector(settings, fs, low, level_db=quiet), loud, low, high, fractions)
     sustained = AutoRelease(fs, sustain=1.0, heard=RUN_SAMPLES)
-    (release_63, release_90), held = _times(Detector(settings, fs, high, sustained), quiet, high, low, fractions)
+    (release_63, release_90), held = _times(Detector(settings, fs, high, sustained, loud), quiet, high, low, fractions)
     return Step(attack_63 * ms - lookahead, attack_90 * ms - lookahead, (release_63 - held) * ms,
                 (release_90 - held) * ms, held * ms)
 
@@ -411,7 +498,7 @@ def reference_signal():
 
 
 def level_difference(settings, auto_gain_db=None):
-    """Runs the reference signal through the Clean model, Attack, Release and Hold as settings has them, then
+    """Runs the reference signal through the Character's model, Attack, Release and Hold as settings has them, then
     Auto Gain (the estimate unless auto_gain_db is given), and returns the long-term level difference in dB,
     output minus input: each segment's level difference (its power ratio), averaged over the segments. The
     average is in dB, as the estimate's is, so every level counts the same, the quiet ones as much as the loud."""
@@ -421,8 +508,7 @@ def level_difference(settings, auto_gain_db=None):
     for segment in reference_signal():
         power_in = power_out = 0.0
         for x in segment:
-            level_db = 20 * math.log10(abs(x)) if x != 0 else -math.inf
-            y = x * 10 ** (-detector.process(level_db) / 20) * makeup
+            y = x * 10 ** (-detector.hear_sample(x) / 20) * makeup
             power_in += x * x
             power_out += y * y
         differences.append(10 * math.log10(power_out / power_in))
@@ -1047,6 +1133,179 @@ def report_aliasing(rates=ALIAS_RATES, drives=ALIAS_DRIVES, factor=1):
     return all(row.within for row in rows) and all(row.within for row in bands)
 
 
+# --- Colour ---------------------------------------------------------------------------------------
+
+# VCA's Colour mapping, from the Gain Reduction applied to a channel, in dB: the residual's weight is Colour times
+# VCA_COLOUR_WEIGHT × (1 - e^(-GR / VCA_COLOUR_WEIGHT_DB)), and the drive is Drive's top × (1 - e^(-GR /
+# VCA_COLOUR_DRIVE_DB)). Each is exactly 0 with no Gain Reduction and rises smoothly with it, so Colour follows the
+# compression with no corner. USAGE.md gives the reasons for each constant.
+VCA_COLOUR_WEIGHT = 0.11
+VCA_COLOUR_WEIGHT_DB = 10.0
+VCA_COLOUR_DRIVE_DB = 5.0
+
+
+@dataclass
+class ColourAt:
+    """A Character's Colour at a Gain Reduction: the residual's weight, Colour included, and the drive in dB."""
+    weight: float
+    drive: float
+
+
+def _rising(reduction_db, scale_db):
+    """1 - e^(-GR / scale): exactly 0 with no Gain Reduction, nearing 1 as it grows."""
+    return -math.expm1(-reduction_db / scale_db) if reduction_db > 0 else 0.0
+
+
+def colour_at(settings, reduction_db):
+    """The Character's Colour at a Gain Reduction in dB, or None for a Character with none (Clean)."""
+    if settings.character != "vca":
+        return None
+    return ColourAt(settings.colour / 100 * VCA_COLOUR_WEIGHT * _rising(reduction_db, VCA_COLOUR_WEIGHT_DB),
+                    DRIVE_RANGE[1] * _rising(reduction_db, VCA_COLOUR_DRIVE_DB))
+
+
+def coloured(x, reduction_db, colour, residual_of):
+    """The compressor's output with Colour: each sample of x times the steady Gain Reduction, plus the weight times
+    the residual of the driven sample over the drive (residual_of, one call per sample, in order), so the linear part
+    passes sample-aligned (ADR 0005)."""
+    gain = 10 ** (-reduction_db / 20)
+    compressed = [gain * s for s in x]
+    if colour.weight == 0:
+        return compressed
+    g = 10 ** (colour.drive / 20)
+    return [y + colour.weight * residual_of(g * y) / g for y in compressed]
+
+
+# The steady Gain Reductions `colour` reports, in dB.
+COLOUR_REDUCTIONS = (0, 3, 6, 10, 20, 30)
+# The steady sine `colour` measures the harmonics of: the bin-centred tone nearest 1 kHz at 48 kHz.
+COLOUR_TONE = (1000, 48000)
+# Where the steady Gain Reduction is 0 the sine sits this far under the Knee's lower edge, as the Transfer Curve's grid
+# starts: well clear of it, so a detector reading a hair high still asks for none.
+COLOUR_BELOW_KNEE_DB = 12.0
+# The Engine's harmonics are within this many dB of the lab's (USAGE.md gives the reasons).
+COLOUR_HARMONIC_TOLERANCE_DB = 0.1
+# The Gain Reductions Colour's aliasing is checked at, in dB: from where Colour is first clearly heard to deep
+# compression. Only ALIASING_TOLERANCE's ceiling is checked; its improvement doesn't hold for Colour (USAGE.md).
+COLOUR_ALIAS_REDUCTIONS = (10, 20, 30)
+
+
+def colour_level(settings, reduction_db):
+    """The steady sine's level in dB for a Gain Reduction: the input level whose Gain Reduction it is on the Transfer
+    Curve, or COLOUR_BELOW_KNEE_DB under the Knee for none. None when the settings never reach it."""
+    if reduction_db == 0:
+        return settings.threshold - settings.knee / 2 - COLOUR_BELOW_KNEE_DB
+    return level_for_reduction(settings, reduction_db)
+
+
+@dataclass
+class ColourRow:
+    """Colour at a steady Gain Reduction: the sine's level, the Colour, and its 2nd to 5th harmonics in dB relative to
+    the fundamental (-inf when absent), and their THD in %."""
+    reduction: float
+    level: float
+    colour: ColourAt
+    harmonics: list
+    thd: float
+
+
+def colour_row(settings, reduction_db, k):
+    """Colour on the bin-centred tone k at the level whose Gain Reduction is reduction_db, held steady."""
+    level = colour_level(settings, reduction_db)
+    if level is None:
+        return None
+    colour = colour_at(settings, reduction_db)
+    amplitudes = spectrum(coloured(tone(k, level), reduction_db, colour, AntiAliased()))
+    relative = [amplitudes[h * k] / amplitudes[k] for h in HARMONICS]
+    thd = 100 * math.sqrt(sum(a * a for a in relative))
+    return ColourRow(reduction_db, level, colour, [20 * math.log10(a) if a > 1e-15 else -math.inf for a in relative],
+                     thd)
+
+
+@dataclass
+class ColourAlias:
+    """Colour's worst alias at one condition, in dB relative to the fundamental: the naive shaper's and ADAA's."""
+    fs: float
+    frequency: float  # the tone's, bin-centred
+    reduction: float
+    naive: float
+    adaa: float
+
+    @property
+    def within(self):
+        return self.adaa <= ALIASING_TOLERANCE.ceiling
+
+
+def colour_aliases(settings, rates=ALIAS_RATES, frequencies=ALIAS_FREQUENCIES, reductions=COLOUR_ALIAS_REDUCTIONS):
+    """Colour's worst alias at each condition the settings reach."""
+    rows = []
+    for fs in rates:
+        for frequency in frequencies:
+            k = tone_bin(frequency, fs)
+            for reduction in reductions:
+                level = colour_level(settings, reduction)
+                if level is None:
+                    continue
+                colour = colour_at(settings, reduction)
+                x = tone(k, level)
+                naive = worst_alias_db(spectrum(coloured(x, reduction, colour, residual)), k)
+                adaa = worst_alias_db(spectrum(coloured(x, reduction, colour, AntiAliased())), k)
+                rows.append(ColourAlias(fs, k * fs / ALIAS_SAMPLES, reduction, naive, adaa))
+    return rows
+
+
+def colour_options(parser):
+    transfer_options(parser)
+    character_option(parser)
+    parser.add_argument("--colour", type=float, default=Settings().colour, metavar="%")
+    parser.add_argument("--rates", type=float, nargs="+", default=list(ALIAS_RATES), metavar="Hz")
+
+
+@command("colour", options=colour_options)
+def run_colour(args):
+    _check_rates(args.rates)
+    if not report_colour(settings_from(args), args.rates):
+        raise SystemExit(1)
+
+
+def _shown_db(value):
+    return f"{value:8.2f}" if value > -math.inf else f"{'absent':>8}"
+
+
+def report_colour(settings, rates=ALIAS_RATES):
+    """How the Character's Colour follows the Gain Reduction, then Colour's worst alias at each condition. True when
+    every aliasing row is within its tolerance."""
+    print(f"Colour, {_transfer_heading(settings)}, Colour {settings.colour:g}%")
+    if colour_at(settings, 10.0) is None:
+        print(f"{settings.character.capitalize()} has no Colour, at any setting")
+        return True
+    k = tone_bin(*COLOUR_TONE)
+    print(f"a steady bin-centred sine of {k * COLOUR_TONE[1] / ALIAS_SAMPLES:.1f} Hz at {COLOUR_TONE[1]:g} Hz at the "
+          f"level whose Gain Reduction it is, held steady (or {COLOUR_BELOW_KNEE_DB:g} dB under the Knee for none); "
+          f"harmonics in dB relative to the fundamental; tolerance for the Engine's ±{COLOUR_HARMONIC_TOLERANCE_DB:g} dB")
+    print(f"{'GR dB':>6} {'input dB':>9} {'weight':>9} {'drive dB':>9} {'2nd':>8} {'3rd':>8} {'4th':>8} {'5th':>8} "
+          f"{'THD %':>8}")
+    for reduction in COLOUR_REDUCTIONS:
+        row = colour_row(settings, reduction, k)
+        if row is None:
+            print(f"{reduction:6g}  not reached at these settings")
+            continue
+        print(f"{reduction:6g} {row.level:9.2f} {row.colour.weight:9.6f} {row.colour.drive:9.4f} "
+              f"{' '.join(_shown_db(h) for h in row.harmonics)} {row.thd:8.4f}")
+    tolerance = ALIASING_TOLERANCE
+    print(f"Colour aliasing, bin-centred tones at the level whose Gain Reduction it is, over {ALIAS_SAMPLES} samples: "
+          f"the worst alias in dB relative to the fundamental")
+    print(f"tolerance: ADAA at most {tolerance.ceiling:g} dB; the improvement on naive is shown, not checked "
+          f"(USAGE.md, \"Colour\")")
+    print(f"{'rate Hz':>8} {'tone Hz':>8} {'GR dB':>6} {'input dB':>9} {'naive':>8} {'ADAA':>8} {'better':>8}  check")
+    rows = colour_aliases(settings, rates)
+    for row in rows:
+        print(f"{row.fs:8g} {row.frequency:8.1f} {row.reduction:6g} {colour_level(settings, row.reduction):9.2f} "
+              f"{row.naive:8.2f} {row.adaa:8.2f} {row.naive - row.adaa:8.2f}  "
+              f"{'within' if row.within else 'outside'}")
+    return all(row.within for row in rows)
+
+
 def oversampling_options(parser):
     parser.add_argument("--rates", type=float, nargs="+", default=None, metavar="Hz",
                         help="default: plugkit.conf's SAMPLE_RATES")
@@ -1470,7 +1729,6 @@ def release_trade_off(candidates=RELEASE_CANDIDATES):
 
 # --- Commands -------------------------------------------------------------------------------------
 
-
 def _ratio(text):
     if text.strip().lower() in ("inf", "∞"):
         return math.inf
@@ -1495,8 +1753,18 @@ def timing_options(parser):
     parser.add_argument("--lookahead", type=float, default=LOOKAHEAD_DEFAULT, metavar="ms")
 
 
+def character_option(parser):
+    parser.add_argument("--character", choices=CHARACTERS, default=Settings().character)
+
+
+def transfer_command_options(parser):
+    transfer_options(parser)
+    character_option(parser)
+
+
 def step_options(parser):
     timing_options(parser)
+    character_option(parser)
     parser.add_argument("--auto-release", action="store_true")
 
 
@@ -1513,8 +1781,13 @@ def settings_from(args):
     return settings
 
 
+def _character_heading(settings):
+    """The Character, when it isn't Clean, which every heading leaves unnamed."""
+    return "" if settings.character == "clean" else f"{settings.character.upper()}, "
+
+
 def _transfer_heading(settings):
-    return (f"Threshold {settings.threshold:g} dB, Ratio {_shown(settings.ratio)}:1, Knee {settings.knee:g} dB, "
+    return (f"{_character_heading(settings)}Threshold {settings.threshold:g} dB, Ratio {_shown(settings.ratio)}:1, Knee {settings.knee:g} dB, "
             f"Range {settings.range:g} dB")
 
 
@@ -1560,7 +1833,7 @@ def transfer_curve(settings):
     return TransferCurve(rows, slope(lowest), slope(highest - GRID_SPACING))
 
 
-@command("transfer", options=transfer_options)
+@command("transfer", options=transfer_command_options)
 def run_transfer(args):
     report_transfer(settings_from(args))
 
@@ -1574,6 +1847,9 @@ def report_transfer(settings):
         print(f"{level:9.2f} {out:10.2f} {level - out:10.2f}  {region}")
     print(f"slope below the Knee {curve.slope_below:.4f} (unity is 1), "
           f"above it {curve.slope_above:.4f} (1/Ratio is {1 / settings.ratio:.4f}; 1 once Range is reached)")
+    if settings.character == "vca":
+        print(f"levels are VCA's RMS Detection Level, sine-calibrated: the steady test signal is a square wave whose "
+              f"peak is {SINE_CALIBRATION_DB:.4f} dB under each level")
 
 
 @command("step", options=step_options)
@@ -1631,6 +1907,7 @@ def report_latency(sample_rates):
 
 def autogain_options(parser):
     transfer_options(parser)
+    character_option(parser)
 
 
 @command("autogain", options=autogain_options)
@@ -1681,9 +1958,9 @@ def burst_release(settings, fs, length_ms):
     low = gain_reduction(quiet, settings)
     if gain_reduction(loud, settings) - low < 1e-9:
         return None
-    detector = Detector(settings, fs, low)
+    detector = Detector(settings, fs, low, level_db=quiet)
     for _ in range(max(round(length_ms * fs / 1000), 1)):
-        detector.process(loud)
+        detector.hear_steady(loud)
     start = detector.gain_reduction
     (release_63, release_90), held = _times(detector, quiet, start, low, (ONE_TIME_CONSTANT, NINETY_PERCENT))
     ms = 1000 / fs
@@ -1701,6 +1978,7 @@ def bursts(settings, fs, lengths=BURST_LENGTHS):
 
 def bursts_options(parser):
     timing_options(parser)
+    character_option(parser)
     parser.add_argument("--lengths", type=float, nargs="+", default=list(BURST_LENGTHS), metavar="ms")
 
 

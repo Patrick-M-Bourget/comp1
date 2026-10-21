@@ -166,6 +166,15 @@ inline Channels constantLevel (int numChannels, int numSamples, double levelDb)
     return Channels (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (numSamples), magnitude));
 }
 
+// How far a sine's peak is over its RMS level, 10·log10(2) dB (dyn-lab's SINE_CALIBRATION_DB). VCA reads a
+// sine-calibrated RMS level, so its steady test signal is a steady level (steadyLevel) this far under the level it
+// stands for, and a level read off its output is this far over the square wave's.
+inline constexpr double sineCalibrationDb = 3.0102999566398120;
+
+// How far a Character's steady test signal sits from the level it stands for, in dB: VCA's a square wave
+// sineCalibrationDb under it, Clean's at it.
+inline double steadyLevelOffsetDb (Character character) { return character == Character::VCA ? -sineCalibrationDb : 0.0; }
+
 // The Gain Reduction in dB the Engine gave each sample: how far the output is under the input.
 inline std::vector<double> gainReductionDb (const std::vector<float>& input, const std::vector<float>& output)
 {
@@ -182,10 +191,12 @@ inline constexpr double ninetyPercent = 0.9;
 // As dyn-lab measures a step: the samples taken, from the first one at the new level (reduction[from]), for the Gain
 // Reduction to move each fraction of the way from start to end, and the samples before it first moved at all. The
 // output is float, so a Gain Reduction read off it carries up to about 1e-6 dB of rounding, which differs between
-// input levels: a sample held at the new level can read a hair off a start read at the old one. So it has moved once
-// it is more than heldWithin of the way, far under the first step of any Release the tests measure (1e-5 of the
-// way at 500 ms and 192 kHz).
-inline constexpr double heldWithin = 3.0e-6;
+// input levels: a sample held at the new level can read a hair off a start read at the old one (under 2e-7 of the way
+// on the smallest step the tests measure, 6 dB). So it has moved once it is more than heldWithin of the way, under the
+// first step of any Clean Release (1.04e-6 of the way at 5000 ms and 192 kHz). dyn-lab counts the same way
+// (MOVED_WITHIN), so VCA, whose Gain Reduction leaves its level slowly as its RMS level falls, reads the same Hold in
+// both.
+inline constexpr double heldWithin = 1.0e-6;
 
 struct Crossings
 {
@@ -311,8 +322,8 @@ inline int impulseDelaySamples (const Settings& settings, double sampleRate, int
 
 // --- The Dry/Wet null -------------------------------------------------------------------------------------------
 
-// A setting the Dry/Wet null must hold under: a row of the null's table. Oversampling (#10) and Colour (#19) add one
-// per factor and per Colour, each leaving the Wet path linear and aligned with no Gain Reduction.
+// A setting the Dry/Wet null must hold under: a row of the null's table. Oversampling and Colour add rows, each
+// leaving the Wet path linear and aligned with no Gain Reduction.
 struct NullRow
 {
     const char* name;
@@ -446,6 +457,27 @@ inline double worstAliasDb (const std::vector<double>& spectrum, int bin)
         if (b % static_cast<std::size_t> (bin) != 0 || b == 0)
             worst = std::max (worst, spectrum[b]);
     return 20.0 * std::log10 (std::max (worst, 1.0e-300) / spectrum[static_cast<std::size_t> (bin)]);
+}
+
+// --- Colour, as dyn-lab's `colour` measures it -------------------------------------------------------------------
+
+// dyn-lab's colour_level at the defaults: the input level whose Gain Reduction on the Transfer Curve is reductionDb,
+// above the Knee from 3 dB of Gain Reduction (4 dB over Threshold, past the Knee's 3 dB half-width); or for none, 12 dB
+// under the Knee (COLOUR_BELOW_KNEE_DB).
+inline double levelForReductionDb (double reductionDb) { return reductionDb > 0.0 ? -18.0 + reductionDb / 0.75 : -18.0 - 3.0 - 12.0; }
+
+// The bin-centred tone in bin at levelDb, times scale, for lengths spectrumLengths, through an Engine with settings at
+// sampleRate, compressed by a steady Gain Reduction, as dyn-lab's colour holds it: an External Detection Source on a
+// Sidechain that is a square wave sineCalibrationDb under levelDb, which VCA reads at levelDb with no ripple at all. The
+// Gain Reduction settles over the first length (Attack 10 ms, the RMS level 5 ms), so the last is periodic.
+inline std::vector<float> steadilyCompressedTone (Settings settings, double sampleRate, int bin, double levelDb, int lengths, double scale = 1.0)
+{
+    auto tone = binCentredTone (bin, levelDb, lengths);
+    for (auto& sample : tone)
+        sample = static_cast<float> (scale * sample);
+    const auto sidechain = steadyLevel (1, static_cast<int> (tone.size()), levelDb - sineCalibrationDb);
+    settings.detectionSource = DetectionSource::External;
+    return played (settings, sampleRate, { tone }, { 512 }, &sidechain).front();
 }
 
 // --- The Limiter: true peak, and dyn-lab's reference signals (python3 tools/dyn-lab/dynlab.py limiter) ------------

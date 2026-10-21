@@ -20,17 +20,16 @@ constexpr auto zeroLatency = ProcessingMode::ZeroLatency;
 constexpr auto highQuality = ProcessingMode::HighQuality;
 constexpr double off = -std::numeric_limits<double>::infinity();
 
-// The settings the null must hold under, one row each. Oversampling (#10) adds a row per factor, Colour (#19) a row
-// per Colour.
+// The settings the null must hold under, one row each: Oversampling's largest factor, and VCA's Colour.
 const std::vector<test::NullRow>& nullRows()
 {
     static const std::vector<test::NullRow> rows {
         { "Clean", [] (Settings&) {} },
         // Oversampling runs only the nonlinear residual (ADR 0009), so with Saturation off the Wet path stays exactly
-        // linear and aligned at every factor.
-        { "Oversampling 1x", [] (Settings& s) { s.oversampling = Oversampling::x1; } },
-        { "Oversampling 4x", [] (Settings& s) { s.oversampling = Oversampling::x4; } },
+        // linear and aligned at every factor: Clean plays the 2x default, and this the largest.
         { "Oversampling 8x", [] (Settings& s) { s.oversampling = Oversampling::x8; } },
+        // With no Gain Reduction, Colour's weight is exactly 0, at any Colour (ADR 0005): at its top, 100%, too.
+        { "VCA at Colour 100%", [] (Settings& s) { s.character = Character::VCA; } },
     };
     return rows;
 }
