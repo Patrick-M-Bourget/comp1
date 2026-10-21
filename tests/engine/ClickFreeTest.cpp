@@ -151,3 +151,13 @@ TEST_CASE ("While a compressor setting glides, the output is the same however th
     }
     CHECK (cutUp == whole);
 }
+
+TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click")
+{
+    const auto host = anyHost();
+    CAPTURE (host.sampleRate, host.blockSize);
+    const auto output = playTone (host, [] (double time, Settings& s) {
+        s.processingMode = alternating (time) ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency;
+    });
+    CHECK (discontinuity (output, host.sampleRate) < threshold);
+}
