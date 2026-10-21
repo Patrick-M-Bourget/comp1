@@ -85,6 +85,10 @@ jobs:
         timeout-minutes: 8
         run: '"$PLUGKIT/scripts/check.sh" test'
 
+      - name: CPU budget
+        timeout-minutes: 3
+        run: '"$PLUGKIT/scripts/check.sh" cpu'
+
       - name: Engine tests under ThreadSanitizer
         if: runner.os == 'macOS'
         timeout-minutes: 25
