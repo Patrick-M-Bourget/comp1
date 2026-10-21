@@ -79,6 +79,24 @@ TEST_CASE ("With External and a mono Sidechain, every main channel is compressed
     CHECK (gains[1] == Catch::Approx (-18.0).margin (0.1));
 }
 
+TEST_CASE ("With Internal, a loud Sidechain changes nothing in the output, bit for bit")
+{
+    const int sidechainChannels = GENERATE (1, 2);
+    CAPTURE (sidechainChannels);
+    const auto input = test::noise (2, 8192);
+    const auto sidechainSamples = test::steadyLevel (sidechainChannels, 8192, 0.0);
+    auto alone = input, keyed = input;
+    for (auto* audio : { &alone, &keyed })
+    {
+        Engine engine;
+        engine.prepare (48000.0, 512, 2);
+        engine.setSettings ({ .thresholdDb = -24.0 });
+        test::processInBlocks (engine, *audio, { 512 }, audio == &keyed ? &sidechainSamples : nullptr);
+    }
+    REQUIRE (alone != input); // compressed
+    CHECK (keyed == alone);
+}
+
 TEST_CASE ("With External and no Sidechain connected, a loud main input passes bit for bit")
 {
     // A Sidechain that is null, has no channels, or has fewer samples than the block counts as none connected.
