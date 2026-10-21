@@ -7,6 +7,7 @@
 #include "DryWet.h"
 #include "Glide.h"
 #include "LevelTaps.h"
+#include "Limiter.h"
 #include "Lookahead.h"
 #include "ModeFade.h"
 #include "SaturationStage.h"
@@ -533,9 +534,11 @@ struct Engine::Impl
     Compressor compressor;
     SaturationStage saturation;
     GlidingGain autoGain, outputGain;
-    // High Quality's delays (comp1/Latency.h): the Lookahead budget, around the compressor, and the reserves' padding.
+    // High Quality's delays (comp1/Latency.h): the Lookahead budget, around the compressor, and the Oversampling
+    // reserve's padding; the Limiter fills the Limiter reserve.
     LookaheadStage lookahead;
-    DelayLine oversamplingPadding, limiterPadding;
+    DelayLine oversamplingPadding;
+    Limiter limiter;
     ModeFade modeFade;
     Audition audition;
     DryWet dryWet;
@@ -562,6 +565,8 @@ struct Engine::Impl
         saturation.setSettings (settings, snapToSettings);
         dryWet.setLevels (settings.dryDb, settings.wetDb, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
+        limiter.setOn (settings.limiter, snapToSettings);
+        limiter.setCeiling (settings.ceilingDb, snapToSettings);
         audition.setHeld (settings.detectionAudition, snapToSettings);
         audition.setPlacement (settings.stereoPlacement, snapToSettings);
         lookahead.setLookahead (settings.lookaheadMs, snapToSettings);
@@ -597,11 +602,10 @@ struct Engine::Impl
     // is held, so letting go doesn't restart compression from zero.
     //
     // In High Quality the audio is delayed by the Lookahead budget and the detection signal by less, so the compressor
-    // meets the audio Lookahead early; then the Oversampling padding before the Dry/Wet sum, and the Limiter padding
-    // after Output Gain. Then Global Bypass, which crossfades to the input as it came in, delayed to match; it takes
-    // precedence over Detection Audition, and everything before it runs on while it is on, so turning it off has no
-    // restart transient.
-    // Last, the mode fade, which swaps the paths in silence.
+    // meets the audio Lookahead early; then the Oversampling padding before the Dry/Wet sum. After Output Gain, the
+    // Limiter, on the path playing. Then Global Bypass, which crossfades to the input as it came in, delayed to match;
+    // it takes precedence over Detection Audition, and everything before it runs on while it is on, so turning it off
+    // has no restart transient. Last, the mode fade, which swaps the paths in silence.
     void wetPath (AudioBlock wet, const ConstAudioBlock* sidechainPiece, ProcessingMode path)
     {
         globalBypass.takeInput ({ wet.channels, wet.numChannels, wet.numSamples }, path);
@@ -623,8 +627,7 @@ struct Engine::Impl
         dryWet.sum (wet);
         audition.process (detected, wet, highQuality);
         outputGain.process (wet);
-        if (highQuality)
-            limiterPadding.process (wet);
+        limiter.process (wet, path);
         globalBypass.process (wet);
         modeFade.process (wet);
     }
@@ -654,7 +657,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->outputGain.prepare (sampleRate);
     impl->lookahead.prepare (sampleRate, numChannels, plugkit::runSamples);
     impl->oversamplingPadding.prepare (numChannels, oversamplingReserveSamples);
-    impl->limiterPadding.prepare (numChannels, limiterReserveSamples (sampleRate));
+    impl->limiter.prepare (sampleRate, numChannels);
     impl->modeFade.prepare (sampleRate);
     impl->audition.prepare (sampleRate, numChannels);
     impl->dryWet.prepare (sampleRate, numChannels, plugkit::runSamples);

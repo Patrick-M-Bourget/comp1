@@ -12,8 +12,10 @@ using namespace comp1;
 TEST_CASE ("A non-finite input sample never reaches the output, which plays on as if it were silence")
 {
     const bool autoGain = GENERATE (false, true);
-    CAPTURE (autoGain);
-    const Settings settings { .autoGain = autoGain, .outputGainDb = 6.0 };
+    // The Limiter on, at a Ceiling the noise passes: a non-finite sample never reaches its gain computer either.
+    const bool limiter = GENERATE (false, true);
+    CAPTURE (autoGain, limiter);
+    const Settings settings { .autoGain = autoGain, .outputGainDb = 6.0, .limiter = limiter, .ceilingDb = -6.0 };
     const auto input = test::noise (2, 4096);
     // The same audio with non-finite samples in it, on both channels, and with silence in their place.
     auto broken = input, silenced = input;

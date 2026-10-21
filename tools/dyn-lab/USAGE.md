@@ -2,7 +2,7 @@
 
 A Python model of comp1's Characters. It prints the figures the Engine's tests check, so a ticket brief can cite a command and its output exactly. It needs only the standard library: no installs, no numpy. Run it from the repo root.
 
-It models the Clean Character, with High Quality's Lookahead and latency, and the Saturation stage (see [Saturation](#saturation)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
+It models the Clean Character, with High Quality's Lookahead and latency, the Saturation stage (see [Saturation](#saturation)) and the Limiter (see [Limiter](#limiter)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
 
 Hold freezes the Gain Reduction for Hold ms whenever it stops rising, mid-Attack included, before Release begins. Any rise restarts the count.
 
@@ -10,7 +10,7 @@ Auto Release, when on, lengthens Release after sustained compression and leaves 
 
 Range caps the Gain Reduction the gain computer asks for, before the detector smooths it. So the Transfer Curve rises with the input again, Range below it, once the Gain Reduction reaches Range, and Attack, Release and Hold take the same times over a smaller step. At 60 dB, its top, Range sets no limit (ADR 0008).
 
-Every option has a default, and a setting outside its range exits with an error that names the range. The ranges are named once in `dynlab.py` (`THRESHOLD_RANGE`, `RATIO_RANGE` and so on), each with its source: Pro-C 3's documentation, ADR 0008 for Threshold, Release, Range and Drive, or ADR 0001 for Lookahead. Lookahead is a Processing Mode setting, read in High Quality only, not one of the compressor's. The check harness's `docs` stage fails when one differs from the plugin's, `engine/include/comp1/Settings.h`'s `parameterRanges` (`LAB_RANGES` in `plugkit.conf`).
+Every option has a default, and a setting outside its range exits with an error that names the range. The ranges are named once in `dynlab.py` (`THRESHOLD_RANGE`, `RATIO_RANGE` and so on), each with its source: Pro-C 3's documentation, ADR 0008 for Threshold, Release, Range and Drive, ADR 0001 for Lookahead, or comp1's own reasons for the Limiter's Ceiling (`CEILING_RANGE`). Lookahead is a Processing Mode setting, read in High Quality only, not one of the compressor's. The check harness's `docs` stage fails when one differs from the plugin's, `engine/include/comp1/Settings.h`'s `parameterRanges` (`LAB_RANGES` in `plugkit.conf`).
 
 | Setting | Range | Default |
 |---|---|---|
@@ -24,6 +24,7 @@ Every option has a default, and a setting outside its range exits with an error 
 | Drive | 0 to 24 dB | 6 dB |
 | Auto Release | off or on (`--auto-release`) | off |
 | Lookahead | 0 to 5 ms | 0 ms |
+| Ceiling | −30 to 0 dBFS | 0 dBFS |
 
 ## `transfer`
 
@@ -62,7 +63,7 @@ Prints each Processing Mode's latency in whole host samples, at every sample rat
 
 - the Oversampling reserve (`OVERSAMPLING_RESERVE_SAMPLES`), 128 samples at every rate, reserved for Oversampling's filters (#10);
 - the Lookahead budget (`LOOKAHEAD_BUDGET_MS`), Lookahead's top of 5 ms, rounded up;
-- the Limiter reserve (`LIMITER_RESERVE_MS`), 1 ms rounded up, reserved for the Limiter's own lookahead (#18).
+- the Limiter reserve (`LIMITER_RESERVE_MS`), 1 ms rounded up, the Limiter's own lookahead in High Quality: its true-peak estimator's delay and its lookahead window fill it exactly (see [Limiter](#limiter)).
 
 It also prints `MODE_FADE_MS`: a Processing Mode switch fades the output out over 10 ms, swaps paths in the silence, and fades the new path in over 10 ms, each on a smoothstep curve.
 
@@ -159,6 +160,36 @@ Off, every burst releases in Release's time. On, Release grows with the burst's 
     python3 tools/dyn-lab/dynlab.py bursts
     python3 tools/dyn-lab/dynlab.py bursts --attack 0.5 --release 50 --hold 20
     python3 tools/dyn-lab/dynlab.py bursts --lengths 1 10 100 --rates 192000
+
+## Limiter
+
+The Limiter is the last stage, after Output Gain, on every channel with one shared gain from the loudest channel. Each mode has its own:
+
+- **Zero Latency:** a zero-attack gain computer on the sample peak. Each sample's Gain Reduction brings it to the Ceiling at once, then releases with one pole in dB. A safety clip at the Ceiling follows. It adds no delay, and no sample's magnitude exceeds the Ceiling.
+- **High Quality:** true-peak detection and a lookahead, which together fill the Limiter reserve exactly, so the latency never changes. The true-peak estimator is a 4x interpolator (`TRUE_PEAK_FACTOR`), a Kaiser-windowed sinc polyphase FIR 16 host samples long (`TRUE_PEAK_TAPS`, `TRUE_PEAK_BETA`). Its cutoff is the host's Nyquist, so its phase 0 is the host sample itself. It reads 8 samples ahead of the sample it estimates, its delay at every rate. Each sample's estimate is the loudest of its own segment (the sample and the three points after it) and the one before, so a peak between two samples brings both down. The lookahead window, W, is the Limiter reserve less the estimator's delay: 37 samples at 44.1 kHz, 184 at 192 kHz. Over it, the Gain Reduction asked for goes through a sliding maximum over W + 1 samples, the release, and an average over W + 1 samples. So the gain moves smoothly and is fully down when a peak reaches the audio, which is delayed by the estimator's delay plus W. It aims `LIMITER_TRUE_PEAK_HEADROOM_DB` under the Ceiling.
+
+Below `LIMITER_SETTLED_DB` (10⁻⁷ dB) the Gain Reduction counts as none, so once the release has settled, a signal that never reaches the Ceiling passes bit for bit.
+
+The constants, named once in `dynlab.py`:
+
+- **`CEILING_RANGE`, −30 to 0 dBFS, default 0 dBFS:** comp1's own. Pro-C 3 has no output Limiter whose range it could follow. Full scale at the top, and as the default, means the Limiter switched on stops only overs. 30 dB down leaves room for a Ceiling far under any delivery spec's peak level, for stems and for headroom kept on purpose.
+- **`LIMITER_RELEASE_MS`, 200 ms, in both modes:** the shortest of the trade-off table's releases whose distortion on a 50 Hz tone stays within 1% (`LIMITER_DISTORTION_LIMIT`) in both modes. Between a low tone's peaks the gain recovers a little and is pulled down again, a ripple that grows as the release shortens: 1.9% at 100 ms, 6.6% at 20 ms. 1% is about where a limiter on a bass note starts to be heard as fuzz rather than as level. The cost is recovery: back from a 6 dB limit to under 1 dB in 358 ms.
+- **`LIMITER_TRUE_PEAK_HEADROOM_DB`, 0.3 dB:** the estimator's worst under-read on the band-limited test signals is 0.22 dB (a 20 kHz tone at 48 kHz), so 0.3 dB covers it with 0.08 dB to spare for the gain's own movement. On the reference set, High Quality's true peaks come out 0.15 to 0.30 dB under the Ceiling.
+
+**The band-limited test signals** are tones at 1, 5, 10, 15, 19 and 20 kHz and noise from three seeds, at full scale, 1024 samples each. The noise is 64 sines evenly spaced in log frequency from 20 Hz to 20 kHz, phases from the seeded generator, scaled to a sample peak. Every tone and the noise fade in over 1 ms (`LIMITER_FADE_MS`), on a raised cosine. An abrupt start has content up to Nyquist, where no interpolator, the reference's included, can say where the true peak lies: the same tones started abruptly, or white noise, read up to about 0.8 dB under. **The 16x reference** is the same design at 16x, 64 host samples long, Kaiser β 10, flat to within 0.001 dB up to 20 kHz at 44.1 kHz. It reads silence before a signal, and stops at the last sample whose interpolation reads nothing past the end, where the audio would go on.
+
+### `limiter`
+
+Prints the Limiter's figures at a Ceiling (`--ceiling dB`, 0 dBFS by default) and at each sample rate (44.1, 48 and 96 kHz by default, `--rates`). It exits non-zero when a reference signal passes the Ceiling or an under-read is over the headroom.
+
+- **Its parts,** per rate, in host samples: the Limiter reserve, the estimator's delay, the lookahead window, the release, and the headroom, with the estimator's worst under-read and the signal it was on.
+- **The reference set's peaks:** each signal's output sample peak and 16x true peak, in dB against the Ceiling, through each mode. Zero Latency promises the sample peak, High Quality the true peak. The signals are the full-scale burst (256 samples of silence, then a 1 kHz sine from its peak at full scale), a 10 kHz and a 19 kHz tone, and the band-limited noise, each pushed 12 dB over the Ceiling (`LIMITER_PUSH_DB`), 2048 samples.
+- **The timing,** per mode: the full-scale burst for 50 ms between a quiet level (alternating samples at −40 dBFS, so each sample's Gain Reduction reads off it), through a Ceiling of −12 dBFS. The Gain Reduction on the burst's first sample in the audio heard, against the most it reaches over the burst: equal, the gain is fully down when the burst arrives. Then the release's 63% and 90%, counted from the first quiet sample heard. High Quality's average over the window rounds the release's start, so it comes out about 0.4 ms longer than Zero Latency's.
+- **The release's trade-off:** each candidate release's recovery from a 6 dB limit and the distortion (THD+N) of a 49.8 Hz tone 6 dB over the Ceiling, in each mode, at 48 kHz. The tone is bin-centred over 16384 samples, and measured over a second length, once the gain has settled.
+
+    python3 tools/dyn-lab/dynlab.py limiter
+    python3 tools/dyn-lab/dynlab.py limiter --ceiling -6 --rates 44100
+    python3 tools/dyn-lab/dynlab.py limiter --ceiling -30 --rates 192000
 
 ## Tests
 

@@ -38,6 +38,7 @@ inline constexpr ParameterRange wet { -inf, 12.0 };         // dB; comp1's own
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own
 inline constexpr ParameterRange lookahead { 0.0, 5.0 };     // ms; ADR 0001's budget for it
 inline constexpr ParameterRange stereoLink { 0.0, 100.0 };  // %
+inline constexpr ParameterRange ceiling { -30.0, 0.0 };     // dBFS; comp1's own, with dyn-lab's reasons (CEILING_RANGE)
 // The Detection EQ's, which dyn-lab doesn't model. Pro-C 3's manual gives its side chain filters' Slopes up to
 // 96 dB/oct ("Side chain section"), and no other range of its side chain EQ, so the rest are comp1's own (ADR 0008).
 inline constexpr ParameterRange detectionFrequency { 10.0, 30000.0 }; // Hz; comp1's own: 20 Hz to 20 kHz with room each side
@@ -166,6 +167,10 @@ struct Settings
 
     // Output Gain, in dB: applied to the whole output after Dry and Wet are summed, before the Limiter.
     double outputGainDb = 0.0;
+    // The Limiter, last, after Output Gain: on or off, and its Ceiling in dBFS, the highest level it lets through,
+    // as the sample peak in Zero Latency and the true peak in High Quality.
+    bool limiter = false;
+    double ceilingDb = 0.0;
 
     // Detection Source: what the detection stage feeds the compressor's detector.
     DetectionSource detectionSource = DetectionSource::Internal;

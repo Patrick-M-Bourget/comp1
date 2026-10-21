@@ -172,9 +172,13 @@ TEST_CASE ("A Processing Mode switch falls to silence and rises again within the
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto [from, to] = GENERATE (table<ProcessingMode, ProcessingMode> ({ { zeroLatency, highQuality }, { highQuality, zeroLatency } }));
-    // Dry Off, the Wet path alone; and Dry and Wet both at 0 dB, so each path plays the input twice over.
-    const auto [dryDb, gain] = GENERATE (table<double, float> ({ { -std::numeric_limits<double>::infinity(), 1.0f }, { 0.0, 2.0f } }));
-    CAPTURE (sampleRate, static_cast<int> (to), dryDb);
+    // Dry Off, the Wet path alone; and Dry and Wet both at 0 dB, so each path plays the input twice over. And the
+    // Limiter on, the Wet path alone, at its Ceiling's top, which the noise never reaches: it changes nothing on either
+    // path.
+    const auto [dryDb, gain, limiter] = GENERATE (table<double, float, bool> ({ { -std::numeric_limits<double>::infinity(), 1.0f, false },
+                                                                                { 0.0, 2.0f, false },
+                                                                                { -std::numeric_limits<double>::infinity(), 1.0f, true } }));
+    CAPTURE (sampleRate, static_cast<int> (to), dryDb, limiter);
     const int fade = static_cast<int> (std::lround (modeFadeMs * sampleRate / 1000.0));
     // Into High Quality, the silence lasts while its delays after the compressor, the reserves' padding, fill with the
     // new path's audio, so the fade-in starts from it: High Quality's latency less the Lookahead budget.
@@ -182,7 +186,7 @@ TEST_CASE ("A Processing Mode switch falls to silence and rises again within the
     // Part-way through a run, once the old path has played long enough to fill its delays.
     const int switchAt = 4003;
     const auto input = test::noise (2, switchAt + 2 * fade + padding + 3000);
-    Settings before { .ratio = 1.0, .processingMode = from }, after { .ratio = 1.0, .processingMode = to };
+    Settings before { .ratio = 1.0, .limiter = limiter, .processingMode = from }, after { .ratio = 1.0, .limiter = limiter, .processingMode = to };
     before.dryDb = after.dryDb = dryDb;
     const auto reference = play (input, sampleRate, { 4096 }, before, after, switchAt);
 
@@ -241,7 +245,8 @@ TEST_CASE ("A non-finite input sample never reaches the output in High Quality, 
             broken[ch][i] = i % 2 == 0 ? std::numeric_limits<float>::quiet_NaN() : std::numeric_limits<float>::infinity();
             silenced[ch][i] = 0.0f;
         }
-    const Settings highQualitySettings { .autoGain = true, .processingMode = highQuality, .lookaheadMs = 3.0 };
+    // The Limiter on, at a Ceiling the noise passes, so it works through the switch too.
+    const Settings highQualitySettings { .autoGain = true, .limiter = true, .ceilingDb = -12.0, .processingMode = highQuality, .lookaheadMs = 3.0 };
     auto laterSettings = highQualitySettings;
     laterSettings.processingMode = later;
     CHECK (play (broken, 48000.0, { 512 }, highQualitySettings, laterSettings, 2500)
@@ -259,8 +264,12 @@ TEST_CASE ("The Engine does not allocate in either Processing Mode, nor across a
     plugkit::test::AllocationGuard guard;
     for (int block = 0; block < 64; ++block)
     {
-        // The mode switching every few blocks, some of the time mid-fade, Lookahead moving, and blocks cutting runs.
+        // The mode switching every few blocks, some of the time mid-fade, Lookahead moving, the Limiter switching and
+        // its Ceiling moving, and blocks cutting runs.
         engine.setSettings ({ .thresholdDb = -30.0,
+                              .outputGainDb = 12.0,
+                              .limiter = block % 5 != 2,
+                              .ceilingDb = -3.0 * (block % 11),
                               .processingMode = (block / 3) % 2 == 0 ? zeroLatency : highQuality,
                               .lookaheadMs = 0.5 * (block % 11) });
         const int count = block % 3 == 0 ? blockSize : 1 + (block * 37) % blockSize;

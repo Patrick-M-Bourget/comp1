@@ -1,9 +1,11 @@
-"""Tests for dyn-lab, at its seams: the gain computer, the step response, Auto Release, Auto Gain, the latency,
-Saturation, its aliasing and the command line.
+"""Tests for dyn-lab, at its seams: the gain computer, the step response, Auto Release, Auto Gain, the latency, the
+Limiter, Saturation, its aliasing and the command line.
 
     python3 tools/dyn-lab/test_dynlab.py
 """
 
+import contextlib
+import io
 import math
 import os
 import subprocess
@@ -249,6 +251,93 @@ class Latency(unittest.TestCase):
                 self.assertTrue(top <= budget < top + 1)
 
 
+class Limiter(unittest.TestCase):
+    def test_the_estimators_delay_and_the_lookahead_window_fill_the_limiter_reserve_exactly(self):
+        # Worked by hand: 16 taps read 8 samples ahead; the reserve is 45 samples at 44.1 kHz and 192 at 192 kHz.
+        self.assertEqual(dynlab.estimator_delay(), 8)
+        self.assertEqual(dynlab.lookahead_window(44100), 37)
+        self.assertEqual(dynlab.lookahead_window(192000), 184)
+        for fs in dynlab.supported_rates():
+            with self.subTest(fs):
+                _, _, reserve = dynlab.high_quality_parts(fs)
+                self.assertEqual(dynlab.estimator_delay() + dynlab.lookahead_window(fs), reserve)
+
+    def test_the_estimator_reads_a_peak_between_samples_and_never_under_the_sample_peak(self):
+        phases = dynlab.interpolator(dynlab.TRUE_PEAK_FACTOR, dynlab.TRUE_PEAK_TAPS, dynlab.TRUE_PEAK_BETA)
+        self.assertEqual(len(phases), dynlab.TRUE_PEAK_FACTOR - 1)
+        for phase in phases:
+            self.assertAlmostEqual(sum(phase), 1.0, places=12)
+        # A sine at a quarter of the rate, faded in, its peaks halfway between samples: they read cos(pi/4), 3 dB under
+        # the peak, 1, which the estimator's middle phase falls on.
+        tone = [dynlab._fade_in(48000, n) * math.sin(math.pi / 2 * n + math.pi / 4) for n in range(512)]
+        self.assertAlmostEqual(max(abs(x) for x in tone), math.cos(math.pi / 4), places=9)
+        self.assertAlmostEqual(dynlab.estimated_true_peak([tone]), 1.0, delta=0.02)  # within its passband ripple
+        self.assertAlmostEqual(dynlab.reference_true_peak([tone]), 1.0, delta=0.001)
+        for x in ([0.5] * 64, [(-1) ** n * 0.5 for n in range(64)]):
+            self.assertGreaterEqual(dynlab.estimated_true_peak([x]), 0.5)
+
+    def test_the_headroom_covers_the_estimators_worst_under_read_at_every_rate(self):
+        for fs in dynlab.SAMPLE_RATES:
+            with self.subTest(fs):
+                self.assertLessEqual(dynlab.under_read(fs).db, dynlab.LIMITER_TRUE_PEAK_HEADROOM_DB)
+
+    def test_zero_latency_holds_the_sample_peak_and_high_quality_the_true_peak_to_the_ceiling(self):
+        for ceiling in (0.0, -6.0, -30.0):
+            for row in dynlab.limiter_peaks(ceiling, 44100):
+                with self.subTest(ceiling=ceiling, signal=row.signal, mode=row.mode):
+                    self.assertLessEqual(row.sample, 0.0)
+                    if row.mode == "high quality":
+                        self.assertLessEqual(row.true, 0.0)
+
+    def test_zero_latency_alone_lets_the_true_peak_over(self):
+        # Why High Quality has its estimator: a 19 kHz tone held to the Ceiling sample by sample peaks over it
+        # between samples.
+        rows = [row for row in dynlab.limiter_peaks(0.0, 44100) if row.signal == "19 kHz tone"]
+        self.assertGreater(next(row.true for row in rows if row.mode == "zero latency"), 1.0)
+
+    def test_the_gain_is_fully_down_when_the_burst_arrives_and_releases_in_the_release_time(self):
+        for fs in dynlab.SAMPLE_RATES:
+            for mode in dynlab.LIMITERS:
+                with self.subTest(fs=fs, mode=mode):
+                    timing = dynlab.limiter_timing(mode, fs)
+                    self.assertEqual(timing.first, timing.most)
+                    self.assertGreaterEqual(timing.most, -dynlab.TIMING_CEILING_DB)
+                    # One pole: 63% in one time constant, 90% in ln 10 of them; High Quality's average over its
+                    # window, about a millisecond, rounds the start.
+                    self.assertAlmostEqual(timing.release_63, dynlab.LIMITER_RELEASE_MS, delta=1.0)
+                    self.assertAlmostEqual(timing.release_90, dynlab.LIMITER_RELEASE_MS * math.log(10), delta=1.0)
+
+    def test_below_the_ceiling_the_signal_passes_bit_for_bit(self):
+        tone = dynlab.limiter_tone(1000, -1.0, 48000)
+        for mode, limit in dynlab.LIMITERS.items():
+            with self.subTest(mode):
+                out, reductions = limit([tone], 0.0, 48000)
+                delay = dynlab.latency_of_limiter(mode, 48000)
+                self.assertEqual(out[0][delay:], tone[:len(tone) - delay])
+                self.assertEqual(set(reductions), {0.0})
+
+    def test_the_release_is_the_shortest_candidate_within_the_distortion_limit_in_both_modes(self):
+        rows = dynlab.release_trade_off()
+        within = [row.release for row in rows
+                  if all(share <= dynlab.LIMITER_DISTORTION_LIMIT for share in row.distortion.values())]
+        self.assertEqual(min(within), dynlab.LIMITER_RELEASE_MS)
+        # The trade-off: a shorter release recovers sooner and distorts more.
+        for shorter, longer in zip(rows, rows[1:]):
+            self.assertLess(shorter.recovery, longer.recovery)
+            for mode in dynlab.LIMITERS:
+                self.assertGreater(shorter.distortion[mode], longer.distortion[mode])
+
+    def test_the_report_fails_when_the_headroom_does_not_cover_the_under_read(self):
+        headroom = dynlab.LIMITER_TRUE_PEAK_HEADROOM_DB
+        try:
+            dynlab.LIMITER_TRUE_PEAK_HEADROOM_DB = 0.0
+            with contextlib.redirect_stdout(io.StringIO()) as printed:
+                self.assertFalse(dynlab.report_limiter(0.0, (48000,)))
+            self.assertIn("over the headroom", printed.getvalue())
+        finally:
+            dynlab.LIMITER_TRUE_PEAK_HEADROOM_DB = headroom
+
+
 class Saturation(unittest.TestCase):
     def test_the_shape_is_the_line_up_to_the_knee_and_saturates_toward_2(self):
         for u in (-1, -0.5, 0, 0.25, 1):
@@ -382,11 +471,12 @@ class CommandLine(unittest.TestCase):
             text = text.replace("−", "-").split()[0]
             return math.inf if text == "∞" else float(text)
 
-        # The compressor's settings, Lookahead, which is Processing Mode's and kept out of Settings, and Drive,
-        # Saturation's.
+        # The compressor's settings, Lookahead, which is Processing Mode's and kept out of Settings, Drive,
+        # Saturation's, and Ceiling, the Limiter's.
         ranges = {**{name: low_high for name, (low_high, _) in dynlab.PARAMETERS.items()},
-                  "lookahead": dynlab.LOOKAHEAD_RANGE, "drive": dynlab.DRIVE_RANGE}
-        defaults = {**vars(dynlab.Settings()), "lookahead": dynlab.LOOKAHEAD_DEFAULT, "drive": dynlab.Saturation().drive}
+                  "lookahead": dynlab.LOOKAHEAD_RANGE, "drive": dynlab.DRIVE_RANGE, "ceiling": dynlab.CEILING_RANGE}
+        defaults = {**vars(dynlab.Settings()), "lookahead": dynlab.LOOKAHEAD_DEFAULT, "drive": dynlab.Saturation().drive,
+                    "ceiling": dynlab.CEILING_DEFAULT}
         with open(os.path.join(LAB, "USAGE.md")) as doc:
             rows = {cells[0]: cells[1:] for cells in
                     ([cell.strip() for cell in line.strip().strip("|").split("|")] for line in doc)
@@ -410,7 +500,8 @@ class CommandLine(unittest.TestCase):
                             (("autogain", "--range", "-1"), ("Range", "0", "60")),
                             (("saturation", "--drive", "25"), ("Drive", "0", "24")),
                             (("aliasing", "--drive", "-1"), ("Drive", "0", "24")),
-                            (("step", "--lookahead", "6"), ("Lookahead", "0", "5"))):
+                            (("step", "--lookahead", "6"), ("Lookahead", "0", "5")),
+                            (("limiter", "--ceiling", "1"), ("Ceiling", "-30", "0"))):
             with self.subTest(args):
                 result = run(*args)
                 self.assertNotEqual(result.returncode, 0)
@@ -450,6 +541,20 @@ class CommandLine(unittest.TestCase):
         result = run("bursts", "--lengths", "0")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("burst", result.stderr)
+
+    def test_limiter_prints_its_parts_and_each_modes_peaks_and_timing_for_every_rate(self):
+        result = run("limiter", "--ceiling", "-6", "--rates", "44100", "96000")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = [line.split() for line in result.stdout.splitlines() if line.split()[:1] in (["44100"], ["96000"])]
+        # Each rate's reserve, estimator delay, window and release in samples, worked by hand.
+        parts = [row[:6] for row in rows]
+        self.assertIn(["44100", "45", "8", "37", "8820", "0.3"], parts)
+        self.assertIn(["96000", "96", "8", "88", "19200", "0.3"], parts)
+        # Per rate and mode, four reference signals' peaks and one timing row.
+        for mode in ("zero", "high"):
+            self.assertEqual(sum(1 for row in rows if mode in row), 2 * 5, mode)
+        self.assertIn("chosen", result.stdout)
+        self.assertNotIn("  over the", result.stdout)
 
     def test_ratio_reads_inf_and_the_infinity_sign(self):
         for spelling in ("inf", "∞"):

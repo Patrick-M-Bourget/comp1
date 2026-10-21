@@ -25,6 +25,8 @@ inline const juce::String saturationPositionId { "saturation_position" };
 inline const juce::String dryId { "dry" };
 inline const juce::String wetId { "wet" };
 inline const juce::String outputGainId { "output_gain" };
+inline const juce::String limiterId { "limiter" };
+inline const juce::String ceilingId { "ceiling" };
 inline const juce::String detectionSourceId { "detection_source" };
 inline const juce::String detectionHighPassOnId { "detection_high_pass_on" };
 inline const juce::String detectionHighPassFrequencyId { "detection_high_pass_frequency" };
@@ -44,8 +46,8 @@ inline const juce::String lookaheadId { "lookahead" };
 inline const juce::String globalBypassId { "global_bypass" };
 
 // Every host parameter, in the order hosts list them: Detection Source, the Detection EQ, Stereo Placement and Stereo
-// Link, then the compressor's, then Saturation's, then Dry and Wet, then Output Gain, as the signal meets them; then
-// the whole plugin's, Processing Mode, Lookahead and Global Bypass.
+// Link, then the compressor's, then Saturation's, then Dry and Wet, then Output Gain and the Limiter's, as the signal
+// meets them; then the whole plugin's, Processing Mode, Lookahead and Global Bypass.
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
 // The host parameters as Settings, each resolved once. Reads from any thread, with no allocation or lock.
@@ -72,6 +74,8 @@ private:
     std::atomic<float>* dry;
     std::atomic<float>* wet;
     std::atomic<float>* outputGain;
+    std::atomic<float>* limiter;
+    std::atomic<float>* ceiling;
     std::atomic<float>* detectionSource;
     std::atomic<float>* highPassOn;
     std::atomic<float>* highPassFrequency;

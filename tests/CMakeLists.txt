@@ -31,6 +31,7 @@ add_executable(comp1_engine_tests
     engine/GlobalBypassTest.cpp
     engine/LatencyTest.cpp
     engine/LevelTapsTest.cpp
+    engine/LimiterTest.cpp
     engine/LookaheadTest.cpp
     engine/NonFiniteInputTest.cpp
     engine/OutputGainTest.cpp
@@ -64,6 +65,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/DryWetParameterTest.cpp
         plugin/GlobalBypassParameterTest.cpp
         plugin/LatencyReportTest.cpp
+        plugin/LimiterParameterTest.cpp
         plugin/PluginShellTest.cpp
         plugin/SaturationParameterTest.cpp
         plugin/SessionTest.cpp
