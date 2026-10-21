@@ -121,6 +121,10 @@ void Engine::process (AudioBlock main, const ConstAudioBlock*)
         for (int ch = 0; ch < channels; ++ch)
             impl->subBlock[static_cast<std::size_t> (ch)] = main.channels[ch] + start;
 
+        // The grid cuts the block into pieces, but Output Gain glides a sample at a time with next(), not a step per
+        // run, so where the pieces fall changes nothing: from the sample a new setting is taken (the start of the
+        // host's block, so the host decides when a change lands), the gain is the same sample for sample however
+        // the audio is cut.
         impl->outputGain.process ({ impl->subBlock.data(), channels, count });
 
         impl->gridPosition += count;
