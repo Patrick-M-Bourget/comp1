@@ -167,3 +167,35 @@ TEST_CASE ("Attack, Release and Hold match dyn-lab's step response within one sa
     CHECK (std::abs ((*release.sixtyThree - release.held) * sampleMs - rate.step.release63) <= sampleMs);
     CHECK (std::abs ((*release.ninety - release.held) * sampleMs - rate.step.release90) <= sampleMs);
 }
+
+TEST_CASE ("FET's loop stays stable at the fastest Attack and Ratio ∞, on a step and on full-scale noise, at every rate", "[sweep]")
+{
+    // A loop that heard its gain a sample late would overshoot here, its Gain Reduction swinging from sample to
+    // sample. Solved within the sample, it rises straight to its steady state and stays there.
+    const double sampleRate = GENERATE (from_range (test::sampleRates()));
+    CAPTURE (sampleRate);
+    const Settings settings { .character = Character::FET, .ratio = parameterRanges::inf, .attackMs = parameterRanges::attack.low, .colour = 0.0 };
+
+    // A step from under the Knee to full scale: the Gain Reduction never falls on its way up, and settles at 18 dB.
+    const auto reduction = gainReductionAfterStep (settings, sampleRate, -40.0, 0.0, 0.01);
+    for (std::size_t i = 0; i < reduction.size(); ++i)
+    {
+        CAPTURE (i);
+        REQUIRE (std::isfinite (reduction[i]));
+        if (i > 0)
+            REQUIRE (reduction[i] >= reduction[i - 1] - 1.0e-5);
+    }
+    CHECK (std::abs (reduction.back() - 18.0) <= 0.01);
+
+    // Full-scale noise: every sample's Gain Reduction is finite and never a gain.
+    auto noise = test::noise (1, static_cast<int> (0.02 * sampleRate));
+    for (auto& sample : noise.front())
+        sample *= 2.0f;
+    const auto output = test::played (settings, sampleRate, noise);
+    for (std::size_t i = 0; i < noise.front().size(); ++i)
+    {
+        CAPTURE (i);
+        REQUIRE (std::isfinite (output.front()[i]));
+        REQUIRE (std::abs (output.front()[i]) <= std::abs (noise.front()[i]));
+    }
+}
