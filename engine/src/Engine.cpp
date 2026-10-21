@@ -19,34 +19,48 @@ namespace comp1
 namespace
 {
 
-// The compressor: the Clean Character's gain computer on every sample of every channel, each channel on its own.
+// The compressor: the Clean Character's gain computer and detector on every sample of every channel, each channel
+// detected and compressed on its own.
 class Compressor
 {
 public:
+    void prepare (double newSampleRate, int numChannels)
+    {
+        sampleRate = newSampleRate;
+        detectors.assign (static_cast<std::size_t> (std::max (numChannels, 0)), {});
+    }
+
     void setSettings (const Settings& settings)
     {
         curve = { .thresholdDb = settings.thresholdDb,
                   .inverseRatio = 1.0 / settings.ratio,
                   .kneeDb = settings.kneeDb,
                   .rangeDb = settings.rangeDb };
+        timing = clean::timing (settings.attackMs, settings.releaseMs, settings.holdMs, sampleRate);
     }
 
-    void process (AudioBlock block) const
+    void process (AudioBlock block)
     {
         for (int ch = 0; ch < block.numChannels; ++ch)
+        {
+            auto& detector = detectors[static_cast<std::size_t> (ch)];
             for (int i = 0; i < block.numSamples; ++i)
             {
                 float& sample = block.channels[ch][i];
                 // The Detection Level: the main input's own peak level, in dB where a full-scale sine reads 0.
                 const double levelDb = plugkit::gainToDecibels (std::abs (static_cast<double> (sample)));
-                const double reduction = clean::gainReduction (levelDb, curve);
+                const double reduction = detector.process (clean::gainReduction (levelDb, curve), timing);
                 if (reduction > 0.0)
                     sample = static_cast<float> (plugkit::decibelsToGain (-reduction) * sample);
             }
+        }
     }
 
 private:
+    double sampleRate = 44100.0;
     clean::Curve curve;
+    clean::Timing timing;
+    std::vector<clean::Detector> detectors; // per channel
 };
 
 // Output Gain, applied to every channel. Its gain glides to each new target with plugkit's Smoother, so a change,
@@ -133,6 +147,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->numChannels = numChannels;
     impl->gridPosition = 0;
     impl->subBlock.assign (static_cast<std::size_t> (std::max (numChannels, 0)), nullptr);
+    impl->compressor.prepare (sampleRate, numChannels);
     impl->outputGain.prepare (sampleRate);
     impl->snapToSettings = true;
 }
