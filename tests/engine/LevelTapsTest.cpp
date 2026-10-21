@@ -628,3 +628,103 @@ TEST_CASE ("Under the Ceiling once released, and off once settled, the Limiter's
         for (const auto& record : limitedRecords (off, limiterSine (levelDb)))
             REQUIRE (record.limiterGainReductionDb == 0.0);
 }
+
+namespace
+{
+
+// The compressor, the Gate and the Limiter all at work on bursts in mode: the Gate opening on each burst and closing
+// between them, and the Limiter's Ceiling under the bursts' peaks.
+Settings everyStage (ProcessingMode mode)
+{
+    return { .gate = { .on = true, .thresholdDb = -30.0, .releaseMs = 20.0, .holdMs = 0.0 },
+             .thresholdDb = -30.0,
+             .autoGain = true,
+             .limiter = true,
+             .ceilingDb = -12.0,
+             .processingMode = mode };
+}
+
+// Noise (test::noise, its peaks near -6 dB) in bursts of 50 ms, 60 dB quieter for 50 ms between them.
+test::Channels bursts (int numChannels, int numSamples, std::uint32_t seed)
+{
+    auto audio = test::noise (numChannels, numSamples, seed);
+    for (auto& channel : audio)
+        for (std::size_t i = 0; i < channel.size(); ++i)
+            if ((i / 2400) % 2 == 1)
+                channel[i] *= 0.001f;
+    return audio;
+}
+
+} // namespace
+
+TEST_CASE ("The Gate's and the Limiter's Gain Reductions are the same, record for record, however the host cuts the audio into blocks", "[sweep]")
+{
+    const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
+    const int numChannels = GENERATE (1, 2);
+    CAPTURE (mode, numChannels);
+    const auto input = bursts (numChannels, 48000, 3);
+    const auto recordsCutBy = [&] (const std::vector<int>& blockSizes) {
+        auto audio = input;
+        Engine engine;
+        engine.prepare (48000.0, 4096, numChannels);
+        engine.setSettings (everyStage (mode));
+        return playAndRead (engine, audio, blockSizes);
+    };
+    const auto reference = recordsCutBy ({ 512 });
+    REQUIRE (reference.size() == 3000);
+    const auto most = [&] (double LevelRecord::* field) {
+        double m = 0.0;
+        for (const auto& record : reference)
+            m = std::max (m, record.*field);
+        return m;
+    };
+    CHECK (most (&LevelRecord::gainReductionDb) > 1.0);
+    CHECK (most (&LevelRecord::gateGainReductionDb) > 1.0);
+    CHECK (most (&LevelRecord::limiterGainReductionDb) > 1.0);
+    for (const auto& cut : test::blockCuts())
+    {
+        const auto records = recordsCutBy (cut);
+        REQUIRE (records.size() == reference.size());
+        for (std::size_t r = 0; r < records.size(); ++r)
+        {
+            CAPTURE (cut, r);
+            REQUIRE (records[r].inputDb == reference[r].inputDb);
+            REQUIRE (records[r].outputDb == reference[r].outputDb);
+            REQUIRE (records[r].gainReductionDb == reference[r].gainReductionDb);
+            REQUIRE (records[r].detectionLevelDb == reference[r].detectionLevelDb);
+            REQUIRE (records[r].gateGainReductionDb == reference[r].gateGainReductionDb);
+            REQUIRE (records[r].limiterGainReductionDb == reference[r].limiterGainReductionDb);
+        }
+    }
+}
+
+TEST_CASE ("Under Global Bypass and Detection Audition the Gate and the Limiter report the Gain Reduction they apply underneath")
+{
+    const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
+    CAPTURE (mode);
+    const auto recordsWith = [&] (Settings settings) {
+        auto audio = bursts (2, 24000, 5);
+        Engine engine;
+        engine.prepare (48000.0, 512, 2);
+        engine.setSettings (settings);
+        return playAndRead (engine, audio, { 512 });
+    };
+    const auto plain = recordsWith (everyStage (mode));
+    auto bypassed = everyStage (mode);
+    bypassed.globalBypass = true;
+    auto auditioned = everyStage (mode);
+    auditioned.detectionAudition = true;
+    for (const auto& settings : { bypassed, auditioned })
+    {
+        const auto records = recordsWith (settings);
+        REQUIRE (records.size() == plain.size());
+        bool limited = false;
+        for (std::size_t r = 0; r < records.size(); ++r)
+        {
+            CAPTURE (settings.globalBypass, r);
+            REQUIRE (records[r].gateGainReductionDb == plain[r].gateGainReductionDb);
+            limited = limited || records[r].limiterGainReductionDb > 1.0;
+        }
+        CHECK (limited);
+    }
+}
