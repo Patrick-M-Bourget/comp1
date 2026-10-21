@@ -36,6 +36,19 @@ inline double gainReduction (double levelDb, const Curve& curve)
     return reduction < curve.rangeDb ? reduction : curve.rangeDb;
 }
 
+// The Auto Gain estimate in dB: the negated average Gain Reduction of the Transfer Curve over dyn-lab's reference
+// level distribution, Detection Levels from -40 to 0 dB in 2 dB steps, each equally likely (REFERENCE_LEVELS; its
+// USAGE.md gives the reasons). Worked out from the settings alone, never measured from the audio.
+inline double autoGainDb (const Curve& curve)
+{
+    constexpr int lowestDb = -40, highestDb = 0, stepDb = 2;
+    double sum = 0.0;
+    int count = 0;
+    for (int levelDb = lowestDb; levelDb <= highestDb; levelDb += stepDb, ++count)
+        sum += gainReduction (levelDb, curve);
+    return sum / count;
+}
+
 // The settings the detector reads, at the sample rate.
 struct Timing
 {

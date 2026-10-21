@@ -19,6 +19,12 @@ namespace comp1
 namespace
 {
 
+// The Clean Character's gain computer settings, from Settings.
+clean::Curve curveOf (const Settings& settings)
+{
+    return { .thresholdDb = settings.thresholdDb, .inverseRatio = 1.0 / settings.ratio, .kneeDb = settings.kneeDb, .rangeDb = settings.rangeDb };
+}
+
 // The compressor: the Clean Character's gain computer and detector on every sample of every channel, each channel
 // detected and compressed on its own.
 class Compressor
@@ -32,10 +38,7 @@ public:
 
     void setSettings (const Settings& settings)
     {
-        curve = { .thresholdDb = settings.thresholdDb,
-                  .inverseRatio = 1.0 / settings.ratio,
-                  .kneeDb = settings.kneeDb,
-                  .rangeDb = settings.rangeDb };
+        curve = curveOf (settings);
         timing = clean::timing (settings.attackMs, settings.releaseMs, settings.holdMs, sampleRate);
     }
 
@@ -63,9 +66,9 @@ private:
     std::vector<clean::Detector> detectors; // per channel
 };
 
-// Output Gain, applied to every channel. Its gain glides to each new target with plugkit's Smoother, so a change,
-// Host Automation included, is click-free.
-class OutputGain
+// A gain applied to every channel, in dB: Auto Gain, and Output Gain. It glides to each new target with plugkit's
+// Smoother, so a change, Host Automation included, is click-free.
+class GlidingGain
 {
 public:
     void prepare (double sampleRate)
@@ -124,7 +127,7 @@ struct Engine::Impl
     std::vector<float*> subBlock; // per channel
 
     Compressor compressor;
-    OutputGain outputGain;
+    GlidingGain autoGain, outputGain;
 
     void applySettings()
     {
@@ -134,6 +137,7 @@ struct Engine::Impl
         if (latest != nullptr)
             settings = *latest;
         compressor.setSettings (settings);
+        autoGain.setTargetDb (settings.autoGain ? clean::autoGainDb (curveOf (settings)) : 0.0, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
         snapToSettings = false;
     }
@@ -148,6 +152,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->gridPosition = 0;
     impl->subBlock.assign (static_cast<std::size_t> (std::max (numChannels, 0)), nullptr);
     impl->compressor.prepare (sampleRate, numChannels);
+    impl->autoGain.prepare (sampleRate);
     impl->outputGain.prepare (sampleRate);
     impl->snapToSettings = true;
 }
@@ -170,11 +175,13 @@ void Engine::process (AudioBlock main, const ConstAudioBlock*)
         for (int ch = 0; ch < channels; ++ch)
             impl->subBlock[static_cast<std::size_t> (ch)] = main.channels[ch] + start;
 
+        // The grid cuts the block into pieces, but Auto Gain and Output Gain glide a sample at a time with next(), not
+        // a step per run, so where the pieces fall changes nothing: from the sample a new setting is taken (the start
+        // of the host's block, so the host decides when a change lands), each gain is the same sample for sample
+        // however the audio is cut.
+        // The Wet path: the compressor, then Auto Gain. Then Output Gain.
         impl->compressor.process ({ impl->subBlock.data(), channels, count });
-        // The grid cuts the block into pieces, but Output Gain glides a sample at a time with next(), not a step per
-        // run, so where the pieces fall changes nothing: from the sample a new setting is taken (the start of the
-        // host's block, so the host decides when a change lands), the gain is the same sample for sample however
-        // the audio is cut.
+        impl->autoGain.process ({ impl->subBlock.data(), channels, count });
         impl->outputGain.process ({ impl->subBlock.data(), channels, count });
 
         impl->gridPosition += count;
