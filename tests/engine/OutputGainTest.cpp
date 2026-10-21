@@ -28,7 +28,7 @@ double largestGlideStep (double jump, double sampleRate)
 const std::vector<int> wholeCut { 4096 };
 } // namespace
 
-TEST_CASE ("At 0 dB Output Gain the output is the input, bit for bit, at every sample rate and block size")
+TEST_CASE ("At 0 dB Output Gain the output is the input, bit for bit, at every sample rate and block size", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const int numChannels = GENERATE (1, 2);

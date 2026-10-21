@@ -101,7 +101,7 @@ test::Channels loudNoise (int numSamples)
 
 } // namespace
 
-TEST_CASE ("With Saturation off, the output is the same at any Drive or Saturation Position, bit for bit")
+TEST_CASE ("With Saturation off, the output is the same at any Drive or Saturation Position, bit for bit", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE (from_range (test::blockCuts()));
@@ -116,7 +116,7 @@ TEST_CASE ("With Saturation off, the output is the same at any Drive or Saturati
         }
 }
 
-TEST_CASE ("At Drive 0 dB, Saturation passes anything at or below full scale through bit for bit, with no delay")
+TEST_CASE ("At Drive 0 dB, Saturation passes anything at or below full scale through bit for bit, with no delay", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE (from_range (test::blockCuts()));
