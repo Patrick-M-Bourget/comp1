@@ -29,6 +29,7 @@ inline constexpr ParameterRange range { 0.0, 60.0 };        // dB; comp1's own: 
 inline constexpr ParameterRange drive { 0.0, 24.0 };        // dB; comp1's own
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own
 inline constexpr ParameterRange lookahead { 0.0, 5.0 };     // ms; ADR 0001's budget for it
+inline constexpr ParameterRange stereoLink { 0.0, 100.0 };  // %
 } // namespace parameterRanges
 
 // Where the Saturation stage sits on the Wet path. Hosts store it as a choice by index, so the order is frozen
@@ -53,6 +54,16 @@ enum class ProcessingMode
 {
     ZeroLatency,
     HighQuality,
+};
+
+// Which part of the stereo signal the compressor compresses: both channels, or the Mid or the Side alone. comp1's own
+// list, stored in sessions in this order, which never changes once released; the Engine maps it onto plugkit's
+// StereoPlacement where it routes.
+enum class StereoPlacement
+{
+    Stereo,
+    Mid,
+    Side,
 };
 
 // Everything the Engine plays, in one value: the Plugin Shell builds it from the host parameters and hands it over
@@ -83,6 +94,12 @@ struct Settings
 
     // Detection Source: what the detection stage feeds the compressor's detector.
     DetectionSource detectionSource = DetectionSource::Internal;
+
+    // Where on a stereo track the compressor works: the part Stereo Placement picks, and with Stereo, Stereo Link in %
+    // (0 to 100), how much the two channels share one Gain Reduction, from each channel's own at 0% to the larger of
+    // the two at 100% (comp1's own default, ADR 0008). A mono track is compressed as Stereo, whatever they hold.
+    StereoPlacement stereoPlacement = StereoPlacement::Stereo;
+    double stereoLink = 100.0;
 
     // Detection Audition: not a host parameter, and never saved. Held while the editor holds it, it plays the
     // detection signal in place of the Dry and Wet sum, before Output Gain.

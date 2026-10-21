@@ -11,6 +11,7 @@
 #include <limits>
 #include <numbers>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace comp1;
@@ -34,52 +35,65 @@ struct Host
 using Envelope = std::function<double (double)>;
 
 // Plays a sine through the Engine as a host would, letting change(seconds, settings) edit the settings before each
-// block, and returns the output.
-std::vector<float> playTone (Host host,
-                             const std::function<void (double, Settings&)>& change,
-                             const Envelope& amplitude = [] (double) { return toneAmplitude; },
-                             double seconds = toneSeconds)
+// block, and returns the output. On two channels, the right is the left at half its amplitude, 2 radians ahead, so
+// the channels' levels differ and the Mid and the Side each carry the tone.
+test::Channels playTone (Host host,
+                         const std::function<void (double, Settings&)>& change,
+                         const Envelope& amplitude = [] (double) { return toneAmplitude; },
+                         double seconds = toneSeconds,
+                         int numChannels = 1)
 {
     const auto [sampleRate, blockSize] = host;
     const int numBlocks = static_cast<int> (seconds * sampleRate / blockSize);
 
     Engine engine;
-    engine.prepare (sampleRate, blockSize, 1);
+    engine.prepare (sampleRate, blockSize, numChannels);
 
     Settings settings;
-    std::vector<float> output;
-    std::vector<float> block (static_cast<std::size_t> (blockSize));
-    float* channels[] = { block.data() };
+    test::Channels output (static_cast<std::size_t> (numChannels));
+    test::Channels block (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (blockSize)));
+    std::vector<float*> channels;
+    for (auto& channel : block)
+        channels.push_back (channel.data());
     int n = 0;
     for (int b = 0; b < numBlocks; ++b)
     {
         change (static_cast<double> (n) / sampleRate, settings);
         engine.setSettings (settings);
-        for (auto& s : block)
+        for (std::size_t i = 0; i < static_cast<std::size_t> (blockSize); ++i, ++n)
         {
             const double time = static_cast<double> (n) / sampleRate;
-            s = static_cast<float> (amplitude (time) * std::sin (2.0 * std::numbers::pi * toneFrequency * n++ / sampleRate));
+            const double phase = 2.0 * std::numbers::pi * toneFrequency * n / sampleRate;
+            for (std::size_t ch = 0; ch < block.size(); ++ch)
+                block[ch][i] = static_cast<float> (amplitude (time) * (ch == 0 ? std::sin (phase) : 0.5 * std::sin (phase + 2.0)));
         }
-        engine.process ({ channels, 1, blockSize });
-        output.insert (output.end(), block.begin(), block.end());
+        engine.process ({ channels.data(), numChannels, blockSize });
+        for (std::size_t ch = 0; ch < block.size(); ++ch)
+            output[ch].insert (output[ch].end(), block[ch].begin(), block[ch].end());
     }
     return output;
 }
 
 // How much sharper the sharpest corner of the output is, from the onset on, than a pure sine of toneFrequency at
 // the output's peak level allows: a sine A sin(wn) has a second difference of at most A w^2. Clicks show up far
-// above 1. The onset is skipped: the tone itself starts abruptly, and the compressor's first Attack moves with it.
-double discontinuity (const std::vector<float>& output, double sampleRate)
+// above 1. The onset is skipped: the tone itself starts abruptly, and the compressor's first Attack moves with it. On
+// two channels, the worse of the two, each against its own peak.
+double discontinuity (const test::Channels& output, double sampleRate)
 {
-    double peak = 0.0, sharpest = 0.0;
-    const auto from = static_cast<std::size_t> (onsetSeconds * sampleRate);
-    for (auto i = std::max (from, std::size_t { 2 }); i < output.size(); ++i)
+    double worst = 0.0;
+    for (const auto& channel : output)
     {
-        peak = std::max (peak, static_cast<double> (std::abs (output[i])));
-        sharpest = std::max (sharpest, std::abs (static_cast<double> (output[i]) - 2.0 * output[i - 1] + output[i - 2]));
+        double peak = 0.0, sharpest = 0.0;
+        const auto from = static_cast<std::size_t> (onsetSeconds * sampleRate);
+        for (auto i = std::max (from, std::size_t { 2 }); i < channel.size(); ++i)
+        {
+            peak = std::max (peak, static_cast<double> (std::abs (channel[i])));
+            sharpest = std::max (sharpest, std::abs (static_cast<double> (channel[i]) - 2.0 * channel[i - 1] + channel[i - 2]));
+        }
+        const double w = 2.0 * std::numbers::pi * toneFrequency / sampleRate;
+        worst = std::max (worst, sharpest / (peak * w * w));
     }
-    const double w = 2.0 * std::numbers::pi * toneFrequency / sampleRate;
-    return sharpest / (peak * w * w);
+    return worst;
 }
 
 constexpr double threshold = 2.0;
@@ -104,6 +118,7 @@ struct Jump
     // When it has any, the jump is measured against the steady tone with each of these settings, rather than against
     // a pure sine: Saturation's own harmonics sharpen the tone's corners past a sine's.
     std::vector<std::function<void (Settings&)>> steady = {};
+    int numChannels = 1; // the track it is heard on
 };
 
 // Saturation on at Drive 24 dB, which pushes the tone (-12 dB) 12 dB into the shape.
@@ -111,6 +126,24 @@ void saturating (Settings& s)
 {
     s.saturation = true;
     s.driveDb = 24.0;
+}
+
+// Stereo Link and Stereo Placement, which only a stereo track hears, with Threshold low enough that the Mid and the
+// Side are compressed too.
+Jump onStereo (std::string setting, std::function<void (Settings&, bool)> set)
+{
+    return { std::move (setting),
+             [set] (Settings& s, bool b) {
+                 s.thresholdDb = -30.0;
+                 set (s, b);
+             },
+             {},
+             2 };
+}
+
+Jump placementJump (StereoPlacement a, StereoPlacement b, std::string setting)
+{
+    return onStereo (std::move (setting), [a, b] (Settings& s, bool toB) { s.stereoPlacement = toB ? b : a; });
 }
 
 const std::vector<Jump>& jumps()
@@ -153,6 +186,10 @@ const std::vector<Jump>& jumps()
              s.processingMode = ProcessingMode::HighQuality; // Zero Latency doesn't read it
              s.lookaheadMs = b ? 5.0 : 0.0;
          } },
+        onStereo ("Stereo Link", [] (Settings& s, bool b) { s.stereoLink = b ? 100.0 : 0.0; }),
+        placementJump (StereoPlacement::Stereo, StereoPlacement::Mid, "Stereo Placement, Stereo and Mid"),
+        placementJump (StereoPlacement::Mid, StereoPlacement::Side, "Stereo Placement, Mid and Side"),
+        placementJump (StereoPlacement::Side, StereoPlacement::Stereo, "Stereo Placement, Side and Stereo"),
     };
     return all;
 }
@@ -164,10 +201,13 @@ TEST_CASE ("Jumps in each compressor setting do not click")
     const auto& jump = GENERATE (from_range (jumps()));
     const auto host = anyHost();
     CAPTURE (jump.setting, host.sampleRate, host.blockSize);
-    const auto output = playTone (host, [&jump] (double time, Settings& s) { jump.set (s, alternating (time)); });
+    const auto play = [&host, &jump] (const std::function<void (double, Settings&)>& change) {
+        return playTone (host, change, [] (double) { return toneAmplitude; }, toneSeconds, jump.numChannels);
+    };
+    const auto output = play ([&jump] (double time, Settings& s) { jump.set (s, alternating (time)); });
     double steady = 1.0;
     for (const auto& settings : jump.steady)
-        steady = std::max (steady, discontinuity (playTone (host, [&settings] (double, Settings& s) { settings (s); }), host.sampleRate));
+        steady = std::max (steady, discontinuity (play ([&settings] (double, Settings& s) { settings (s); }), host.sampleRate));
     CAPTURE (steady);
     CHECK (discontinuity (output, host.sampleRate) < threshold * steady);
 }

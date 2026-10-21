@@ -60,16 +60,25 @@ inline Channels delayed (const Channels& audio, int samples)
     return out;
 }
 
-// A steady Detection Level: a square wave whose peak reads levelDb, the same magnitude every sample, so the peak
-// detector reads levelDb throughout.
-inline Channels steadyLevel (int numChannels, int numSamples, double levelDb)
+// A steady Detection Level on each channel: channel ch a square wave whose peak reads levelsDb[ch], the same magnitude
+// every sample, so the peak detector reads that level throughout.
+inline Channels steadyLevels (const std::vector<double>& levelsDb, int numSamples)
 {
-    const auto magnitude = static_cast<float> (std::pow (10.0, levelDb / 20.0));
-    Channels channels (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (numSamples)));
-    for (auto& channel : channels)
+    Channels channels;
+    for (const double levelDb : levelsDb)
+    {
+        const auto magnitude = static_cast<float> (std::pow (10.0, levelDb / 20.0));
+        auto& channel = channels.emplace_back (static_cast<std::size_t> (numSamples));
         for (std::size_t i = 0; i < channel.size(); ++i)
             channel[i] = i % 2 == 0 ? magnitude : -magnitude;
+    }
     return channels;
+}
+
+// The same steady Detection Level, levelDb, on every channel.
+inline Channels steadyLevel (int numChannels, int numSamples, double levelDb)
+{
+    return steadyLevels (std::vector<double> (static_cast<std::size_t> (numChannels), levelDb), numSamples);
 }
 
 // A steady level that doesn't alternate: the same sample value, levelDb, every sample. Saturation's ADAA averages the
@@ -145,6 +154,29 @@ inline double steadyOutputDb (const Settings& settings,
         if (channel.back() != output.front().back())
             return std::nan ("");
     return levelDb + 20.0 * std::log10 (gain);
+}
+
+// Each channel's output level in dB after seconds of steady levels, levelsDb[ch] on channel ch, through an Engine with
+// settings: its input level plus the gain its last sample got.
+inline std::vector<double> steadyOutputsDb (const Settings& settings, const std::vector<double>& levelsDb, double sampleRate, double seconds = 0.5)
+{
+    const auto input = steadyLevels (levelsDb, static_cast<int> (seconds * sampleRate));
+    auto output = input;
+    Engine engine;
+    engine.prepare (sampleRate, 512, static_cast<int> (input.size()));
+    engine.setSettings (settings);
+    processInBlocks (engine, output, { 512 });
+    std::vector<double> outputDb;
+    for (std::size_t ch = 0; ch < input.size(); ++ch)
+        outputDb.push_back (levelsDb[ch] + 20.0 * std::log10 (static_cast<double> (output[ch].back()) / static_cast<double> (input[ch].back())));
+    return outputDb;
+}
+
+// Every Stereo Placement comp1 offers.
+inline const std::vector<StereoPlacement>& stereoPlacements()
+{
+    static const std::vector<StereoPlacement> all { StereoPlacement::Stereo, StereoPlacement::Mid, StereoPlacement::Side };
+    return all;
 }
 
 // Every sample rate comp1 supports: plugkit.conf's SAMPLE_RATES, which pluginval runs at, as tests/CMakeLists.txt

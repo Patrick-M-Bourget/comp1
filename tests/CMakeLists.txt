@@ -36,13 +36,16 @@ add_executable(comp1_engine_tests
     engine/SaturationTest.cpp
     engine/SettingsHandoffTest.cpp
     engine/StepResponseTest.cpp
+    engine/StereoLinkTest.cpp
+    engine/StereoPlacementTest.cpp
     engine/SubnormalsTest.cpp
     engine/TransferCurveTest.cpp
 )
-# The detection stage is Engine-private (engine/src), and its contract is tested directly.
+# The detection stage is Engine-private (engine/src), and its contract is tested directly, with the plugkit pieces it
+# includes.
 target_include_directories(comp1_engine_tests PRIVATE ${PROJECT_SOURCE_DIR}/engine/src)
 # plugkit::test_support's AllocationGuard replaces operator new and delete in this executable.
-target_link_libraries(comp1_engine_tests PRIVATE comp1::engine plugkit::test_support Catch2::Catch2WithMain)
+target_link_libraries(comp1_engine_tests PRIVATE comp1::engine plugkit::dsp plugkit::test_support Catch2::Catch2WithMain)
 catch_discover_tests(comp1_engine_tests ADD_TAGS_AS_LABELS)
 
 # The Engine is plain C++: no source of it includes JUCE, and its target links nothing of JUCE's.
@@ -59,6 +62,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/PluginShellTest.cpp
         plugin/SaturationParameterTest.cpp
         plugin/StateTest.cpp
+        plugin/StereoParametersTest.cpp
     )
     # tests/engine for Measure.h, the test helpers both targets share.
     target_include_directories(comp1_plugin_tests PRIVATE

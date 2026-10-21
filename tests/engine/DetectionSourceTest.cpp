@@ -51,10 +51,7 @@ std::vector<double> gainsDb (const Settings& settings, double sampleRate, int ma
 // A steady Sidechain, its channels at the levels given in dB.
 test::Channels steadySidechain (const std::vector<double>& levelsDb, double sampleRate, double seconds = 0.5)
 {
-    test::Channels channels;
-    for (const double db : levelsDb)
-        channels.push_back (test::steadyLevel (1, static_cast<int> (seconds * sampleRate), db).front());
-    return channels;
+    return test::steadyLevels (levelsDb, static_cast<int> (seconds * sampleRate));
 }
 
 } // namespace
@@ -65,7 +62,10 @@ TEST_CASE ("With External and a stereo Sidechain, each main channel is compresse
     CAPTURE (sampleRate);
     // Full scale on the left, -6 dB on the right: the two take different Gain Reductions.
     const auto sidechainSamples = steadySidechain ({ 0.0, -6.0 }, sampleRate);
-    const auto gains = gainsDb (external(), sampleRate, 2, &sidechainSamples);
+    // Unlinked, so each channel takes its own.
+    auto settings = external();
+    settings.stereoLink = 0.0;
+    const auto gains = gainsDb (settings, sampleRate, 2, &sidechainSamples);
     CHECK (gains[0] == Catch::Approx (-18.0).margin (0.1));
     CHECK (gains[1] == Catch::Approx (-12.0).margin (0.1));
 }

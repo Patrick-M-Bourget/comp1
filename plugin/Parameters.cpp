@@ -1,5 +1,6 @@
 #include "Parameters.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace comp1::parameters
@@ -98,7 +99,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { detectionSourceId, 1 },
                                                               "Detection Source",
                                                               juce::StringArray { "Internal", "External" },
-                                                              static_cast<int> (defaults.detectionSource)));
+                                                              static_cast<int> (defaults.detectionSource)),
+                // Its choices are StereoPlacement's, in its order, which sessions save by index: comp1 offers Stereo, Mid
+                // and Side.
+                std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { stereoPlacementId, 1 },
+                                                              "Stereo Placement",
+                                                              juce::StringArray { "Stereo", "Mid", "Side" },
+                                                              static_cast<int> (defaults.stereoPlacement)),
+                floatParameter (stereoLinkId, "Stereo Link", linearRange (parameterRanges::stereoLink), defaults.stereoLink, withText (1, "%")));
     layout.add (floatParameter (thresholdId, "Threshold", linearRange (parameterRanges::threshold), defaults.thresholdDb, withText (2, "dB")),
                 floatParameter (ratioId, "Ratio", ratioRange(), defaults.ratio, ratioText()),
                 floatParameter (kneeId, "Knee", linearRange (parameterRanges::knee), defaults.kneeDb, withText (2, "dB")),
@@ -146,6 +154,8 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       saturationPosition (parameters.getRawParameterValue (saturationPositionId)),
       outputGain (parameters.getRawParameterValue (outputGainId)),
       detectionSource (parameters.getRawParameterValue (detectionSourceId)),
+      stereoPlacement (parameters.getRawParameterValue (stereoPlacementId)),
+      stereoLink (parameters.getRawParameterValue (stereoLinkId)),
       processingMode (parameters.getRawParameterValue (processingModeId)),
       lookahead (parameters.getRawParameterValue (lookaheadId))
 {
@@ -169,6 +179,8 @@ Settings SettingsReader::read() const
                                                                                                : SaturationPosition::After,
              .outputGainDb = plain (outputGain),
              .detectionSource = detectionSource->load (std::memory_order_relaxed) >= 0.5f ? DetectionSource::External : DetectionSource::Internal,
+             .stereoPlacement = static_cast<StereoPlacement> (std::clamp (static_cast<int> (std::lround (stereoPlacement->load (std::memory_order_relaxed))), 0, 2)),
+             .stereoLink = plain (stereoLink),
              .processingMode = processingMode->load (std::memory_order_relaxed) >= 0.5f ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency,
              .lookaheadMs = plain (lookahead) };
 }

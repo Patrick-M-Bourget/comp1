@@ -49,6 +49,11 @@ public:
     // Restoring a state lets go of Detection Audition.
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    // Whether the editor offers Stereo Placement and Stereo Link: only on a stereo track. On a mono one both keep
+    // their stored values and change nothing, the mono channel compressed as Stereo.
+    bool isStereoPlacementAvailable() const { return getMainBusNumOutputChannels() == 2; }
+    bool isStereoLinkAvailable() const { return getMainBusNumOutputChannels() == 2; }
+
     // Detection Audition, while the editor holds it: not a host parameter, and never saved. Any thread.
     void setDetectionAudition (bool held) { heldDetectionAudition.store (held, std::memory_order_relaxed); }
     bool detectionAudition() const { return heldDetectionAudition.load (std::memory_order_relaxed); }
