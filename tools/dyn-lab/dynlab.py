@@ -1431,14 +1431,15 @@ def report_oversampling(sample_rates):
 CEILING_RANGE = (-30, 0)
 CEILING_DEFAULT = 0.0
 
-# The true-peak estimator, High Quality's: a 4x interpolator, a windowed-sinc polyphase FIR, TRUE_PEAK_TAPS host
+# The true-peak estimator, High Quality's: an 8x interpolator, a windowed-sinc polyphase FIR, TRUE_PEAK_TAPS host
 # samples long, Kaiser-windowed with TRUE_PEAK_BETA. Its cutoff is the host's Nyquist, so its phase 0 is the host
 # sample itself and the estimate never reads under the sample peak; each other phase is normalised to unity gain at
 # DC. It reads half its length ahead of the sample it estimates, so it delays by TRUE_PEAK_TAPS / 2 host samples at
-# every rate. 16 taps are the fewest whose worst under-read on the band-limited test signals stays near 0.2 dB
-# (`limiter` prints it); 24 halve that, at 4 more samples of delay taken from the lookahead window.
-TRUE_PEAK_FACTOR = 4
-TRUE_PEAK_TAPS = 16
+# every rate, taken from the lookahead window, so the Limiter reserve and the latency stay as they are. Chosen from
+# `limiter`'s full-band table (USAGE.md gives the reasons): the fewest phases, then the fewest taps, that keep white
+# noise's and full-band noise's true peaks FULL_BAND_MARGIN_DB under the Ceiling at LIMITER_TRUE_PEAK_HEADROOM_DB.
+TRUE_PEAK_FACTOR = 8
+TRUE_PEAK_TAPS = 48
 TRUE_PEAK_BETA = 6.0
 # The reference the estimator is measured against, and the Limiter's output: 16x, 64 host samples long, Kaiser
 # β 10, flat to within 0.001 dB up to 20 kHz at 44.1 kHz.
@@ -1675,6 +1676,51 @@ def under_read(fs):
         if worst is None or reading > worst.db:
             worst = UnderRead(fs, reading, name)
     return worst
+
+
+# --- Limiter: full-band signals ------------------------------------------------------------------------
+
+# White noise and differenced white noise (most of its power near Nyquist), from each seed, at full scale, this many
+# samples long, each pushed each of FULL_BAND_PUSHES_DB over the Ceiling: unlike the band-limited test signals, they
+# have content right up to Nyquist, where the estimator under-reads most. The candidates are the estimator designs,
+# (factor, taps), the table compares, at LIMITER_TRUE_PEAK_HEADROOM_DB. The chosen design keeps every true peak at
+# least FULL_BAND_MARGIN_DB under the Ceiling, a margin for seeds and material the table doesn't try.
+FULL_BAND_SEEDS = (1, 2, 3, 7)
+FULL_BAND_SAMPLES = 2048
+FULL_BAND_PUSHES_DB = (0, 12, 36)
+FULL_BAND_CANDIDATES = ((4, 16), (4, 48), (8, 32), (8, 40), (8, 48), (16, 48))
+FULL_BAND_MARGIN_DB = 0.1
+
+
+def full_band_signals(seed, length=FULL_BAND_SAMPLES):
+    """White noise from seed, and the same differenced and halved, as (name, one channel) pairs, each within full
+    scale."""
+    white = _white(seed)
+    noise = [next(white) for _ in range(length + 1)]
+    return [(f"white noise, seed {seed}", noise[:length]),
+            (f"differenced noise, seed {seed}", [(noise[n + 1] - noise[n]) / 2 for n in range(length)])]
+
+
+def full_band_over(fs, factor=None, taps=None, seeds=FULL_BAND_SEEDS, pushes=FULL_BAND_PUSHES_DB):
+    """High Quality's Limiter's worst true peak at fs on the full-band signals, in dB against the Ceiling, and the
+    signal and push it was on, with the estimator's factor and taps (TRUE_PEAK_FACTOR and TRUE_PEAK_TAPS by
+    default)."""
+    global TRUE_PEAK_FACTOR, TRUE_PEAK_TAPS
+    chosen = TRUE_PEAK_FACTOR, TRUE_PEAK_TAPS
+    TRUE_PEAK_FACTOR, TRUE_PEAK_TAPS = factor or chosen[0], taps or chosen[1]
+    try:
+        worst = (-math.inf, "")
+        for seed in seeds:
+            for name, signal in full_band_signals(seed):
+                for push in pushes:
+                    gain = 10 ** (push / 20)
+                    out, _ = limit_high_quality([[gain * x for x in signal]], 0.0, fs)
+                    over = _db(reference_true_peak(out))
+                    if over > worst[0]:
+                        worst = (over, f"{name}, {push:g} dB over")
+        return worst
+    finally:
+        TRUE_PEAK_FACTOR, TRUE_PEAK_TAPS = chosen
 
 
 # --- Limiter: peaks and timing ------------------------------------------------------------------------
@@ -2194,6 +2240,19 @@ def report_limiter(ceiling_db, sample_rates=SAMPLE_RATES):
         print(f"{fs:8g} {_whole_samples(LIMITER_RESERVE_MS, fs):8d} {estimator_delay():10d} {lookahead_window(fs):7d} "
               f"{round(LIMITER_RELEASE_MS * fs / 1000):8d} {LIMITER_TRUE_PEAK_HEADROOM_DB:9g} {worst.db:11.3f}  "
               f"{worst.signal}{'' if covered else ', over the headroom'}")
+    print("High Quality's worst true peak on the full-band signals, in dB against the Ceiling, per estimator "
+          f"(factor x taps); the chosen one, {TRUE_PEAK_FACTOR}x{TRUE_PEAK_TAPS}, keeps {FULL_BAND_MARGIN_DB:g} dB "
+          "under (FULL_BAND_MARGIN_DB)")
+    print(f"{'rate Hz':>8} " + " ".join(f"{f'{f}x{t}':>9}" for f, t in FULL_BAND_CANDIDATES) + "  chosen's worst signal")
+    for fs in sample_rates:
+        cells = []
+        for factor, taps in FULL_BAND_CANDIDATES:
+            over, signal = full_band_over(fs, factor, taps)
+            if (factor, taps) == (TRUE_PEAK_FACTOR, TRUE_PEAK_TAPS):
+                held = held and over <= -FULL_BAND_MARGIN_DB
+                worst_signal = signal + ('' if over <= -FULL_BAND_MARGIN_DB else ', within the margin')
+            cells.append(f"{over:9.3f}")
+        print(f"{fs:8g} " + " ".join(cells) + f"  {worst_signal}")
     print(f"each reference signal's output peaks in dB against the Ceiling, the tones and noise pushed "
           f"{LIMITER_PUSH_DB:g} dB over it; true peak by the 16x reference")
     print(f"{'rate Hz':>8} {'signal':>17} {'mode':>13} {'sample peak':>12} {'true peak':>10}")

@@ -483,10 +483,10 @@ class Latency(unittest.TestCase):
 
 class Limiter(unittest.TestCase):
     def test_the_estimators_delay_and_the_lookahead_window_fill_the_limiter_reserve_exactly(self):
-        # Worked by hand: 16 taps read 8 samples ahead; the reserve is 45 samples at 44.1 kHz and 192 at 192 kHz.
-        self.assertEqual(dynlab.estimator_delay(), 8)
-        self.assertEqual(dynlab.lookahead_window(44100), 37)
-        self.assertEqual(dynlab.lookahead_window(192000), 184)
+        # Worked by hand: 48 taps read 24 samples ahead; the reserve is 45 samples at 44.1 kHz and 192 at 192 kHz.
+        self.assertEqual(dynlab.estimator_delay(), 24)
+        self.assertEqual(dynlab.lookahead_window(44100), 21)
+        self.assertEqual(dynlab.lookahead_window(192000), 168)
         for fs in dynlab.supported_rates():
             with self.subTest(fs):
                 _, _, reserve = dynlab.high_quality_parts(fs)
@@ -510,6 +510,19 @@ class Limiter(unittest.TestCase):
         for fs in dynlab.SAMPLE_RATES:
             with self.subTest(fs):
                 self.assertLessEqual(dynlab.under_read(fs).db, dynlab.LIMITER_TRUE_PEAK_HEADROOM_DB)
+
+    def test_the_estimator_is_the_first_candidate_to_keep_full_band_true_peaks_the_margin_under_the_ceiling(self):
+        chosen = (dynlab.TRUE_PEAK_FACTOR, dynlab.TRUE_PEAK_TAPS)
+        candidates = sorted(dynlab.FULL_BAND_CANDIDATES)
+        self.assertIn(chosen, candidates)
+        for fs in (44100, 48000):
+            with self.subTest(fs=fs):
+                self.assertLessEqual(dynlab.full_band_over(fs)[0], -dynlab.FULL_BAND_MARGIN_DB)
+        # Every design before it misses the margin, the old 4x 16-tap one by over a dB past the Ceiling itself.
+        for factor, taps in candidates[:candidates.index(chosen)]:
+            with self.subTest(factor=factor, taps=taps):
+                self.assertGreater(dynlab.full_band_over(44100, factor, taps)[0], -dynlab.FULL_BAND_MARGIN_DB)
+        self.assertGreater(dynlab.full_band_over(44100, 4, 16)[0], 1.0)
 
     def test_zero_latency_holds_the_sample_peak_and_high_quality_the_true_peak_to_the_ceiling(self):
         for ceiling in (0.0, -6.0, -30.0):

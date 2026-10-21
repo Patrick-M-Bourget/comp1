@@ -7,7 +7,7 @@
 // - Zero Latency: a zero-attack gain computer on the sample peak. Each sample's Gain Reduction brings it to the
 //   Ceiling at once and releases with one pole in dB; then a safety clip at the Ceiling. No delay, and no sample's
 //   magnitude ever passes the Ceiling.
-// - High Quality: a 4x true-peak estimator, aiming the headroom under the Ceiling, then over a lookahead window W, a
+// - High Quality: an 8x true-peak estimator, aiming the headroom under the Ceiling, then over a lookahead window W, a
 //   sliding maximum of the Gain Reduction asked for over W + 1 samples, the release, and their average over W + 1
 //   samples, so the gain moves smoothly and is fully down when a peak reaches the audio. The estimator's delay and W
 //   fill the Limiter reserve (comp1/Latency.h) exactly: the audio is delayed by it, on or off.
@@ -46,8 +46,8 @@ public:
     static constexpr double settledDb = 1.0e-7;
     // The true-peak estimator, dyn-lab's TRUE_PEAK_FACTOR, TRUE_PEAK_TAPS and TRUE_PEAK_BETA: it delays by half its
     // length at every sample rate.
-    static constexpr int estimatorFactor = 4;
-    static constexpr int estimatorTaps = 16;
+    static constexpr int estimatorFactor = 8;
+    static constexpr int estimatorTaps = 48;
     static constexpr double estimatorBeta = 6.0;
     static constexpr int estimatorDelay = estimatorTaps / 2;
     // The Ceiling glides this many times plugkit's glide time. Zero Latency's zero attack follows a falling Ceiling
