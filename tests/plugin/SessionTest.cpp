@@ -19,10 +19,10 @@ constexpr float zeroLatency = 0.0f, highQuality = 1.0f;
 constexpr float infinity = std::numeric_limits<float>::infinity();
 
 // A folder of its own for each test's per-user settings and User Presets, deleted after it, so no test reaches the
-// real Documents folder or settings file.
+// real Documents folder or settings file. Named by a UUID, as tests run in parallel processes.
 struct TemporaryFolder
 {
-    juce::File folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("comp1-session-test", {});
+    juce::File folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("comp1-session-test-" + juce::Uuid().toString());
     TemporaryFolder() { REQUIRE (folder.createDirectory()); }
     ~TemporaryFolder() { folder.deleteRecursively(); }
 };
