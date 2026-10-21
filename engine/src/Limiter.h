@@ -68,9 +68,6 @@ public:
         // The whole Limiter reserve, the estimator's delay and the window.
         reserve = limiterReserveSamples (sampleRate);
         span = std::max (reserve - estimatorDelay, 0) + 1;
-        // Before the Limiter, High Quality's other delays after the compressor hold what the path last played; when it
-        // starts again, the estimator hears silence in their place (startPath).
-        staleSamples = latencySamples (ProcessingMode::HighQuality, sampleRate) - lookaheadBudgetSamples (sampleRate) - reserve;
         history.assign (channels, {});
         delayed.assign (channels, std::vector<float> (static_cast<std::size_t> (reserve)));
         heldValues.assign (static_cast<std::size_t> (span), 0.0);
@@ -145,16 +142,13 @@ private:
     void highQualitySample (AudioBlock block, int i, double share, double ceilingGain)
     {
         // The estimate for the sample estimatorDelay ago: the loudest of its segment and the one before, on every
-        // channel. While stale audio arrives, silence.
+        // channel.
         double segment = 0.0;
         const double aim = ceilingGain * headroomGain;
-        const bool stale = staleLeft > 0;
-        if (stale)
-            --staleLeft;
         for (int ch = 0; ch < block.numChannels; ++ch)
         {
             auto& h = history[static_cast<std::size_t> (ch)];
-            const double sample = stale ? 0.0 : static_cast<double> (block.channels[ch][i]);
+            const auto sample = static_cast<double> (block.channels[ch][i]);
             // Written twice, so the latest estimatorTaps samples sit in a row from historyPosition + 1.
             h[static_cast<std::size_t> (historyPosition)] = h[static_cast<std::size_t> (historyPosition + estimatorTaps)] = sample;
             segment = std::max (segment, segmentPeak (h.data() + historyPosition + 1, aim));
@@ -242,7 +236,7 @@ private:
 
     static double gainOf (double reductionDb) { return reductionDb > 0.0 ? plugkit::decibelsToGain (-reductionDb) : 1.0; }
 
-    // path starts afresh, with no Gain Reduction; High Quality's estimator hears silence for the stale samples.
+    // path starts afresh, with no Gain Reduction.
     void startPath (ProcessingMode path)
     {
         if (path == ProcessingMode::ZeroLatency)
@@ -262,7 +256,6 @@ private:
         averagedSum = 0.0;
         nonzeroAveraged = 0;
         averagedPosition = 0;
-        staleLeft = staleSamples;
     }
 
     // Each phase between samples: a Kaiser-windowed sinc, its cutoff the host's Nyquist, normalised to unity at DC.
@@ -295,7 +288,7 @@ private:
     double headroomGain = 1.0; // the true peak High Quality aims for, against the Ceiling
     double mostGain = 1.0;     // the most any phase reads of samples up to 1 in magnitude, its taps' magnitudes summed
     double releasePole = 0.0;
-    int reserve = 1, span = 1, staleSamples = 0;
+    int reserve = 1, span = 1;
     plugkit::Smoother onShare; // 0 off, 1 on
     plugkit::Smoother ceiling; // linear gain
     ProcessingMode playing = ProcessingMode::ZeroLatency;
@@ -305,7 +298,6 @@ private:
     std::vector<std::array<double, 2 * estimatorTaps>> history; // per channel, the latest samples, written twice
     int historyPosition = 0;
     double previousSegment = 0.0;
-    int staleLeft = 0;
     std::vector<double> heldValues;
     std::vector<std::int64_t> heldPositions;
     int heldFront = 0, heldCount = 0;
