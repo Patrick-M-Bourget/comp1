@@ -26,8 +26,9 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
         // Every setting moving every block, Output Gain back to 0 dB every few, Auto Release, Auto Gain and Saturation
         // on and off, Saturation moving Before and After, Detection Source, Detection Audition and Stereo Placement
         // moving every few, Stereo Link and every Detection EQ setting moving every block, each band switching on and
-        // off, and changing Shape or Slope; blocks cutting the grid's runs; the Sidechain coming and going, and
-        // changing between mono and stereo.
+        // off, and changing Shape or Slope; the Character moving every few, Clean and VCA in turn crossfading, with
+        // Colour moving every block; blocks cutting the grid's runs; the Sidechain coming and going, and changing
+        // between mono and stereo.
         DetectionEq eq;
         eq.highPass.on = block % 4 != 1;
         eq.highPass.filter.frequency = 20.0 + 97.0 * block;
@@ -40,7 +41,8 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
         eq.freeBand.filter.frequency = 30.0 + 211.0 * block;
         eq.freeBand.filter.gain = -30.0 + block % 61;
         eq.freeBand.filter.q = 0.025 + 0.6 * block;
-        engine.setSettings ({ .thresholdDb = -6.0 * (block % 10),
+        engine.setSettings ({ .character = static_cast<Character> ((block / 3) % 4),
+                              .thresholdDb = -6.0 * (block % 10),
                               .ratio = block % 5 == 4 ? std::numeric_limits<double>::infinity() : 1.0 + block % 5,
                               .kneeDb = 8.0 * (block % 9),
                               .attackMs = 0.005 + 25.0 * (block % 10),
@@ -48,6 +50,7 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
                               .autoRelease = block % 3 != 0,
                               .holdMs = 50.0 * (block % 10),
                               .rangeDb = 6.0 * (block % 11),
+                              .colour = 12.5 * (block % 9),
                               .autoGain = block % 2 == 0,
                               .saturation = block % 4 != 1,
                               .driveDb = 3.0 * (block % 9),
