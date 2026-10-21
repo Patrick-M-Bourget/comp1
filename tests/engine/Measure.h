@@ -397,4 +397,25 @@ inline double worstAliasDb (const std::vector<double>& spectrum, int bin)
     return 20.0 * std::log10 (std::max (worst, 1.0e-300) / spectrum[static_cast<std::size_t> (bin)]);
 }
 
+// --- Colour, as dyn-lab's `colour` measures it -------------------------------------------------------------------
+
+// dyn-lab's colour_level at the defaults: the input level whose Gain Reduction on the Transfer Curve is reductionDb,
+// above the Knee from 3 dB of Gain Reduction (4 dB over Threshold, past the Knee's 3 dB half-width); or for none, 12 dB
+// under the Knee (COLOUR_BELOW_KNEE_DB).
+inline double levelForReductionDb (double reductionDb) { return reductionDb > 0.0 ? -18.0 + reductionDb / 0.75 : -18.0 - 3.0 - 12.0; }
+
+// The bin-centred tone in bin at levelDb, times scale, for lengths spectrumLengths, through an Engine with settings at
+// sampleRate, compressed by a steady Gain Reduction, as dyn-lab's colour holds it: an External Detection Source on a
+// Sidechain that is a square wave sineCalibrationDb under levelDb, which VCA reads at levelDb with no ripple at all. The
+// Gain Reduction settles over the first length (Attack 10 ms, the RMS level 5 ms), so the last is periodic.
+inline std::vector<float> steadilyCompressedTone (Settings settings, double sampleRate, int bin, double levelDb, int lengths, double scale = 1.0)
+{
+    auto tone = binCentredTone (bin, levelDb, lengths);
+    for (auto& sample : tone)
+        sample = static_cast<float> (scale * sample);
+    const auto sidechain = steadyLevel (1, static_cast<int> (tone.size()), levelDb - sineCalibrationDb);
+    settings.detectionSource = DetectionSource::External;
+    return played (settings, sampleRate, { tone }, { 512 }, &sidechain).front();
+}
+
 } // namespace comp1::test

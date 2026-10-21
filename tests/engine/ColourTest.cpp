@@ -17,28 +17,14 @@ namespace
 {
 
 constexpr double sampleRate = 48000.0;
-// Lengths of spectrumLength the coloured tone plays for, the last measured: the Gain Reduction settles over the first
-// (Attack 10 ms, the RMS level 5 ms), so the last is periodic, as the lab's second length is.
+// Lengths of spectrumLength the coloured tone plays for, the last measured, as the lab measures its second.
 constexpr int lengths = 8;
 constexpr double absent = -std::numeric_limits<double>::infinity();
 
-// dyn-lab's level_for_reduction at the defaults: the input level whose Gain Reduction on the Transfer Curve is
-// reductionDb, above the Knee from 3 dB of Gain Reduction (4 dB over Threshold, past the Knee's 3 dB half-width), or 12
-// dB under the Knee for none (COLOUR_BELOW_KNEE_DB).
-double levelForReductionDb (double reductionDb) { return reductionDb > 0.0 ? -18.0 + reductionDb / 0.75 : -18.0 - 3.0 - 12.0; }
-
-// A bin-centred sine near 1 kHz at levelDb on the main input, compressed on VCA by a steady Gain Reduction: an
-// External Detection Source on a Sidechain that is a square wave sineCalibrationDb under levelDb, which VCA reads at
-// levelDb with no ripple at all, as the lab holds the Gain Reduction steady (tools/dyn-lab/USAGE.md, "colour").
-std::vector<float> colouredTone (Settings settings, double levelDb, double scale = 1.0)
+// A bin-centred sine near 1 kHz at levelDb, compressed on settings' Character by a steady Gain Reduction.
+std::vector<float> colouredTone (const Settings& settings, double levelDb, double scale = 1.0)
 {
-    const int bin = test::toneBin (1000.0, sampleRate);
-    auto tone = test::binCentredTone (bin, levelDb, lengths);
-    for (auto& sample : tone)
-        sample = static_cast<float> (scale * sample);
-    const auto sidechain = test::steadyLevel (1, static_cast<int> (tone.size()), levelDb - test::sineCalibrationDb);
-    settings.detectionSource = DetectionSource::External;
-    return test::played (settings, sampleRate, { tone }, { 512 }, &sidechain).front();
+    return test::steadilyCompressedTone (settings, sampleRate, test::toneBin (1000.0, sampleRate), levelDb, lengths, scale);
 }
 
 // One row of `colour`: the steady Gain Reduction, and the 2nd to 5th harmonics in dB relative to the fundamental.
@@ -90,7 +76,7 @@ TEST_CASE ("On VCA, Colour follows the Gain Reduction: the harmonics match dyn-l
     const auto& table = GENERATE (from_range (tables()));
     const auto& row = GENERATE_REF (from_range (table.rows));
     CAPTURE (table.command, row.reductionDb);
-    const auto spectrum = test::amplitudes (colouredTone ({ .character = Character::VCA, .colour = table.colour }, levelForReductionDb (row.reductionDb)));
+    const auto spectrum = test::amplitudes (colouredTone ({ .character = Character::VCA, .colour = table.colour }, test::levelForReductionDb (row.reductionDb)));
     const auto bin = static_cast<std::size_t> (test::toneBin (1000.0, sampleRate));
     for (std::size_t h = 0; h < row.harmonicsDb.size(); ++h)
     {
@@ -106,7 +92,7 @@ TEST_CASE ("On VCA, Colour follows the Gain Reduction: the harmonics match dyn-l
 TEST_CASE ("At Colour 0% VCA adds no distortion: doubling the main input doubles the output bit for bit, under compression")
 {
     // 10 dB of Gain Reduction, set by the Sidechain alone, so it is the same for both inputs.
-    const double levelDb = levelForReductionDb (10.0);
+    const double levelDb = test::levelForReductionDb (10.0);
     const auto once = colouredTone ({ .character = Character::VCA, .colour = 0.0 }, levelDb);
     const auto twice = colouredTone ({ .character = Character::VCA, .colour = 0.0 }, levelDb, 2.0);
     const auto tone = test::binCentredTone (test::toneBin (1000.0, sampleRate), levelDb, lengths);
@@ -131,7 +117,7 @@ TEST_CASE ("At Colour 0% VCA adds no distortion: doubling the main input doubles
 TEST_CASE ("With no Gain Reduction, VCA at Colour 100% passes the input bit for bit")
 {
     // 12 dB under the Knee: no Gain Reduction, so Colour's weight is exactly 0.
-    const test::Channels input { test::binCentredTone (test::toneBin (1000.0, sampleRate), levelForReductionDb (0.0), lengths) };
+    const test::Channels input { test::binCentredTone (test::toneBin (1000.0, sampleRate), test::levelForReductionDb (0.0), lengths) };
     CHECK (test::played ({ .character = Character::VCA }, sampleRate, input) == input);
 }
 
@@ -172,7 +158,7 @@ TEST_CASE ("Under Stereo Placement Mid or Side, Colour shapes only the part comp
     // The compressed part: the tone at 20 dB of Gain Reduction, held steady by a mono Sidechain, which drives every
     // Placement; the other part, quiet noise.
     const int bin = test::toneBin (1000.0, sampleRate);
-    const double levelDb = levelForReductionDb (20.0);
+    const double levelDb = test::levelForReductionDb (20.0);
     const auto loud = test::binCentredTone (bin, levelDb, lengths);
     auto quiet = test::noise (1, static_cast<int> (loud.size())).front();
     for (auto& sample : quiet)
