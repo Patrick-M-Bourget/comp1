@@ -5,7 +5,8 @@ Models the Clean Character after Giannoulis, Massberg & Reiss (2012), "Digital D
 Design — A Tutorial and Analysis" (J. Audio Eng. Soc. 60(6)): feedforward, with a soft-knee gain computer
 and a smooth branching peak detector in the log domain, with Hold, Auto Release and Range, and Auto Gain after it;
 the VCA Character, an RMS Detection Level into Clean's gain computer and detector, and its Colour; the FET Character,
-feedback detection solved within each sample, and its Colour; High Quality's Lookahead and fixed latency; Saturation; and the Limiter. Standard library only. See tools/dyn-lab/USAGE.md for every
+feedback detection solved within each sample, and its Colour; the Opto Character, FET's loop with a material-dependent
+attack, a two-stage release and a history of its own, and its Colour; High Quality's Lookahead and fixed latency; Saturation; and the Limiter. Standard library only. See tools/dyn-lab/USAGE.md for every
 command.
 """
 
@@ -205,8 +206,8 @@ class AutoRelease:
 
 # --- The Characters' Detection Levels -------------------------------------------------------------
 
-# The Characters dyn-lab models. Opto (#21) isn't modelled yet.
-CHARACTERS = ("clean", "vca", "fet")
+# The Characters dyn-lab models.
+CHARACTERS = ("clean", "vca", "fet", "opto")
 # VCA's RMS time constant: the one-pole mean-square average covers 1 - 1/e of a step in this many ms. USAGE.md gives
 # the reasons.
 VCA_RMS_MS = 5.0
@@ -253,7 +254,9 @@ class RmsLevel:
         return self._level(x * x)
 
 
-LEVELS = {"clean": PeakLevel, "vca": RmsLevel, "fet": PeakLevel}
+LEVELS = {"clean": PeakLevel, "vca": RmsLevel, "fet": PeakLevel, "opto": PeakLevel}
+# The Characters whose detection, with an Internal Detection Source, hears the gain it applies: FET's loop.
+FED_BACK = ("fet", "opto")
 
 
 # --- FET: feedback detection ----------------------------------------------------------------------
@@ -274,16 +277,22 @@ def fet_loop(previous_db, level_db, pole, settings):
     steady state the output is the Transfer Curve's. w never falls as y rises, so the solution is unique and lies
     between previous_db and the steady Gain Reduction; it is found region by region of the Transfer Curve in closed
     form."""
-    a, b = pole * previous_db, 1 - pole
+    return loop_from(pole * previous_db, 1 - pole, pole, level_db, settings)
+
+
+def loop_from(a, b, keep, level_db, settings):
+    """FET's loop in the form G = a + b·w(level - G): a is what the step keeps of the Gain Reduction held, and b is w's
+    share; keep is 1 - b, given so each caller rounds it as its own pole. fet_loop's are a = pole·previous, b = 1 - pole
+    and keep the pole; Opto's come from its two parts (opto_step)."""
     t, knee, q = settings.threshold, settings.knee, 1 / settings.ratio
     half = knee / 2
     if level_db - a <= t - half:
         loop = a  # below the Knee in the output's domain, where w is 0
     elif knee > 0 and a + b * (1 - q) * half >= level_db - t - q * half:
         # Across the Knee. With u = x - T + W/2 for the input x whose output is the loop's, the output's y - T + W/2 is
-        # u + (q - 1)u²/2W, so the loop is pole·(q - 1)u²/2W + u = level - T + W/2 - a, a quadratic in u.
+        # u + (q - 1)u²/2W, so the loop is keep·(q - 1)u²/2W + u = level - T + W/2 - a, a quadratic in u.
         e = level_db - t + half - a
-        c = pole * (q - 1) / (2 * knee)
+        c = keep * (q - 1) / (2 * knee)
         u = 2 * e / (1 + math.sqrt(max(0.0, 1 + 4 * c * e)))
         loop = a + b * (1 - q) * u * u / (2 * knee)
     else:
@@ -301,6 +310,78 @@ def fet_step(previous_db, level_db, wanted_db, pole, settings):
     fastest = pole ** FET_SPEEDUP_MAX
     capped = fastest * previous_db + (1 - fastest) * wanted_db
     return min(loop, capped) if wanted_db > previous_db else max(loop, capped)
+
+
+# --- Opto: material-dependent attack, two-stage release ---------------------------------------------
+
+# Opto's attack: Attack's time times a factor of how far the Transfer Curve's Gain Reduction is over the Gain Reduction
+# held, each sample: OPTO_ATTACK_SLOWEST at no overshoot, OPTO_ATTACK_FASTEST at OPTO_ATTACK_SPAN_DB and over, and a
+# smoothstep between them in the factor's logarithm, so Attack's own time at half the span. USAGE.md gives the reasons
+# for each constant.
+OPTO_ATTACK_SLOWEST = 2.0
+OPTO_ATTACK_FASTEST = 0.5
+OPTO_ATTACK_SPAN_DB = 20.0
+# The overshoot at which the attack takes Attack's own time: half the span, where the smoothstep is half way.
+OPTO_ATTACK_REFERENCE_DB = OPTO_ATTACK_SPAN_DB / 2
+# Opto's release is two one-pole parts of the Gain Reduction: the fast one, OPTO_FAST_SHARE of it, at Release (or Auto
+# Release's in its place), and the slow one, the rest, at a time that grows with Opto's history state, from
+# OPTO_SLOW_FRESH_MS with none to OPTO_SLOW_SEASONED_MS when it is full. The history charges toward 1 while the Transfer
+# Curve asks for Gain Reduction and discharges toward 0 while it doesn't, each covering 1 - 1/e of the way in its time.
+OPTO_FAST_SHARE = 0.6
+OPTO_SLOW_FRESH_MS = 500.0
+OPTO_SLOW_SEASONED_MS = 5000.0
+OPTO_HISTORY_CHARGE_MS = 3000.0
+OPTO_HISTORY_DISCHARGE_MS = 5000.0
+# How long `step --character opto` holds its loud level, from steady state under Threshold, before the step down. Opto's
+# release depends on how long it compressed, so its step down follows a burst of this length (`bursts` gives others).
+OPTO_STEP_HOLD_MS = 1000.0
+
+
+def opto_attack_scale(overshoot_db):
+    """The factor Opto's attack takes Attack's time by at an overshoot in dB: OPTO_ATTACK_SLOWEST at 0 dB and under, 1 at
+    OPTO_ATTACK_REFERENCE_DB, OPTO_ATTACK_FASTEST at OPTO_ATTACK_SPAN_DB and over, smooth between."""
+    x = min(max(overshoot_db / OPTO_ATTACK_SPAN_DB, 0.0), 1.0)
+    return OPTO_ATTACK_SLOWEST * (OPTO_ATTACK_FASTEST / OPTO_ATTACK_SLOWEST) ** (x * x * (3 - 2 * x))
+
+
+class History(AutoRelease):
+    """Opto's history state, from 0 to 1 (its sustain): stepped on the run grid as Auto Release's sustain state is,
+    charging for the samples of the run just heard that asked for Gain Reduction and discharging for the rest, in
+    OPTO_HISTORY_CHARGE_MS and OPTO_HISTORY_DISCHARGE_MS."""
+
+    def __init__(self, fs):
+        super().__init__(fs)
+        charge, discharge = _pole(OPTO_HISTORY_CHARGE_MS, fs), _pole(OPTO_HISTORY_DISCHARGE_MS, fs)
+        self.charged = [charge ** n for n in range(RUN_SAMPLES + 1)]
+        self.discharged = [discharge ** n for n in range(RUN_SAMPLES + 1)]
+
+    def slow_ms(self):
+        """The slow part's release time in ms, as the history stands."""
+        return OPTO_SLOW_FRESH_MS + (OPTO_SLOW_SEASONED_MS - OPTO_SLOW_FRESH_MS) * self.sustain
+
+
+def opto_step(fast_db, slow_db, level_db, wanted_db, fast_pole, slow_pole, settings, feedback):
+    """One sample of Opto's two parts, from fast_db and slow_db: each one pole, the fast at fast_pole and the slow at
+    slow_pole (both the scaled Attack's while attacking), toward its share of what the gain computer asks for. Fed back,
+    the gain computer reads the detection sample's level less the Gain Reduction of the same sample, FET's loop solved
+    within the sample (loop_from), and capped as FET's is: never further than each part's pole to the power
+    FET_SPEEDUP_MAX moves toward its share of wanted_db, the loop's steady state. Feedforward, it asks for wanted_db.
+    Returns the two parts."""
+    share = OPTO_FAST_SHARE
+    asked = wanted_db
+    if feedback:
+        a = fast_pole * fast_db + slow_pole * slow_db
+        b = share * (1 - fast_pole) + (1 - share) * (1 - slow_pole)
+        loop = loop_from(a, b, 1 - b, level_db, settings)
+        fast_cap, slow_cap = fast_pole ** FET_SPEEDUP_MAX, slow_pole ** FET_SPEEDUP_MAX
+        capped = (fast_cap * fast_db + (1 - fast_cap) * share * wanted_db,
+                  slow_cap * slow_db + (1 - slow_cap) * (1 - share) * wanted_db)
+        rising = wanted_db > fast_db + slow_db
+        if (capped[0] + capped[1] < loop) if rising else (capped[0] + capped[1] > loop):
+            return capped
+        asked = (loop - a) / b
+    return (fast_pole * fast_db + (1 - fast_pole) * share * asked,
+            slow_pole * slow_db + (1 - slow_pole) * (1 - share) * asked)
 
 
 # --- Clean: detector ------------------------------------------------------------------------------
@@ -323,13 +404,18 @@ class Detector:
     the one pole, so the gain computer reads the Detection Level less the Gain Reduction of the same sample. Attack,
     Release, Hold and Auto Release branch as on Clean, on whether the Transfer Curve asks for more Gain Reduction than
     the detector holds, which is whether the loop's solution rises. With an External Detection Source (external) the
-    gain applied never reaches the Sidechain, so FET is feedforward, as Clean is."""
+    gain applied never reaches the Sidechain, so FET is feedforward, as Clean is.
+
+    Opto is fed back as FET is, with Hold and the branching as on Clean, but steps two parts (opto_step): Attack's pole
+    is its time scaled by the overshoot (opto_attack_scale), for both parts, and Release's the fast part's, while the
+    slow part's comes from Opto's history state (History), taken at the start of each run, as Auto Release's is."""
 
     def __init__(self, settings, fs, gain_reduction=0.0, auto_release=None, level_db=-math.inf, external=False):
         """auto_release is the AutoRelease state to start from: empty by default. The Character's Detection Level
         starts settled at level_db."""
         self.level = LEVELS[settings.character](fs, level_db)
-        self.feedback = settings.character == "fet" and not external
+        self.feedback = settings.character in FED_BACK and not external
+        self.opto = settings.character == "opto"
         self.settings = settings
         self.fs = fs
         self.attack = _pole(settings.attack, fs)
@@ -339,6 +425,11 @@ class Detector:
         self.gain_reduction = gain_reduction
         self.auto_release = auto_release or AutoRelease(fs)
         self.position = 0  # where the next sample falls in its run
+        # Opto's: its two parts, the Gain Reduction held split by their shares, and its history, empty.
+        self.fast = OPTO_FAST_SHARE * gain_reduction
+        self.slow = gain_reduction - self.fast
+        self.history = History(fs)
+        self.slow_pole = 0.0
 
     def process(self, level_db):
         """Takes one sample's Detection Level in dB and returns the Gain Reduction in dB (0 or more)."""
@@ -346,10 +437,14 @@ class Detector:
             self.auto_release.start_run()
             if self.settings.auto_release:
                 self.release = _pole(self.auto_release.release_ms(self.settings.release), self.fs)
+            self.history.start_run()
+            self.slow_pole = _pole(self.history.slow_ms(), self.fs)
         self.position = (self.position + 1) % RUN_SAMPLES
         wanted = gain_reduction(level_db, self.settings)
         self.auto_release.hear(wanted > 0)
-        if wanted > self.gain_reduction:
+        self.history.hear(wanted > 0)
+        attacking = wanted > self.gain_reduction
+        if attacking:
             self.held = 0
             pole = self.attack
         elif self.held < self.hold:
@@ -357,7 +452,14 @@ class Detector:
             return self.gain_reduction
         else:
             pole = self.release
-        if self.feedback:
+        if self.opto:
+            slow_pole = self.slow_pole
+            if attacking:
+                pole = slow_pole = _pole(self.settings.attack * opto_attack_scale(wanted - self.gain_reduction), self.fs)
+            self.fast, self.slow = opto_step(self.fast, self.slow, level_db, wanted, pole, slow_pole, self.settings,
+                                             self.feedback)
+            self.gain_reduction = self.fast + self.slow
+        elif self.feedback:
             self.gain_reduction = fet_step(self.gain_reduction, level_db, wanted, pole, self.settings)
         else:
             self.gain_reduction = pole * self.gain_reduction + (1 - pole) * wanted
@@ -423,7 +525,11 @@ def step_response(settings, fs, lookahead=LOOKAHEAD_DEFAULT, external=False, qui
     so Lookahead doesn't move them.
 
     With external, the step is the Sidechain's, on an External Detection Source, while the main stays steady: the Gain
-    Reduction never reaches what the detector hears."""
+    Reduction never reaches what the detector hears.
+
+    Opto's release depends on how long it compressed, so on Opto the step down follows a burst OPTO_STEP_HOLD_MS long
+    from steady state under Threshold (after_burst), its history and Auto Release's sustain state as the burst left
+    them, rather than steady compression."""
     quiet = settings.threshold - STEP_DB if quiet is None else quiet
     loud = settings.threshold + STEP_DB if loud is None else loud
     low, high = gain_reduction(quiet, settings), gain_reduction(loud, settings)
@@ -433,9 +539,11 @@ def step_response(settings, fs, lookahead=LOOKAHEAD_DEFAULT, external=False, qui
     fractions = (ONE_TIME_CONSTANT, NINETY_PERCENT)
     (attack_63, attack_90), _ = _times(Detector(settings, fs, low, level_db=quiet, external=external), loud, low, high,
                                        fractions)
-    sustained = AutoRelease(fs, sustain=1.0, heard=RUN_SAMPLES)
-    (release_63, release_90), held = _times(Detector(settings, fs, high, sustained, loud, external), quiet, high, low,
-                                            fractions)
+    if settings.character == "opto":
+        released = after_burst(settings, fs, OPTO_STEP_HOLD_MS, external, quiet, loud)
+    else:
+        released = Detector(settings, fs, high, AutoRelease(fs, sustain=1.0, heard=RUN_SAMPLES), loud, external)
+    (release_63, release_90), held = _times(released, quiet, high, low, fractions)
     return Step(attack_63 * ms - lookahead, attack_90 * ms - lookahead, (release_63 - held) * ms,
                 (release_90 - held) * ms, held * ms)
 
@@ -1235,9 +1343,16 @@ FET_COLOUR_WEIGHT = 0.25
 FET_COLOUR_WEIGHT_DB = 10.0
 FET_COLOUR_DRIVE_DB = 4.0
 
+# Opto's Colour mapping, VCA's form with its own constants, the gentlest of the three: OPTO_COLOUR_WEIGHT,
+# OPTO_COLOUR_WEIGHT_DB and OPTO_COLOUR_DRIVE_DB play VCA's parts. USAGE.md gives the reasons.
+OPTO_COLOUR_WEIGHT = 0.075
+OPTO_COLOUR_WEIGHT_DB = 10.0
+OPTO_COLOUR_DRIVE_DB = 5.0
+
 # Each Character with Colour: its weight, the Gain Reduction its weight rises over and the one its drive rises over.
 COLOUR_MAPPINGS = {"vca": (VCA_COLOUR_WEIGHT, VCA_COLOUR_WEIGHT_DB, VCA_COLOUR_DRIVE_DB),
-                   "fet": (FET_COLOUR_WEIGHT, FET_COLOUR_WEIGHT_DB, FET_COLOUR_DRIVE_DB)}
+                   "fet": (FET_COLOUR_WEIGHT, FET_COLOUR_WEIGHT_DB, FET_COLOUR_DRIVE_DB),
+                   "opto": (OPTO_COLOUR_WEIGHT, OPTO_COLOUR_WEIGHT_DB, OPTO_COLOUR_DRIVE_DB)}
 
 # Colour's shape is driven relative to Threshold: the compressed signal is shaped at the drive plus this less
 # Threshold, in dB, so a steady Gain Reduction at a Ratio gives the same Colour at every Threshold. It is the default
@@ -1973,6 +2088,8 @@ def step_options(parser):
     character_option(parser)
     parser.add_argument("--auto-release", action="store_true")
     parser.add_argument("--external", action="store_true")
+    parser.add_argument("--over", type=float, default=STEP_DB, metavar="dB",
+                        help=f"how far over Threshold the step goes ({STEP_DB:g} dB by default)")
 
 
 def _check_rates(rates):
@@ -2026,7 +2143,7 @@ FET_SETTLED_DB = 1e-12
 def steady_output(level_db, settings):
     """The Character's steady output level in dB for a steady input of level_db: the Transfer Curve, or on FET, its
     loop run to steady state."""
-    if settings.character != "fet":
+    if settings.character not in FED_BACK:
         return transfer(level_db, settings)
     detector = Detector(settings, FET_TRANSFER_RATE, level_db=level_db)
     previous = 0.0
@@ -2079,10 +2196,10 @@ def report_transfer(settings):
     if settings.character == "vca":
         print(f"levels are VCA's RMS Detection Level, sine-calibrated: the steady test signal is a square wave whose "
               f"peak is {SINE_CALIBRATION_DB:.4f} dB under each level")
-    if settings.character == "fet":
+    if settings.character in FED_BACK:
         clean = replace(settings, character="clean")
         largest = max(abs(out - transfer(level, clean)) for level, out, _ in curve.rows)
-        print(f"measured: FET's loop run at each level to steady state, at {FET_TRANSFER_RATE:g} Hz and Attack "
+        print(f"measured: {settings.character.upper()}'s loop run at each level to steady state, at {FET_TRANSFER_RATE:g} Hz and Attack "
               f"{settings.attack:g} ms; it is at most {largest:.1e} dB from Clean's Transfer Curve")
 
 
@@ -2091,13 +2208,17 @@ def run_step(args):
     settings = settings_from(args)
     check_range("lookahead", args.lookahead, LOOKAHEAD_RANGE, " ms")
     _check_rates(args.rates)
-    report_step(settings, args.rates, args.lookahead, args.external)
+    if args.over <= 0:
+        raise ValueError("the step must go over Threshold: --over above 0 dB")
+    report_step(settings, args.rates, args.lookahead, args.external, args.over)
 
 
-def report_step(settings, sample_rates=SAMPLE_RATES, lookahead=LOOKAHEAD_DEFAULT, external=False):
-    """The step response's times at each sample rate, for a level step STEP_DB either side of Threshold: the detection
-    signal's own, or with external, the Sidechain's on an External Detection Source while the main stays steady."""
-    print(f"Step ±{STEP_DB:g} dB around Threshold, {_transfer_heading(settings)}, {_timing_heading(settings)}, "
+def report_step(settings, sample_rates=SAMPLE_RATES, lookahead=LOOKAHEAD_DEFAULT, external=False, over=STEP_DB):
+    """The step response's times at each sample rate, for a level step from STEP_DB under Threshold to over dB over it:
+    the detection signal's own, or with external, the Sidechain's on an External Detection Source while the main stays
+    steady."""
+    around = f"±{STEP_DB:g} dB around" if over == STEP_DB else f"from {STEP_DB:g} dB under to {over:g} dB over"
+    print(f"Step {around} Threshold, {_transfer_heading(settings)}, {_timing_heading(settings)}, "
           f"Auto Release {'on' if settings.auto_release else 'off'}, Lookahead {lookahead:g} ms")
     if external:
         print("External Detection Source: the Sidechain steps while the main stays steady, so the Gain Reduction never "
@@ -2106,8 +2227,11 @@ def report_step(settings, sample_rates=SAMPLE_RATES, lookahead=LOOKAHEAD_DEFAULT
           "Lookahead earlier; Hold counts from when the detector meets the step down, and Release from when it "
           "begins, after Hold; 63% is 1 - 1/e")
     print(f"{'rate Hz':>8} {'attack 63%':>11} {'attack 90%':>11} {'release 63%':>12} {'release 90%':>12} {'hold':>9}")
+    if settings.character == "opto":
+        print(f"Opto: the step down follows {OPTO_STEP_HOLD_MS:g} ms at the loud level (OPTO_STEP_HOLD_MS), from steady "
+              f"state under Threshold")
     for fs in sample_rates:
-        step = step_response(settings, fs, lookahead, external)
+        step = step_response(settings, fs, lookahead, external, loud=settings.threshold + over)
         if step is None:
             print(f"{fs:8g}  no Gain Reduction to measure at Ratio 1:1 or Range 0 dB")
             continue
@@ -2159,6 +2283,42 @@ def report_speedup(sample_rates=(SPEEDUP_RATE,)):
             fet = step_response(Settings(ratio=ratio, character="fet"), fs, **levels)
             print(f"{fs:8g} {_shown(ratio):>6} {clean.release_63:10.4f} {clean.release_90:10.4f} "
                   f"{fet.release_63:9.4f} {fet.release_90:9.4f} {clean.release_63 / fet.release_63:9.2f}")
+
+
+# The step sizes and Attacks `overshoot` prints Opto's attack at: steps from STEP_DB under Threshold to these over it.
+OVERSHOOT_STEPS_DB = (5, 10, 20, 30)
+OVERSHOOT_ATTACKS = (Settings().attack, 1.0)
+
+
+def overshoot_options(parser):
+    parser.add_argument("--rates", type=float, nargs="+", default=[SPEEDUP_RATE], metavar="Hz")
+
+
+@command("overshoot", options=overshoot_options)
+def run_overshoot(args):
+    _check_rates(args.rates)
+    report_overshoot(args.rates)
+
+
+def report_overshoot(sample_rates=(SPEEDUP_RATE,)):
+    """Opto's Attack times against the step's size, beside FET's, whose loop and cap Opto shares without the
+    material-dependent attack."""
+    print(f"Opto's attack against the step's size: steps from {STEP_DB:g} dB under Threshold to each size over it; the "
+          f"defaults otherwise; times in ms, as `step` measures them")
+    print(f"Attack's time is scaled by the overshoot, the Transfer Curve's Gain Reduction less the Gain Reduction held: "
+          f"x{OPTO_ATTACK_SLOWEST:g} at 0 dB, x1 at {OPTO_ATTACK_REFERENCE_DB:g} dB, x{OPTO_ATTACK_FASTEST:g} from "
+          f"{OPTO_ATTACK_SPAN_DB:g} dB; 'scale' is the step's first sample's")
+    print(f"{'rate Hz':>8} {'attack ms':>10} {'over dB':>8} {'GR dB':>7} {'scale':>6} {'FET 63%':>9} {'FET 90%':>9} "
+          f"{'Opto 63%':>9} {'Opto 90%':>9}")
+    for fs in sample_rates:
+        for attack in OVERSHOOT_ATTACKS:
+            for over in OVERSHOOT_STEPS_DB:
+                loud = Settings().threshold + over
+                fet = step_response(Settings(attack=attack, character="fet"), fs, loud=loud)
+                opto = step_response(Settings(attack=attack, character="opto"), fs, loud=loud)
+                reduction = gain_reduction(loud, Settings())
+                print(f"{fs:8g} {attack:10g} {over:8g} {reduction:7.2f} {opto_attack_scale(reduction):6.3f} "
+                      f"{fet.attack_63:9.4f} {fet.attack_90:9.4f} {opto.attack_63:9.4f} {opto.attack_90:9.4f}")
 
 
 def latency_options(parser):
@@ -2234,6 +2394,17 @@ class Burst:
     on: Release
 
 
+def after_burst(settings, fs, length_ms, external=False, quiet=None, loud=None):
+    """A detector that has heard the Detection Level STEP_DB over Threshold (loud, in dB, when given) for length_ms (a
+    sample at least) from steady state STEP_DB under it (quiet), the run grid starting with the burst."""
+    quiet = settings.threshold - STEP_DB if quiet is None else quiet
+    loud = settings.threshold + STEP_DB if loud is None else loud
+    detector = Detector(settings, fs, gain_reduction(quiet, settings), level_db=quiet, external=external)
+    for _ in range(max(round(length_ms * fs / 1000), 1)):
+        detector.hear_steady(loud)
+    return detector
+
+
 def burst_release(settings, fs, length_ms):
     """Holds the Detection Level STEP_DB over Threshold for length_ms from steady state STEP_DB under it, the run
     grid starting with the burst, then drops it back, and measures the Release that follows. None when there is no
@@ -2242,9 +2413,7 @@ def burst_release(settings, fs, length_ms):
     low = gain_reduction(quiet, settings)
     if gain_reduction(loud, settings) - low < 1e-9:
         return None
-    detector = Detector(settings, fs, low, level_db=quiet)
-    for _ in range(max(round(length_ms * fs / 1000), 1)):
-        detector.hear_steady(loud)
+    detector = after_burst(settings, fs, length_ms)
     start = detector.gain_reduction
     (release_63, release_90), held = _times(detector, quiet, start, low, (ONE_TIME_CONSTANT, NINETY_PERCENT))
     ms = 1000 / fs
@@ -2281,6 +2450,10 @@ def report_bursts(settings, sample_rates=SAMPLE_RATES, lengths=BURST_LENGTHS):
           f"{_timing_heading(settings)}")
     print(f"Auto Release releases in Release × (1 + {AUTO_RELEASE_MULTIPLIER - 1:g} × sustain); sustain charges in "
           f"{AUTO_RELEASE_CHARGE_MS:g} ms, discharges in {AUTO_RELEASE_DISCHARGE_MS:g} ms")
+    if settings.character == "opto":
+        print(f"Opto releases in two parts: {OPTO_FAST_SHARE:.0%} at Release (Auto Release's when on), the rest in "
+              f"{OPTO_SLOW_FRESH_MS:g} to {OPTO_SLOW_SEASONED_MS:g} ms as its history grows; the history charges in "
+              f"{OPTO_HISTORY_CHARGE_MS:g} ms, discharges in {OPTO_HISTORY_DISCHARGE_MS:g} ms")
     print("times in ms, counted from when Release begins, after Hold; 63% is 1 - 1/e")
     print(f"{'rate Hz':>8} {'burst ms':>9} {'off 63%':>10} {'off 90%':>10} {'on 63%':>10} {'on 90%':>10}")
     for fs in sample_rates:
