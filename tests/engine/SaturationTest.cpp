@@ -130,7 +130,9 @@ TEST_CASE ("At Drive 0 dB, Saturation passes anything at or below full scale thr
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE (from_range (test::blockCuts()));
     const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
-    CAPTURE (sampleRate, cut, static_cast<int> (position));
+    // High Quality runs at the base rate until Oversampling (#10): there too the stage adds nothing to its latency.
+    const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
+    CAPTURE (sampleRate, cut, static_cast<int> (position), static_cast<int> (mode));
     // Noise up to full scale, with full scale itself, of both signs, among it.
     auto input = test::noise (2, 6000, 5);
     for (auto& channel : input)
@@ -141,8 +143,8 @@ TEST_CASE ("At Drive 0 dB, Saturation passes anything at or below full scale thr
         channel[101] = -1.0f;
         channel[2000] = -1.0f;
     }
-    const auto off = played ({}, sampleRate, cut, input);
-    CHECK (played ({ .saturation = true, .driveDb = 0.0, .saturationPosition = position }, sampleRate, cut, input) == off);
+    const auto off = played ({ .processingMode = mode }, sampleRate, cut, input);
+    CHECK (played ({ .saturation = true, .driveDb = 0.0, .saturationPosition = position, .processingMode = mode }, sampleRate, cut, input) == off);
 }
 
 TEST_CASE ("Saturation never makes a non-finite output, from a non-finite input or a near-equal pair of samples")

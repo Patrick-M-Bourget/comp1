@@ -35,7 +35,7 @@ struct Condition
 
 // The rows `python3 tools/dyn-lab/dynlab.py aliasing` prints, copied as printed. Oversampling (#10) and Colour (#19)
 // add tables of their own.
-const std::vector<Condition>& zeroLatency()
+const std::vector<Condition>& baseRate()
 {
     static const std::vector<Condition> all {
         { 44100.0, 1000.0, 6.0, -100.35, {} },    { 44100.0, 1000.0, 12.0, -79.40, {} },
@@ -58,27 +58,32 @@ const std::vector<Condition>& zeroLatency()
     return all;
 }
 
-// The tone's spectrum through the Engine, at Ratio 1:1 so only Saturation shapes it, at either Saturation Position:
-// two lengths of it, the second measured, as dyn-lab measures it.
-std::vector<double> saturatedSpectrum (double sampleRate, int bin, double driveDb, SaturationPosition position)
+// The tone's spectrum through the Engine, at Ratio 1:1 so only Saturation shapes it, at a Saturation Position and in a
+// Processing Mode: two lengths of it, the second measured, as dyn-lab measures it. High Quality's latency is far under
+// a length, so its second is steady too.
+std::vector<double> saturatedSpectrum (double sampleRate, int bin, double driveDb, SaturationPosition position, ProcessingMode mode)
 {
     test::Channels audio { test::binCentredTone (bin, 0.0) };
     Engine engine;
     engine.prepare (sampleRate, 512, 1);
-    engine.setSettings ({ .ratio = 1.0, .saturation = true, .driveDb = driveDb, .saturationPosition = position });
+    engine.setSettings ({ .ratio = 1.0, .saturation = true, .driveDb = driveDb, .saturationPosition = position, .processingMode = mode });
     test::processInBlocks (engine, audio, { 512 });
     return test::amplitudes (audio.front());
 }
 
+// Zero Latency, and High Quality, which runs at the base rate until Oversampling (#10).
+ProcessingMode atBaseRate() { return GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality); }
+
 } // namespace
 
-TEST_CASE ("In Zero Latency, the worst alias at each of dyn-lab's reference conditions is within its tolerance")
+TEST_CASE ("At the base rate, the worst alias at each of dyn-lab's reference conditions is within its tolerance")
 {
-    const auto& condition = GENERATE (from_range (zeroLatency()));
+    const auto& condition = GENERATE (from_range (baseRate()));
     const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
-    CAPTURE (condition.sampleRate, condition.frequency, condition.driveDb, static_cast<int> (position));
+    const auto mode = atBaseRate();
+    CAPTURE (condition.sampleRate, condition.frequency, condition.driveDb, static_cast<int> (position), static_cast<int> (mode));
     const int bin = test::toneBin (condition.frequency, condition.sampleRate);
-    const double worst = test::worstAliasDb (saturatedSpectrum (condition.sampleRate, bin, condition.driveDb, position), bin);
+    const double worst = test::worstAliasDb (saturatedSpectrum (condition.sampleRate, bin, condition.driveDb, position, mode), bin);
     CHECK (worst <= ceilingDb);
     CHECK (std::abs (worst - condition.labDb) <= labWithinDb);
     if (condition.naiveDb)
@@ -125,13 +130,14 @@ std::vector<Harmonic> harmonics()
 
 } // namespace
 
-TEST_CASE ("In Zero Latency, the in-band harmonics are within dyn-lab's tolerance of its ideal reference")
+TEST_CASE ("At the base rate, the in-band harmonics are within dyn-lab's tolerance of its ideal reference")
 {
     const auto rows = harmonics();
     const auto& row = GENERATE_REF (from_range (rows));
-    CAPTURE (row.sampleRate, row.frequency, row.driveDb, row.harmonic);
+    const auto mode = atBaseRate();
+    CAPTURE (row.sampleRate, row.frequency, row.driveDb, row.harmonic, static_cast<int> (mode));
     const int bin = test::toneBin (row.frequency, row.sampleRate);
-    const auto spectrum = saturatedSpectrum (row.sampleRate, bin, row.driveDb, SaturationPosition::After);
+    const auto spectrum = saturatedSpectrum (row.sampleRate, bin, row.driveDb, SaturationPosition::After, mode);
     const double levelDb = 20.0 * std::log10 (spectrum[static_cast<std::size_t> (row.harmonic * bin)]);
     CHECK (std::abs (levelDb - row.idealDb) <= harmonicToleranceDb);
     // The even harmonics are absent, as the shape is odd.
