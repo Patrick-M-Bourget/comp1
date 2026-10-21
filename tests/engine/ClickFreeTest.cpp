@@ -115,6 +115,10 @@ const std::vector<Jump>& jumps()
         { "Hold", [] (Settings& s, bool b) { s.holdMs = b ? 500.0 : 0.0; } },
         { "Range", [] (Settings& s, bool b) { s.rangeDb = b ? 60.0 : 0.0; } },
         { "Auto Gain", [] (Settings& s, bool b) { s.autoGain = b; } },
+        { "Lookahead", [] (Settings& s, bool b) {
+             s.processingMode = ProcessingMode::HighQuality; // Zero Latency doesn't read it
+             s.lookaheadMs = b ? 5.0 : 0.0;
+         } },
     };
     return all;
 }
@@ -245,4 +249,14 @@ TEST_CASE ("While a compressor setting glides, the output is the same however th
         test::processInBlocks (engine, *audio, audio == &whole ? wholeCut : cut);
     }
     CHECK (cutUp == whole);
+}
+
+TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click")
+{
+    const auto host = anyHost();
+    CAPTURE (host.sampleRate, host.blockSize);
+    const auto output = playTone (host, [] (double time, Settings& s) {
+        s.processingMode = alternating (time) ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency;
+    });
+    CHECK (discontinuity (output, host.sampleRate) < threshold);
 }

@@ -23,8 +23,11 @@ add_executable(comp1_engine_tests
     engine/AutoReleaseTest.cpp
     engine/ClickFreeTest.cpp
     engine/DetectionStageTest.cpp
+    engine/LatencyTest.cpp
+    engine/LookaheadTest.cpp
     engine/NonFiniteInputTest.cpp
     engine/OutputGainTest.cpp
+    engine/ProcessingModeTest.cpp
     engine/RealtimeSafetyTest.cpp
     engine/SettingsHandoffTest.cpp
     engine/StepResponseTest.cpp
@@ -47,6 +50,7 @@ if(COMP1_BUILD_PLUGIN)
     # Host-level checks drive the Plugin Shell the way a host does. One source per line, as above.
     add_executable(comp1_plugin_tests
         plugin/AutoReleaseParameterTest.cpp
+        plugin/LatencyReportTest.cpp
         plugin/PluginShellTest.cpp
         plugin/StateTest.cpp
     )

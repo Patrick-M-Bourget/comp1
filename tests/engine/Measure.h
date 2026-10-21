@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <random>
@@ -130,6 +131,56 @@ inline const std::vector<std::vector<int>>& blockCuts()
 {
     static const std::vector<std::vector<int>> cuts { { 512 }, { 1 }, { 7 }, { 16 }, { 17, 3, 64, 1000 }, { 4096 }, { 33, 1, 15, 128 } };
     return cuts;
+}
+
+// --- Step response -----------------------------------------------------------------------------------------------
+
+// The Gain Reduction in dB the listener hears on each sample, as an Engine with settings at sampleRate plays a steady
+// level held for seconds, then another for as long: each output sample against the input sample latency samples
+// earlier, the one it carries. Index 0 is the first output sample after the first level's seconds, so the step itself
+// is heard at index latency.
+inline std::vector<double> heardGainReduction (const Settings& settings, double sampleRate, double fromDb, double toDb, double seconds, int latency)
+{
+    const int length = static_cast<int> (seconds * sampleRate);
+    auto audio = steadyLevel (1, length, fromDb);
+    const auto after = steadyLevel (1, length, toDb);
+    audio.front().insert (audio.front().end(), after.front().begin(), after.front().end());
+    const auto input = audio.front();
+    Engine engine;
+    engine.prepare (sampleRate, 512, 1);
+    engine.setSettings (settings);
+    processInBlocks (engine, audio, { 512 });
+    const auto from = static_cast<std::ptrdiff_t> (length);
+    const std::vector<float> carried (input.begin() + from - latency, input.end() - latency);
+    return gainReductionDb (carried, { audio.front().begin() + from, audio.front().end() });
+}
+
+// --- Delay -------------------------------------------------------------------------------------------------------
+
+// How many samples an Engine with settings at sampleRate delays an impulse by, played in blocks of blockSize: where
+// the output's largest sample falls, on every channel, or -1 when the channels disagree. The settings should apply
+// no Gain Reduction (Ratio 1:1, say), so the impulse comes out whole.
+inline int impulseDelaySamples (const Settings& settings, double sampleRate, int blockSize = 512, int numChannels = 2)
+{
+    const int length = static_cast<int> (0.05 * sampleRate);
+    Channels audio (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (length)));
+    for (auto& channel : audio)
+        channel[100] = 0.5f;
+    Engine engine;
+    engine.prepare (sampleRate, blockSize, numChannels);
+    engine.setSettings (settings);
+    processInBlocks (engine, audio, { blockSize });
+    int delay = -1;
+    for (const auto& channel : audio)
+    {
+        const auto peak = static_cast<int> (std::max_element (channel.begin(), channel.end(), [] (float a, float b) {
+                                                return std::abs (a) < std::abs (b);
+                                            }) - channel.begin());
+        if (delay >= 0 && peak - 100 != delay)
+            return -1;
+        delay = peak - 100;
+    }
+    return delay;
 }
 
 } // namespace comp1::test
