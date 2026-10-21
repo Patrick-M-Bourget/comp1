@@ -322,8 +322,8 @@ inline int impulseDelaySamples (const Settings& settings, double sampleRate, int
 
 // --- The Dry/Wet null -------------------------------------------------------------------------------------------
 
-// A setting the Dry/Wet null must hold under: a row of the null's table. Oversampling and Colour add rows, each
-// leaving the Wet path linear and aligned with no Gain Reduction.
+// A setting the Dry/Wet null must hold under: a row of the null's table, such as a Character at a Colour.
+// Oversampling adds one. Each row leaves the Wet path linear and aligned with no Gain Reduction.
 struct NullRow
 {
     const char* name;

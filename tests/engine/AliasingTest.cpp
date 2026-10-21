@@ -88,7 +88,7 @@ ProcessingMode atBaseRate() { return GENERATE (ProcessingMode::ZeroLatency, Proc
 
 } // namespace
 
-TEST_CASE ("At the base rate, the worst alias at each of dyn-lab's reference conditions is within its tolerance")
+TEST_CASE ("At the base rate, the worst alias at each of dyn-lab's reference conditions is within its tolerance", "[sweep]")
 {
     const auto& condition = GENERATE (from_range (baseRate()));
     const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
@@ -215,7 +215,7 @@ std::vector<OversampledCondition> oversampledConditions()
 
 } // namespace
 
-TEST_CASE ("Oversampled, the worst alias at each of dyn-lab's reference conditions is within its factor's tolerance and no worse than at 1x")
+TEST_CASE ("Oversampled, the worst alias at each of dyn-lab's reference conditions is within its factor's tolerance and no worse than at 1x", "[sweep]")
 {
     const auto conditions = oversampledConditions();
     const auto& [oversampling, row] = GENERATE_REF (from_range (conditions));
@@ -275,7 +275,7 @@ std::vector<Harmonic> harmonics()
 
 } // namespace
 
-TEST_CASE ("At the base rate, the in-band harmonics are within dyn-lab's tolerance of its ideal reference")
+TEST_CASE ("At the base rate, the in-band harmonics are within dyn-lab's tolerance of its ideal reference", "[sweep]")
 {
     const auto rows = harmonics();
     const auto& row = GENERATE_REF (from_range (rows));
@@ -304,7 +304,7 @@ struct ColourCondition
 
 // The aliasing rows `python3 tools/dyn-lab/dynlab.py colour --character vca` prints, copied as printed. Only the
 // ceiling is checked: the improvement over the naive shaper doesn't hold for Colour at 20 and 30 dB of Gain Reduction
-// (tools/dyn-lab/USAGE.md, "colour"). Oversampling (#10) adds its rows.
+// (tools/dyn-lab/USAGE.md, "colour").
 const std::vector<ColourCondition>& colourConditions()
 {
     static const std::vector<ColourCondition> all {
@@ -326,7 +326,7 @@ constexpr double colourComparedOverDb = -100.0;
 
 } // namespace
 
-TEST_CASE ("At the base rate, VCA's worst alias at Colour 100% at each of dyn-lab's Colour conditions is under the ceiling")
+TEST_CASE ("At the base rate, VCA's worst alias at Colour 100% at each of dyn-lab's Colour conditions is under the ceiling", "[sweep]")
 {
     const auto& condition = GENERATE (from_range (colourConditions()));
     const auto mode = atBaseRate();

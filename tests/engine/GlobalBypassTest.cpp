@@ -56,7 +56,7 @@ Settings compressing (ProcessingMode mode, bool bypassed)
 
 } // namespace
 
-TEST_CASE ("Global Bypass settled on plays the input delayed by the latency, bit for bit, at every rate, block size and setting")
+TEST_CASE ("Global Bypass settled on plays the input delayed by the latency, bit for bit, at every rate, block size and setting", "[sweep]")
 {
     const auto mode = GENERATE (zeroLatency, highQuality);
     const auto& scene = GENERATE (from_range (scenes()));

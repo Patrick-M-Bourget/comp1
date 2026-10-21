@@ -57,7 +57,7 @@ const std::vector<Levels>& nullLevels()
 
 } // namespace
 
-TEST_CASE ("With no compression, Dry plus Wet nulls against the input delayed by the reported latency")
+TEST_CASE ("With no compression, Dry plus Wet nulls against the input delayed by the reported latency", "[sweep]")
 {
     const auto& row = GENERATE (from_range (nullRows()));
     const auto& levels = GENERATE (from_range (nullLevels()));

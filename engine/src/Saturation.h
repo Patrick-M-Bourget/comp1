@@ -3,7 +3,7 @@
 // The saturation module: one soft-clip shape, its nonlinear residual and the residual's antiderivative, and
 // first-order antiderivative anti-aliasing (ADAA) of the residual only (ADR 0005), as dyn-lab models them
 // (tools/dyn-lab/USAGE.md, "Saturation"). It is kept apart from the rest of the Engine, as a Character's gain computer
-// is: the Saturation stage drives it with Drive, and VCA's Colour with a drive of its own, sample by sample. It
+// is: the Saturation stage drives it with Drive, and Colour with a drive of its own, sample by sample. It
 // assumes nothing about the sample rate, so it runs as well oversampled (ADR 0009).
 
 #include <cmath>

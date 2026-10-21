@@ -47,7 +47,7 @@ Settings saturating (Settings settings, SaturationPosition position)
 
 } // namespace
 
-TEST_CASE ("An impulse comes out at exactly the reported latency at every Oversampling and sample rate")
+TEST_CASE ("An impulse comes out at exactly the reported latency at every Oversampling and sample rate", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto oversampling = GENERATE (from_range (everyOversampling()));
@@ -56,7 +56,7 @@ TEST_CASE ("An impulse comes out at exactly the reported latency at every Oversa
            == latencySamples (highQuality, sampleRate));
 }
 
-TEST_CASE ("An Oversampling over the sample rate's cap plays the cap")
+TEST_CASE ("An Oversampling over the sample rate's cap plays the cap", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
@@ -76,7 +76,7 @@ TEST_CASE ("An Oversampling over the sample rate's cap plays the cap")
 
 // What Dry/Wet's exact null rests on (DryWetTest's nullRows() holds it at each factor): with nothing nonlinear, the Wet path is linear and aligned at every
 // Oversampling (ADR 0009).
-TEST_CASE ("With Saturation off, High Quality at every Oversampling is High Quality at 1x, and at Ratio 1:1 the input delayed by the reported latency, bit for bit")
+TEST_CASE ("With Saturation off, High Quality at every Oversampling is High Quality at 1x, and at Ratio 1:1 the input delayed by the reported latency, bit for bit", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto oversampling = GENERATE (from_range (everyOversampling()));
@@ -89,7 +89,7 @@ TEST_CASE ("With Saturation off, High Quality at every Oversampling is High Qual
            == test::delayed (input, latencySamples (highQuality, sampleRate)));
 }
 
-TEST_CASE ("High Quality at 1x and Lookahead 0 is Zero Latency's output delayed by the reported latency, bit for bit, with Saturation on and off")
+TEST_CASE ("High Quality at 1x and Lookahead 0 is Zero Latency's output delayed by the reported latency, bit for bit, with Saturation on and off", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
@@ -109,7 +109,7 @@ TEST_CASE ("High Quality at 1x and Lookahead 0 is Zero Latency's output delayed 
            == test::delayed (test::played (zeroLatencySettings, sampleRate, input, cut), latencySamples (highQuality, sampleRate)));
 }
 
-TEST_CASE ("Zero Latency is the same at every Oversampling, bit for bit, at every sample rate and block size")
+TEST_CASE ("Zero Latency is the same at every Oversampling, bit for bit, at every sample rate and block size", "[sweep]")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
@@ -146,7 +146,7 @@ TEST_CASE ("Oversampled, Saturation Before still changes what the compressor rea
     CHECK (std::abs (steadyDb (SaturationPosition::After) - -10.52) <= 0.01);
 }
 
-TEST_CASE ("In High Quality, External detection keyed from the input meets the audio as Internal detection does, at every Oversampling")
+TEST_CASE ("In High Quality, External detection keyed from the input meets the audio as Internal detection does, at every Oversampling", "[sweep]")
 {
     // A Lookahead step, keyed from the Sidechain carrying the input itself, comes out sample for sample as keyed
     // internally: the Sidechain is delayed with the audio, so External detection keeps Internal's timing.
@@ -166,7 +166,7 @@ TEST_CASE ("In High Quality, External detection keyed from the input meets the a
     CHECK (test::played (external, sampleRate, input, cut, &input) == test::played (internal, sampleRate, input, cut));
 }
 
-TEST_CASE ("With Saturation off, an Oversampling change leaves the output as it is, bit for bit")
+TEST_CASE ("With Saturation off, an Oversampling change leaves the output as it is, bit for bit", "[sweep]")
 {
     const double sampleRate = GENERATE (44100.0, 96000.0, 192000.0);
     const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
@@ -181,7 +181,7 @@ TEST_CASE ("With Saturation off, an Oversampling change leaves the output as it 
     }
 }
 
-TEST_CASE ("An Oversampling change gives the same output at every block size")
+TEST_CASE ("An Oversampling change gives the same output at every block size", "[sweep]")
 {
     const auto [from, to] = GENERATE (table<Oversampling, Oversampling> ({ { Oversampling::x1, Oversampling::x8 }, { Oversampling::x8, Oversampling::x1 } }));
     const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
