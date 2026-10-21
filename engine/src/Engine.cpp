@@ -714,7 +714,7 @@ struct Engine::Impl
         dryWet.sum (wet);
         audition.process (detected, wet, highQuality);
         outputGain.process (wet);
-        limiter.process (wet, path);
+        limiter.process (wet, path, runLevels);
         globalBypass.process (wet);
         modeFade.process (wet);
     }

@@ -546,3 +546,46 @@ TEST_CASE ("Across a Gate step and an on/off glide the Gate's Gain Reduction rec
     CHECK (closed);
     CHECK (glided);
 }
+
+namespace
+{
+
+constexpr double ceilingDb = -12.0;
+
+// The Limiter on at ceilingDb in mode, with Ratio 1:1, so the compressor applies no Gain Reduction.
+Settings limited (ProcessingMode mode)
+{
+    return { .ratio = 1.0, .limiter = true, .ceilingDb = ceilingDb, .processingMode = mode };
+}
+
+// Half a second of a 1500 Hz sine at 48 kHz, its peak at levelDb: 32 samples a cycle, from a phase of 0, so every run
+// of 16 holds one sample at the peak, and its sample peak is its true peak.
+std::vector<float> limiterSine (double levelDb)
+{
+    std::vector<float> sine (24000);
+    for (std::size_t n = 0; n < sine.size(); ++n)
+        sine[n] = static_cast<float> (test::gainOf (levelDb) * std::sin (2.0 * std::numbers::pi * static_cast<double> (n) / 32.0));
+    return sine;
+}
+
+std::vector<LevelRecord> limitedRecords (const Settings& settings, std::vector<float> input)
+{
+    test::Channels audio { std::move (input) };
+    Engine engine;
+    engine.prepare (48000.0, 512, 1);
+    engine.setSettings (settings);
+    return playAndRead (engine, audio, { 512 });
+}
+
+} // namespace
+
+TEST_CASE ("In Zero Latency the Limiter's Gain Reduction brings the sample peak to the Ceiling")
+{
+    // A sine whose sample peak is 6 dB over the Ceiling: each run's peak sample takes 6 dB, from the first run on.
+    const auto records = limitedRecords (limited (ProcessingMode::ZeroLatency), limiterSine (ceilingDb + 6.0));
+    for (std::size_t r = 0; r < records.size(); ++r)
+    {
+        CAPTURE (r);
+        REQUIRE_THAT (records[r].limiterGainReductionDb, WithinAbs (6.0, 0.01));
+    }
+}

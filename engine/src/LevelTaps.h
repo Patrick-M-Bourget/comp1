@@ -43,13 +43,18 @@ public:
     // One sample's gain from the Gate, which puts one gain on every channel: 1 for none.
     void noteGateGain (double gain) { smallestGateGain = std::min (smallestGateGain, gain); }
 
+    // One sample's gain from the Limiter, which puts one gain on every channel, after its on/off crossfade and before
+    // Zero Latency's safety clip: 1 for none.
+    void noteLimiterGain (double gain) { smallestLimiterGain = std::min (smallestLimiterGain, gain); }
+
     LevelRecord take()
     {
         const LevelRecord record { .inputDb = levelDb (inputPeak),
                                    .outputDb = levelDb (outputPeak),
                                    .gainReductionDb = mostGainReductionDb,
                                    .detectionLevelDb = atLeastFloor (loudestDetectionDb),
-                                   .gateGainReductionDb = reductionOf (smallestGateGain) };
+                                   .gateGainReductionDb = reductionOf (smallestGateGain),
+                                   .limiterGainReductionDb = reductionOf (smallestLimiterGain) };
         *this = {};
         return record;
     }
@@ -73,7 +78,7 @@ private:
 
     float inputPeak = 0.0f, outputPeak = 0.0f;
     double loudestDetectionDb = plugkit::levelFloorDb, mostGainReductionDb = 0.0;
-    double smallestGateGain = 1.0;
+    double smallestGateGain = 1.0, smallestLimiterGain = 1.0;
 };
 
 // The level history: a single-producer single-consumer ring of LevelRecords. The audio thread pushes a record per
