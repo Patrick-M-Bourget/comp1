@@ -121,7 +121,7 @@ TEST_CASE ("With no Gain Reduction, VCA at Colour 100% passes the input bit for 
     CHECK (test::played ({ .character = Character::VCA }, sampleRate, input) == input);
 }
 
-TEST_CASE ("Clean has no Colour: its output is the same at every Colour, and FET and Opto play as Clean")
+TEST_CASE ("Clean has no Colour: its output is the same at every Colour, and Opto plays as Clean")
 {
     const double rate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE (from_range (test::blockCuts()));
@@ -132,7 +132,6 @@ TEST_CASE ("Clean has no Colour: its output is the same at every Colour, and FET
     CHECK (clean != input);
     CHECK (test::played ({ .thresholdDb = -40.0, .colour = 0.0 }, rate, input, cut) == clean);
     CHECK (test::played ({ .thresholdDb = -40.0, .colour = 37.0 }, rate, input, cut) == clean);
-    CHECK (test::played ({ .character = Character::FET, .thresholdDb = -40.0 }, rate, input, cut) == clean);
     CHECK (test::played ({ .character = Character::Opto, .thresholdDb = -40.0 }, rate, input, cut) == clean);
 }
 

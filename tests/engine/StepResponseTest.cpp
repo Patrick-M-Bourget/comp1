@@ -31,6 +31,8 @@ struct Response
     Settings settings;
     double gainReductionDb; // the Gain Reduction 20 dB over Threshold: (1 - 1/Ratio) 20 dB, capped at Range
     std::vector<Rate> rates;
+    double seconds = 1.0; // how long each level of the step up plays, and twice that of the step down
+    bool subMillisecond = false; // whether Attack's 90% comes in under 1 ms
 };
 
 // Each table is the output of the dyn-lab command named with it, copied as printed.
@@ -73,6 +75,49 @@ const std::vector<Response>& responses()
           { { 44100, { 1.7007, 5.5329, 50.3175, 115.4422, 20.0000 } },
             { 48000, { 1.6875, 5.5417, 50.3125, 115.4375, 20.0000 } },
             { 96000, { 1.6875, 5.5312, 50.3021, 115.4375, 20.0000 } } } },
+        // FET, fed back: its Attack runs up to FET_SPEEDUP_MAX times faster than Clean's, and its Release under the Knee
+        // is Clean's. Mono, as each channel's loop is its own, and half a second a level, which settles every row.
+        { "python3 tools/dyn-lab/dynlab.py step --character fet",
+          { .character = Character::FET, .colour = 0.0 },
+          15.0,
+          { { 44100, { 2.5170, 5.7823, 100.0227, 230.2721, 0.0000 } },
+            { 48000, { 2.5208, 5.7917, 100.0208, 230.2708, 0.0000 } },
+            { 96000, { 2.5104, 5.7708, 100.0104, 230.2604, 0.0000 } } },
+          0.5 },
+        { "python3 tools/dyn-lab/dynlab.py step --character fet --attack 0.5 --release 50 --hold 20",
+          { .character = Character::FET, .attackMs = 0.5, .releaseMs = 50.0, .holdMs = 20.0, .colour = 0.0 },
+          15.0,
+          { { 44100, { 0.1361, 0.3175, 50.0227, 115.1474, 20.0000 } },
+            { 48000, { 0.1458, 0.3125, 50.0000, 115.1458, 20.0000 } },
+            { 96000, { 0.1354, 0.3021, 50.0104, 115.1354, 20.0000 } } },
+          0.5 },
+        { "python3 tools/dyn-lab/dynlab.py step --character fet --ratio 20",
+          { .character = Character::FET, .ratio = 20.0, .colour = 0.0 },
+          19.0,
+          { { 44100, { 2.6077, 5.8730, 100.0227, 230.2721, 0.0000 } },
+            { 48000, { 2.6250, 5.8750, 100.0208, 230.2708, 0.0000 } },
+            { 96000, { 2.6146, 5.8646, 100.0104, 230.2604, 0.0000 } } },
+          0.5 },
+        { "python3 tools/dyn-lab/dynlab.py step --character fet --ratio inf",
+          { .character = Character::FET, .ratio = parameterRanges::inf, .colour = 0.0 },
+          20.0,
+          { { 44100, { 2.6757, 5.9410, 100.0227, 230.2721, 0.0000 } },
+            { 48000, { 2.6667, 5.9375, 100.0208, 230.2708, 0.0000 } },
+            { 96000, { 2.6667, 5.9271, 100.0104, 230.2604, 0.0000 } } },
+          0.5 },
+        // FET's sub-millisecond attack, at its reference Attack (FET_REFERENCE_ATTACK_MS), at every rate: its 90% within
+        // a sample or two, far under 1 ms.
+        { "python3 tools/dyn-lab/dynlab.py step --character fet --attack 0.02 --rates 44100 48000 88200 96000 176400 192000",
+          { .character = Character::FET, .attackMs = 0.02, .colour = 0.0 },
+          15.0,
+          { { 44100, { 0.0227, 0.0454, 100.0227, 230.2721, 0.0000 } },
+            { 48000, { 0.0208, 0.0417, 100.0208, 230.2708, 0.0000 } },
+            { 88200, { 0.0113, 0.0227, 100.0113, 230.2608, 0.0000 } },
+            { 96000, { 0.0104, 0.0208, 100.0104, 230.2604, 0.0000 } },
+            { 176400, { 0.0113, 0.0170, 100.0057, 230.2608, 0.0000 } },
+            { 192000, { 0.0104, 0.0156, 100.0000, 230.2604, 0.0000 } } },
+          0.5,
+          true },
     };
     return all;
 }
@@ -108,13 +153,15 @@ TEST_CASE ("Attack, Release and Hold match dyn-lab's step response within one sa
     const double quiet = settings.thresholdDb - stepDb + offset, loud = settings.thresholdDb + stepDb + offset;
 
     // Up from no Gain Reduction (the quiet level is below the Knee) to the full amount, for Attack.
-    const auto attack = test::crossings (gainReductionAfterStep (settings, rate.sampleRate, quiet, loud, 1.0), 0.0, response.gainReductionDb);
+    const auto attack = test::crossings (gainReductionAfterStep (settings, rate.sampleRate, quiet, loud, response.seconds), 0.0, response.gainReductionDb);
     REQUIRE (attack.ninety);
     CHECK (std::abs (*attack.sixtyThree * sampleMs - rate.step.attack63) <= sampleMs);
     CHECK (std::abs (*attack.ninety * sampleMs - rate.step.attack90) <= sampleMs);
+    if (response.subMillisecond)
+        CHECK (*attack.ninety * sampleMs < 1.0);
 
     // And back down, for Hold and Release.
-    const auto release = test::crossings (gainReductionAfterStep (settings, rate.sampleRate, loud, quiet, 2.0), response.gainReductionDb, 0.0);
+    const auto release = test::crossings (gainReductionAfterStep (settings, rate.sampleRate, loud, quiet, 2.0 * response.seconds), response.gainReductionDb, 0.0);
     REQUIRE (release.ninety);
     CHECK (std::abs (release.held * sampleMs - rate.step.hold) <= sampleMs);
     CHECK (std::abs ((*release.sixtyThree - release.held) * sampleMs - rate.step.release63) <= sampleMs);

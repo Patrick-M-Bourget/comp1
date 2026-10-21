@@ -7,7 +7,11 @@
 
 #include "Saturation.h"
 
+#include "comp1/Settings.h"
+
 #include <plugkit/Units.h>
+
+#include <cmath>
 
 namespace comp1
 {
@@ -18,6 +22,26 @@ struct ColourAt
     double weight = 0.0;
     double driveDb = 0.0;
 };
+
+// A Character's Colour mapping (dyn-lab's COLOUR_MAPPINGS): the most its weight reaches, and the Gain Reductions in dB
+// over which its weight and its drive rise.
+struct ColourMapping
+{
+    double weight = 0.0;
+    double weightDb = 1.0;
+    double driveDb = 1.0;
+};
+
+// The Colour mapping at a Gain Reduction in dB, before the Colour control scales its weight: the weight mapping.weight ×
+// (1 - e^(-GR / mapping.weightDb)), and the drive Drive's top × (1 - e^(-GR / mapping.driveDb)), which nears it and
+// never passes it. Each is exactly 0 with no Gain Reduction, and rises smoothly with it.
+inline ColourAt colourAt (const ColourMapping& mapping, double gainReductionDb)
+{
+    if (! (gainReductionDb > 0.0))
+        return {};
+    return { .weight = mapping.weight * -std::expm1 (-gainReductionDb / mapping.weightDb),
+             .driveDb = parameterRanges::drive.high * -std::expm1 (-gainReductionDb / mapping.driveDb) };
+}
 
 // Colour on one part the compressor compresses (a channel, or the Mid or the Side). Each compressed sample y gains
 // w r(g y) / g, with g the drive's gain and r the residual anti-aliased (ADR 0005), so the linear part, y, passes

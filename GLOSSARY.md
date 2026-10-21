@@ -136,7 +136,7 @@ Listening to the signal the detector hears instead of the plugin's output.
 _Avoid_: Sidechain solo, listen
 
 **Detection Level**:
-The level of the detection signal, as the detector compares it with Threshold, in dB where a full-scale sine reads 0.
+The level of the detection signal, before any feedback, in dB where a full-scale sine reads 0. Clean and VCA compare it with Threshold; FET compares it less the Gain Reduction it is applying.
 _Avoid_: Input level, sidechain level
 
 **Stereo Link**:
