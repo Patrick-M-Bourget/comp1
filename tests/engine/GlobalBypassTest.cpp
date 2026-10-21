@@ -44,6 +44,22 @@ const std::vector<Scene>& scenes()
              s.saturation = true;
              s.driveDb = 24.0;
          } },
+        { "Saturation Before at 8x Oversampling", [] (Settings& s) {
+             s.saturation = true;
+             s.driveDb = 24.0;
+             s.saturationPosition = SaturationPosition::Before;
+             s.oversampling = Oversampling::x8;
+         } },
+        { "Dry 0 dB and Wet -6 dB", [] (Settings& s) {
+             s.dryDb = 0.0;
+             s.wetDb = -6.0;
+         } },
+        { "the Limiter at -12 dBFS", [] (Settings& s) {
+             s.limiter = true;
+             s.ceilingDb = -12.0;
+         } },
+        // Gate Threshold over the noise's peaks, so the Gate closes by Gate Range.
+        { "the Gate closed", [] (Settings& s) { s.gate = { .on = true, .thresholdDb = 0.0, .rangeDb = 60.0 }; } },
     };
     return all;
 }

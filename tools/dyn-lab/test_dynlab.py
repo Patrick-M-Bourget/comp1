@@ -483,10 +483,10 @@ class Latency(unittest.TestCase):
 
 class Limiter(unittest.TestCase):
     def test_the_estimators_delay_and_the_lookahead_window_fill_the_limiter_reserve_exactly(self):
-        # Worked by hand: 16 taps read 8 samples ahead; the reserve is 45 samples at 44.1 kHz and 192 at 192 kHz.
-        self.assertEqual(dynlab.estimator_delay(), 8)
-        self.assertEqual(dynlab.lookahead_window(44100), 37)
-        self.assertEqual(dynlab.lookahead_window(192000), 184)
+        # Worked by hand: 48 taps read 24 samples ahead; the reserve is 45 samples at 44.1 kHz and 192 at 192 kHz.
+        self.assertEqual(dynlab.estimator_delay(), 24)
+        self.assertEqual(dynlab.lookahead_window(44100), 21)
+        self.assertEqual(dynlab.lookahead_window(192000), 168)
         for fs in dynlab.supported_rates():
             with self.subTest(fs):
                 _, _, reserve = dynlab.high_quality_parts(fs)
@@ -510,6 +510,19 @@ class Limiter(unittest.TestCase):
         for fs in dynlab.SAMPLE_RATES:
             with self.subTest(fs):
                 self.assertLessEqual(dynlab.under_read(fs).db, dynlab.LIMITER_TRUE_PEAK_HEADROOM_DB)
+
+    def test_the_estimator_is_the_first_candidate_to_keep_full_band_true_peaks_the_margin_under_the_ceiling(self):
+        chosen = (dynlab.TRUE_PEAK_FACTOR, dynlab.TRUE_PEAK_TAPS)
+        candidates = sorted(dynlab.FULL_BAND_CANDIDATES)
+        self.assertIn(chosen, candidates)
+        for fs in (44100, 48000):
+            with self.subTest(fs=fs):
+                self.assertLessEqual(dynlab.full_band_over(fs)[0], -dynlab.FULL_BAND_MARGIN_DB)
+        # Every design before it misses the margin, the old 4x 16-tap one by over a dB past the Ceiling itself.
+        for factor, taps in candidates[:candidates.index(chosen)]:
+            with self.subTest(factor=factor, taps=taps):
+                self.assertGreater(dynlab.full_band_over(44100, factor, taps)[0], -dynlab.FULL_BAND_MARGIN_DB)
+        self.assertGreater(dynlab.full_band_over(44100, 4, 16)[0], 1.0)
 
     def test_zero_latency_holds_the_sample_peak_and_high_quality_the_true_peak_to_the_ceiling(self):
         for ceiling in (0.0, -6.0, -30.0):
@@ -676,7 +689,7 @@ class Aliasing(unittest.TestCase):
 
 
 class Gate(unittest.TestCase):
-    """The Gate: a hard gate on its key level, open at Gate Threshold and closed GATE_HYSTERESIS_DB under it, asking
+    """The Gate: a hard gate on its held level, open at Gate Threshold and closed GATE_HYSTERESIS_DB under it, asking
     for no Gain Reduction open and exactly Gate Range closed, each move one pole in dB."""
 
     def assertWithinOneSample(self, measured_ms, expected_ms, fs):
@@ -690,7 +703,7 @@ class Gate(unittest.TestCase):
         for fs in dynlab.SAMPLE_RATES:
             for hold in (0, 20, 500):
                 step = dynlab.gate_step(dynlab.Gate(hold=hold), fs)
-                self.assertWithinOneSample(step.release_begins, hold + dynlab.GATE_KEY_HOLD_MS, fs)
+                self.assertWithinOneSample(step.release_begins, hold + dynlab.GATE_LEVEL_HOLD_MS, fs)
 
     def test_gate_attack_and_gate_release_reach_63_percent_in_one_time_constant(self):
         # The slowest settings once: settling a 5000 ms Gate Release for the depth is long.
@@ -722,15 +735,15 @@ class Gate(unittest.TestCase):
         gate = dynlab.Gate(hold=20)
         detector = dynlab.GateDetector(gate, fs)
         quiet, between = gate.threshold - 20, gate.threshold - dynlab.GATE_HYSTERESIS_DB / 2
-        key_hold = round(dynlab.GATE_KEY_HOLD_MS * fs / 1000)
-        for _ in range(key_hold + 1):
+        level_hold = round(dynlab.GATE_LEVEL_HOLD_MS * fs / 1000)
+        for _ in range(level_hold + 1):
             detector.process(gate.threshold + 20)
-        # 15 ms under the closing level, past the key hold but within Gate Hold, then one sample back between.
-        for _ in range(key_hold + round(0.015 * fs)):
+        # 15 ms under the closing level, past the level hold but within Gate Hold, then one sample back between.
+        for _ in range(level_hold + round(0.015 * fs)):
             detector.process(quiet)
         detector.process(between)
-        # A whole key hold and Gate Hold again before Gate Release begins.
-        for n in range(key_hold + round(0.020 * fs)):
+        # A whole level hold and Gate Hold again before Gate Release begins.
+        for n in range(level_hold + round(0.020 * fs)):
             self.assertEqual(detector.process(quiet), 0.0, n)
         self.assertGreater(detector.process(quiet), 0.0)
 
@@ -751,13 +764,13 @@ class Gate(unittest.TestCase):
 
     def test_the_constants_are_the_trade_offs_choice_and_keep_every_signal_steady(self):
         rows = dynlab.gate_trade_off()
-        self.assertEqual(dynlab.chosen_gate_constants(rows), (dynlab.GATE_KEY_HOLD_MS, dynlab.GATE_HYSTERESIS_DB))
-        # With no key hold every low signal ripples, and how late a stop closes is the key hold.
+        self.assertEqual(dynlab.chosen_gate_constants(rows), (dynlab.GATE_LEVEL_HOLD_MS, dynlab.GATE_HYSTERESIS_DB))
+        # With no level hold every low signal ripples, and how late a stop closes is the level hold.
         for row in rows:
-            if row.key_hold == 0:
+            if row.level_hold == 0:
                 self.assertFalse(row.steady)
-            self.assertAlmostEqual(row.stop, row.key_hold, delta=1000 / dynlab.GATE_TRADE_OFF_RATE)
-            self.assertAlmostEqual(row.fade, row.key_hold + 1000 * row.hysteresis / dynlab.GATE_FADE_DB_PER_S,
+            self.assertAlmostEqual(row.stop, row.level_hold, delta=1000 / dynlab.GATE_TRADE_OFF_RATE)
+            self.assertAlmostEqual(row.fade, row.level_hold + 1000 * row.hysteresis / dynlab.GATE_FADE_DB_PER_S,
                                    delta=1000 / dynlab.GATE_TRADE_OFF_RATE)
 
 
@@ -990,8 +1003,8 @@ class CommandLine(unittest.TestCase):
         rows = [line.split() for line in result.stdout.splitlines() if line.split()[:1] in (["44100"], ["96000"])]
         # Each rate's reserve, estimator delay, window and release in samples, worked by hand.
         parts = [row[:6] for row in rows]
-        self.assertIn(["44100", "45", "8", "37", "8820", "0.3"], parts)
-        self.assertIn(["96000", "96", "8", "88", "19200", "0.3"], parts)
+        self.assertIn(["44100", "45", "24", "21", "8820", "0.3"], parts)
+        self.assertIn(["96000", "96", "24", "72", "19200", "0.3"], parts)
         # Per rate and mode, four reference signals' peaks and one timing row.
         for mode in ("zero", "high"):
             self.assertEqual(sum(1 for row in rows if mode in row), 2 * 5, mode)

@@ -167,7 +167,7 @@ TEST_CASE ("The Gate lowers the Dry path too: at Dry 0 dB and Wet Off, closed, t
         CHECK (std::abs (outputDb[ch] - (expectedDb[ch] - gate.rangeDb)) <= 0.001);
 }
 
-TEST_CASE ("The Gate keys after the Detection EQ: its high-pass closes the Gate on a low tone that would keep it open")
+TEST_CASE ("The Gate listens after the Detection EQ: its high-pass closes the Gate on a low tone that would keep it open")
 {
     // A -20 dB 50 Hz tone, 10 dB over Gate Threshold.
     const double sampleRate = 48000.0;
@@ -184,9 +184,9 @@ TEST_CASE ("The Gate keys after the Detection EQ: its high-pass closes the Gate 
     CHECK (std::abs (gatedDb[0] - (tailLevelsDb (tone, 4800)[0] - settings.gate.rangeDb)) <= 0.001);
 }
 
-TEST_CASE ("The Gate never keys from a feedback path: from silence, closed, a tone 1 dB over Gate Threshold opens it within Gate Attack's 90% time")
+TEST_CASE ("The Gate never listens to a feedback path: from silence, closed, a tone 1 dB over Gate Threshold opens it within Gate Attack's 90% time")
 {
-    // A Gate keyed from its own output would hear the tone Gate Range down, under the closing level, and stay shut.
+    // A Gate listening to its own output would hear the tone Gate Range down, under the closing level, and stay shut.
     const double sampleRate = 48000.0;
     const Settings::Gate gate { .releaseMs = 5.0, .holdMs = 0.0 };
     const auto silence = test::steadyLevel (1, 9600, silent);
@@ -220,7 +220,7 @@ TEST_CASE ("With External and no Sidechain connected the Gate stays open; a conn
     const Settings::Gate gate {};
     auto settings = gated (gate);
     settings.detectionSource = DetectionSource::External;
-    // A main the Gate would close on were it keyed from it.
+    // A main the Gate would close on were it listening to it.
     const auto quiet = test::steadyLevel (2, 72000, gate.thresholdDb - stepDb);
     auto gateOff = settings;
     gateOff.gate.on = false;
@@ -275,12 +275,12 @@ TEST_CASE ("The reported latency is unchanged with the Gate on")
     CHECK (test::impulseDelaySamples (gated ({}, mode), 48000.0) == latencySamples (mode, 48000.0));
 }
 
-TEST_CASE ("With its key 20 dB under Gate Threshold the Gate lowers the input by Gate Range; above it, it passes bit for bit")
+TEST_CASE ("With its Detection Level 20 dB under Gate Threshold the Gate lowers the input by Gate Range; above it, it passes bit for bit")
 {
     const double rangeDb = GENERATE (6.0, 20.0, 60.0);
     CAPTURE (rangeDb);
     const Settings::Gate gate { .rangeDb = rangeDb };
-    // Settled: the key hold, Gate Hold and 14 Gate Release time constants leave under 1e-4 dB of Gate Range to go.
+    // Settled: the level hold, Gate Hold and 14 Gate Release time constants leave under 1e-4 dB of Gate Range to go.
     const double quietDb = gate.thresholdDb - 20.0;
     CHECK (std::abs (test::steadyOutputDb (gated (gate), quietDb, 48000.0, 2, 1.5) - (quietDb - rangeDb)) <= 0.001);
     const auto loud = test::steadyLevel (2, 4800, gate.thresholdDb + 20.0);

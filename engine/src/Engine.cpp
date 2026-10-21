@@ -357,9 +357,6 @@ private:
     // The gain computer's settings, each gliding as the Glide of its index.
     static constexpr double clean::Curve::* curveGlides[] = { &clean::Curve::thresholdDb, &clean::Curve::inverseRatio, &clean::Curve::kneeDb,
                                                               &clean::Curve::rangeDb };
-    // Close enough to count as arrived, in each glide's units (dB, 1/Ratio, log ms, ms, a fraction): far below what
-    // can be heard.
-    static constexpr double arrivalTolerance = 1.0e-7;
 
     void update()
     {
@@ -673,11 +670,10 @@ struct Engine::Impl
         return { subBlock.data(), channels, count };
     }
 
-    // The Wet path, on a piece of a run, in place, gated, with the Sidechain's piece (or none), on path: Saturation Before,
-    // the detection stage, fed the compressor's input as the Internal signal, then the compressor, Saturation After
-    // and Auto Gain; then the Dry/Wet sum, Detection Audition and Output Gain. Saturation runs at one of its two
-    // positions. The compressor's
-    // settings step at the start of each run, wherever the host's blocks fall; Saturation, Auto Gain, Detection
+    // The Wet path, on a piece of a run, in place, gated, with the Sidechain's piece (or none), on path: Saturation
+    // Before, the detection stage, fed the compressor's input as the Internal signal, then the compressor, Saturation
+    // After and Auto Gain; then the Dry/Wet sum, Detection Audition and Output Gain. Saturation runs at one of its two
+    // positions. The compressor's settings step at the start of each run, wherever the host's blocks fall; Saturation, Auto Gain, Detection
     // Audition and Output Gain glide a sample at a time with next(), so where the pieces fall changes nothing either.
     // From the sample a new setting is taken (the start of the host's block, so the host decides when a change lands),
     // the output is the same sample for sample however the audio is cut. The detector runs while Detection Audition
@@ -688,9 +684,9 @@ struct Engine::Impl
     // compressor, at the host rate. The audio is delayed by the Lookahead budget and the detection signal by
     // less, so the compressor meets the audio Lookahead early; the two sections and the budget are the Wet path's delay
     // up to the Dry/Wet sum. After Output Gain, the Limiter, on the path playing. Then Global Bypass, which crossfades
-    // to the input as it came in, before the Gate, delayed to match; it takes precedence over Detection Audition, and everything before
-    // it runs on while it is on, so turning it off has no restart transient. Last, the mode fade, which swaps the paths
-    // in silence.
+    // to the input as it came in, before the Gate, delayed to match; it takes precedence over Detection Audition, and
+    // everything before it runs on while it is on, so turning it off has no restart transient. Last, the mode fade,
+    // which swaps the paths in silence.
     void wetPath (AudioBlock wet, const ConstAudioBlock* sidechainPiece, ProcessingMode path)
     {
         if (gridPosition == 0)

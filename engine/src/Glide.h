@@ -1,10 +1,14 @@
 #pragma once
 
 // How every gliding setting takes a new value: it glides there, or with snap (the settings in force at prepare()) it
-// is there at once.
+// is there at once; and when a glide counts as arrived.
 
 namespace comp1
 {
+
+// Close enough for a setting's glide to count as arrived, in whatever units it glides in (dB, ms, log ms, log Hz,
+// 1/Ratio, a fraction): far below what can be heard.
+inline constexpr double arrivalTolerance = 1.0e-7;
 
 // glide is anything with reset (target), to be there at once, and setTarget (target), to glide there: plugkit's
 // Smoother, or the mode fade.

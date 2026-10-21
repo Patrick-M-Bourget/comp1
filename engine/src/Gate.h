@@ -3,14 +3,14 @@
 // The Gate: a hard gate on the main input, ahead of the Dry/Wet split, so it lowers the Dry and the Wet path alike, as
 // dyn-lab models it (tools/dyn-lab/USAGE.md, "Gate"), with its figures (python3 tools/dyn-lab/dynlab.py gate).
 //
-// Its key is the Detection Source after the Detection EQ, from a detection stage of its own, fed the main input as the
-// Internal signal and the Sidechain, with the compressor's Detection Source and Detection EQ settings. So it never keys
-// from its own output, the compressor, or any feedback path. One Gate gain goes on every main channel, from the louder
-// channel's key, whatever Stereo Placement and Stereo Link are.
+// It listens to the Detection Source after the Detection EQ, from a detection stage of its own, fed the main input as
+// the Internal signal and the Sidechain, with the compressor's Detection Source and Detection EQ settings. So it never
+// listens to its own output, the compressor, or any feedback path. One Gate gain goes on every main channel, from the
+// louder channel's Detection Level, whatever Stereo Placement and Stereo Link are.
 //
-// The key level is the loudest Detection Level of the key over the sample and the key hold before it. The Gate opens
-// when the key level reaches Gate Threshold and closes once it is the hysteresis under it. Gate Hold keeps it open for
-// Gate Hold after it would close, before Gate Release begins; a key level back above the closing level restarts the
+// The held level is the loudest Detection Level over the sample and the level hold before it. The Gate opens
+// when the held level reaches Gate Threshold and closes once it is the hysteresis under it. Gate Hold keeps it open for
+// Gate Hold after it would close, before Gate Release begins; a held level back above the closing level restarts the
 // count. Open, it asks for no Gain Reduction; closed, exactly Gate Range. Gate Attack is how fast it opens and Gate
 // Release how fast it closes, each one pole in dB. With External and no Sidechain connected it is open.
 
@@ -35,7 +35,7 @@ namespace comp1
 
 // The loudest of the last few levels: a sliding maximum over a window of the sample and holdSamples before it, kept as
 // the levels each louder than every later one, oldest first, in storage sized at prepare().
-class KeyHold
+class LevelHold
 {
 public:
     void prepare (int newHoldSamples)
@@ -89,8 +89,8 @@ private:
 class GateStage
 {
 public:
-    // dyn-lab's figures: GATE_KEY_HOLD_MS, GATE_HYSTERESIS_DB and GATE_SETTLED_DB.
-    static constexpr double keyHoldMs = 10.0;
+    // dyn-lab's figures: GATE_LEVEL_HOLD_MS, GATE_HYSTERESIS_DB and GATE_SETTLED_DB.
+    static constexpr double levelHoldMs = 10.0;
     static constexpr double hysteresisDb = 6.0;
     static constexpr double settledDb = 1.0e-7;
 
@@ -99,7 +99,7 @@ public:
     {
         sampleRate = newSampleRate;
         detection.prepare (sampleRate, numChannels, plugkit::runSamples);
-        keyHold.prepare (static_cast<int> (std::lround (keyHoldMs * sampleRate / 1000.0)));
+        levelHold.prepare (static_cast<int> (std::lround (levelHoldMs * sampleRate / 1000.0)));
         for (auto& setting : glides)
             setting.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         share.configure (plugkit::glideTimeConstantSeconds * sampleRate, 1.0e-6);
@@ -140,19 +140,19 @@ public:
             update();
     }
 
-    // Gates main, a piece of the scrubbed input of at most a run, in place, keyed from it and the Sidechain's piece
+    // Gates main, a piece of the scrubbed input of at most a run, in place, listening to it and the Sidechain's piece
     // (or none). It is fed every piece in order, on or off, so its Detection EQ stays on the run grid. It notes the
     // gain it applies at each sample, its on/off share included, in levels.
     void process (AudioBlock main, const ConstAudioBlock* sidechain, RunLevels& levels)
     {
-        const auto key = detection.process ({ main.channels, main.numChannels, main.numSamples }, sidechain);
-        const bool noKey = source == DetectionSource::External && sidechain == nullptr;
+        const auto detected = detection.process ({ main.channels, main.numChannels, main.numSamples }, sidechain);
+        const bool noSidechain = source == DetectionSource::External && sidechain == nullptr;
         for (int i = 0; i < main.numSamples; ++i)
         {
             double louder = 0.0;
             for (int ch = 0; ch < main.numChannels; ++ch)
-                louder = std::max (louder, std::abs (static_cast<double> (key.channelFollowedBy (ch)[i])));
-            const double reductionDb = step (noKey, plugkit::gainToDecibels (louder));
+                louder = std::max (louder, std::abs (static_cast<double> (detected.channelFollowedBy (ch)[i])));
+            const double reductionDb = step (noSidechain, plugkit::gainToDecibels (louder));
             const double on = share.isSettled() ? share.value() : share.next();
             if (const double applied = on * reductionDb; applied > 0.0)
             {
@@ -165,20 +165,21 @@ public:
     }
 
 private:
-    // One sample of the Gate, from its key's Detection Level in dB (or no key): its Gain Reduction in dB.
-    double step (bool noKey, double levelDb)
+    // One sample of the Gate, from its Detection Level in dB (or none, with no Sidechain to listen to): its Gain
+    // Reduction in dB.
+    double step (bool noSidechain, double levelDb)
     {
-        if (noKey)
+        if (noSidechain)
         {
             open = true;
             held = 0;
         }
-        else if (const double keyDb = keyHold.next (levelDb); keyDb >= thresholdDb)
+        else if (const double heldDb = levelHold.next (levelDb); heldDb >= thresholdDb)
         {
             open = true;
             held = 0;
         }
-        else if (keyDb >= thresholdDb - hysteresisDb)
+        else if (heldDb >= thresholdDb - hysteresisDb)
             held = 0;
         else if (open)
         {
@@ -203,13 +204,11 @@ private:
     }
 
     enum Glide : std::size_t { threshold, range, hold, logAttack, logRelease, count };
-    // Close enough to count as arrived, in each glide's units (dB, ms, log ms): far below what can be heard.
-    static constexpr double arrivalTolerance = 1.0e-7;
 
     double sampleRate = 44100.0;
     DetectionStage detection;
     DetectionSource source = DetectionSource::Internal;
-    KeyHold keyHold;
+    LevelHold levelHold;
     plugkit::Smoother glides[count];
     plugkit::Smoother share; // 0 off, 1 on: the share of the Gain Reduction applied
     double thresholdDb = 0.0, rangeDb = 0.0;

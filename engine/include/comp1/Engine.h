@@ -76,7 +76,7 @@ public:
     // plays as silence, on both paths.
     //
     // The Gate comes first, on the main input before the Dry/Wet split, so it lowers the Dry and the Wet path alike: it
-    // keys from the Detection Source after the Detection EQ, never from its own output, and puts one gain on every
+    // listens to the Detection Source after the Detection EQ, never to its own output, and puts one gain on every
     // channel. With External and no Sidechain connected it is open. Off, or open, it changes nothing, bit for bit.
     //
     // The Dry path is the gated input, split off before the Wet path touches it, delayed to meet the Wet path at the

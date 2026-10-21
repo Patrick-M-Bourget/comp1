@@ -276,6 +276,45 @@ inline const std::vector<std::vector<int>>& blockCuts()
     return cuts;
 }
 
+// A host: a sample rate, and the block sizes it cuts the audio into, in turn.
+struct Host
+{
+    double sampleRate;
+    std::vector<int> cut;
+};
+
+// Each sample rate comp1 supports, with a block cut in turn, for a sweep that needs every rate but not every rate at
+// every cut.
+inline const std::vector<Host>& hosts()
+{
+    static const std::vector<Host> all = [] {
+        std::vector<Host> h;
+        for (std::size_t r = 0; r < sampleRates().size(); ++r)
+            h.push_back ({ sampleRates()[r], blockCuts()[r % blockCuts().size()] });
+        return h;
+    }();
+    return all;
+}
+
+// signal on the left channel and, at half its level, on the right.
+inline Channels stereo (const std::vector<float>& signal)
+{
+    Channels audio { signal, signal };
+    for (auto& sample : audio[1])
+        sample *= 0.5f;
+    return audio;
+}
+
+// The loudest sample of every channel, linear.
+inline double samplePeak (const Channels& audio)
+{
+    double peak = 0.0;
+    for (const auto& channel : audio)
+        for (const float sample : channel)
+            peak = std::max (peak, static_cast<double> (std::abs (sample)));
+    return peak;
+}
+
 // --- Step response -----------------------------------------------------------------------------------------------
 
 // The Gain Reduction in dB the listener hears on each sample, as an Engine with settings at sampleRate plays a steady
@@ -461,10 +500,15 @@ inline double worstAliasDb (const std::vector<double>& spectrum, int bin)
 
 // --- Colour, as dyn-lab's `colour` measures it -------------------------------------------------------------------
 
-// dyn-lab's colour_level at the defaults: the input level whose Gain Reduction on the Transfer Curve is reductionDb,
-// above the Knee from 3 dB of Gain Reduction (4 dB over Threshold, past the Knee's 3 dB half-width); or for none, 12 dB
-// under the Knee (COLOUR_BELOW_KNEE_DB).
-inline double levelForReductionDb (double reductionDb) { return reductionDb > 0.0 ? -18.0 + reductionDb / 0.75 : -18.0 - 3.0 - 12.0; }
+// dyn-lab's colour_level at Settings' defaults: the input level whose Gain Reduction on the Transfer Curve is
+// reductionDb, above the Knee from 3 dB of Gain Reduction at the defaults (4 dB over Threshold, past the Knee's 3 dB
+// half-width); or for none, 12 dB under the Knee (COLOUR_BELOW_KNEE_DB).
+inline double levelForReductionDb (double reductionDb)
+{
+    const Settings defaults;
+    const double slope = 1.0 - 1.0 / defaults.ratio;
+    return reductionDb > 0.0 ? defaults.thresholdDb + reductionDb / slope : defaults.thresholdDb - defaults.kneeDb / 2.0 - 12.0;
+}
 
 // The bin-centred tone in bin at levelDb, times scale, for lengths spectrumLengths, through an Engine with settings at
 // sampleRate, compressed by a steady Gain Reduction, as dyn-lab's colour holds it: an External Detection Source on a

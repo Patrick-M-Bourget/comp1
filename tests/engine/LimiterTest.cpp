@@ -41,41 +41,9 @@ const std::vector<double>& ceilings()
     return all;
 }
 
-// Each sample rate comp1 supports, with a block cut in turn: the cut is shown not to matter on its own (below).
-struct Host
-{
-    double sampleRate;
-    std::vector<int> cut;
-};
-
-const std::vector<Host>& hosts()
-{
-    static const std::vector<Host> all = [] {
-        std::vector<Host> h;
-        for (std::size_t r = 0; r < test::sampleRates().size(); ++r)
-            h.push_back ({ test::sampleRates()[r], test::blockCuts()[r % test::blockCuts().size()] });
-        return h;
-    }();
-    return all;
-}
-
-// signal on the left channel and, at half its level, on the right, long enough to play out the latency too.
-test::Channels stereo (const std::vector<float>& signal)
-{
-    test::Channels audio { signal, signal };
-    for (auto& sample : audio[1])
-        sample *= 0.5f;
-    return audio;
-}
-
-double samplePeak (const test::Channels& audio)
-{
-    double peak = 0.0;
-    for (const auto& channel : audio)
-        for (const float sample : channel)
-            peak = std::max (peak, static_cast<double> (std::abs (sample)));
-    return peak;
-}
+using test::hosts;
+using test::samplePeak;
+using test::stereo;
 
 } // namespace
 
@@ -113,6 +81,66 @@ TEST_CASE ("High Quality's Limiter never lets the true peak past the Ceiling, at
         const test::Channels input { signal.make (ceilingDb, host.sampleRate, length) };
         const auto out = test::played (limiting (highQuality, ceilingDb, outputGainDb), host.sampleRate, input, host.cut);
         CHECK (test::truePeak (out) <= test::gainOf (ceilingDb));
+    }
+}
+
+namespace
+{
+
+// Full-band signals, unlike dyn-lab's reference signals, which are band-limited: content right up to Nyquist, where
+// the estimator under-reads most. Each at full scale, length samples long.
+struct FullBandSignal
+{
+    const char* name;
+    std::vector<float> (*make) (double sampleRate, int length);
+};
+
+const std::vector<FullBandSignal>& fullBandSignals()
+{
+    static const std::vector<FullBandSignal> all {
+        // Seeded white noise, -0.5 to 0.5, doubled.
+        { "white noise", [] (double, int length) {
+             auto noise = test::noise (1, length, 7).front();
+             for (auto& sample : noise)
+                 sample *= 2.0f;
+             return noise;
+         } },
+        // A naive 1 kHz square wave, whose harmonics fold back all over the band, as a hard-clipped synth's do.
+        { "1 kHz square wave", [] (double sampleRate, int length) {
+             std::vector<float> square (static_cast<std::size_t> (length));
+             for (int n = 0; n < length; ++n)
+                 square[static_cast<std::size_t> (n)] = std::fmod (1000.0 * n / sampleRate, 1.0) < 0.5 ? 1.0f : -1.0f;
+             return square;
+         } },
+        // White noise, high-passed by a first difference: most of its power near Nyquist.
+        { "differenced noise", [] (double, int length) {
+             const auto noise = test::noise (1, length + 1, 9).front();
+             std::vector<float> high (static_cast<std::size_t> (length));
+             for (std::size_t n = 0; n < high.size(); ++n)
+                 high[n] = noise[n + 1] - noise[n];
+             return high;
+         } },
+    };
+    return all;
+}
+
+} // namespace
+
+TEST_CASE ("High Quality's Limiter keeps the true peak of white noise and full-band signals under the Ceiling, at any Output Gain", "[sweep]")
+{
+    const auto& host = GENERATE (from_range (hosts()));
+    const double ceilingDb = GENERATE (from_range (ceilings()));
+    const double outputGainDb = GENERATE (from_range (outputGains()));
+    CAPTURE (host.sampleRate, host.cut, ceilingDb, outputGainDb);
+    const int length = 2 * test::limiterSignalSamples + latencySamples (highQuality, host.sampleRate);
+    for (const auto& signal : fullBandSignals())
+    {
+        CAPTURE (signal.name);
+        const test::Channels input { signal.make (host.sampleRate, length) };
+        const auto out = test::played (limiting (highQuality, ceilingDb, outputGainDb), host.sampleRate, input, host.cut);
+        const double overDb = 20.0 * std::log10 (test::truePeak (out)) - ceilingDb;
+        CAPTURE (overDb);
+        CHECK (overDb <= 0.0);
     }
 }
 
@@ -242,9 +270,9 @@ struct TimingRow
 const std::vector<TimingRow>& timingTable()
 {
     static const std::vector<TimingRow> rows {
-        { 44100, zeroLatency, 200.0227, 460.5215 }, { 44100, highQuality, 200.4308, 460.9524 },
-        { 48000, zeroLatency, 200.0208, 460.5208 }, { 48000, highQuality, 200.4375, 460.9375 },
-        { 96000, zeroLatency, 200.0000, 460.5208 }, { 96000, highQuality, 200.4688, 460.9792 },
+        { 44100, zeroLatency, 200.0227, 460.5215 }, { 44100, highQuality, 200.2494, 460.7710 },
+        { 48000, zeroLatency, 200.0208, 460.5208 }, { 48000, highQuality, 200.2708, 460.7708 },
+        { 96000, zeroLatency, 200.0000, 460.5208 }, { 96000, highQuality, 200.3854, 460.8958 },
     };
     return rows;
 }

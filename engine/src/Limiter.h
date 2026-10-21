@@ -7,7 +7,7 @@
 // - Zero Latency: a zero-attack gain computer on the sample peak. Each sample's Gain Reduction brings it to the
 //   Ceiling at once and releases with one pole in dB; then a safety clip at the Ceiling. No delay, and no sample's
 //   magnitude ever passes the Ceiling.
-// - High Quality: a 4x true-peak estimator, aiming the headroom under the Ceiling, then over a lookahead window W, a
+// - High Quality: an 8x true-peak estimator, aiming the headroom under the Ceiling, then over a lookahead window W, a
 //   sliding maximum of the Gain Reduction asked for over W + 1 samples, the release, and their average over W + 1
 //   samples, so the gain moves smoothly and is fully down when a peak reaches the audio. The estimator's delay and W
 //   fill the Limiter reserve (comp1/Latency.h) exactly: the audio is delayed by it, on or off.
@@ -18,11 +18,14 @@
 // Gain Reduction settles on exactly none, and the audio passes bit for bit. Each sample moves the same however the
 // audio is cut. When a Processing Mode's path starts playing again, its Limiter starts afresh.
 
+#include "Bessel.h"
+#include "Glide.h"
 #include "LevelTaps.h"
 #include "comp1/Engine.h"
 #include "comp1/Latency.h"
 
 #include <plugkit/Smoother.h>
+#include <plugkit/Units.h>
 
 #include <algorithm>
 #include <array>
@@ -44,8 +47,8 @@ public:
     static constexpr double settledDb = 1.0e-7;
     // The true-peak estimator, dyn-lab's TRUE_PEAK_FACTOR, TRUE_PEAK_TAPS and TRUE_PEAK_BETA: it delays by half its
     // length at every sample rate.
-    static constexpr int estimatorFactor = 4;
-    static constexpr int estimatorTaps = 16;
+    static constexpr int estimatorFactor = 8;
+    static constexpr int estimatorTaps = 48;
     static constexpr double estimatorBeta = 6.0;
     static constexpr int estimatorDelay = estimatorTaps / 2;
     // The Ceiling glides this many times plugkit's glide time. Zero Latency's zero attack follows a falling Ceiling
@@ -53,7 +56,7 @@ public:
     static constexpr double ceilingGlides = 4.0;
 
     Limiter()
-        : headroomGain (std::pow (10.0, -truePeakHeadroomDb / 20.0))
+        : headroomGain (plugkit::decibelsToGain (-truePeakHeadroomDb))
     {
         designEstimator();
     }
@@ -66,9 +69,6 @@ public:
         // The whole Limiter reserve, the estimator's delay and the window.
         reserve = limiterReserveSamples (sampleRate);
         span = std::max (reserve - estimatorDelay, 0) + 1;
-        // Before the Limiter, High Quality's other delays after the compressor hold what the path last played; when it
-        // starts again, the estimator hears silence in their place (startPath).
-        staleSamples = latencySamples (ProcessingMode::HighQuality, sampleRate) - lookaheadBudgetSamples (sampleRate) - reserve;
         history.assign (channels, {});
         delayed.assign (channels, std::vector<float> (static_cast<std::size_t> (reserve)));
         heldValues.assign (static_cast<std::size_t> (span), 0.0);
@@ -88,22 +88,9 @@ public:
     }
 
     // With snap, each takes effect at once instead of gliding.
-    void setOn (bool on, bool snap)
-    {
-        if (snap)
-            onShare.reset (on ? 1.0 : 0.0);
-        else
-            onShare.setTarget (on ? 1.0 : 0.0);
-    }
+    void setOn (bool on, bool snap) { glideTo (onShare, on ? 1.0 : 0.0, snap); }
 
-    void setCeiling (double ceilingDb, bool snap)
-    {
-        const double gain = std::pow (10.0, ceilingDb / 20.0);
-        if (snap)
-            ceiling.reset (gain);
-        else
-            ceiling.setTarget (gain);
-    }
+    void setCeiling (double ceilingDb, bool snap) { glideTo (ceiling, plugkit::decibelsToGain (ceilingDb), snap); }
 
     // Limits block in place, on path: High Quality's delays it by the Limiter reserve. It notes the gain it applies
     // at each sample in levels.
@@ -157,16 +144,13 @@ private:
     double highQualitySample (AudioBlock block, int i, double share, double ceilingGain)
     {
         // The estimate for the sample estimatorDelay ago: the loudest of its segment and the one before, on every
-        // channel. While stale audio arrives, silence.
+        // channel.
         double segment = 0.0;
         const double aim = ceilingGain * headroomGain;
-        const bool stale = staleLeft > 0;
-        if (stale)
-            --staleLeft;
         for (int ch = 0; ch < block.numChannels; ++ch)
         {
             auto& h = history[static_cast<std::size_t> (ch)];
-            const double sample = stale ? 0.0 : static_cast<double> (block.channels[ch][i]);
+            const auto sample = static_cast<double> (block.channels[ch][i]);
             // Written twice, so the latest estimatorTaps samples sit in a row from historyPosition + 1.
             h[static_cast<std::size_t> (historyPosition)] = h[static_cast<std::size_t> (historyPosition + estimatorTaps)] = sample;
             segment = std::max (segment, segmentPeak (h.data() + historyPosition + 1, aim));
@@ -249,13 +233,13 @@ private:
     // --- Both ---
 
     // The Gain Reduction in dB that brings peak to ceilingGain: 0 when it is under it.
-    static double overDb (double peak, double ceilingGain) { return peak > ceilingGain ? 20.0 * std::log10 (peak / ceilingGain) : 0.0; }
+    static double overDb (double peak, double ceilingGain) { return peak > ceilingGain ? plugkit::gainToDecibels (peak / ceilingGain) : 0.0; }
 
     static double settled (double reductionDb) { return reductionDb < settledDb ? 0.0 : reductionDb; }
 
-    static double gainOf (double reductionDb) { return reductionDb > 0.0 ? std::pow (10.0, -reductionDb / 20.0) : 1.0; }
+    static double gainOf (double reductionDb) { return reductionDb > 0.0 ? plugkit::decibelsToGain (-reductionDb) : 1.0; }
 
-    // path starts afresh, with no Gain Reduction; High Quality's estimator hears silence for the stale samples.
+    // path starts afresh, with no Gain Reduction.
     void startPath (ProcessingMode path)
     {
         if (path == ProcessingMode::ZeroLatency)
@@ -275,21 +259,11 @@ private:
         averagedSum = 0.0;
         nonzeroAveraged = 0;
         averagedPosition = 0;
-        staleLeft = staleSamples;
     }
 
     // Each phase between samples: a Kaiser-windowed sinc, its cutoff the host's Nyquist, normalised to unity at DC.
     void designEstimator()
     {
-        const auto besselI0 = [] (double x) {
-            double total = 1.0, term = 1.0;
-            for (int k = 1; term > 1.0e-17 * total; ++k)
-            {
-                term *= (x / (2.0 * k)) * (x / (2.0 * k));
-                total += term;
-            }
-            return total;
-        };
         constexpr int half = estimatorTaps / 2;
         for (int p = 1; p < estimatorFactor; ++p)
         {
@@ -317,7 +291,7 @@ private:
     double headroomGain = 1.0; // the true peak High Quality aims for, against the Ceiling
     double mostGain = 1.0;     // the most any phase reads of samples up to 1 in magnitude, its taps' magnitudes summed
     double releasePole = 0.0;
-    int reserve = 1, span = 1, staleSamples = 0;
+    int reserve = 1, span = 1;
     plugkit::Smoother onShare; // 0 off, 1 on
     plugkit::Smoother ceiling; // linear gain
     ProcessingMode playing = ProcessingMode::ZeroLatency;
@@ -327,7 +301,6 @@ private:
     std::vector<std::array<double, 2 * estimatorTaps>> history; // per channel, the latest samples, written twice
     int historyPosition = 0;
     double previousSegment = 0.0;
-    int staleLeft = 0;
     std::vector<double> heldValues;
     std::vector<std::int64_t> heldPositions;
     int heldFront = 0, heldCount = 0;

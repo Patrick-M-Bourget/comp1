@@ -20,7 +20,8 @@ constexpr auto zeroLatency = ProcessingMode::ZeroLatency;
 constexpr auto highQuality = ProcessingMode::HighQuality;
 constexpr double off = -std::numeric_limits<double>::infinity();
 
-// The settings the null must hold under, one row each: Oversampling's largest factor, and VCA's Colour.
+// The settings the null must hold under, one row each: the Gate, Oversampling's largest factor, VCA's and FET's
+// Colour, and each Character with Colour at that factor with the Gate.
 const std::vector<test::NullRow>& nullRows()
 {
     static const std::vector<test::NullRow> rows {
@@ -36,6 +37,23 @@ const std::vector<test::NullRow>& nullRows()
         { "Oversampling 8x", [] (Settings& s) { s.oversampling = Oversampling::x8; } },
         // With no Gain Reduction, Colour's weight is exactly 0, at any Colour (ADR 0005): at its top, 100%, too.
         { "VCA at Colour 100%", [] (Settings& s) { s.character = Character::VCA; } },
+        // FET's loop gives exactly no Gain Reduction at Ratio 1:1, so its Colour's weight is 0 too.
+        { "FET at Colour 100%", [] (Settings& s) { s.character = Character::FET; } },
+        // Each Character with Colour, at the largest factor, with the Gate on and open: together, as they play.
+        { "VCA at 8x, Gate open",
+          [] (Settings& s) {
+              s.character = Character::VCA;
+              s.oversampling = Oversampling::x8;
+              s.gate.on = true;
+              s.gate.thresholdDb = parameterRanges::threshold.low;
+          } },
+        { "FET at 8x, Gate open",
+          [] (Settings& s) {
+              s.character = Character::FET;
+              s.oversampling = Oversampling::x8;
+              s.gate.on = true;
+              s.gate.thresholdDb = parameterRanges::threshold.low;
+          } },
     };
     return rows;
 }
