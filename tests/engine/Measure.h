@@ -309,6 +309,43 @@ inline int impulseDelaySamples (const Settings& settings, double sampleRate, int
     return delay;
 }
 
+// --- The Dry/Wet null -------------------------------------------------------------------------------------------
+
+// A setting the Dry/Wet null must hold under: a row of the null's table. Oversampling (#10) and Colour (#19) add one
+// per factor and per Colour, each leaving the Wet path linear and aligned with no Gain Reduction.
+struct NullRow
+{
+    const char* name;
+    void (*apply) (Settings&);
+};
+
+// The settings that leave the Wet path unchanged (Ratio 1:1, Auto Gain off, Saturation off, Output Gain 0 dB) in mode
+// at lookaheadMs, with row applied and Dry and Wet at dryDb and wetDb.
+inline Settings nullSettings (const NullRow& row, ProcessingMode mode, double lookaheadMs, double dryDb, double wetDb)
+{
+    Settings settings { .ratio = 1.0, .autoGain = false, .saturation = false, .outputGainDb = 0.0, .processingMode = mode, .lookaheadMs = lookaheadMs };
+    settings.dryDb = dryDb;
+    settings.wetDb = wetDb;
+    row.apply (settings);
+    return settings;
+}
+
+// The worst relative error of output against expected times gain, over every sample: 0 when they match exactly.
+// A sample whose expected value is 0 counts any output as the whole error.
+inline double worstRelativeError (const Channels& output, const Channels& expected, double gain)
+{
+    double worst = 0.0;
+    for (std::size_t ch = 0; ch < expected.size(); ++ch)
+        for (std::size_t i = 0; i < expected[ch].size(); ++i)
+        {
+            const double want = gain * expected[ch][i], got = output[ch][i];
+            if (want == got)
+                continue;
+            worst = std::max (worst, want == 0.0 ? 1.0 : std::abs (got - want) / std::abs (want));
+        }
+    return worst;
+}
+
 // --- Spectra: aliasing and harmonics, as dyn-lab's `aliasing` measures them ------------------------
 
 // The length of each spectrum, a power of two, as dyn-lab's ALIAS_SAMPLES: a tone of a whole number of cycles over it
