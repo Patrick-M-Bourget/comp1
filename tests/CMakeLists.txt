@@ -58,6 +58,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/LatencyReportTest.cpp
         plugin/PluginShellTest.cpp
         plugin/StateTest.cpp
+        plugin/StereoParametersTest.cpp
     )
     # tests/engine for Measure.h, the test helpers both targets share.
     target_include_directories(comp1_plugin_tests PRIVATE
