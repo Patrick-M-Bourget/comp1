@@ -103,17 +103,19 @@ TEST_CASE ("On VCA, at a steady level the output follows dyn-lab's Transfer Curv
     }
 }
 
-TEST_CASE ("On FET, at a steady level the output follows dyn-lab's Transfer Curve within 0.01 dB", "[sweep]")
+TEST_CASE ("On FET and Opto, at a steady level the output follows dyn-lab's Transfer Curve within 0.01 dB", "[sweep]")
 {
-    // `python3 tools/dyn-lab/dynlab.py transfer --character fet`, with each table's other options, prints the tables
-    // above as they are: it runs FET's loop to steady state at each level, and its last line gives the most it differs
-    // from Clean's, under 1e-9 dB. So FET's feedback, its gain computer reading the output's level, lands on Clean's
-    // Transfer Curve. Mono, as each channel's loop is its own; 0.2 s at each level is 20 of Attack's time constants,
-    // which the loop only shortens. Colour 0%, so the output's gain is the compressor's alone.
+    // `python3 tools/dyn-lab/dynlab.py transfer --character fet` (and `--character opto`), with each table's other
+    // options, prints the tables above as they are: it runs the loop to steady state at each level, and its last line
+    // gives the most it differs from Clean's, under 1e-9 dB. So the feedback, the gain computer reading the output's
+    // level, lands on Clean's Transfer Curve. Mono, as each channel's loop is its own; 0.2 s at each level is 20 of
+    // Attack's time constants, which the loop only shortens, and 10 of Opto's slowest attack, twice Attack's time.
+    // Colour 0%, so the output's gain is the compressor's alone.
+    const auto character = GENERATE (Character::FET, Character::Opto);
     const auto& curve = GENERATE (from_range (curves()));
-    CAPTURE (curve.command);
+    CAPTURE (character, curve.command);
     auto settings = curve.settings;
-    settings.character = Character::FET;
+    settings.character = character;
     settings.colour = 0.0;
     for (const auto& row : curve.rows)
     {

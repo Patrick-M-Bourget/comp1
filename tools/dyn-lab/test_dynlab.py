@@ -403,6 +403,136 @@ class Fet(unittest.TestCase):
         self.assertTrue(all(row.within for row in rows))
 
 
+class Opto(unittest.TestCase):
+    """Opto: FET's loop, a material-dependent attack, a two-stage release with a history of its own, and its Colour."""
+
+    def opto(self, **options):
+        return dynlab.Settings(character="opto", **options)
+
+    def test_its_steady_output_is_cleans_transfer_curve(self):
+        for options in Fet.SETTINGS:
+            with self.subTest(options=options):
+                clean = dynlab.transfer_curve(dynlab.Settings(**options))
+                opto = dynlab.transfer_curve(self.opto(**options))
+                for (_, expected, region), (_, measured, opto_region) in zip(clean.rows, opto.rows):
+                    self.assertAlmostEqual(measured, expected, delta=1e-8)
+                    self.assertEqual(region, opto_region)
+
+    def test_the_attack_scale_is_twice_attack_at_no_overshoot_attack_at_the_reference_and_half_from_the_span(self):
+        self.assertEqual(dynlab.opto_attack_scale(-3.0), 2.0)
+        self.assertEqual(dynlab.opto_attack_scale(0.0), 2.0)
+        self.assertAlmostEqual(dynlab.opto_attack_scale(10.0), 1.0, places=12)
+        self.assertEqual(dynlab.opto_attack_scale(20.0), 0.5)
+        self.assertEqual(dynlab.opto_attack_scale(35.0), 0.5)
+        scales = [dynlab.opto_attack_scale(x / 10) for x in range(0, 201)]
+        self.assertTrue(all(b < a for a, b in zip(scales, scales[1:])))
+        # Smooth: no corner at either end, the scale's slope there under a hundredth of its mid-span slope.
+        self.assertLess(abs(scales[1] - scales[0]), 0.01 * abs(scales[101] - scales[99]))
+        self.assertLess(abs(scales[200] - scales[199]), 0.01 * abs(scales[101] - scales[99]))
+
+    def test_a_larger_step_attacks_faster_and_a_smaller_one_slower_than_fets(self):
+        for attack in dynlab.OVERSHOOT_ATTACKS:
+            times = []
+            for over in dynlab.OVERSHOOT_STEPS_DB:
+                loud = -18 + over
+                fet = dynlab.step_response(dynlab.Settings(character="fet", attack=attack), 48000, loud=loud)
+                opto = dynlab.step_response(self.opto(attack=attack), 48000, loud=loud)
+                times.append(opto.attack_63)
+                if over == dynlab.OVERSHOOT_STEPS_DB[0]:
+                    self.assertGreater(opto.attack_63, 1.5 * fet.attack_63)
+                if over == dynlab.OVERSHOOT_STEPS_DB[-1]:
+                    self.assertLess(opto.attack_63, fet.attack_63)
+            self.assertEqual(times, sorted(times, reverse=True))
+
+    def test_its_release_is_two_parts_slower_than_releases_one_pole(self):
+        fs = 48000
+        clean = dynlab.step_response(dynlab.Settings(), fs)
+        opto = dynlab.step_response(self.opto(), fs)
+        self.assertGreater(opto.release_63, clean.release_63)
+        # 90% waits on the slow part, whose time is at least OPTO_SLOW_FRESH_MS.
+        self.assertGreater(opto.release_90, dynlab.OPTO_SLOW_FRESH_MS)
+        self.assertEqual(opto.hold, clean.hold)
+
+    def test_its_release_gets_slower_after_longer_bursts_with_auto_release_off_and_on(self):
+        rows = dynlab.bursts(self.opto(), 48000, (100, 1000, 10000))
+        for side in ("off", "on"):
+            with self.subTest(side):
+                for times in ("release_63", "release_90"):
+                    figures = [getattr(getattr(row, side), times) for row in rows]
+                    self.assertEqual(figures, sorted(figures))
+                    self.assertGreater(figures[-1], 1.5 * figures[0])
+
+    def test_with_auto_release_the_fast_part_follows_the_material_and_the_slow_part_still_applies(self):
+        short, long = dynlab.bursts(self.opto(), 48000, (1, 10000))
+        # After a transient, Auto Release's pole is near Release's, so the release is near Auto Release off's.
+        self.assertAlmostEqual(short.on.release_63, short.off.release_63, delta=0.02 * short.off.release_63)
+        # After a long burst, the fast part's pole is Auto Release's, longer, and the slow part's 90% is unchanged.
+        self.assertGreater(long.on.release_63, long.off.release_63)
+        self.assertGreater(long.on.release_90, dynlab.OPTO_SLOW_FRESH_MS)
+
+    def test_the_history_charges_while_asked_for_gain_reduction_and_discharges_otherwise(self):
+        fs = 48000
+        history = dynlab.History(fs)
+        runs = round(dynlab.OPTO_HISTORY_CHARGE_MS * fs / 1000 / dynlab.RUN_SAMPLES)
+        for _ in range(runs):
+            for _ in range(dynlab.RUN_SAMPLES):
+                history.hear(True)
+            history.start_run()
+        self.assertAlmostEqual(history.sustain, 1 - 1 / math.e, delta=1e-3)
+        self.assertAlmostEqual(history.slow_ms(), dynlab.OPTO_SLOW_FRESH_MS + (1 - 1 / math.e) * (
+            dynlab.OPTO_SLOW_SEASONED_MS - dynlab.OPTO_SLOW_FRESH_MS), delta=5)
+        charged = history.sustain
+        for _ in range(round(dynlab.OPTO_HISTORY_DISCHARGE_MS * fs / 1000 / dynlab.RUN_SAMPLES)):
+            history.start_run()
+        self.assertAlmostEqual(history.sustain, charged / math.e, delta=1e-3)
+
+    def test_the_loop_is_stable_at_the_fastest_attack_and_infinite_ratio(self):
+        for fs in dynlab.supported_rates():
+            settings = self.opto(attack=dynlab.ATTACK_RANGE[0], ratio=math.inf)
+            detector = dynlab.Detector(settings, fs, level_db=-40)
+            reductions = [detector.hear_steady(level) for level in [-40] * 10 + [0] * 400]
+            steps = [b - a for a, b in zip(reductions, reductions[1:])]
+            # It never falls on its way up, but for its two parts' sum rounding, a few 1e-15 dB either way.
+            self.assertTrue(all(step >= -1e-12 for step in steps))
+            self.assertAlmostEqual(reductions[-1], 18.0, places=6)
+            noise = dynlab._white(7)
+            detector = dynlab.Detector(settings, fs)
+            for _ in range(2000):
+                reduction = detector.hear_sample(next(noise))
+                self.assertTrue(math.isfinite(reduction) and reduction >= 0)
+
+    def test_with_an_external_detection_source_it_is_feedforward_and_slower_to_attack(self):
+        internal = dynlab.step_response(self.opto(), 48000)
+        external = dynlab.step_response(self.opto(), 48000, external=True)
+        self.assertGreater(external.attack_63, 2 * internal.attack_63)
+        self.assertEqual(external.release_63, internal.release_63)
+
+    def test_lookahead_brings_its_attack_forward_against_the_delayed_audio(self):
+        plain = dynlab.step_response(self.opto(), 48000)
+        ahead = dynlab.step_response(self.opto(), 48000, lookahead=5)
+        self.assertAlmostEqual(ahead.attack_63, plain.attack_63 - 5, places=9)
+        self.assertEqual(ahead.release_63, plain.release_63)
+
+    def test_with_auto_gain_the_reference_signal_keeps_its_level(self):
+        for options in ({}, {"ratio": math.inf}, {"threshold": -30, "ratio": math.inf}):
+            with self.subTest(options=options):
+                self.assertLessEqual(abs(dynlab.level_difference(self.opto(**options))), dynlab.AUTO_GAIN_TOLERANCE)
+
+    def test_its_colour_is_the_gentlest_about_a_fifth_of_a_percent_at_10_db_and_0_8_at_20(self):
+        k = dynlab.tone_bin(*dynlab.COLOUR_TONE)
+        for reduction, thd in ((10, 0.2), (20, 0.8)):
+            opto = dynlab.colour_row(self.opto(), reduction, k)
+            vca = dynlab.colour_row(dynlab.Settings(character="vca"), reduction, k)
+            self.assertAlmostEqual(opto.thd, thd, delta=0.05)
+            self.assertLess(opto.thd, vca.thd)
+        self.assertEqual(dynlab.colour_at(self.opto(), 0), dynlab.ColourAt(0.0, 0.0))
+
+    def test_every_colour_aliasing_row_is_under_the_ceiling(self):
+        rows = dynlab.colour_aliases(self.opto())
+        self.assertEqual(len(rows), len(dynlab.ALIAS_RATES) * len(dynlab.ALIAS_FREQUENCIES) * 3)
+        self.assertTrue(all(row.within for row in rows))
+
+
 class Colour(unittest.TestCase):
     """Colour: the Character's own distortion, the Saturation shape's residual weighted and driven by the Gain
     Reduction."""
@@ -485,7 +615,7 @@ class Colour(unittest.TestCase):
                 self.assertEqual(out, [0.0] * section + [gain * s for s in x[:-section]])
 
     def test_every_oversampled_aliasing_row_is_within_its_factors_tolerance(self):
-        for character in ("vca", "fet"):
+        for character in ("vca", "fet", "opto"):
             for factor in (2, 4, 8):
                 rows = dynlab.colour_aliases(dynlab.Settings(character=character), factor=factor)
                 self.assertEqual(len(rows), len(dynlab.ALIAS_RATES) * len(dynlab.ALIAS_FREQUENCIES) * 3)
@@ -1039,18 +1169,31 @@ class CommandLine(unittest.TestCase):
         self.assertEqual([(row[0], row[1]) for row in rows], [("48000", "1"), ("48000", "1000"), ("96000", "1"), ("96000", "1000")])
         self.assertTrue(all(len(row) == 6 for row in rows))
 
+    def test_step_over_sets_the_loud_level_and_must_be_above_0(self):
+        result = run("step", "--over", "5", "--rates", "48000")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("to 5 dB over Threshold", result.stdout)
+        self.assertNotEqual(run("step", "--over", "0").returncode, 0)
+
+    def test_overshoot_prints_each_attack_and_step_size(self):
+        result = run("overshoot")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = [line.split() for line in result.stdout.splitlines() if line.split()[:1] == ["48000"]]
+        self.assertEqual([(float(row[1]), float(row[2])) for row in rows],
+                         [(attack, over) for attack in dynlab.OVERSHOOT_ATTACKS for over in dynlab.OVERSHOOT_STEPS_DB])
+
     def test_bursts_rejects_a_length_that_is_not_above_0(self):
         result = run("bursts", "--lengths", "0")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("burst", result.stderr)
 
-    def test_character_is_clean_vca_or_fet(self):
+    def test_character_is_clean_vca_fet_or_opto(self):
         for command in ("transfer", "step", "bursts", "autogain", "colour"):
             with self.subTest(command):
-                for character in ("vca", "fet"):
+                for character in ("vca", "fet", "opto"):
                     self.assertEqual(run(command, "--character", character,
                                          *(("--lengths", "1") if command == "bursts" else ())).returncode, 0)
-                result = run(command, "--character", "opto")
+                result = run(command, "--character", "tube")
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("character", result.stderr)
 

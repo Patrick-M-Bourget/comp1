@@ -110,6 +110,7 @@ std::vector<Scene> scenes()
         { .name = "Clean, Colour 100%", .settings = withCharacter (Character::Clean) },
         { .name = "VCA, Colour 100%", .settings = withCharacter (Character::VCA) },
         { .name = "FET, Colour 100%", .settings = withCharacter (Character::FET) },
+        { .name = "Opto, Colour 100%", .settings = withCharacter (Character::Opto) },
         { .name = "High Quality, 2x Oversampling", .settings = highQuality() },
         { .name = "Defaults, 32-sample blocks", .settings = {}, .blockSize = 32 },
         // Timed after 10 s of silence, long enough for every filter and envelope to have rung down below the smallest

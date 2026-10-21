@@ -224,6 +224,85 @@ const std::vector<Table>& tables()
             { 20.0, { absent, -37.11, absent, -49.70 } },
             { 30.0, { absent, -37.10, absent, -44.86 } } },
           Oversampling::x8 },
+        // Opto's, the gentlest: VCA's form, two thirds of its weight.
+        { "python3 tools/dyn-lab/dynlab.py colour --character opto",
+          Character::Opto,
+          100.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -115.35, absent, -116.80 } },
+            { 10.0, { absent, -54.09, absent, -66.30 } },
+            { 20.0, { absent, -41.81, absent, -55.21 } },
+            { 30.0, { absent, -41.84, absent, -49.75 } } } },
+        { "python3 tools/dyn-lab/dynlab.py colour --character opto --colour 50",
+          Character::Opto,
+          50.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -121.37, absent, -122.82 } },
+            { 10.0, { absent, -60.12, absent, -72.34 } },
+            { 20.0, { absent, -47.95, absent, -61.35 } },
+            { 30.0, { absent, -48.05, absent, -55.96 } } } },
+        { "python3 tools/dyn-lab/dynlab.py colour --character opto --oversampling 2",
+          Character::Opto,
+          100.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -114.94, absent, -116.32 } },
+            { 10.0, { absent, -54.00, absent, -66.17 } },
+            { 20.0, { absent, -41.76, absent, -55.06 } },
+            { 30.0, { absent, -41.79, absent, -49.62 } } },
+          Oversampling::x2 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character opto --oversampling 4",
+          Character::Opto,
+          100.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -114.84, absent, -116.21 } },
+            { 10.0, { absent, -53.98, absent, -66.14 } },
+            { 20.0, { absent, -41.75, absent, -55.02 } },
+            { 30.0, { absent, -41.78, absent, -49.58 } } },
+          Oversampling::x4 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character opto --oversampling 8",
+          Character::Opto,
+          100.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -114.82, absent, -116.18 } },
+            { 10.0, { absent, -53.98, absent, -66.13 } },
+            { 20.0, { absent, -41.74, absent, -55.01 } },
+            { 30.0, { absent, -41.78, absent, -49.58 } } },
+          Oversampling::x8 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character opto --colour 50 --oversampling 2",
+          Character::Opto,
+          50.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -120.96, absent, -122.34 } },
+            { 10.0, { absent, -60.04, absent, -72.21 } },
+            { 20.0, { absent, -47.90, absent, -61.20 } },
+            { 30.0, { absent, -48.00, absent, -55.83 } } },
+          Oversampling::x2 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character opto --colour 50 --oversampling 4",
+          Character::Opto,
+          50.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -120.86, absent, -122.23 } },
+            { 10.0, { absent, -60.02, absent, -72.17 } },
+            { 20.0, { absent, -47.89, absent, -61.16 } },
+            { 30.0, { absent, -47.99, absent, -55.80 } } },
+          Oversampling::x4 },
+        { "python3 tools/dyn-lab/dynlab.py colour --character opto --colour 50 --oversampling 8",
+          Character::Opto,
+          50.0,
+          { { 0.0, { absent, absent, absent, absent } },
+            { 3.0, { absent, absent, absent, absent } },
+            { 6.0, { absent, -120.84, absent, -122.20 } },
+            { 10.0, { absent, -60.01, absent, -72.17 } },
+            { 20.0, { absent, -47.88, absent, -61.15 } },
+            { 30.0, { absent, -47.99, absent, -55.79 } } },
+          Oversampling::x8 },
         // Colour tracks Threshold: at each Threshold, the same Gain Reduction gives the same harmonics.
         { "python3 tools/dyn-lab/dynlab.py colour --character vca --threshold -10", Character::VCA, 100.0, vcaTracked(), Oversampling::x1, -10.0 },
         { "python3 tools/dyn-lab/dynlab.py colour --character vca --threshold -50", Character::VCA, 100.0, vcaTracked(), Oversampling::x1, -50.0 },
@@ -239,7 +318,7 @@ constexpr double comparedOverDb = -100.0;
 
 } // namespace
 
-TEST_CASE ("On VCA and FET, Colour follows the Gain Reduction: the harmonics match dyn-lab's colour within its tolerance, in each Processing Mode and at every Oversampling", "[sweep]")
+TEST_CASE ("On VCA, FET and Opto, Colour follows the Gain Reduction: the harmonics match dyn-lab's colour within its tolerance, in each Processing Mode and at every Oversampling", "[sweep]")
 {
     const auto& table = GENERATE (from_range (tables()));
     const auto& row = GENERATE_REF (from_range (table.rows));
@@ -312,7 +391,7 @@ TEST_CASE ("With no Gain Reduction, VCA at Colour 100% passes the input bit for 
     CHECK (test::played ({ .character = Character::VCA }, sampleRate, input) == input);
 }
 
-TEST_CASE ("Clean has no Colour: its output is the same at every Colour, and Opto plays as Clean")
+TEST_CASE ("Clean has no Colour: its output is the same at every Colour")
 {
     const double rate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE (from_range (test::blockCuts()));
@@ -323,13 +402,12 @@ TEST_CASE ("Clean has no Colour: its output is the same at every Colour, and Opt
     CHECK (clean != input);
     CHECK (test::played ({ .thresholdDb = -40.0, .colour = 0.0 }, rate, input, cut) == clean);
     CHECK (test::played ({ .thresholdDb = -40.0, .colour = 37.0 }, rate, input, cut) == clean);
-    CHECK (test::played ({ .character = Character::Opto, .thresholdDb = -40.0 }, rate, input, cut) == clean);
 }
 
-TEST_CASE ("The detector never hears Colour: VCA's and FET's Gain Reduction is the same at Colour 0% and 100%, in each Processing Mode")
+TEST_CASE ("The detector never hears Colour: VCA's, FET's and Opto's Gain Reduction is the same at Colour 0% and 100%, in each Processing Mode")
 {
-    // FET's loop too: it hears the detection signal times the gain, never the coloured output.
-    const auto character = GENERATE (Character::VCA, Character::FET);
+    // FET's and Opto's loop too: it hears the detection signal times the gain, never the coloured output.
+    const auto character = GENERATE (Character::VCA, Character::FET, Character::Opto);
     // Zero Latency, and High Quality with Colour oversampled.
     const auto mode = GENERATE (ProcessingMode::ZeroLatency, ProcessingMode::HighQuality);
     CAPTURE (static_cast<int> (character), static_cast<int> (mode));

@@ -89,8 +89,8 @@ TEST_CASE ("With Saturation off and no Colour, High Quality at every Oversamplin
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto oversampling = GENERATE (from_range (everyOversampling()));
     const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
-    // Clean, which has no Colour, and VCA and FET at Colour 0%, under compression.
-    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET);
+    // Clean, which has no Colour, and VCA, FET and Opto at Colour 0%, under compression.
+    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET, Character::Opto);
     CAPTURE (sampleRate, factorOf (oversampling), cut, static_cast<int> (character));
     auto settings = colouring (compressing, character);
     settings.colour = 0.0;
@@ -106,8 +106,8 @@ TEST_CASE ("High Quality at 1x and Lookahead 0 is Zero Latency's output delayed 
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
     const int saturation = GENERATE (0, 1, 2); // off, Before, After
-    // Clean, and VCA and FET at Colour 100% under compression, Colour ahead of Saturation After in one section.
-    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET);
+    // Clean, and VCA, FET and Opto at Colour 100% under compression, Colour ahead of Saturation After in one section.
+    const auto character = GENERATE (Character::Clean, Character::VCA, Character::FET, Character::Opto);
     CAPTURE (sampleRate, cut, saturation, static_cast<int> (character));
     auto settings = at (colouring (compressing, character), Oversampling::x1);
     if (saturation > 0)
