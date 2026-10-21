@@ -1,4 +1,5 @@
 #include "Measure.h"
+#include "comp1/Style.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <plugkit/test/AllocationGuard.h>
@@ -71,6 +72,25 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
                               .detectionAudition = block % 5 < 2 });
         const int count = block % 3 == 0 ? blockSize : 1 + (block * 37) % blockSize;
         engine.process ({ main, 2, count }, sidechains[(block / 2) % 3]);
+    }
+
+    REQUIRE (guard.allocations() == 0);
+}
+
+TEST_CASE ("Engine does not allocate across a Style change, mid-compression")
+{
+    constexpr int blockSize = 512;
+    Engine engine;
+    engine.prepare (48000.0, blockSize, 2);
+    std::vector<float> left (blockSize, 0.5f), right (blockSize, -0.5f);
+    float* main[] = { left.data(), right.data() };
+
+    plugkit::test::AllocationGuard guard;
+    // Every Style in turn, each from the Style table as choosing it hands it over, some cut part-way through a run.
+    for (int block = 0; block < 4 * styleCount; ++block)
+    {
+        engine.setSettings (styled (static_cast<Style> (block % styleCount)));
+        engine.process ({ main, 2, block % 2 == 0 ? blockSize : 1 + (block * 37) % blockSize });
     }
 
     REQUIRE (guard.allocations() == 0);
