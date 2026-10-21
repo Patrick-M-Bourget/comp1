@@ -170,6 +170,42 @@ void freeBandAtTone (Settings& s)
 double colourful (double) { return 4.0; }
 
 void onVca (Settings& s) { s.character = Character::VCA; }
+// The Limiter on, the tone (-12 dB) pushed 24 dB by Output Gain, 12 dB over the Ceiling's top, in mode.
+void limitingTone (Settings& s, ProcessingMode mode)
+{
+    s.processingMode = mode;
+    s.outputGainDb = 24.0;
+    s.limiter = true;
+}
+
+// The Limiter switching on and off on the tone, in mode, against the steady tone limited, whose corners are sharper
+// than a sine's.
+Jump limiterJump (ProcessingMode mode, std::string setting)
+{
+    return { std::move (setting),
+             [mode] (Settings& s, bool b) {
+                 limitingTone (s, mode);
+                 s.limiter = b;
+             },
+             { [mode] (Settings& s) { limitingTone (s, mode); } } };
+}
+
+// The Ceiling jumping across its range, the Limiter on, in mode: from no limiting to 18 dB of it, against the steady
+// tone limited at the bottom.
+Jump ceilingJump (ProcessingMode mode, std::string setting)
+{
+    const auto atBottom = [mode] (Settings& s) {
+        s.processingMode = mode;
+        s.limiter = true;
+        s.ceilingDb = parameterRanges::ceiling.low;
+    };
+    return { std::move (setting),
+             [mode, atBottom] (Settings& s, bool b) {
+                 atBottom (s);
+                 s.ceilingDb = b ? parameterRanges::ceiling.low : parameterRanges::ceiling.high;
+             },
+             { atBottom } };
+}
 
 Jump placementJump (StereoPlacement a, StereoPlacement b, std::string setting)
 {
@@ -315,6 +351,10 @@ const std::vector<Jump>& jumps()
              s.dryDb = 0.0;
              s.wetDb = b ? 12.0 : -24.0;
          } },
+        limiterJump (ProcessingMode::ZeroLatency, "Limiter"),
+        limiterJump (ProcessingMode::HighQuality, "Limiter, High Quality"),
+        ceilingJump (ProcessingMode::ZeroLatency, "Ceiling"),
+        ceilingJump (ProcessingMode::HighQuality, "Ceiling, High Quality"),
     };
     return all;
 }
@@ -484,12 +524,23 @@ TEST_CASE ("While a compressor setting glides, the output is the same however th
 TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click")
 {
     const auto host = anyHost();
-    // Dry Off, and Dry and Wet both at 0 dB, so both paths fade.
+    // Dry Off, and Dry and Wet both at 0 dB, so both paths fade; and with the Limiter on, the tone pushed into it,
+    // measured against the steady tone limited in each mode.
     const double dryDb = GENERATE (-infinity, 0.0);
-    CAPTURE (host.sampleRate, host.blockSize, dryDb);
-    const auto output = playTone (host, [dryDb] (double time, Settings& s) {
+    const bool limiter = GENERATE (false, true);
+    CAPTURE (host.sampleRate, host.blockSize, dryDb, limiter);
+    const auto pushed = [dryDb, limiter] (Settings& s, ProcessingMode mode) {
         s.dryDb = dryDb;
-        s.processingMode = alternating (time) ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency;
+        if (limiter)
+            limitingTone (s, mode);
+        s.processingMode = mode;
+    };
+    const auto output = playTone (host, [&pushed] (double time, Settings& s) {
+        pushed (s, alternating (time) ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency);
     });
-    CHECK (discontinuity (output, host.sampleRate) < clickLimit);
+    double steady = 1.0;
+    for (const auto mode : { ProcessingMode::ZeroLatency, ProcessingMode::HighQuality })
+        if (limiter)
+            steady = std::max (steady, discontinuity (playTone (host, [&pushed, mode] (double, Settings& s) { pushed (s, mode); }), host.sampleRate));
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit * steady);
 }

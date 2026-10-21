@@ -480,4 +480,169 @@ inline std::vector<float> steadilyCompressedTone (Settings settings, double samp
     return played (settings, sampleRate, { tone }, { 512 }, &sidechain).front();
 }
 
+// --- The Limiter: true peak, and dyn-lab's reference signals (python3 tools/dyn-lab/dynlab.py limiter) ------------
+
+// The true peak of every channel, linear, by dyn-lab's 16x reference: each channel interpolated at 16 points per
+// host sample by a Kaiser-windowed sinc (β 10) 64 host samples long, its cutoff the host's Nyquist. Written here
+// apart from the Engine's own estimator, which it measures. It reads silence before the audio, and stops at the last
+// sample whose interpolation reads nothing past the end, where the audio would go on. From sample from on, when given,
+// with the audio before it heard.
+inline double truePeak (const Channels& audio, int from = 0)
+{
+    constexpr int factor = 16, taps = 64, half = taps / 2;
+    constexpr double beta = 10.0;
+    const auto besselI0 = [] (double x) {
+        double total = 1.0, term = 1.0;
+        for (int k = 1; term > 1.0e-17 * total; ++k)
+        {
+            term *= (x / (2.0 * k)) * (x / (2.0 * k));
+            total += term;
+        }
+        return total;
+    };
+    static const auto phases = [&besselI0] {
+        std::vector<std::vector<double>> all;
+        for (int p = 1; p < factor; ++p)
+        {
+            std::vector<double> kernel;
+            for (int j = 1 - half; j <= half; ++j)
+            {
+                const double t = static_cast<double> (p) / factor - j;
+                const double u = t / half;
+                const double window = besselI0 (beta * std::sqrt (std::max (0.0, 1.0 - u * u))) / besselI0 (beta);
+                kernel.push_back (std::sin (std::numbers::pi * t) / (std::numbers::pi * t) * window);
+            }
+            double total = 0.0;
+            for (const double c : kernel)
+                total += c;
+            for (double& c : kernel)
+                c /= total;
+            all.push_back (kernel);
+        }
+        return all;
+    }();
+    // The most any phase can make of samples up to 1 in magnitude: a segment whose window peaks at w can read no more
+    // than w times it, so one that can't pass the peak found so far is skipped, which changes nothing it returns.
+    static const double mostGain = [] {
+        double most = 0.0;
+        for (const auto& kernel : phases)
+        {
+            double sum = 0.0;
+            for (const double c : kernel)
+                sum += std::abs (c);
+            most = std::max (most, sum);
+        }
+        return most;
+    }();
+    double peak = 0.0;
+    std::vector<double> padded;
+    for (const auto& channel : audio)
+    {
+        const auto length = static_cast<int> (channel.size());
+        // half samples of silence before, the channel, then half more, so every window reads in range.
+        padded.assign (static_cast<std::size_t> (length + taps), 0.0);
+        for (int n = 0; n < length; ++n)
+            padded[static_cast<std::size_t> (n + half)] = channel[static_cast<std::size_t> (n)];
+        for (int m = from; m + half < length; ++m)
+        {
+            const double* window = padded.data() + m + 1; // x[m + 1 - half] to x[m + half]
+            peak = std::max (peak, std::abs (window[half - 1]));
+            double loudest = 0.0;
+            for (int j = 0; j < taps; ++j)
+                loudest = std::max (loudest, std::abs (window[j]));
+            if (loudest * mostGain <= peak)
+                continue;
+            for (const auto& kernel : phases)
+            {
+                double sum = 0.0;
+                for (int j = 0; j < taps; ++j)
+                    sum += kernel[static_cast<std::size_t> (j)] * window[j];
+                peak = std::max (peak, std::abs (sum));
+            }
+        }
+    }
+    return peak;
+}
+
+// A level in dB as a linear gain.
+inline double gainOf (double db) { return std::pow (10.0, db / 20.0); }
+
+// How many samples each of dyn-lab's Limiter reference signals runs, before the Engine's latency is added.
+inline constexpr int limiterSignalSamples = 2048;
+
+// dyn-lab's fade-in: a raised cosine over 1 ms (LIMITER_FADE_MS), so a signal is band-limited from its first sample.
+inline double fadeIn (double sampleRate, int n)
+{
+    const double samples = 1.0e-3 * sampleRate;
+    return n >= samples ? 1.0 : 0.5 - 0.5 * std::cos (std::numbers::pi * n / samples);
+}
+
+// dyn-lab's limiter_tone: a sine at frequency, its peak at levelDb, faded in, from a phase of 0.3 radians.
+inline std::vector<float> limiterTone (double frequency, double levelDb, double sampleRate, int length)
+{
+    std::vector<float> tone (static_cast<std::size_t> (length));
+    for (int n = 0; n < length; ++n)
+        tone[static_cast<std::size_t> (n)] = static_cast<float> (gainOf (levelDb) * fadeIn (sampleRate, n)
+                                                                 * std::sin (2.0 * std::numbers::pi * frequency * n / sampleRate + 0.3));
+    return tone;
+}
+
+// dyn-lab's band_limited_noise: 64 sines evenly spaced in log frequency from 20 Hz to 20 kHz, phases from dyn-lab's
+// seeded generator (_white), faded in, its sample peak at levelDb.
+inline std::vector<float> bandLimitedNoise (double levelDb, double sampleRate, int length, std::uint32_t seed = 1)
+{
+    constexpr int tones = 64;
+    std::uint32_t state = seed;
+    std::vector<double> frequencies, phases;
+    for (int k = 0; k < tones; ++k)
+    {
+        state = 1664525u * state + 1013904223u;
+        frequencies.push_back (20.0 * std::pow (1000.0, static_cast<double> (k) / (tones - 1)));
+        phases.push_back (std::numbers::pi * (state / 2147483648.0 - 1.0));
+    }
+    std::vector<double> noise (static_cast<std::size_t> (length));
+    double peak = 0.0;
+    for (int n = 0; n < length; ++n)
+    {
+        double sum = 0.0;
+        for (std::size_t k = 0; k < frequencies.size(); ++k)
+            sum += std::sin (2.0 * std::numbers::pi * frequencies[k] * n / sampleRate + phases[k]);
+        noise[static_cast<std::size_t> (n)] = sum * fadeIn (sampleRate, n);
+        peak = std::max (peak, std::abs (noise[static_cast<std::size_t> (n)]));
+    }
+    std::vector<float> out;
+    for (const double x : noise)
+        out.push_back (static_cast<float> (x * gainOf (levelDb) / peak));
+    return out;
+}
+
+// dyn-lab's full_scale_burst: 256 samples of silence (BURST_START), then 1 kHz at full scale from its peak.
+inline constexpr int burstStart = 256;
+inline std::vector<float> fullScaleBurst (double sampleRate, int length)
+{
+    std::vector<float> burst (static_cast<std::size_t> (length));
+    for (int n = burstStart; n < length; ++n)
+        burst[static_cast<std::size_t> (n)] = static_cast<float> (std::cos (2.0 * std::numbers::pi * 1000.0 * (n - burstStart) / sampleRate));
+    return burst;
+}
+
+// One of dyn-lab's Limiter reference signals at a Ceiling, the tones and noise 12 dB over it (LIMITER_PUSH_DB),
+// length samples long.
+struct LimiterSignal
+{
+    const char* name;
+    std::vector<float> (*make) (double ceilingDb, double sampleRate, int length);
+};
+
+inline const std::vector<LimiterSignal>& limiterSignals()
+{
+    static const std::vector<LimiterSignal> all {
+        { "full-scale burst", [] (double, double sampleRate, int length) { return fullScaleBurst (sampleRate, length); } },
+        { "10 kHz tone", [] (double ceilingDb, double sampleRate, int length) { return limiterTone (10000.0, ceilingDb + 12.0, sampleRate, length); } },
+        { "19 kHz tone", [] (double ceilingDb, double sampleRate, int length) { return limiterTone (19000.0, ceilingDb + 12.0, sampleRate, length); } },
+        { "noise", [] (double ceilingDb, double sampleRate, int length) { return bandLimitedNoise (ceilingDb + 12.0, sampleRate, length); } },
+    };
+    return all;
+}
+
 } // namespace comp1::test

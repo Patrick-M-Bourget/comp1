@@ -13,8 +13,10 @@ TEST_CASE ("A non-finite input sample never reaches the output, which plays on a
 {
     const bool autoGain = GENERATE (false, true);
     const auto character = GENERATE (Character::Clean, Character::VCA);
-    CAPTURE (autoGain, static_cast<int> (character));
-    const Settings settings { .character = character, .autoGain = autoGain, .outputGainDb = 6.0 };
+    // The Limiter on, at a Ceiling the noise passes: a non-finite sample never reaches its gain computer either.
+    const bool limiter = GENERATE (false, true);
+    CAPTURE (autoGain, static_cast<int> (character), limiter);
+    const Settings settings { .character = character, .autoGain = autoGain, .outputGainDb = 6.0, .limiter = limiter, .ceilingDb = -6.0 };
     const auto input = test::noise (2, 4096);
     // The same audio with non-finite samples in it, on both channels, and with silence in their place.
     auto broken = input, silenced = input;

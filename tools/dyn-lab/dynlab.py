@@ -4,13 +4,14 @@
 Models the Clean Character after Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor
 Design — A Tutorial and Analysis" (J. Audio Eng. Soc. 60(6)): feedforward, with a soft-knee gain computer
 and a smooth branching peak detector in the log domain, with Hold, Auto Release and Range, and Auto Gain after it;
-the VCA Character, an RMS Detection Level into Clean's gain computer and detector, and its Colour; the Saturation
-stage; and High Quality's Lookahead and fixed latency. Standard library only. See tools/dyn-lab/USAGE.md for every
+the VCA Character, an RMS Detection Level into Clean's gain computer and detector, and its Colour; High Quality's
+Lookahead and fixed latency; Saturation; and the Limiter. Standard library only. See tools/dyn-lab/USAGE.md for every
 command.
 """
 
 import argparse
 import math
+import operator
 import os
 from dataclasses import dataclass, fields, replace
 from fractions import Fraction
@@ -390,8 +391,9 @@ OVERSAMPLING_RESERVE_SAMPLES = 128
 # The Lookahead budget: Lookahead's top, so every Lookahead fits within it. The audio is delayed by the whole budget
 # and the detection signal by the budget less Lookahead, so moving Lookahead moves only the detection signal.
 LOOKAHEAD_BUDGET_MS = LOOKAHEAD_RANGE[1]
-# Reserved for the Limiter (#18): its own lookahead, about 1 ms (ADR 0001), time to bring the gain down smoothly
-# ahead of a peak, whatever the compressor's Lookahead is.
+# The Limiter reserve: High Quality's Limiter's own lookahead, about 1 ms (ADR 0001), time to bring the gain down
+# smoothly ahead of a peak, whatever the compressor's Lookahead is. The true-peak estimator's delay and the lookahead
+# window fill it exactly (lookahead_window; `limiter` prints both).
 LIMITER_RESERVE_MS = 1.0
 
 # A Processing Mode switch fades the output out over MODE_FADE_MS, swaps paths in the silence, and fades the new one
@@ -1046,6 +1048,386 @@ def report_colour(settings, rates=ALIAS_RATES):
     return all(row.within for row in rows)
 
 
+# --- Limiter --------------------------------------------------------------------------------------
+
+# comp1's own: Pro-C 3 has no output Limiter whose range it could follow. The top is full scale, and the default,
+# so the Limiter switched on at its default stops only overs; 30 dB down leaves room for a Ceiling far under any
+# delivery spec's peak level, for stems and for headroom kept on purpose, with a span the slider can still set
+# finely.
+CEILING_RANGE = (-30, 0)
+CEILING_DEFAULT = 0.0
+
+# The true-peak estimator, High Quality's: a 4x interpolator, a windowed-sinc polyphase FIR, TRUE_PEAK_TAPS host
+# samples long, Kaiser-windowed with TRUE_PEAK_BETA. Its cutoff is the host's Nyquist, so its phase 0 is the host
+# sample itself and the estimate never reads under the sample peak; each other phase is normalised to unity gain at
+# DC. It reads half its length ahead of the sample it estimates, so it delays by TRUE_PEAK_TAPS / 2 host samples at
+# every rate. 16 taps are the fewest whose worst under-read on the band-limited test signals stays near 0.2 dB
+# (`limiter` prints it); 24 halve that, at 4 more samples of delay taken from the lookahead window.
+TRUE_PEAK_FACTOR = 4
+TRUE_PEAK_TAPS = 16
+TRUE_PEAK_BETA = 6.0
+# The reference the estimator is measured against, and the Limiter's output: 16x, 64 host samples long, Kaiser
+# β 10, flat to within 0.001 dB up to 20 kHz at 44.1 kHz.
+REFERENCE_PEAK_FACTOR = 16
+REFERENCE_PEAK_TAPS = 64
+REFERENCE_PEAK_BETA = 10.0
+# High Quality's Limiter aims this far under the Ceiling, so the estimator's worst under-read can't take the true
+# peak over it.
+LIMITER_TRUE_PEAK_HEADROOM_DB = 0.3
+# The one release both modes' Limiters return with, one pole in dB, chosen from `limiter`'s trade-off table.
+LIMITER_RELEASE_MS = 200.0
+# Under this many dB, the Limiter's Gain Reduction counts as none and the audio passes bit for bit: a gain this
+# close to 1 moves no float sample.
+LIMITER_SETTLED_DB = 1e-7
+
+
+def bessel_i0(x):
+    """The modified Bessel function of the first kind, order 0, by its power series."""
+    total = term = 1.0
+    k = 0
+    while term > 1e-17 * total:
+        k += 1
+        term *= (x / (2 * k)) ** 2
+        total += term
+    return total
+
+
+def interpolator(factor, taps, beta):
+    """A polyphase interpolator by factor: for each phase p from 1 to factor - 1, the taps coefficients of
+    x[m + j], j from 1 - taps / 2 to taps / 2, that give the signal at m + p / factor. A Kaiser-windowed sinc with its
+    cutoff at the host's Nyquist, each phase normalised to unity gain at DC. Phase 0 is x[m] itself."""
+    half = taps // 2
+    phases = []
+    for p in range(1, factor):
+        t = [p / factor - j for j in range(1 - half, half + 1)]
+        window = [bessel_i0(beta * math.sqrt(max(0.0, 1 - (u / half) ** 2))) / bessel_i0(beta) for u in t]
+        kernel = [math.sin(math.pi * u) / (math.pi * u) * w for u, w in zip(t, window)]
+        total = sum(kernel)
+        phases.append([c / total for c in kernel])
+    return phases
+
+
+def estimator_delay():
+    """The true-peak estimator's delay in host samples, the same at every rate."""
+    return TRUE_PEAK_TAPS // 2
+
+
+def lookahead_window(fs):
+    """High Quality's lookahead window at fs in host samples: the Limiter reserve less the estimator's delay, so the
+    two fill the reserve exactly."""
+    return _whole_samples(LIMITER_RESERVE_MS, fs) - estimator_delay()
+
+
+def _segment_peaks(channels, phases, taps):
+    """Per host sample m, the loudest of every channel's x[m] and its interpolated values up to m + 1, the signal
+    silent outside its length."""
+    half = taps // 2
+    length = len(channels[0])
+    peaks = [0.0] * length
+    for x in channels:
+        padded = [0.0] * half + list(x) + [0.0] * half
+        for m in range(length):
+            window = padded[m + 1:m + 1 + taps]
+            peak = max([abs(x[m])] + [abs(sum(map(operator.mul, c, window))) for c in phases])
+            peaks[m] = max(peaks[m], peak)
+    return peaks
+
+
+def reference_true_peak(channels):
+    """The 16x reference's true peak of every channel, linear: silence before the signal, and up to the last sample
+    whose interpolation reads none past its end, where the audio would go on."""
+    segments = _segment_peaks(channels, interpolator(REFERENCE_PEAK_FACTOR, REFERENCE_PEAK_TAPS, REFERENCE_PEAK_BETA),
+                              REFERENCE_PEAK_TAPS)
+    return max(segments[:len(segments) - REFERENCE_PEAK_TAPS // 2])
+
+
+def estimated_true_peak(channels):
+    """The true-peak estimator's reading of every channel, linear, over the whole signal."""
+    return max(_segment_peaks(channels, interpolator(TRUE_PEAK_FACTOR, TRUE_PEAK_TAPS, TRUE_PEAK_BETA), TRUE_PEAK_TAPS))
+
+
+def _db(gain):
+    return 20 * math.log10(gain) if gain > 0 else -math.inf
+
+
+def _over_db(peak, ceiling):
+    """The Gain Reduction in dB that brings peak to ceiling: 0 when it is under it."""
+    return 20 * math.log10(peak / ceiling) if peak > ceiling else 0.0
+
+
+def _gain(reduction_db):
+    return 10 ** (-reduction_db / 20) if reduction_db > 0 else 1.0
+
+
+def _settled(reduction_db):
+    return 0.0 if reduction_db < LIMITER_SETTLED_DB else reduction_db
+
+
+def limit_zero_latency(channels, ceiling_db, fs, release_ms=LIMITER_RELEASE_MS):
+    """Zero Latency's Limiter, with no delay: a zero-attack gain computer on the loudest channel's sample peak, which
+    brings each sample to the Ceiling at once and releases with one pole in dB, then a safety clip at the Ceiling.
+    Returns the output and each sample's Gain Reduction in dB."""
+    ceiling = 10 ** (ceiling_db / 20)
+    pole = _pole(release_ms, fs)
+    reduction = 0.0
+    out = [[] for _ in channels]
+    reductions = []
+    for n in range(len(channels[0])):
+        need = _over_db(max(abs(x[n]) for x in channels), ceiling)
+        reduction = _settled(max(need, pole * reduction))
+        gain = _gain(reduction)
+        for x, y in zip(channels, out):
+            y.append(max(-ceiling, min(ceiling, gain * x[n])))
+        reductions.append(reduction)
+    return out, reductions
+
+
+def limit_high_quality(channels, ceiling_db, fs, release_ms=LIMITER_RELEASE_MS):
+    """High Quality's Limiter, delaying by the Limiter reserve: the true-peak estimator on every channel, aiming
+    LIMITER_TRUE_PEAK_HEADROOM_DB under the Ceiling, then over the lookahead window W, a sliding maximum of the Gain
+    Reduction asked for over W + 1 samples, the release (one pole in dB), and their average over W + 1 samples, so the
+    gain is fully down when a peak arrives in the audio, delayed by the estimator's delay plus W. Each sample's
+    estimate is the loudest of its own segment and the one before, so a peak between two samples brings both down.
+    Returns the output and each output sample's Gain Reduction in dB."""
+    ceiling = 10 ** ((ceiling_db - LIMITER_TRUE_PEAK_HEADROOM_DB) / 20)
+    pole = _pole(release_ms, fs)
+    delay, window = estimator_delay(), lookahead_window(fs)
+    span = window + 1
+    segments = _segment_peaks(channels, interpolator(TRUE_PEAK_FACTOR, TRUE_PEAK_TAPS, TRUE_PEAK_BETA), TRUE_PEAK_TAPS)
+    length = len(segments)
+    need = [_over_db(max(segments[q], segments[q - 1] if q > 0 else 0.0), ceiling) for q in range(length)]
+    released = []
+    reductions = []
+    last = 0.0
+    for q in range(length):
+        held = max(need[max(0, q - window):q + 1])
+        last = _settled(max(held, pole * last))
+        released.append(last)
+        recent = released[max(0, q - window):q + 1]
+        reductions.append(sum(recent) / span if any(recent) else 0.0)
+    total = delay + window
+    heard = [0.0] * delay + reductions[:length - delay]  # output sample n takes the reduction worked out at n - delay
+    out = [[0.0] * total + [x[n - total] * _gain(heard[n]) for n in range(total, length)] for x in channels]
+    return out, heard
+
+
+LIMITERS = {"zero latency": limit_zero_latency, "high quality": limit_high_quality}
+
+
+# --- Limiter: test signals --------------------------------------------------------------------------
+
+# Each test signal of the true-peak figures is this many host samples long, and every tone and the noise fade in
+# over LIMITER_FADE_MS on a raised cosine, so they are band-limited from their first sample: an abrupt start has
+# content up to Nyquist, where no interpolator, the reference's included, can say where the true peak lies.
+LIMITER_SIGNAL_SAMPLES = 2048
+LIMITER_FADE_MS = 1.0
+# The band-limited noise: NOISE_TONES sines, spaced evenly in log frequency over NOISE_BAND Hz, each at the same
+# level, their phases from the seeded generator, scaled so its sample peak reads the level asked for.
+NOISE_TONES = 64
+NOISE_BAND = (20, 20000)
+# The full-scale burst: BURST_START samples of silence, then a 1 kHz sine starting at its peak, at full scale. It
+# starts abruptly, a transient, but at 1 kHz its content is far below Nyquist.
+BURST_START = 256
+BURST_FREQUENCY = 1000
+# How far over the Ceiling the reference set's tones and noise are pushed, in dB.
+LIMITER_PUSH_DB = 12.0
+
+
+def _fade_in(fs, n):
+    samples = LIMITER_FADE_MS * fs / 1000
+    return 1.0 if n >= samples else 0.5 - 0.5 * math.cos(math.pi * n / samples)
+
+
+def limiter_tone(frequency, level_db, fs, length=LIMITER_SIGNAL_SAMPLES):
+    """A sine at frequency, its peak at level_db, faded in, from a phase of 0.3 radians."""
+    amplitude = 10 ** (level_db / 20)
+    return [amplitude * _fade_in(fs, n) * math.sin(2 * math.pi * frequency * n / fs + 0.3) for n in range(length)]
+
+
+def band_limited_noise(level_db, fs, seed=REFERENCE_SEED, length=LIMITER_SIGNAL_SAMPLES):
+    """Seeded noise band-limited to NOISE_BAND, its sample peak at level_db, faded in."""
+    white = _white(seed)
+    low, high = NOISE_BAND
+    frequencies = [low * (high / low) ** (k / (NOISE_TONES - 1)) for k in range(NOISE_TONES)]
+    phases = [math.pi * next(white) for _ in frequencies]
+    noise = [sum(math.sin(2 * math.pi * f * n / fs + p) for f, p in zip(frequencies, phases)) * _fade_in(fs, n)
+             for n in range(length)]
+    scale = 10 ** (level_db / 20) / max(abs(x) for x in noise)
+    return [x * scale for x in noise]
+
+
+def full_scale_burst(fs, length=LIMITER_SIGNAL_SAMPLES):
+    """Silence for BURST_START samples, then BURST_FREQUENCY Hz at full scale from its peak."""
+    return [0.0 if n < BURST_START else math.cos(2 * math.pi * BURST_FREQUENCY * (n - BURST_START) / fs)
+            for n in range(length)]
+
+
+def reference_set(ceiling_db, fs):
+    """The Limiter's reference signals at a Ceiling, as (name, one channel) pairs."""
+    over = ceiling_db + LIMITER_PUSH_DB
+    return [("full-scale burst", full_scale_burst(fs)),
+            ("10 kHz tone", limiter_tone(10000, over, fs)),
+            ("19 kHz tone", limiter_tone(19000, over, fs)),
+            ("noise", band_limited_noise(over, fs))]
+
+
+# --- Limiter: the estimator's under-read ------------------------------------------------------------
+
+# The band-limited test signals the estimator is measured on: a tone at each frequency and noise from each seed,
+# at full scale, this many samples long.
+UNDER_READ_FREQUENCIES = (1000, 5000, 10000, 15000, 19000, 20000)
+UNDER_READ_SEEDS = (1, 2, 3)
+UNDER_READ_SAMPLES = 1024
+
+
+@dataclass
+class UnderRead:
+    """The estimator's worst under-read at a rate, in dB against the 16x reference, and the signal it was on."""
+    fs: float
+    db: float
+    signal: str
+
+
+def under_read(fs):
+    """The estimator's worst under-read at fs over the band-limited test signals: how far its reading of each
+    signal's true peak is under the reference's, in dB."""
+    tones = [(f"{f / 1000:g} kHz tone", limiter_tone(f, 0.0, fs, UNDER_READ_SAMPLES)) for f in UNDER_READ_FREQUENCIES]
+    noises = [(f"noise, seed {seed}", band_limited_noise(0.0, fs, seed, UNDER_READ_SAMPLES))
+              for seed in UNDER_READ_SEEDS]
+    signals = tones + noises
+    worst = None
+    for name, signal in signals:
+        reading = _db(reference_true_peak([signal])) - _db(estimated_true_peak([signal]))
+        if worst is None or reading > worst.db:
+            worst = UnderRead(fs, reading, name)
+    return worst
+
+
+# --- Limiter: peaks and timing ------------------------------------------------------------------------
+
+@dataclass
+class Peaks:
+    """A reference signal's output peaks through one mode's Limiter, each in dB against the Ceiling."""
+    signal: str
+    mode: str
+    sample: float
+    true: float
+
+
+def limiter_peaks(ceiling_db, fs):
+    """Each reference signal's output peaks through each mode's Limiter at fs."""
+    rows = []
+    for name, signal in reference_set(ceiling_db, fs):
+        for mode, limit in LIMITERS.items():
+            out, _ = limit([signal], ceiling_db, fs)
+            rows.append(Peaks(name, mode, _db(max(abs(x) for x in out[0])) - ceiling_db,
+                              _db(reference_true_peak(out)) - ceiling_db))
+    return rows
+
+
+# The timing signal: a quiet level, the full-scale burst for BURST_MS, then the quiet level again, long enough for
+# the release, through a Ceiling of TIMING_CEILING_DB, so the burst is limited by about 12 dB. The quiet level
+# alternates in sign at TIMING_QUIET_DB, far under the Ceiling, so each sample's Gain Reduction reads off it.
+TIMING_CEILING_DB = -12.0
+TIMING_QUIET_DB = -40.0
+BURST_MS = 50.0
+TIMING_RELEASE_MS = 600.0
+
+
+@dataclass
+class Timing:
+    """One mode's Limiter on the timing signal at fs: in dB, the Gain Reduction on the burst's first
+    sample in the audio heard and the most it reaches over the burst; in ms, the release's 63% and 90%, counted from
+    the first quiet sample heard after the burst."""
+    fs: float
+    mode: str
+    first: float
+    most: float
+    release_63: float
+    release_90: float
+
+
+def timing_signal(fs):
+    """The quiet level, BURST_START samples of it, the burst for BURST_MS, then the quiet level for
+    TIMING_RELEASE_MS; and the burst's first and last samples."""
+    quiet = 10 ** (TIMING_QUIET_DB / 20)
+    start, end = BURST_START, BURST_START + round(BURST_MS * fs / 1000)
+    length = end + round(TIMING_RELEASE_MS * fs / 1000)
+    signal = [(quiet if n % 2 == 0 else -quiet) if n < start or n >= end
+              else math.cos(2 * math.pi * BURST_FREQUENCY * (n - start) / fs) for n in range(length)]
+    return signal, start, end
+
+
+def limiter_timing(mode, fs):
+    """mode's Limiter's timing on the timing signal at fs, as Timing."""
+    signal, start, end = timing_signal(fs)
+    out, _ = LIMITERS[mode]([signal], TIMING_CEILING_DB, fs)
+    delay = latency_of_limiter(mode, fs)
+    heard = [_db(abs(signal[n - delay])) - _db(abs(out[0][n])) for n in range(delay, len(signal))]
+    most = max(heard[start:end])
+    times = []
+    for fraction in (ONE_TIME_CONSTANT, NINETY_PERCENT):
+        n = next(n for n in range(end, len(heard)) if heard[end - 1] - heard[n] >= fraction * heard[end - 1])
+        times.append((n - end + 1) * 1000 / fs)
+    return Timing(fs, mode, heard[start], most, *times)
+
+
+def latency_of_limiter(mode, fs):
+    """The Limiter's delay in host samples: the Limiter reserve in High Quality, none in Zero Latency."""
+    return _whole_samples(LIMITER_RESERVE_MS, fs) if mode == "high quality" else 0
+
+
+# --- Limiter: release ---------------------------------------------------------------------------------
+
+# The releases the trade-off table compares, in ms.
+RELEASE_CANDIDATES = (20, 50, 100, 200, 500, 1000)
+# The trade-off's two figures. Recovery: after a 6 dB limit, the time until the Gain Reduction is back under
+# RECOVERED_DB, about the smallest change in level a listener notices on music. Distortion: THD+N of a bin-centred
+# tone near 50 Hz, pushed 6 dB over the Ceiling, measured once it has settled, where the gain ripples most between
+# the tone's peaks; LIMITER_DISTORTION_LIMIT is the most a limiter on a bass note may add before it is heard as
+# fuzz rather than as level.
+TRADE_OFF_LIMIT_DB = 6.0
+RECOVERED_DB = 1.0
+DISTORTION_RATE = 48000
+DISTORTION_SAMPLES = 16384
+DISTORTION_BIN = 17  # 49.8 Hz at 48 kHz over DISTORTION_SAMPLES
+LIMITER_DISTORTION_LIMIT = 0.01
+
+
+@dataclass
+class ReleaseTradeOff:
+    """A release's recovery time in ms and each mode's distortion on the 50 Hz tone, a fraction."""
+    release: float
+    recovery: float
+    distortion: dict
+
+
+def recovery_ms(release_ms):
+    """The time in ms the Gain Reduction takes to fall from TRADE_OFF_LIMIT_DB to under RECOVERED_DB, one pole in
+    dB."""
+    return release_ms * math.log(TRADE_OFF_LIMIT_DB / RECOVERED_DB)
+
+
+def distortion(mode, release_ms):
+    """THD+N of the tone near 50 Hz, TRADE_OFF_LIMIT_DB over a 0 dB Ceiling, through mode's Limiter at release_ms:
+    the power that isn't the tone's against the tone's, as an amplitude ratio, over a second length, the first
+    having let the gain settle."""
+    n_samples, k = DISTORTION_SAMPLES, DISTORTION_BIN
+    amplitude = 10 ** (TRADE_OFF_LIMIT_DB / 20)
+    tone = [amplitude * math.sin(2 * math.pi * k * n / n_samples) for n in range(2 * n_samples)]
+    out, _ = LIMITERS[mode]([tone], 0.0, DISTORTION_RATE, release_ms)
+    y = out[0][n_samples:]
+    real = sum(v * math.cos(2 * math.pi * k * n / n_samples) for n, v in enumerate(y))
+    imaginary = sum(v * math.sin(2 * math.pi * k * n / n_samples) for n, v in enumerate(y))
+    tone_power = (2 * math.hypot(real, imaginary) / n_samples) ** 2 / 2
+    total_power = sum(v * v for v in y) / n_samples
+    return math.sqrt(max(total_power - tone_power, 0.0) / tone_power)
+
+
+def release_trade_off(candidates=RELEASE_CANDIDATES):
+    return [ReleaseTradeOff(r, recovery_ms(r), {mode: distortion(mode, r) for mode in LIMITERS}) for r in candidates]
+
+
 # --- Commands -------------------------------------------------------------------------------------
 
 def _ratio(text):
@@ -1325,6 +1707,69 @@ def report_bursts(settings, sample_rates=SAMPLE_RATES, lengths=BURST_LENGTHS):
         for burst in rows:
             print(f"{fs:8g} {burst.length:9g} {burst.off.release_63:10.4f} {burst.off.release_90:10.4f} "
                   f"{burst.on.release_63:10.4f} {burst.on.release_90:10.4f}")
+
+
+def limiter_options(parser):
+    parser.add_argument("--ceiling", type=float, default=CEILING_DEFAULT, metavar="dB")
+    parser.add_argument("--rates", type=float, nargs="+", default=list(SAMPLE_RATES), metavar="Hz")
+
+
+@command("limiter", options=limiter_options)
+def run_limiter(args):
+    check_range("ceiling", args.ceiling, CEILING_RANGE, " dBFS")
+    _check_rates(args.rates)
+    if not report_limiter(args.ceiling, args.rates):
+        raise SystemExit(1)
+
+
+def report_limiter(ceiling_db, sample_rates=SAMPLE_RATES):
+    """The Limiter's figures at a Ceiling: per rate its parts, the estimator's under-read, each reference signal's
+    peaks and the timing; then the release's trade-off. True when every peak holds the Ceiling and the headroom
+    covers every under-read."""
+    print(f"Limiter, Ceiling {ceiling_db:g} dBFS, release {LIMITER_RELEASE_MS:g} ms (LIMITER_RELEASE_MS) in both modes")
+    print(f"High Quality: a {TRUE_PEAK_FACTOR}x true-peak estimator, {TRUE_PEAK_TAPS} taps (TRUE_PEAK_TAPS), then a "
+          f"lookahead window; the two fill the Limiter reserve, and it aims {LIMITER_TRUE_PEAK_HEADROOM_DB:g} dB under "
+          f"the Ceiling (LIMITER_TRUE_PEAK_HEADROOM_DB)")
+    print("in host samples, and the estimator's worst under-read in dB against the 16x reference, on band-limited "
+          "tones and noise")
+    print(f"{'rate Hz':>8} {'reserve':>8} {'estimator':>10} {'window':>7} {'release':>8} {'headroom':>9} "
+          f"{'under-read':>11}  signal")
+    held = True
+    for fs in sample_rates:
+        worst = under_read(fs)
+        covered = worst.db <= LIMITER_TRUE_PEAK_HEADROOM_DB
+        held = held and covered
+        print(f"{fs:8g} {_whole_samples(LIMITER_RESERVE_MS, fs):8d} {estimator_delay():10d} {lookahead_window(fs):7d} "
+              f"{round(LIMITER_RELEASE_MS * fs / 1000):8d} {LIMITER_TRUE_PEAK_HEADROOM_DB:9g} {worst.db:11.3f}  "
+              f"{worst.signal}{'' if covered else ', over the headroom'}")
+    print(f"each reference signal's output peaks in dB against the Ceiling, the tones and noise pushed "
+          f"{LIMITER_PUSH_DB:g} dB over it; true peak by the 16x reference")
+    print(f"{'rate Hz':>8} {'signal':>17} {'mode':>13} {'sample peak':>12} {'true peak':>10}")
+    for fs in sample_rates:
+        for row in limiter_peaks(ceiling_db, fs):
+            # Zero Latency promises the sample peak, High Quality the true peak.
+            promised = row.sample if row.mode == "zero latency" else row.true
+            within = promised <= 0.0
+            held = held and within
+            print(f"{fs:8g} {row.signal:>17} {row.mode:>13} {row.sample:12.3f} {row.true:10.3f}"
+                  f"{'' if within else '  over the Ceiling'}")
+    print(f"the timing signal: the full-scale burst between quiet levels, Ceiling {TIMING_CEILING_DB:g} dBFS; Gain "
+          f"Reduction in dB on the burst's first sample heard and the most over it; the release in ms, counted from "
+          f"the first quiet sample heard")
+    print(f"{'rate Hz':>8} {'mode':>13} {'first':>8} {'most':>8} {'release 63%':>12} {'release 90%':>12}")
+    for fs in sample_rates:
+        for mode in LIMITERS:
+            t = limiter_timing(mode, fs)
+            print(f"{fs:8g} {mode:>13} {t.first:8.3f} {t.most:8.3f} {t.release_63:12.4f} {t.release_90:12.4f}")
+    print(f"release trade-off, at {DISTORTION_RATE:g} Hz: recovery from a {TRADE_OFF_LIMIT_DB:g} dB limit to under "
+          f"{RECOVERED_DB:g} dB, and THD+N on a {DISTORTION_BIN * DISTORTION_RATE / DISTORTION_SAMPLES:.1f} Hz tone "
+          f"{TRADE_OFF_LIMIT_DB:g} dB over the Ceiling; the release is the shortest within "
+          f"{100 * LIMITER_DISTORTION_LIMIT:g}% in both modes")
+    print(f"{'release ms':>11} {'recovery ms':>12} {'zero latency %':>15} {'high quality %':>15}")
+    for row in release_trade_off():
+        print(f"{row.release:11g} {row.recovery:12.1f} {100 * row.distortion['zero latency']:15.3f} "
+              f"{100 * row.distortion['high quality']:15.3f}{'  chosen' if row.release == LIMITER_RELEASE_MS else ''}")
+    return held
 
 
 if __name__ == "__main__":
