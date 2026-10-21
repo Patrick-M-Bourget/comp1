@@ -9,6 +9,50 @@
 namespace comp1
 {
 
+// A state from 0 to 1 that follows how much of the time the Transfer Curve asks for Gain Reduction, stepped on the
+// run grid: each sample counts whether it asked, and at the start of each run the state charges toward 1 for the
+// samples of the run just heard that asked and discharges toward 0 for the rest, each covering 1 - 1/e of the way in
+// its time. Auto Release's sustain state is one, and Opto's history another (Opto.h).
+class RunCharge
+{
+public:
+    void prepare (double sampleRate, double chargeMs, double dischargeMs)
+    {
+        charge = std::exp (-1000.0 / (chargeMs * sampleRate));
+        discharge = std::exp (-1000.0 / (dischargeMs * sampleRate));
+        reset();
+    }
+
+    void reset()
+    {
+        state = 0.0;
+        heard = compressing = 0;
+    }
+
+    // On every sample: whether the Transfer Curve asked for Gain Reduction.
+    void hear (bool asked)
+    {
+        ++heard;
+        compressing += asked ? 1 : 0;
+    }
+
+    // At the start of each run: the state moves on by the samples heard since the last.
+    void startRun()
+    {
+        state = 1.0 - (1.0 - state) * std::pow (charge, compressing);
+        state *= std::pow (discharge, heard - compressing);
+        heard = compressing = 0;
+    }
+
+    double value() const { return state; }
+
+private:
+    double charge = 0.0, discharge = 0.0; // the state's poles, a sample each
+    double state = 0.0;                   // 0 to 1
+    int heard = 0;                        // this run's samples
+    int compressing = 0;                  // and those of them that asked for Gain Reduction
+};
+
 class AutoRelease
 {
 public:
@@ -23,24 +67,18 @@ public:
     void prepare (double newSampleRate)
     {
         sampleRate = newSampleRate;
-        charge = std::exp (-1000.0 / (chargeMs * sampleRate));
-        discharge = std::exp (-1000.0 / (dischargeMs * sampleRate));
+        sustain.prepare (sampleRate, chargeMs, dischargeMs);
         reset();
     }
 
     void reset()
     {
-        sustain = 0.0;
-        heard = compressing = 0;
+        sustain.reset();
         on = false;
     }
 
     // On every sample: whether the Transfer Curve asked for Gain Reduction.
-    void hear (bool asked)
-    {
-        ++heard;
-        compressing += asked ? 1 : 0;
-    }
+    void hear (bool asked) { sustain.hear (asked); }
 
     // At the start of each run of the grid the detector hears on: the sustain state moves on by the samples heard
     // since the last, charging for those that asked for Gain Reduction and discharging for the rest, and, with Auto
@@ -49,12 +87,10 @@ public:
     // where the detector's delay moves (Lookahead, or a Processing Mode switch), which lengthens or shortens one.
     void startRun (double releaseMs, bool autoReleaseOn)
     {
-        sustain = 1.0 - (1.0 - sustain) * std::pow (charge, compressing);
-        sustain *= std::pow (discharge, heard - compressing);
-        heard = compressing = 0;
+        sustain.startRun();
         on = autoReleaseOn;
         if (on)
-            pole = std::exp (-1000.0 / (releaseMs * (1.0 + (multiplier - 1.0) * sustain) * sampleRate));
+            pole = std::exp (-1000.0 / (releaseMs * (1.0 + (multiplier - 1.0) * sustain.value()) * sampleRate));
     }
 
     // The release pole to use: Auto Release's while it is on, otherwise releasePole, Release's own.
@@ -62,10 +98,7 @@ public:
 
 private:
     double sampleRate = 44100.0;
-    double charge = 0.0, discharge = 0.0; // the sustain state's poles, a sample each
-    double sustain = 0.0;                 // 0 to 1
-    int heard = 0;                        // this run's samples
-    int compressing = 0;                  // and those of them that asked for Gain Reduction
+    RunCharge sustain;
     bool on = false;
     double pole = 0.0;
 };

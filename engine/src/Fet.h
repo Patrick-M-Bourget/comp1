@@ -21,10 +21,13 @@ inline constexpr double speedupMax = 4.0;
 // G = pole · previous + (1 - pole) · w(level - G). w is the Transfer Curve's inverse in the output's domain, capped at
 // Range, so at steady state the output is the Transfer Curve's. w never falls as its level rises, so G is unique and
 // lies between previousDb and the steady Gain Reduction; it is found region by region of the Transfer Curve in closed
-// form (dyn-lab's fet_loop).
-inline double loop (double previousDb, double levelDb, double pole, const clean::Curve& curve)
+// form (dyn-lab's fet_loop), in loopFrom's general form.
+//
+// loopFrom solves G = a + b · w(level - G): a is what the step keeps of the Gain Reduction held, b is w's share, and
+// keep is 1 - b, passed so each caller rounds it as its own pole (dyn-lab's loop_from). loop's are a = pole · previous,
+// b = 1 - pole and keep the pole; a detector that steps more than one part passes its own.
+inline double loopFrom (double a, double b, double keep, double levelDb, const clean::Curve& curve)
 {
-    const double a = pole * previousDb, b = 1.0 - pole;
     const double t = curve.thresholdDb, knee = curve.kneeDb, q = curve.inverseRatio, half = knee / 2.0;
     double solved = 0.0;
     if (levelDb - a <= t - half)
@@ -32,9 +35,9 @@ inline double loop (double previousDb, double levelDb, double pole, const clean:
     else if (knee > 0.0 && a + b * (1.0 - q) * half >= levelDb - t - q * half)
     {
         // Across the Knee. With u = x - T + W/2 for the input x whose output is the loop's, the output's y - T + W/2 is
-        // u + (q - 1)u²/2W, so the loop is pole·(q - 1)u²/2W + u = level - T + W/2 - a, a quadratic in u.
+        // u + (q - 1)u²/2W, so the loop is keep·(q - 1)u²/2W + u = level - T + W/2 - a, a quadratic in u.
         const double e = levelDb - t + half - a;
-        const double c = pole * (q - 1.0) / (2.0 * knee);
+        const double c = keep * (q - 1.0) / (2.0 * knee);
         const double u = 2.0 * e / (1.0 + std::sqrt (std::max (0.0, 1.0 + 4.0 * c * e)));
         solved = a + b * (1.0 - q) * u * u / (2.0 * knee);
     }
@@ -43,6 +46,11 @@ inline double loop (double previousDb, double levelDb, double pole, const clean:
         solved = (q * a + b * (1.0 - q) * (levelDb - t)) / (q + b * (1.0 - q));
     // Range caps w, and so the loop's solution.
     return std::min (solved, a + b * curve.rangeDb);
+}
+
+inline double loop (double previousDb, double levelDb, double pole, const clean::Curve& curve)
+{
+    return loopFrom (pole * previousDb, 1.0 - pole, pole, levelDb, curve);
 }
 
 // One step of FET's detector from previousDb, pole Attack's or Release's: the loop's solution, but never further than
