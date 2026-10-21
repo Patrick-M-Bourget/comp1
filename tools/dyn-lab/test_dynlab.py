@@ -436,7 +436,7 @@ class Oversampling(unittest.TestCase):
                 self.assertGreater(worst_passband(factor // 2), dynlab.ALIASING_TOLERANCE.passband_ceilings[factor])
 
     def test_oversampling_closes_the_fundamentals_shortfall_at_5_khz(self):
-        # #16's figure: 7.6 dB louder than the ideal at 1x, 44.1 kHz and Drive 24 dB. Each factor at least halves it.
+        # At 1x the fundamental is 7.6 dB louder than the ideal at 44.1 kHz and Drive 24 dB. Each factor at least halves it.
         shortfalls = []
         for factor in (1, 2, 4, 8):
             (row,) = dynlab.harmonics(rates=(44100,), frequencies=(5000,), drives=(24.0,), factor=factor, numbers=(1,))
