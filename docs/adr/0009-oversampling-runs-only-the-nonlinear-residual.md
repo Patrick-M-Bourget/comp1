@@ -1,6 +1,8 @@
 # Oversampling runs only the nonlinear residual
 
-In High Quality, a nonlinear stage (Saturation, and Colour, #19) keeps its linear part at the host rate and oversamples only its nonlinear residual, f(u) − u. The residual goes up through the Oversampling filters, is worked out at the oversampled rate, comes back down, and is added to the linear part, which is delayed by exactly as much. The compressor's gain stays at the host rate.
+In High Quality, a nonlinear stage keeps its linear part at the host rate and oversamples only its nonlinear residual, f(u) − u. The residual goes up through the Oversampling filters, is worked out at the oversampled rate, comes back down, and is added to the linear part, which is delayed by exactly as much. The compressor's gain stays at the host rate.
+
+Saturation follows this today. Colour is meant to as well, but for now it runs inside the compressor at the host rate in both Processing Modes, anti-aliased by its ADAA alone (ADR 0005): oversampling it means the compressor handing its Colour residual to the After section, which #63 plans.
 
 This extends ADR 0005's split of the waveshaper into a sample-aligned linear part and a residual that alone is anti-aliased. Filters that see only the residual can't touch the linear part. So the Wet path is exactly linear and aligned whenever nothing is nonlinear (Saturation off, no Colour), and Dry plus Wet nulls exactly against the input at every Oversampling, as it does at 1x. The filters' delay is a fixed count of host samples at every factor, padded to the same total, because ADR 0001's cap on the internal rate keeps it so. Nothing in the Wet path's delay moves with the factor, and the reported latency never changes.
 
