@@ -1094,16 +1094,16 @@ class Comp(unittest.TestCase):
     def test_at_0_percent_each_curve_compresses_nothing(self):
         for name, style in dynlab.STYLE_DEFAULTS.items():
             with self.subTest(name):
-                self.assertEqual(dynlab.comp_ratio(style.curve, 0), 1)
-                at_zero = replace_settings(style.settings, style.curve, 0)
+                self.assertEqual(dynlab.comp_ratio(style.comp_curve, 0), 1)
+                at_zero = replace_settings(style.settings, style.comp_curve, 0)
                 self.assertEqual(dynlab.auto_gain(at_zero), 0)
 
     def test_threshold_falls_and_ratio_rises_with_comp(self):
         for name, style in dynlab.STYLE_DEFAULTS.items():
             with self.subTest(name):
                 comps = [c / 4 for c in range(401)]
-                thresholds = [dynlab.comp_threshold(style.curve, c) for c in comps]
-                ratios = [dynlab.comp_ratio(style.curve, c) for c in comps]
+                thresholds = [dynlab.comp_threshold(style.comp_curve, c) for c in comps]
+                ratios = [dynlab.comp_ratio(style.comp_curve, c) for c in comps]
                 self.assertTrue(all(a > b for a, b in zip(thresholds, thresholds[1:])))
                 self.assertTrue(all(a < b for a, b in zip(ratios, ratios[1:])))
 
@@ -1112,25 +1112,25 @@ class Comp(unittest.TestCase):
             with self.subTest(name):
                 dynlab.check_range("comp", style.comp, dynlab.COMP_RANGE, "%")
                 for c in self.COMPS:
-                    dynlab.check_ranges(replace_settings(style.settings, style.curve, c))
+                    dynlab.check_ranges(replace_settings(style.settings, style.comp_curve, c))
 
     def test_the_default_comp_gives_exactly_the_default_threshold_and_ratio(self):
         for name, style in dynlab.STYLE_DEFAULTS.items():
             with self.subTest(name):
-                self.assertEqual(dynlab.comp_threshold(style.curve, style.comp), style.settings.threshold)
-                self.assertEqual(dynlab.comp_ratio(style.curve, style.comp), style.settings.ratio)
+                self.assertEqual(dynlab.comp_threshold(style.comp_curve, style.comp), style.settings.threshold)
+                self.assertEqual(dynlab.comp_ratio(style.comp_curve, style.comp), style.settings.ratio)
 
     def test_the_comp_nearest_a_threshold_inverts_the_curve_and_clamps_to_its_span(self):
         for name, style in dynlab.STYLE_DEFAULTS.items():
             with self.subTest(name):
                 for c in self.COMPS:
-                    threshold = dynlab.comp_threshold(style.curve, c)
-                    self.assertAlmostEqual(dynlab.comp_for_threshold(style.curve, threshold), c, places=9)
-                start, end = style.curve.points[0].threshold, style.curve.points[-1].threshold
-                self.assertEqual(dynlab.comp_for_threshold(style.curve, start + 6), 0)
-                self.assertEqual(dynlab.comp_for_threshold(style.curve, end - 6), 100)
+                    threshold = dynlab.comp_threshold(style.comp_curve, c)
+                    self.assertAlmostEqual(dynlab.comp_for_threshold(style.comp_curve, threshold), c, places=9)
+                start, end = style.comp_curve.points[0].threshold, style.comp_curve.points[-1].threshold
+                self.assertEqual(dynlab.comp_for_threshold(style.comp_curve, start + 6), 0)
+                self.assertEqual(dynlab.comp_for_threshold(style.comp_curve, end - 6), 100)
         # Clean's runs straight from 0 dB at 0% to -18 dB at 50%: -9 dB is a quarter of the way.
-        self.assertAlmostEqual(dynlab.comp_for_threshold(dynlab.STYLE_DEFAULTS["clean"].curve, -9), 25, places=9)
+        self.assertAlmostEqual(dynlab.comp_for_threshold(dynlab.STYLE_DEFAULTS["clean"].comp_curve, -9), 25, places=9)
 
     def test_along_each_curve_the_reference_signal_keeps_its_level_within_the_styles_tolerance(self):
         for name, style in dynlab.STYLE_DEFAULTS.items():
@@ -1162,9 +1162,9 @@ class Comp(unittest.TestCase):
         self.assertLess(shares[1000] - shares[999], middle / 100)
 
 
-def replace_settings(settings, curve, comp):
-    """settings with the Threshold and Ratio of curve at comp."""
-    return dynlab.replace(settings, threshold=dynlab.comp_threshold(curve, comp), ratio=dynlab.comp_ratio(curve, comp))
+def replace_settings(settings, comp_curve, comp):
+    """settings with the Threshold and Ratio of comp_curve at comp."""
+    return dynlab.replace(settings, threshold=dynlab.comp_threshold(comp_curve, comp), ratio=dynlab.comp_ratio(comp_curve, comp))
 
 
 LAB =os.path.dirname(os.path.abspath(__file__))
@@ -1335,7 +1335,7 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(rows[5][1:3], ["-18.00", "3.00"])
         self.assertTrue(all(row[-1] == "within" for row in rows))
         self.assertNotEqual(run("compcurve", "--style", "tube").returncode, 0)
-        # FET's curve at Clean's ±1 dB tolerance: past it from 50% up.
+        # FET's Comp Curve at Clean's ±1 dB tolerance: past it from 50% up.
         strict = run("compcurve", "--style", "fet", "--tolerance", "1")
         self.assertNotEqual(strict.returncode, 0)
         self.assertIn("outside", strict.stdout)

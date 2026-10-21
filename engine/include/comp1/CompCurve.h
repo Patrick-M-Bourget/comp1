@@ -28,7 +28,7 @@ struct CompPoint
 // A Style's Comp Curve, dyn-lab's form (tools/dyn-lab/USAGE.md, "Comp"): three points, at Comp 0%, the Style's default
 // Comp and 100%, with Threshold and 1/Ratio each running in a straight line from one point to the next. The first
 // point's Ratio is 1:1, so 0% compresses nothing; each point's Threshold is below the one before and its Ratio above,
-// so Threshold falls and Ratio rises with Comp, and each Threshold on the curve has one Comp. The middle point is the
+// so Threshold falls and Ratio rises with Comp, and each Threshold on the Comp Curve has one Comp. The middle point is the
 // Style's default Threshold and Ratio, which its default Comp lands on exactly.
 struct CompCurve
 {
@@ -39,7 +39,7 @@ struct CompCurve
 
 namespace detail
 {
-// The two points comp (clamped to the curve's span) falls between, and how far from the first to the second, 0 to 1.
+// The two points comp (clamped to the Comp Curve's span) falls between, and how far from the first to the second, 0 to 1.
 struct Between
 {
     const CompPoint& from;
@@ -47,9 +47,9 @@ struct Between
     double share;
 };
 
-inline Between between (const CompCurve& curve, double comp)
+inline Between between (const CompCurve& compCurve, double comp)
 {
-    const auto& p = curve.points;
+    const auto& p = compCurve.points;
     comp = std::clamp (comp, p.front().comp, p.back().comp);
     for (std::size_t i = 0; i + 1 < p.size(); ++i)
         if (comp <= p[i + 1].comp)
@@ -57,36 +57,36 @@ inline Between between (const CompCurve& curve, double comp)
     return { p[p.size() - 2], p.back(), 1.0 };
 }
 
-// a and b mixed as (1 - u) a + u b: exactly a at u = 0 and exactly b at u = 1, so the curve meets its points.
+// a and b mixed as (1 - u) a + u b: exactly a at u = 0 and exactly b at u = 1, so the Comp Curve meets its points.
 inline double mix (double a, double b, double u) { return (1.0 - u) * a + u * b; }
 } // namespace detail
 
-// The Threshold in dB a curve sets at comp (%).
-inline double compThresholdDb (const CompCurve& curve, double comp)
+// The Threshold in dB a Comp Curve sets at comp (%).
+inline double compThresholdDb (const CompCurve& compCurve, double comp)
 {
-    const auto at = detail::between (curve, comp);
+    const auto at = detail::between (compCurve, comp);
     return detail::mix (at.from.thresholdDb, at.to.thresholdDb, at.share);
 }
 
-// The 1/Ratio a curve sets at comp (%), as the Engine glides Ratio: 0 for ∞:1.
-inline double compInverseRatio (const CompCurve& curve, double comp)
+// The 1/Ratio a Comp Curve sets at comp (%), as the Engine glides Ratio: 0 for ∞:1.
+inline double compInverseRatio (const CompCurve& compCurve, double comp)
 {
-    const auto at = detail::between (curve, comp);
+    const auto at = detail::between (compCurve, comp);
     return detail::mix (1.0 / at.from.ratio, 1.0 / at.to.ratio, at.share);
 }
 
-// The Ratio (:1) a curve sets at comp (%), infinity for ∞:1.
-inline double compRatio (const CompCurve& curve, double comp)
+// The Ratio (:1) a Comp Curve sets at comp (%), infinity for ∞:1.
+inline double compRatio (const CompCurve& compCurve, double comp)
 {
-    const double inverse = compInverseRatio (curve, comp);
+    const double inverse = compInverseRatio (compCurve, comp);
     return inverse <= 0.0 ? std::numeric_limits<double>::infinity() : 1.0 / inverse;
 }
 
-// The Comp (%) on a curve nearest a Threshold in dB: the one that sets it, clamped to the curve's span, so a Threshold
-// above the curve's start is its first Comp and one below its end its last.
-inline double compNearestThreshold (const CompCurve& curve, double thresholdDb)
+// The Comp (%) on a Comp Curve nearest a Threshold in dB: the one that sets it, clamped to the Comp Curve's span, so a Threshold
+// above the Comp Curve's start is its first Comp and one below its end its last.
+inline double compNearestThreshold (const CompCurve& compCurve, double thresholdDb)
 {
-    const auto& p = curve.points;
+    const auto& p = compCurve.points;
     if (thresholdDb >= p.front().thresholdDb)
         return p.front().comp;
     for (std::size_t i = 0; i + 1 < p.size(); ++i)

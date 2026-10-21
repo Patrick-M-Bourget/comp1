@@ -48,7 +48,7 @@ struct StyleDefaults
 };
 
 // A Style, as one row: the Character it plays, its Comp Curve, and its defaults. A Source Style has no defaults yet,
-// and plays Clean on Clean's curve, until the Source Styles ticket fills its row (#26).
+// and plays Clean on Clean's Comp Curve, until the Source Styles ticket fills its row (#26).
 struct StyleDescription
 {
     Character character;
@@ -60,7 +60,7 @@ struct StyleDescription
 // tools/dyn-lab/dynlab.py styles, and compcurve --style <name>; its USAGE.md, "Styles" and "Comp", gives the reasons).
 // Clean's are a default Settings', so a new instance holds its own Style's defaults, except Comp Follow, which a
 // default Settings holds off so an instance plays its stored settings, while choosing any Style turns it on. Every
-// Style writes the Gate and the Limiter off, at their defaults, and its default Comp, 50%, the middle of its curve.
+// Style writes the Gate and the Limiter off, at their defaults, and its default Comp, 50%, the middle of its Comp Curve.
 inline constexpr Settings::Gate gateOff {};
 inline constexpr CompCurve cleanCompCurve { { CompPoint { 0.0, 0.0, 1.0 }, CompPoint { 50.0, -18.0, 4.0 }, CompPoint { 100.0, -36.0, 8.0 } } };
 inline constexpr std::array<StyleDescription, styleCount> styles {

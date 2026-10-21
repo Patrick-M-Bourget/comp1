@@ -2851,42 +2851,42 @@ class CompPoint:
 class CompCurve:
     """A Style's Comp Curve: three points, at Comp 0%, the Style's default Comp and 100%, with Threshold and 1/Ratio
     each running in a straight line from one point to the next. The first point's Ratio is 1:1, so 0% compresses
-    nothing; each point's Threshold is below the one before and its Ratio above, so each Threshold on the curve has one
+    nothing; each point's Threshold is below the one before and its Ratio above, so each Threshold on the Comp Curve has one
     Comp. The middle point is the Style's default Threshold and Ratio, which the default Comp lands on exactly."""
     points: tuple
 
 
-def _between(curve, comp):
+def _between(comp_curve, comp):
     """The two points comp (clamped to COMP_RANGE) falls between, and how far from the first to the second, 0 to 1."""
     comp = min(max(comp, COMP_RANGE[0]), COMP_RANGE[1])
-    for a, b in zip(curve.points, curve.points[1:]):
+    for a, b in zip(comp_curve.points, comp_curve.points[1:]):
         if comp <= b.comp:
             return a, b, (comp - a.comp) / (b.comp - a.comp)
-    return curve.points[-2], curve.points[-1], 1.0
+    return comp_curve.points[-2], comp_curve.points[-1], 1.0
 
 
 def _mix(a, b, u):
-    """a and b mixed as (1 - u) a + u b: exactly a at u = 0, and exactly b at u = 1, so the curve meets its points."""
+    """a and b mixed as (1 - u) a + u b: exactly a at u = 0, and exactly b at u = 1, so the Comp Curve meets its points."""
     return (1 - u) * a + u * b
 
 
-def comp_threshold(curve, comp):
-    """The Threshold in dB the curve sets at comp (%)."""
-    a, b, u = _between(curve, comp)
+def comp_threshold(comp_curve, comp):
+    """The Threshold in dB the Comp Curve sets at comp (%)."""
+    a, b, u = _between(comp_curve, comp)
     return _mix(a.threshold, b.threshold, u)
 
 
-def comp_ratio(curve, comp):
-    """The Ratio the curve sets at comp (%), :1, gliding as 1/Ratio between points so ∞:1 (0) can be one."""
-    a, b, u = _between(curve, comp)
+def comp_ratio(comp_curve, comp):
+    """The Ratio the Comp Curve sets at comp (%), :1, gliding as 1/Ratio between points so ∞:1 (0) can be one."""
+    a, b, u = _between(comp_curve, comp)
     inverse = _mix(1 / a.ratio, 1 / b.ratio, u)
     return inf if inverse == 0 else 1 / inverse
 
 
-def comp_for_threshold(curve, threshold):
-    """The Comp (%) on the curve nearest a Threshold in dB: the one that sets it, clamped to the curve's span, so a
-    Threshold above the curve's start is 0% and one below its end is 100%."""
-    points = curve.points
+def comp_for_threshold(comp_curve, threshold):
+    """The Comp (%) on the Comp Curve nearest a Threshold in dB: the one that sets it, clamped to the Comp Curve's span, so a
+    Threshold above the Comp Curve's start is 0% and one below its end is 100%."""
+    points = comp_curve.points
     if threshold >= points[0].threshold:
         return COMP_RANGE[0]
     for a, b in zip(points, points[1:]):
@@ -2897,7 +2897,7 @@ def comp_for_threshold(curve, threshold):
 
 # The Comp Follow glide: how long turning Comp Follow on (or off) takes to move Threshold, Ratio and Auto Gain from the
 # stored settings onto the Comp Curve (or back), in ms (ADR 0004: a fixed time, so playback reproduces it). Long enough
-# that a move from the stored settings to the curve, which may be 30 dB of Threshold, is heard as compression easing
+# that a move from the stored settings to the Comp Curve, which may be 30 dB of Threshold, is heard as compression easing
 # over rather than a jump: six times the 50 ms every other setting glides over. Short enough to have arrived within a
 # beat at 200 bpm, so grabbing Comp still answers at once.
 COMP_FOLLOW_GLIDE_MS = 300.0
@@ -2919,7 +2919,7 @@ class StyleDefaults:
     Style's Comp Curve, and how far its Auto Gain may let the reference signal's level move along it, in dB."""
     settings: Settings
     comp: float
-    curve: CompCurve
+    comp_curve: CompCurve
     gate: Gate = field(default_factory=Gate)
     limiter: bool = False
     ceiling: float = CEILING_DEFAULT
@@ -2986,7 +2986,7 @@ class CompRow:
     difference: float
 
 
-# The Comps compcurve prints the curve at, in %.
+# The Comps compcurve prints the Comp Curve at, in %.
 COMP_STEPS = tuple(range(COMP_RANGE[0], COMP_RANGE[1] + 1, 10))
 
 
@@ -2996,7 +2996,7 @@ def comp_curve_rows(name):
     style = STYLE_DEFAULTS[name]
     rows = []
     for comp in COMP_STEPS:
-        threshold, ratio = comp_threshold(style.curve, comp), comp_ratio(style.curve, comp)
+        threshold, ratio = comp_threshold(style.comp_curve, comp), comp_ratio(style.comp_curve, comp)
         settings = replace(style.settings, threshold=threshold, ratio=ratio)
         rows.append(CompRow(comp, threshold, ratio, auto_gain(settings), level_difference(settings)))
     return rows
@@ -3020,7 +3020,7 @@ def report_compcurve(name, tolerance=None):
     tolerance = style.auto_gain_tolerance if tolerance is None else tolerance
     s = style.settings
     print(f"Comp Curve, {name}: Threshold and 1/Ratio straight between "
-          + ", ".join(f"Comp {p.comp:g}% ({p.threshold:g} dB, {_shown(p.ratio)}:1)" for p in style.curve.points)
+          + ", ".join(f"Comp {p.comp:g}% ({p.threshold:g} dB, {_shown(p.ratio)}:1)" for p in style.comp_curve.points)
           + f"; default Comp {style.comp:g}%")
     print(f"reference signal at {name}'s defaults (Knee {s.knee:g} dB, Attack {s.attack:g} ms, Release {s.release:g} ms, "
           f"Hold {s.hold:g} ms, Range {s.range:g} dB), Auto Gain on: output minus input, within ±{tolerance:g} dB")

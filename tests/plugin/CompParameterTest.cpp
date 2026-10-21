@@ -57,7 +57,7 @@ struct GestureRecorder final : juce::AudioProcessorListener
 };
 
 // Opto chosen (Comp Follow on, Comp 50%), then Comp moved to 80%, and the stored Threshold, Ratio and Auto Gain moved
-// well off the curve by Host Automation, which the Engine ignores while following.
+// well off the Comp Curve by Host Automation, which the Engine ignores while following.
 void followingOffTheCurve (const host::SessionHost& host)
 {
     REQUIRE (host.processor->chooseStyle (Style::Opto));
@@ -156,7 +156,7 @@ TEST_CASE ("The Settings read hold Comp, Comp Follow and the Style's Comp Curve"
     }
 }
 
-TEST_CASE ("The followed Threshold and Ratio are the Style's curve at the current Comp")
+TEST_CASE ("The followed Threshold and Ratio are the Style's Comp Curve at the current Comp")
 {
     host::SessionHost host;
     host.edit ("style", styleValue (Style::FET));
@@ -168,13 +168,13 @@ TEST_CASE ("The followed Threshold and Ratio are the Style's curve at the curren
     CHECK (host.processor->followedRatio() == 4.0);
 }
 
-TEST_CASE ("Stopping following writes Comp Follow off, the curve's Threshold and Ratio and Auto Gain on, as one undo step inside gestures, and the output doesn't change")
+TEST_CASE ("Stopping following writes Comp Follow off, the Comp Curve's Threshold and Ratio and Auto Gain on, as one undo step inside gestures, and the output doesn't change")
 {
     host::SessionHost host;
     followingOffTheCurve (host);
     const auto before = values (*host.processor);
     const int steps = host.history.undoSteps();
-    // Opto's curve at 80%: -32.4 dB, 4.29:1 (python3 tools/dyn-lab/dynlab.py compcurve --style opto).
+    // Opto's Comp Curve at 80%: -32.4 dB, 4.29:1 (python3 tools/dyn-lab/dynlab.py compcurve --style opto).
     const double threshold = host.processor->followedThresholdDb(), ratio = host.processor->followedRatio();
     CHECK_THAT (threshold, WithinAbs (-32.4, 1.0e-9));
     CHECK_THAT (ratio, WithinAbs (4.29, 0.005));
@@ -241,9 +241,9 @@ TEST_CASE ("After stopping following, the output is what following would have pl
     CHECK (mostApart (following, switchedOff) > 0.01);
 }
 
-TEST_CASE ("Following writes Comp at the position nearest the stored Threshold, clamped to the curve, and Comp Follow on, as one undo step inside gestures")
+TEST_CASE ("Following writes Comp at the position nearest the stored Threshold, clamped to the Comp Curve, and Comp Follow on, as one undo step inside gestures")
 {
-    // Clean's curve: 0 dB at 0%, -18 dB at 50%, -36 dB at 100%.
+    // Clean's Comp Curve: 0 dB at 0%, -18 dB at 50%, -36 dB at 100%.
     const auto [threshold, comp] = GENERATE (table<float, float> ({ { -9.0f, 25.0f }, { -27.0f, 75.0f }, { -50.0f, 100.0f }, { 0.0f, 0.0f } }));
     CAPTURE (threshold);
     host::SessionHost host;

@@ -76,9 +76,9 @@ plugkit::StereoPlacement routed (StereoPlacement placement)
 //
 // Comp Follow (ADR 0004): the gain computer, Colour's Threshold tracking and Auto Gain's estimate take Threshold and
 // 1/Ratio from the Comp Curve at Comp while it is on, with the stored Knee and Range, and the stored Threshold, Ratio
-// and Auto Gain change nothing. Turning it on or off moves a share of the curve's values over theirs, 0 to 1, along a
+// and Auto Gain change nothing. Turning it on or off moves a share of the Comp Curve's values over theirs, 0 to 1, along a
 // smoothstep over compFollowGlideMs (dyn-lab's follow_share), stepping a run at a time on the run grid: each run's start
-// mixes the two by the share, (1 - share) times the stored plus share times the curve's, and the settings glide to the
+// mixes the two by the share, (1 - share) times the stored plus share times the Comp Curve's, and the settings glide to the
 // mix as any change does. Moving targets, Comp or the stored values, move the mix with them, and a switch back
 // mid-glide turns the share round from where it is.
 //
@@ -150,9 +150,9 @@ public:
         autoRelease = settings.autoRelease;
     }
 
-    // Auto Gain's estimate for the settings as they stand, in dB: the mixed curve's while Comp Follow's share is above
+    // Auto Gain's estimate for the settings as they stand, in dB: the mixed settings' while Comp Follow's share is above
     // 0 (all of it while following), and the stored settings' alone at 0, 0 dB with the stored Auto Gain off. Off, its
-    // share of the estimate is Comp Follow's, so it glides in and out with the curve.
+    // share of the estimate is Comp Follow's, so it glides in and out with the Comp Curve.
     double autoGainDb() const
     {
         const double share = followShare();
@@ -397,11 +397,11 @@ private:
     static constexpr double clean::Curve::* curveGlides[] = { &clean::Curve::thresholdDb, &clean::Curve::inverseRatio, &clean::Curve::kneeDb,
                                                               &clean::Curve::rangeDb };
 
-    // Comp Follow's share of the curve's values, 0 to 1: the smoothstep of its phase, so its glide starts and ends
+    // Comp Follow's share of the Comp Curve's values, 0 to 1: the smoothstep of its phase, so its glide starts and ends
     // without a corner.
     double followShare() const { return followPhase * followPhase * (3.0 - 2.0 * followPhase); }
 
-    // The gain computer's settings as Comp Follow's share mixes them: the stored ones at 0, the curve's at 1, exactly.
+    // The gain computer's settings as Comp Follow's share mixes them: the stored ones at 0, the Comp Curve's at 1, exactly.
     clean::Curve mixed() const
     {
         if (followPhase <= 0.0)

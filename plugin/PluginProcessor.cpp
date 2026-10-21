@@ -203,7 +203,7 @@ bool PluginProcessor::stopFollowingComp()
     const auto settings = reader.read();
     if (! settings.compFollow)
         return false;
-    // Comp Follow last, so a block the audio thread reads part-way through still plays the curve.
+    // Comp Follow last, so a block the audio thread reads part-way through still plays the Comp Curve.
     setAsOneEdit (parameters,
                   sessionState.editHistory(),
                   { { parameters::thresholdId, static_cast<float> (compThresholdDb (settings.compCurve, settings.comp)) },

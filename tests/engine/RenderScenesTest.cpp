@@ -144,7 +144,7 @@ TEST_CASE ("Render scenes play VCA's, FET's and Opto's Style defaults, and a cha
     CHECK (some ([] (const test::RenderScene& s) { return s.settings == styled (Style::Clean) && s.change == styled (Style::FET); }));
 }
 
-TEST_CASE ("Render scenes play each Character Style following its curve off its default Comp, Comp Follow switched on and off far from the curve, and Comp moving while following", "[render]")
+TEST_CASE ("Render scenes play each Character Style following its Comp Curve off its default Comp, Comp Follow switched on and off far from the Comp Curve, and Comp moving while following", "[render]")
 {
     const auto scenes = test::renderScenes();
     const auto some = [&scenes] (const std::function<bool (const test::RenderScene&)>& wanted) {
@@ -159,7 +159,7 @@ TEST_CASE ("Render scenes play each Character Style following its curve off its 
             return ! s.change && s.settings.compFollow && s.settings.comp != atDefault.comp && atDefault == styled (style);
         }));
     }
-    // Far: the stored settings compress nothing, and the curve at its deepest.
+    // Far: the stored settings compress nothing, and the Comp Curve at its deepest.
     const auto far = [] (const Settings& s) { return s.ratio == 1.0 && s.comp == 100.0; };
     CHECK (some ([&far] (const test::RenderScene& s) { return s.change && far (s.settings) && ! s.settings.compFollow && s.change->compFollow && far (*s.change); }));
     CHECK (some ([&far] (const test::RenderScene& s) { return s.change && far (s.settings) && s.settings.compFollow && ! s.change->compFollow && far (*s.change); }));

@@ -332,7 +332,7 @@ const std::vector<Jump>& jumps()
         { "Hold", [] (Settings& s, bool b) { s.holdMs = b ? 500.0 : 0.0; } },
         { "Range", [] (Settings& s, bool b) { s.rangeDb = b ? 60.0 : 0.0; } },
         { "Auto Gain", [] (Settings& s, bool b) { s.autoGain = b; } },
-        // Comp Follow on and off, the stored settings compressing nothing and the curve at its deepest: every switch
+        // Comp Follow on and off, the stored settings compressing nothing and the Comp Curve at its deepest: every switch
         // after the first lands mid-glide and turns it round. Comp jumping end to end while following.
         { "Comp Follow", [] (Settings& s, bool b) {
              s.thresholdDb = 0.0;

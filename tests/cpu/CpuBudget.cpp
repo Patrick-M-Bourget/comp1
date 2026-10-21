@@ -113,8 +113,8 @@ Settings following()
     return settings;
 }
 
-// Comp at 100%, Clean's curve at its deepest (-36 dB, 8:1), and the stored Threshold and Ratio compressing nothing:
-// far from the curve, so Comp Follow's glide moves every setting it mixes.
+// Comp at 100%, Clean's Comp Curve at its deepest (-36 dB, 8:1), and the stored Threshold and Ratio compressing nothing:
+// far from the Comp Curve, so Comp Follow's glide moves every setting it mixes.
 Settings followingFar()
 {
     auto settings = following();

@@ -24,9 +24,9 @@ namespace
 
 const std::vector<Style> characterStyles { Style::Clean, Style::VCA, Style::FET, Style::Opto };
 
-// A Character Style's settings following its curve at comp, with Colour 0%, so the output's gain is the compressor's
-// and Auto Gain's alone, and the stored Threshold, Ratio and Auto Gain moved well off the curve, so a test that reads
-// the curve's values can't be reading theirs.
+// A Character Style's settings following its Comp Curve at comp, with Colour 0%, so the output's gain is the compressor's
+// and Auto Gain's alone, and the stored Threshold, Ratio and Auto Gain moved well off the Comp Curve, so a test that reads
+// the Comp Curve's values can't be reading theirs.
 Settings following (Style style, double comp)
 {
     auto settings = styled (style);
@@ -38,7 +38,7 @@ Settings following (Style style, double comp)
     return settings;
 }
 
-// A steady input level in dB, and the output level dyn-lab's Transfer Curve gives for it at a point of a Style's curve.
+// A steady input level in dB, and the output level dyn-lab's Transfer Curve gives for it at a point of a Style's Comp Curve.
 struct Row
 {
     double inputDb;
@@ -97,8 +97,8 @@ std::vector<double> gainReductions (const std::function<Settings (double)>& sett
 // The run a time in seconds falls in.
 std::size_t runAt (double seconds, double sampleRate) { return static_cast<std::size_t> (seconds * sampleRate) / plugkit::runSamples; }
 
-// Clean at Comp 100%, the curve's deepest (-36 dB, 8:1), and the stored settings compressing nothing (Ratio 1:1): a
-// steady 0 dB level has 31.5 dB of Gain Reduction on the curve and none off it. Attack and Release are quick (1 and
+// Clean at Comp 100%, the Comp Curve's deepest (-36 dB, 8:1), and the stored settings compressing nothing (Ratio 1:1): a
+// steady 0 dB level has 31.5 dB of Gain Reduction on the Comp Curve and none off it. Attack and Release are quick (1 and
 // 10 ms), so the Gain Reduction follows the settings' glide, not the detector's own times.
 Settings farFromTheCurve (bool compFollow)
 {
@@ -120,7 +120,7 @@ constexpr double settleSeconds = 0.1;
 
 } // namespace
 
-TEST_CASE ("Following, each Character Style's steady Transfer Curve is dyn-lab's at the curve's Threshold and Ratio, with Auto Gain on", "[sweep]")
+TEST_CASE ("Following, each Character Style's steady Transfer Curve is dyn-lab's at the Comp Curve's Threshold and Ratio, with Auto Gain on", "[sweep]")
 {
     const auto& point = GENERATE (from_range (curvePoints()));
     CAPTURE (point.command);
@@ -151,7 +151,7 @@ TEST_CASE ("Following, moving the stored Threshold, Ratio and Auto Gain leaves t
     CHECK (test::played (settings, 48000.0, input, { 512 }, nullptr, test::SettingsChange { .at = 9000, .settings = moved }) == played);
 }
 
-TEST_CASE ("Following each Character Style's curve, Auto Gain keeps the reference signal's level within the Style's tolerance", "[sweep]")
+TEST_CASE ("Following each Character Style's Comp Curve, Auto Gain keeps the reference signal's level within the Style's tolerance", "[sweep]")
 {
     const auto style = GENERATE (from_range (characterStyles));
     // dyn-lab's tolerances (tools/dyn-lab/USAGE.md, "Comp"): FET's own, for its fast Attack, and AUTO_GAIN_TOLERANCE.
@@ -165,7 +165,7 @@ TEST_CASE ("Following each Character Style's curve, Auto Gain keeps the referenc
     }
 }
 
-TEST_CASE ("Turning Comp Follow on glides onto the curve over the fixed glide time, not the usual 50 ms")
+TEST_CASE ("Turning Comp Follow on glides onto the Comp Curve over the fixed glide time, not the usual 50 ms")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     CAPTURE (sampleRate);
@@ -196,7 +196,7 @@ TEST_CASE ("Comp Follow turned back mid-glide turns round from where it is, with
     CAPTURE (sampleRate);
     const double flipSeconds = switchSeconds + glideSeconds / 2.0;
     const auto reductions = gainReductions ([flipSeconds] (double t) { return farFromTheCurve (t >= switchSeconds && t < flipSeconds); }, sampleRate, 0.8);
-    // It gets about a fifth of the way (a smoothstep half way, 7.9 dB), never near the curve, and comes back down to
+    // It gets about a fifth of the way (a smoothstep half way, 7.9 dB), never near the Comp Curve, and comes back down to
     // none.
     const auto most = *std::max_element (reductions.begin(), reductions.end());
     CAPTURE (most);

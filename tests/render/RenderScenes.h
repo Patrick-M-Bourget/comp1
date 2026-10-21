@@ -37,7 +37,7 @@ struct RenderScene
 };
 
 // Comp Follow on or off at Comp 100%, the stored Threshold and Ratio compressing nothing (0 dB, 1:1): the Comp Follow
-// scenes switch between the two, far from the curve.
+// scenes switch between the two, far from the Comp Curve.
 inline Settings compFollowFar (bool compFollow)
 {
     Settings settings;
@@ -91,7 +91,7 @@ inline std::vector<RenderScene> renderScenes()
         { .name = "opto-style", .settings = styled (Style::Opto) },
         { .name = "clean-to-fet-style", .settings = styled (Style::Clean), .change = styled (Style::FET) },
         // Comp: each Character Style following its Comp Curve at a Comp off its default; Comp Follow switched on, and
-        // off, with the stored Threshold and Ratio far from Clean's curve at 100% (-36 dB, 8:1); and Comp moving while
+        // off, with the stored Threshold and Ratio far from Clean's Comp Curve at 100% (-36 dB, 8:1); and Comp moving while
         // following.
         { .name = "clean-comp-80", .settings = with ([] (Settings& s) { s = styled (Style::Clean); s.comp = 80.0; }) },
         { .name = "vca-comp-20", .settings = with ([] (Settings& s) { s = styled (Style::VCA); s.comp = 20.0; }) },

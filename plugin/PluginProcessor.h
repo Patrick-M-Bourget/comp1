@@ -91,12 +91,12 @@ public:
     // editor holds, as part of its step, so the switch and the drag that follows are one undo step.
     //
     // stopFollowingComp(), as the editor turns Comp Follow off by editing Threshold or Ratio: while Comp Follow is on,
-    // writes it off, the curve's Threshold and Ratio at Comp, and Auto Gain on, so the output doesn't change, and
+    // writes it off, the Comp Curve's Threshold and Ratio at Comp, and Auto Gain on, so the output doesn't change, and
     // returns true. With Comp Follow off it changes nothing and returns false.
     bool stopFollowingComp();
     // followComp(), as the editor turns Comp Follow on by grabbing Comp: while Comp Follow is off, writes Comp at the
     // position nearest the stored Threshold on the Style's Comp Curve, clamped to its span, and Comp Follow on, and
-    // returns true; the Engine then glides onto the curve. With Comp Follow on it changes nothing and returns false.
+    // returns true; the Engine then glides onto the Comp Curve. With Comp Follow on it changes nothing and returns false.
     bool followComp();
     // The Threshold in dB and the Ratio (:1) the Style's Comp Curve sets at the current Comp: what the Engine plays
     // while Comp Follow is on, and what the editor shows then. Any thread.

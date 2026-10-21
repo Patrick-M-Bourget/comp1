@@ -164,29 +164,29 @@ TEST_CASE ("Each Character Style's Comp Curve is dyn-lab's, point for point")
     for (const auto& lab : labCurves)
     {
         CAPTURE (static_cast<int> (lab.style));
-        const auto& curve = compCurveOf (lab.style);
+        const auto& compCurve = compCurveOf (lab.style);
         for (std::size_t i = 0; i < lab.points.size(); ++i)
         {
             const double comp = 10.0 * static_cast<double> (i);
             CAPTURE (comp);
-            CHECK (std::abs (compThresholdDb (curve, comp) - lab.points[i].first) <= 0.005);
-            CHECK (std::abs (compRatio (curve, comp) - lab.points[i].second) <= 0.005);
+            CHECK (std::abs (compThresholdDb (compCurve, comp) - lab.points[i].first) <= 0.005);
+            CHECK (std::abs (compRatio (compCurve, comp) - lab.points[i].second) <= 0.005);
         }
     }
 }
 
-TEST_CASE ("On each Character Style's curve, 0% compresses nothing, Threshold falls and Ratio rises, and the default Comp is the default Threshold and Ratio exactly")
+TEST_CASE ("On each Character Style's Comp Curve, 0% compresses nothing, Threshold falls and Ratio rises, and the default Comp is the default Threshold and Ratio exactly")
 {
     const auto style = GENERATE (from_range (characterStyles));
     CAPTURE (static_cast<int> (style));
-    const auto& curve = compCurveOf (style);
-    CHECK (compRatio (curve, 0.0) == 1.0);
+    const auto& compCurve = compCurveOf (style);
+    CHECK (compRatio (compCurve, 0.0) == 1.0);
     double lastThreshold = std::numeric_limits<double>::infinity(), lastRatio = 0.0;
     for (int quarter = 0; quarter <= 400; ++quarter)
     {
         const double comp = quarter / 4.0;
         CAPTURE (comp);
-        const double threshold = compThresholdDb (curve, comp), ratio = compRatio (curve, comp);
+        const double threshold = compThresholdDb (compCurve, comp), ratio = compRatio (compCurve, comp);
         CHECK (threshold < lastThreshold);
         CHECK (ratio > lastRatio);
         CHECK (threshold >= parameterRanges::threshold.low);
@@ -196,19 +196,19 @@ TEST_CASE ("On each Character Style's curve, 0% compresses nothing, Threshold fa
         lastRatio = ratio;
     }
     const auto& defaults = *describe (style).defaults;
-    CHECK (compThresholdDb (curve, defaults.comp) == defaults.thresholdDb);
-    CHECK (compRatio (curve, defaults.comp) == defaults.ratio);
+    CHECK (compThresholdDb (compCurve, defaults.comp) == defaults.thresholdDb);
+    CHECK (compRatio (compCurve, defaults.comp) == defaults.ratio);
 }
 
-TEST_CASE ("The Comp nearest a Threshold is the one that sets it, clamped to the curve's span")
+TEST_CASE ("The Comp nearest a Threshold is the one that sets it, clamped to the Comp Curve's span")
 {
     const auto style = GENERATE (from_range (characterStyles));
     CAPTURE (static_cast<int> (style));
-    const auto& curve = compCurveOf (style);
+    const auto& compCurve = compCurveOf (style);
     for (int comp = 0; comp <= 100; comp += 5)
-        CHECK (std::abs (compNearestThreshold (curve, compThresholdDb (curve, comp)) - comp) <= 1.0e-9);
-    CHECK (compNearestThreshold (curve, curve.points.front().thresholdDb + 6.0) == 0.0);
-    CHECK (compNearestThreshold (curve, curve.points.back().thresholdDb - 6.0) == 100.0);
+        CHECK (std::abs (compNearestThreshold (compCurve, compThresholdDb (compCurve, comp)) - comp) <= 1.0e-9);
+    CHECK (compNearestThreshold (compCurve, compCurve.points.front().thresholdDb + 6.0) == 0.0);
+    CHECK (compNearestThreshold (compCurve, compCurve.points.back().thresholdDb - 6.0) == 100.0);
     // Clean's runs straight from 0 dB at 0% to -18 dB at 50%: -9 dB is a quarter of the way.
     CHECK (std::abs (compNearestThreshold (compCurveOf (Style::Clean), -9.0) - 25.0) <= 1.0e-9);
 }
