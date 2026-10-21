@@ -6,6 +6,8 @@
 //   comp1_sidechain_routing_check <path to comp1.vst3>
 //   comp1_sidechain_routing_check AU   (the AU must be installed and registered)
 
+#include "Layout.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <cmath>
@@ -140,10 +142,7 @@ int main (int argc, char* argv[])
     for (const auto& main : { mono, stereo })
         for (const auto& sidechain : { mono, stereo, juce::AudioChannelSet::disabled() })
         {
-            juce::AudioProcessor::BusesLayout layout;
-            layout.inputBuses.add (main);
-            layout.inputBuses.add (sidechain);
-            layout.outputBuses.add (main);
+            const auto layout = host::layout (main, sidechain);
             const auto description = main.getDescription() + " main, "
                                      + (sidechain.isDisabled() ? juce::String ("no Sidechain") : sidechain.getDescription() + " Sidechain");
             if (! plugin->setBusesLayout (layout))

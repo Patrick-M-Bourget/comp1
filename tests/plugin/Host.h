@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../host/Layout.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -30,15 +32,6 @@ inline void set (juce::AudioProcessor& processor, const juce::String& id, float 
 {
     auto& p = parameter (processor, id);
     p.setValueNotifyingHost (p.convertTo0to1 (plain));
-}
-
-inline juce::AudioProcessor::BusesLayout layout (const juce::AudioChannelSet& main, const juce::AudioChannelSet& sidechain)
-{
-    juce::AudioProcessor::BusesLayout layout;
-    layout.inputBuses.add (main);
-    layout.inputBuses.add (sidechain);
-    layout.outputBuses.add (main);
-    return layout;
 }
 
 inline juce::MemoryBlock saved (juce::AudioProcessor& processor)
