@@ -31,8 +31,10 @@ if(COMP1_BUILD_PLUGIN)
         plugin/PluginShellTest.cpp
         plugin/StateTest.cpp
     )
+    # tests/engine for Measure.h, the test helpers both targets share.
     target_include_directories(comp1_plugin_tests PRIVATE
         ${PROJECT_SOURCE_DIR}/plugin
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine
         $<TARGET_PROPERTY:comp1,INCLUDE_DIRECTORIES>)
     target_compile_definitions(comp1_plugin_tests PRIVATE $<TARGET_PROPERTY:comp1,COMPILE_DEFINITIONS>)
     target_link_libraries(comp1_plugin_tests PRIVATE comp1 comp1::engine Catch2::Catch2WithMain)

@@ -1,10 +1,9 @@
 #include "Host.h"
+#include "Measure.h"
 #include "PluginProcessor.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
-
-#include <random>
 
 namespace
 {
@@ -19,8 +18,7 @@ juce::AudioBuffer<float> play (juce::AudioProcessor& processor, juce::AudioBuffe
     processor.prepareToPlay (48000.0, blockSize);
     const int mainChannels = processor.getMainBusNumOutputChannels();
     const int channels = std::max (processor.getTotalNumInputChannels(), processor.getTotalNumOutputChannels());
-    std::mt19937 random (7);
-    std::uniform_real_distribution<float> unit (-0.5f, 0.5f);
+    const auto noise = comp1::test::noise (channels, blocks * blockSize, 7);
     input.setSize (mainChannels, blocks * blockSize);
     juce::AudioBuffer<float> output (mainChannels, blocks * blockSize), buffer (channels, blockSize);
     juce::MidiBuffer midi;
@@ -28,7 +26,7 @@ juce::AudioBuffer<float> play (juce::AudioProcessor& processor, juce::AudioBuffe
     {
         for (int ch = 0; ch < channels; ++ch)
             for (int i = 0; i < blockSize; ++i)
-                buffer.setSample (ch, i, unit (random));
+                buffer.setSample (ch, i, noise[static_cast<std::size_t> (ch)][static_cast<std::size_t> (b * blockSize + i)]);
         for (int ch = 0; ch < mainChannels; ++ch)
             input.copyFrom (ch, b * blockSize, buffer, ch, 0, blockSize);
         processor.processBlock (buffer, midi);
