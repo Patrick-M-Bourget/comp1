@@ -21,8 +21,9 @@ namespace comp1
 {
 
 // The levels of the run in progress, gathered on the audio thread as the run is played: the peak Input Level and
-// Output Level over every channel, the most Gain Reduction, and the loudest Detection Level. take() makes the run's
-// record and starts the next run afresh.
+// Output Level over every channel, the compressor's, the Gate's and the Limiter's most Gain Reduction, and the loudest
+// Detection Level. The Gate and the Limiter note their gain, and take() works out each one's Gain Reduction once, from
+// the run's smallest gain. take() makes the run's record and starts the next run afresh.
 class RunLevels
 {
 public:
@@ -40,12 +41,21 @@ public:
         mostGainReductionDb = std::max (mostGainReductionDb, gainReductionDb);
     }
 
+    // One sample's gain from the Gate, which puts one gain on every channel: 1 for none.
+    void noteGateGain (double gain) { smallestGateGain = std::min (smallestGateGain, gain); }
+
+    // One sample's gain from the Limiter, which puts one gain on every channel, after its on/off crossfade and before
+    // Zero Latency's safety clip: 1 for none.
+    void noteLimiterGain (double gain) { smallestLimiterGain = std::min (smallestLimiterGain, gain); }
+
     LevelRecord take()
     {
         const LevelRecord record { .inputDb = levelDb (inputPeak),
                                    .outputDb = levelDb (outputPeak),
                                    .gainReductionDb = mostGainReductionDb,
-                                   .detectionLevelDb = atLeastFloor (loudestDetectionDb) };
+                                   .detectionLevelDb = atLeastFloor (loudestDetectionDb),
+                                   .gateGainReductionDb = reductionOf (smallestGateGain),
+                                   .limiterGainReductionDb = reductionOf (smallestLimiterGain) };
         *this = {};
         return record;
     }
@@ -64,8 +74,12 @@ private:
 
     static double levelDb (float peak) { return atLeastFloor (plugkit::gainToDecibels (static_cast<double> (peak))); }
 
+    // A run's smallest gain as its most Gain Reduction in dB: exactly 0 for a gain of 1.
+    static double reductionOf (double gain) { return gain < 1.0 ? -plugkit::gainToDecibels (gain) : 0.0; }
+
     float inputPeak = 0.0f, outputPeak = 0.0f;
     double loudestDetectionDb = plugkit::levelFloorDb, mostGainReductionDb = 0.0;
+    double smallestGateGain = 1.0, smallestLimiterGain = 1.0;
 };
 
 // The level history: a single-producer single-consumer ring of LevelRecords. The audio thread pushes a record per
