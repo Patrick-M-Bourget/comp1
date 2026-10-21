@@ -25,6 +25,12 @@ const std::vector<test::NullRow>& nullRows()
 {
     static const std::vector<test::NullRow> rows {
         { "Clean", [] (Settings&) {} },
+        // The Gate on and open: the noise is far over its lowest Gate Threshold.
+        { "Gate open",
+          [] (Settings& s) {
+              s.gate.on = true;
+              s.gate.thresholdDb = parameterRanges::threshold.low;
+          } },
         // Oversampling runs only the nonlinear residual (ADR 0009), so with Saturation off the Wet path stays exactly
         // linear and aligned at every factor: Clean plays the 2x default, and this the largest.
         { "Oversampling 8x", [] (Settings& s) { s.oversampling = Oversampling::x8; } },

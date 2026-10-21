@@ -2,7 +2,7 @@
 
 A Python model of comp1's Characters. It prints the figures the Engine's tests check, so a ticket brief can cite a command and its output exactly. It needs only the standard library: no installs, no numpy. Run it from the repo root.
 
-It models the Clean, VCA and FET Characters (see [VCA](#vca) and [FET](#fet)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's and FET's Colour (see [Colour](#colour)) and the Limiter (see [Limiter](#limiter)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
+It models the Clean, VCA and FET Characters (see [VCA](#vca) and [FET](#fet)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's and FET's Colour (see [Colour](#colour)) the Limiter (see [Limiter](#limiter)) and the Gate (see [Gate](#gate)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
 
 Hold freezes the Gain Reduction for Hold ms whenever it stops rising, mid-Attack included, before Release begins. Any rise restarts the count.
 
@@ -10,7 +10,7 @@ Auto Release, when on, lengthens Release after sustained compression and leaves 
 
 Range caps the Gain Reduction the gain computer asks for, before the detector smooths it. So the Transfer Curve rises with the input again, Range below it, once the Gain Reduction reaches Range, and Attack, Release and Hold take the same times over a smaller step. At 60 dB, its top, Range sets no limit (ADR 0008).
 
-Every option has a default, and a setting outside its range exits with an error that names the range. The ranges are named once in `dynlab.py` (`THRESHOLD_RANGE`, `RATIO_RANGE` and so on), each with its source: Pro-C 3's documentation, ADR 0008 for Threshold, Release, Range, Drive and Colour, ADR 0001 for Lookahead, or comp1's own reasons for the Limiter's Ceiling (`CEILING_RANGE`). Lookahead is a Processing Mode setting, read in High Quality only, not one of the compressor's. The check harness's `docs` stage fails when one differs from the plugin's, `engine/include/comp1/Settings.h`'s `parameterRanges` (`LAB_RANGES` in `plugkit.conf`).
+Every option has a default, and a setting outside its range exits with an error that names the range. The ranges are named once in `dynlab.py` (`THRESHOLD_RANGE`, `RATIO_RANGE` and so on), each with its source: Pro-C 3's documentation, ADR 0008 for Threshold, Release, Range, Drive and Colour, ADR 0001 for Lookahead, or comp1's own reasons for the Limiter's Ceiling (`CEILING_RANGE`). The Gate's reuse the compressor's of the same names (`GATE_PARAMETERS`). Lookahead is a Processing Mode setting, read in High Quality only, not one of the compressor's. The check harness's `docs` stage fails when one differs from the plugin's, `engine/include/comp1/Settings.h`'s `parameterRanges` (`LAB_RANGES` in `plugkit.conf`).
 
 | Setting | Range | Default |
 |---|---|---|
@@ -26,6 +26,11 @@ Every option has a default, and a setting outside its range exits with an error 
 | Auto Release | off or on (`--auto-release`) | off |
 | Lookahead | 0 to 5 ms | 0 ms |
 | Ceiling | −30 to 0 dBFS | 0 dBFS |
+| Gate Threshold | −60 to 0 dB | −40 dB |
+| Gate Range | 0 to 60 dB | 20 dB |
+| Gate Attack | 0.005 to 250 ms | 1 ms |
+| Gate Release | 5 to 5000 ms | 100 ms |
+| Gate Hold | 0 to 500 ms | 20 ms |
 | Character | `clean`, `vca` or `fet` (`--character`) | `clean` |
 
 `--character` is taken by `transfer`, `step`, `bursts`, `autogain` and `colour`. Clean's figures are the same with it as without.
@@ -372,6 +377,38 @@ Prints the Limiter's figures at a Ceiling (`--ceiling dB`, 0 dBFS by default) an
     python3 tools/dyn-lab/dynlab.py limiter
     python3 tools/dyn-lab/dynlab.py limiter --ceiling -6 --rates 44100
     python3 tools/dyn-lab/dynlab.py limiter --ceiling -30 --rates 192000
+
+## Gate
+
+The Gate is a hard gate on the main input, before the Dry/Wet split, so it lowers the Dry and the Wet path alike. Its key is the Detection Source after the Detection EQ, and one Gate gain goes on every main channel, from the louder channel's key. Each sample:
+
+- **The key level** is the loudest Detection Level of the key over the sample and the `GATE_KEY_HOLD_MS` before it, in dB where a full-scale sine reads 0.
+- **Open or closed:** the Gate opens when the key level reaches Gate Threshold, and closes once it is `GATE_HYSTERESIS_DB` under it. In between it stays as it is.
+- **Gate Hold** keeps it open for Gate Hold ms after it would close, before Gate Release begins. A key level back above the closing level restarts the count.
+- **The Gain Reduction:** open, it asks for none; closed, exactly Gate Range. Gate Attack is how fast it opens and Gate Release how fast it closes, each one pole in dB covering 1 − 1/e of the move in its time, as the compressor's detector does. Under `GATE_SETTLED_DB` (10⁻⁷ dB, the Limiter's `LIMITER_SETTLED_DB`) it counts as none, so an open Gate passes the audio bit for bit.
+- **No key** (External with no Sidechain connected) leaves it open.
+
+Gate Attack, Gate Release and Gate Hold run on samples. The model holds the settings fixed; the Engine glides them on the 16-sample run grid (`RUN_SAMPLES`), as it does the compressor's.
+
+The constants, named once in `dynlab.py`, from `gate`'s trade-off table:
+
+- **`GATE_KEY_HOLD_MS`, 10 ms:** a low tone's level falls to nothing at each zero crossing, so a key level read sample by sample closes the Gate on every half cycle. Holding the loudest level over a window bridges the crossings, at the cost of starting to close that much later after the key stops. The table's signals are a 20 Hz and a 50 Hz tone, the lowest a key commonly carries, and pink-like noise, each 0.1 dB over Gate Threshold (`GATE_RIPPLE_ABOVE_DB`), with Gate Hold 0 ms, so the key hold and hysteresis alone must hold the Gate open. 10 ms is the shortest key hold at which some hysteresis keeps all three steady: at 5 ms the 20 Hz tone ripples by 1.8 dB or more whatever the hysteresis, up to 8 dB.
+- **`GATE_HYSTERESIS_DB`, 6 dB:** the smallest that keeps the 20 Hz tone steady at that key hold. A 10 ms window on a 20 Hz tone dips to 4.6 dB under the tone's peak at each zero crossing, so a closing level 6 dB down clears it. The key hold costs on a stop, the case a gate is for (a hit ends, the bleed between hits is lowered); the hysteresis costs only on a slow fade, where the Gate closes 6 dB lower, 100 ms later at 60 dB/s (`GATE_FADE_DB_PER_S`), letting a decaying tail go on a little further down rather than chopping it. A longer key hold with less hysteresis (15 ms and 2 dB) fades sooner but stops later.
+
+### `gate`
+
+Prints the Gate's step response at each sample rate (44.1, 48 and 96 kHz by default). The key steps from 20 dB above Gate Threshold to 20 dB below it and back, each from steady state. For each rate it reports:
+
+- the closing: when Gate Release begins (Gate Hold plus the key hold), and Gate Release's 63% and 90% times from then;
+- the opening: Gate Attack's 63% and 90% times;
+- the closed depth, settled, which equals Gate Range.
+
+At Gate Range 0 dB there is nothing to measure, and the row says so. Then it prints the key hold's and hysteresis's trade-off at 48 kHz, at the Gate Threshold, Gate Range, Gate Attack and Gate Release given, with Gate Hold 0 ms: for each candidate pair, the Gain Reduction's ripple, peak to peak, on each signal over its second half, and how late the Gate starts closing after a stop (the key hold) and on a key fading at 60 dB/s (the key hold plus the time to fall through the hysteresis), with the chosen pair marked.
+
+    python3 tools/dyn-lab/dynlab.py gate
+    python3 tools/dyn-lab/dynlab.py gate --rates 44100 48000 88200 96000 176400 192000
+    python3 tools/dyn-lab/dynlab.py gate --gate-attack 0.5 --gate-release 50 --gate-hold 0 --rates 44100 48000 88200 96000 176400 192000
+    python3 tools/dyn-lab/dynlab.py gate --gate-range 6 --rates 48000
 
 ## Tests
 

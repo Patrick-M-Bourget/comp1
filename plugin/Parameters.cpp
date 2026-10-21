@@ -185,6 +185,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                                               juce::StringArray { "Stereo", "Mid", "Side" },
                                                               static_cast<int> (defaults.stereoPlacement)),
                 floatParameter (stereoLinkId, "Stereo Link", linearRange (parameterRanges::stereoLink), defaults.stereoLink, withText (1, "%")));
+    // The Gate, first in the chain: its ranges and travel are the compressor's controls of the same names'.
+    const auto& gate = defaults.gate;
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { gateId, 1 }, "Gate", gate.on),
+                floatParameter (gateThresholdId, "Gate Threshold", linearRange (parameterRanges::threshold), gate.thresholdDb, withText (2, "dB")),
+                floatParameter (gateRangeId, "Gate Range", linearRange (parameterRanges::range), gate.rangeDb, withText (2, "dB")),
+                floatParameter (gateAttackId, "Gate Attack", logRange (parameterRanges::attack), gate.attackMs, withText (3, "ms")),
+                floatParameter (gateReleaseId, "Gate Release", logRange (parameterRanges::release), gate.releaseMs, withText (1, "ms")),
+                floatParameter (gateHoldId, "Gate Hold", skewedRange (parameterRanges::hold, 50.0f), gate.holdMs, withText (1, "ms")));
     layout.add (floatParameter (thresholdId, "Threshold", linearRange (parameterRanges::threshold), defaults.thresholdDb, withText (2, "dB")),
                 floatParameter (ratioId, "Ratio", ratioRange(), defaults.ratio, ratioText()),
                 floatParameter (kneeId, "Knee", linearRange (parameterRanges::knee), defaults.kneeDb, withText (2, "dB")),
@@ -238,7 +246,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 }
 
 SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
-    : threshold (parameters.getRawParameterValue (thresholdId)),
+    : gate (parameters.getRawParameterValue (gateId)),
+      gateThreshold (parameters.getRawParameterValue (gateThresholdId)),
+      gateRange (parameters.getRawParameterValue (gateRangeId)),
+      gateAttack (parameters.getRawParameterValue (gateAttackId)),
+      gateRelease (parameters.getRawParameterValue (gateReleaseId)),
+      gateHold (parameters.getRawParameterValue (gateHoldId)),
+      threshold (parameters.getRawParameterValue (thresholdId)),
       ratio (parameters.getRawParameterValue (ratioId)),
       knee (parameters.getRawParameterValue (kneeId)),
       attack (parameters.getRawParameterValue (attackId)),
@@ -299,7 +313,13 @@ Settings SettingsReader::read() const
     eq.freeBand.filter.frequency = plain (bandFrequency);
     eq.freeBand.filter.gain = plain (bandGain);
     eq.freeBand.filter.q = plain (bandQ);
-    return { .thresholdDb = plain (threshold),
+    return { .gate = { .on = on (gate),
+                       .thresholdDb = plain (gateThreshold),
+                       .rangeDb = plain (gateRange),
+                       .attackMs = plain (gateAttack),
+                       .releaseMs = plain (gateRelease),
+                       .holdMs = plain (gateHold) },
+             .thresholdDb = plain (threshold),
              .ratio = plain (ratio),
              .kneeDb = plain (knee),
              .attackMs = plain (attack),

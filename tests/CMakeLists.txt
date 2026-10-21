@@ -30,6 +30,7 @@ add_executable(comp1_engine_tests
     engine/DetectionSourceTest.cpp
     engine/DetectionStageTest.cpp
     engine/DryWetTest.cpp
+    engine/GateTest.cpp
     engine/GlobalBypassTest.cpp
     engine/LatencyTest.cpp
     engine/LevelTapsTest.cpp
@@ -68,6 +69,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/AutoReleaseParameterTest.cpp
         plugin/ColourParameterTest.cpp
         plugin/DryWetParameterTest.cpp
+        plugin/GateParameterTest.cpp
         plugin/GlobalBypassParameterTest.cpp
         plugin/LatencyReportTest.cpp
         plugin/LimiterParameterTest.cpp

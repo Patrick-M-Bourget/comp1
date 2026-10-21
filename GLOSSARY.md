@@ -85,6 +85,23 @@ _Avoid_: Linked, Link, Comp Link
 The downward expander before the compressor, which lowers the signal while its Detection Level is below Gate Threshold. Its controls are Gate Threshold, Gate Range, Gate Attack, Gate Release and Gate Hold.
 _Avoid_: Expander, noise gate; Threshold, Range, Attack, Release or Hold (unqualified) for the Gate's
 
+**Gate Threshold**:
+The Detection Level at which the Gate opens.
+_Avoid_: Gate level, open level
+
+**Gate Range**:
+How far the Gate lowers the signal while closed, in dB.
+_Avoid_: Gate depth, floor
+
+**Gate Attack**:
+How quickly the Gate opens once the Detection Level reaches Gate Threshold.
+
+**Gate Release**:
+How quickly the Gate closes once the Detection Level falls below Gate Threshold.
+
+**Gate Hold**:
+How long the Gate stays open before Gate Release begins.
+
 **Saturation**:
 The standalone distortion stage the user drives, placed before or after the compressor.
 _Avoid_: Colour, drive stage, distortion
