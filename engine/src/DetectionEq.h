@@ -147,8 +147,6 @@ private:
     };
 
     enum Glide : std::size_t { logFrequency, gain, logQ, count };
-    // Close enough to count as arrived, in log Hz, dB and log Q: far below what can be heard.
-    static constexpr double arrivalTolerance = 1.0e-7;
 
     // The target's filter, at the glides' values.
     plugkit::Cascade design() const

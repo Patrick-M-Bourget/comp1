@@ -3,6 +3,7 @@
 // The Saturation stage on the Wet path: the saturation module (Saturation.h) driven by Drive, level-compensated, at
 // its Saturation Position, Before or After the compressor.
 
+#include "Glide.h"
 #include "Saturation.h"
 
 #include "comp1/Engine.h"
@@ -100,9 +101,6 @@ public:
     }
 
 private:
-    // Close enough to count as arrived, in the weight's units and in dB: far below what can be heard.
-    static constexpr double arrivalTolerance = 1.0e-7;
-
     // Faded out exactly: the stage changes nothing.
     bool silent() const { return weight.isSettled() && weight.value() == 0.0; }
 

@@ -357,9 +357,6 @@ private:
     // The gain computer's settings, each gliding as the Glide of its index.
     static constexpr double clean::Curve::* curveGlides[] = { &clean::Curve::thresholdDb, &clean::Curve::inverseRatio, &clean::Curve::kneeDb,
                                                               &clean::Curve::rangeDb };
-    // Close enough to count as arrived, in each glide's units (dB, 1/Ratio, log ms, ms, a fraction): far below what
-    // can be heard.
-    static constexpr double arrivalTolerance = 1.0e-7;
 
     void update()
     {

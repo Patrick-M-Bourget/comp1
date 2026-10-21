@@ -201,8 +201,6 @@ private:
     }
 
     enum Glide : std::size_t { threshold, range, hold, logAttack, logRelease, count };
-    // Close enough to count as arrived, in each glide's units (dB, ms, log ms): far below what can be heard.
-    static constexpr double arrivalTolerance = 1.0e-7;
 
     double sampleRate = 44100.0;
     DetectionStage detection;
