@@ -67,6 +67,9 @@ private:
     double levelDb = plugkit::levelFloorDb;
 };
 
+// Whether a Character has Colour: Clean has none, at any Colour.
+inline bool hasColour (Character character) { return character == Character::VCA; }
+
 // A Character's Colour at a Gain Reduction in dB: the residual's weight, before the Colour control scales it, and the
 // drive. Clean has none: a weight of exactly 0.
 inline ColourAt colourOf (Character character, double gainReductionDb)

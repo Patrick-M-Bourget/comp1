@@ -54,7 +54,8 @@ plugkit::StereoPlacement routed (StereoPlacement placement)
     return plugkit::StereoPlacement::Stereo;
 }
 
-// The compressor: the Clean Character's gain computer and detector on the part of the signal Stereo Placement picks.
+// The compressor: its Character's gain computer and detector (Character.h) on the part of the signal Stereo Placement
+// picks, then its Character's Colour on that part.
 // With Stereo, on every channel, each main channel detected from what it follows in the detection signal, with Stereo
 // Link between the two channels of a stereo track; with Mid or Side, on that part alone, detected from the detection
 // signal's own Mid or Side. A mono track is compressed as Stereo, whatever Placement is stored.
@@ -63,7 +64,8 @@ plugkit::StereoPlacement routed (StereoPlacement placement)
 // included, is click-free and glides the same at every host block size; the gain computer and detector read the
 // settings as they stand for the run. Ratio glides as 1/Ratio, so ∞:1 (0) is reached; Attack and Release glide in
 // log time, as their host parameters move. Stereo Link glides as a fraction, 0 to 1, a sample at a time: it moves the
-// Gain Reduction itself, after the detectors, where a step a run would put a corner in the gain every run.
+// Gain Reduction itself, after the detectors, where a step a run would put a corner in the gain every run. Colour glides
+// as a fraction, 0 to 1, a sample at a time too, as it shapes the waveform.
 //
 // A change of Placement never jumps. At the start of a run, the new Placement starts with detectors of its own and
 // fades in over the glide time as the old one fades out, its detectors still running; a change asked for during a fade
@@ -83,12 +85,15 @@ public:
             voice.levelsDb.assign (voice.detectors.size(), plugkit::levelFloorDb);
             voice.reductionsDb.assign (voice.detectors.size(), 0.0);
             voice.gains.assign (voice.detectors.size(), 1.0);
+            voice.colours.assign (voice.detectors.size(), ColourStage {});
+            voice.colourChanges.assign (voice.detectors.size(), 0.0);
         }
         reductions.assign (voices[0].detectors.size(), 0.0);
         channelDb.assign (reductions.size(), 0.0);
         for (auto& setting : glides)
             setting.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         stereoLink.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
+        colourShare.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         fade.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
         fade.reset (1.0);
         fading = false;
@@ -104,6 +109,7 @@ public:
         glideTo (glides[logRelease], std::log (settings.releaseMs), snap);
         glideTo (glides[hold], settings.holdMs, snap);
         glideTo (stereoLink, settings.stereoLink / 100.0, snap);
+        glideTo (colourShare, settings.colour / 100.0, snap);
         placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
         character = played (settings.character);
         if (snap)
@@ -158,7 +164,9 @@ public:
             if ((detection.runPosition + i) % plugkit::runSamples == 0)
                 startDetectorRuns();
             const double link = stereoLink.isSettled() ? stereoLink.value() : stereoLink.next();
+            const double colour = colourShare.isSettled() ? colourShare.value() : colourShare.next();
             askGains (heard, detection, audio.numChannels, i, link);
+            colourParts (heard, audio, i, colour);
             if (! fading)
             {
                 for (std::size_t c = 0; c < partsOf (heard); ++c)
@@ -168,6 +176,7 @@ public:
             }
             auto& leaving = voices[1 - playing];
             askGains (leaving, detection, audio.numChannels, i, link);
+            colourParts (leaving, audio, i, colour);
             const double in = fade.next();
             if (fade.isSettled())
                 fading = false;
@@ -198,14 +207,16 @@ private:
                     detector.startRun (releaseMs, autoRelease);
     }
 
-    // One Placement, with detectors of its own (per channel under Stereo, the first for Mid or Side), and at the sample
-    // the Detection Levels they read, the Gain Reductions it asks for and the gains they make (likewise).
+    // One Placement, with detectors and Colour of its own (per channel under Stereo, the first for Mid or Side), and at
+    // the sample the Detection Levels they read, the Gain Reductions it asks for, the gains they make and what Colour
+    // adds to each part once compressed (likewise).
     struct Voice
     {
         plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo;
         Character character = Character::Clean;
         std::vector<CharacterDetector> detectors;
-        std::vector<double> levelsDb, reductionsDb, gains;
+        std::vector<ColourStage> colours;
+        std::vector<double> levelsDb, reductionsDb, gains, colourChanges;
     };
 
     // How many parts voice compresses: each channel under Stereo, or the one part, Mid or Side.
@@ -257,19 +268,50 @@ private:
         }
     }
 
+    // Colour on each part voice compresses, at sample i, before the gains are applied: what it adds to the part once
+    // compressed (colourChanges), from the Character's mapping of the Gain Reduction applied to the part, after Stereo
+    // Link, with the weight scaled by colour. Under Mid or Side only that part is coloured, and the other passes. A
+    // Character with no Colour (Clean) does no work, and its changes stay exactly 0.
+    static void colourParts (Voice& voice, AudioBlock audio, int i, double colour)
+    {
+        if (! hasColour (voice.character))
+            return;
+        const bool stereo = voice.placement == plugkit::StereoPlacement::Stereo;
+        const auto parts = stereo ? static_cast<std::size_t> (audio.numChannels) : 1;
+        for (std::size_t p = 0; p < parts; ++p)
+        {
+            double part = 0.0;
+            if (stereo)
+                part = audio.channels[p][i];
+            else
+                part = voice.placement == plugkit::StereoPlacement::Mid ? plugkit::encodeMid (audio.channels[0][i], audio.channels[1][i])
+                                                                        : plugkit::encodeSide (audio.channels[0][i], audio.channels[1][i]);
+            auto at = colourOf (voice.character, voice.reductionsDb[p]);
+            at.weight *= colour;
+            voice.colourChanges[p] = voice.colours[p].change (voice.gains[p] * part, at);
+        }
+    }
+
     // Applies the gains voice asks for to sample i, alone. Stereo scales each channel. Mid and Side, on a stereo track,
     // go on as a change to Left and Right (changeTo), never an encode then a decode, which float doesn't round-trip: the
-    // other part passes. With no Gain Reduction the sample is left as it is, bit for bit.
+    // other part passes. Colour's change goes on with the gain. With no Gain Reduction the sample is left as it is, bit
+    // for bit.
     static void applyGains (const Voice& voice, AudioBlock audio, int i)
     {
         if (voice.placement == plugkit::StereoPlacement::Stereo)
         {
             for (int ch = 0; ch < audio.numChannels; ++ch)
-                if (const double gain = voice.gains[static_cast<std::size_t> (ch)]; gain != 1.0)
-                    audio.channels[ch][i] = static_cast<float> (gain * audio.channels[ch][i]);
+            {
+                const auto c = static_cast<std::size_t> (ch);
+                float& sample = audio.channels[ch][i];
+                if (voice.colourChanges[c] != 0.0)
+                    sample = static_cast<float> (voice.gains[c] * sample + voice.colourChanges[c]);
+                else if (voice.gains[c] != 1.0)
+                    sample = static_cast<float> (voice.gains[c] * sample);
+            }
             return;
         }
-        if (voice.gains[0] == 1.0)
+        if (voice.gains[0] == 1.0 && voice.colourChanges[0] == 0.0)
             return;
         const float left = audio.channels[0][i], right = audio.channels[1][i];
         for (int ch = 0; ch < 2; ++ch)
@@ -277,8 +319,9 @@ private:
     }
 
     // What the gains voice asks for add to channel ch of a sample whose Left and Right are left and right: (g - 1) times
-    // what channel ch carries of the part it compresses, as plugkit places a part (placedSample). Under Stereo, the
-    // channel itself; under Mid, the Mid, on Left and on Right; under Side, the Side, added to Left and taken from Right.
+    // what channel ch carries of the part it compresses, as plugkit places a part (placedSample), and Colour's change to
+    // the part, placed the same way. Under Stereo, the channel itself; under Mid, the Mid, on Left and on Right; under
+    // Side, the Side, added to Left and taken from Right.
     static double changeTo (const Voice& voice, int ch, float left, float right)
     {
         const float carried = plugkit::placedSample (voice.placement, 2, ch, [&] (int part) {
@@ -286,7 +329,11 @@ private:
                 return part == 0 ? left : right;
             return voice.placement == plugkit::StereoPlacement::Mid ? plugkit::encodeMid (left, right) : plugkit::encodeSide (left, right);
         });
-        return (gainOn (voice, ch) - 1.0) * carried;
+        const double change = (gainOn (voice, ch) - 1.0) * carried;
+        if (! hasColour (voice.character))
+            return change;
+        const float placed = plugkit::placedSample (voice.placement, 2, ch, [] (int) { return 1.0f; });
+        return change + placed * voice.colourChanges[partOf (voice, ch)];
     }
 
     enum Glide : std::size_t { threshold, inverseRatio, knee, range, logAttack, logRelease, hold, count };
@@ -307,7 +354,8 @@ private:
 
     double sampleRate = 44100.0;
     plugkit::Smoother glides[count];
-    plugkit::Smoother stereoLink; // 0 to 1
+    plugkit::Smoother stereoLink;  // 0 to 1
+    plugkit::Smoother colourShare; // Colour, 0 to 1
     clean::Curve curve;
     clean::Timing timing;
     double releaseMs = 100.0;
