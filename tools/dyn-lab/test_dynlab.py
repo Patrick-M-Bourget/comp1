@@ -1,4 +1,5 @@
-"""Tests for dyn-lab, at its four seams: the gain computer, the step response, Auto Gain and the command line.
+"""Tests for dyn-lab, at its five seams: the gain computer, the step response, Auto Release, Auto Gain and the
+command line.
 
     python3 tools/dyn-lab/test_dynlab.py
 """
@@ -92,6 +93,80 @@ class StepResponse(unittest.TestCase):
 
     def test_range_0_has_no_gain_reduction_to_measure(self):
         self.assertIsNone(dynlab.step_response(dynlab.Settings(range=0), 48000))
+
+
+class AutoRelease(unittest.TestCase):
+    """Auto Release lengthens Release after sustained compression, up to AUTO_RELEASE_MULTIPLIER times it, and
+    leaves it short after transients."""
+
+    def test_off_every_burst_releases_in_release(self):
+        for fs in dynlab.SAMPLE_RATES:
+            for burst in dynlab.bursts(dynlab.Settings(), fs):
+                with self.subTest(fs=fs, burst=burst.length):
+                    self.assertLessEqual(abs(burst.off.release_63 - 100), 1000 / fs)
+                    self.assertLessEqual(abs(burst.off.release_90 - 100 * math.log(10)), 1000 / fs)
+
+    def test_on_a_longer_burst_never_releases_faster_than_a_shorter_one(self):
+        for settings in (dynlab.Settings(), dynlab.Settings(attack=0.5, release=50, hold=20)):
+            for fs in dynlab.SAMPLE_RATES:
+                with self.subTest(settings=settings, fs=fs):
+                    on = [burst.on for burst in dynlab.bursts(settings, fs, (0.5, 1, 3, 10, 30, 100, 300, 1000, 3000))]
+                    for shorter, longer in zip(on, on[1:]):
+                        self.assertGreaterEqual(longer.release_63, shorter.release_63)
+                        self.assertGreaterEqual(longer.release_90, shorter.release_90)
+
+    def test_on_the_shortest_burst_releases_within_the_margin_of_release(self):
+        for fs in dynlab.SAMPLE_RATES:
+            shortest = dynlab.bursts(dynlab.Settings(), fs)[0]
+            with self.subTest(fs=fs):
+                self.assertLessEqual(shortest.on.release_63, 100 * (1 + dynlab.AUTO_RELEASE_TRANSIENT_MARGIN))
+                self.assertLessEqual(shortest.on.release_90, 100 * math.log(10) * (1 + dynlab.AUTO_RELEASE_TRANSIENT_MARGIN))
+
+    def test_on_the_longest_burst_releases_several_times_slower(self):
+        # The default bursts' longest, 3 s, charges the sustain state most of the way over its 1 s charge, so Release
+        # starts near AUTO_RELEASE_MULTIPLIER times as long, and shortens as the sustain state discharges.
+        for fs in dynlab.SAMPLE_RATES:
+            longest = dynlab.bursts(dynlab.Settings(), fs)[-1]
+            with self.subTest(fs=fs):
+                self.assertGreater(longest.on.release_63, 100 * (dynlab.AUTO_RELEASE_MULTIPLIER - 1))
+                self.assertLess(longest.on.release_63, 100 * dynlab.AUTO_RELEASE_MULTIPLIER)
+
+    def test_a_step_from_steady_state_releases_slowest(self):
+        # From steady state the sustain state is full: Release starts AUTO_RELEASE_MULTIPLIER times as long. Off,
+        # the step is exactly today's.
+        for fs in dynlab.SAMPLE_RATES:
+            on = dynlab.step_response(dynlab.Settings(auto_release=True), fs)
+            off = dynlab.step_response(dynlab.Settings(), fs)
+            longest = dynlab.bursts(dynlab.Settings(), fs)[-1]
+            with self.subTest(fs=fs):
+                self.assertGreater(on.release_63, longest.on.release_63)
+                self.assertLess(on.release_63, 100 * dynlab.AUTO_RELEASE_MULTIPLIER)
+                self.assertLessEqual(abs(off.release_63 - 100), 1000 / fs)
+                self.assertEqual((on.attack_63, on.attack_90, on.hold), (off.attack_63, off.attack_90, off.hold))
+
+    def test_hold_runs_first(self):
+        for fs in dynlab.SAMPLE_RATES:
+            step = dynlab.step_response(dynlab.Settings(hold=20, auto_release=True), fs)
+            with self.subTest(fs=fs):
+                self.assertLessEqual(abs(step.hold - 20), 1000 / fs)
+
+    def test_the_sustain_state_charges_and_discharges_in_its_own_times_at_every_rate(self):
+        # Charged for AUTO_RELEASE_CHARGE_MS from empty, it is 1 - 1/e full; then discharged for
+        # AUTO_RELEASE_DISCHARGE_MS, 1/e of that. It moves a run at a time, so to within a run's worth.
+        def runs(ms, fs):
+            return round(ms * fs / 1000 / dynlab.RUN_SAMPLES)
+
+        for fs in dynlab.SAMPLE_RATES:
+            with self.subTest(fs=fs):
+                sustain = dynlab.AutoRelease(fs)
+                for compressing, ms in ((True, dynlab.AUTO_RELEASE_CHARGE_MS), (False, dynlab.AUTO_RELEASE_DISCHARGE_MS)):
+                    before = sustain.sustain
+                    for _ in range(runs(ms, fs)):
+                        for _ in range(dynlab.RUN_SAMPLES):
+                            sustain.hear(compressing)
+                        sustain.start_run()
+                    expected = 1 - (1 - before) / math.e if compressing else before / math.e
+                    self.assertAlmostEqual(sustain.sustain, expected, delta=dynlab.RUN_SAMPLES * 1000 / (fs * ms))
 
 
 class AutoGain(unittest.TestCase):
@@ -192,6 +267,18 @@ class CommandLine(unittest.TestCase):
         result = run("autogain", "--threshold", "-60", "--ratio", "inf")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("outside", result.stdout)
+
+    def test_bursts_prints_off_and_on_for_every_length_and_rate(self):
+        result = run("bursts", "--lengths", "1", "1000", "--rates", "48000", "96000")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = [line.split() for line in result.stdout.splitlines() if line.split()[:1] in (["48000"], ["96000"])]
+        self.assertEqual([(row[0], row[1]) for row in rows], [("48000", "1"), ("48000", "1000"), ("96000", "1"), ("96000", "1000")])
+        self.assertTrue(all(len(row) == 6 for row in rows))
+
+    def test_bursts_rejects_a_length_that_is_not_above_0(self):
+        result = run("bursts", "--lengths", "0")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("burst", result.stderr)
 
     def test_ratio_reads_inf_and_the_infinity_sign(self):
         for spelling in ("inf", "∞"):
