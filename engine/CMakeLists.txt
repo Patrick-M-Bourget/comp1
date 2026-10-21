@@ -7,8 +7,9 @@ add_library(comp1::engine ALIAS comp1_engine)
 
 target_include_directories(comp1_engine PUBLIC include PRIVATE src)
 target_compile_features(comp1_engine PUBLIC cxx_std_20)
-# plugkit's shared Engine pieces: the Smoother, the run grid, subnormal flushing, the settings hand-off, the matched
-# filter designs (ADR 0006). Public: Settings holds the Detection EQ's bands as plugkit's BandShape.
+# plugkit's shared Engine pieces: the Smoother, the run grid, subnormal flushing, the settings hand-off, the Output
+# Level, Stereo Placement's routing and the matched filter designs (ADR 0006). Public, as comp1/Engine.h reads
+# plugkit::OutputLevel and Settings holds the Detection EQ's bands as plugkit's BandShape.
 target_link_libraries(comp1_engine PUBLIC plugkit::dsp)
 
 if(MSVC)

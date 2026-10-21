@@ -132,6 +132,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 frequency (detectionBandFrequencyId, "Detection Free Band Frequency", eq.freeBand.filter.frequency),
                 floatParameter (detectionBandGainId, "Detection Free Band Gain", linearRange (parameterRanges::detectionGain), eq.freeBand.filter.gain, withText (2, "dB")),
                 floatParameter (detectionBandQId, "Detection Free Band Q", logRange (parameterRanges::detectionQ), eq.freeBand.filter.q, withText (3, {})));
+    // Its choices are StereoPlacement's, in its order, which sessions save by index: comp1 offers Stereo, Mid and Side.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { stereoPlacementId, 1 },
+                                                              "Stereo Placement",
+                                                              juce::StringArray { "Stereo", "Mid", "Side" },
+                                                              static_cast<int> (defaults.stereoPlacement)),
+                floatParameter (stereoLinkId, "Stereo Link", linearRange (parameterRanges::stereoLink), defaults.stereoLink, withText (1, "%")));
     layout.add (floatParameter (thresholdId, "Threshold", linearRange (parameterRanges::threshold), defaults.thresholdDb, withText (2, "dB")),
                 floatParameter (ratioId, "Ratio", ratioRange(), defaults.ratio, ratioText()),
                 floatParameter (kneeId, "Knee", linearRange (parameterRanges::knee), defaults.kneeDb, withText (2, "dB")),
@@ -190,6 +196,8 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       bandFrequency (parameters.getRawParameterValue (detectionBandFrequencyId)),
       bandGain (parameters.getRawParameterValue (detectionBandGainId)),
       bandQ (parameters.getRawParameterValue (detectionBandQId)),
+      stereoPlacement (parameters.getRawParameterValue (stereoPlacementId)),
+      stereoLink (parameters.getRawParameterValue (stereoLinkId)),
       processingMode (parameters.getRawParameterValue (processingModeId)),
       lookahead (parameters.getRawParameterValue (lookaheadId))
 {
@@ -230,6 +238,8 @@ Settings SettingsReader::read() const
              .outputGainDb = plain (outputGain),
              .detectionSource = detectionSource->load (std::memory_order_relaxed) >= 0.5f ? DetectionSource::External : DetectionSource::Internal,
              .detectionEq = eq,
+             .stereoPlacement = static_cast<StereoPlacement> (std::clamp (static_cast<int> (std::lround (stereoPlacement->load (std::memory_order_relaxed))), 0, 2)),
+             .stereoLink = plain (stereoLink),
              .processingMode = processingMode->load (std::memory_order_relaxed) >= 0.5f ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency,
              .lookaheadMs = plain (lookahead) };
 }

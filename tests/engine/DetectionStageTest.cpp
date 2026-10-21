@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <plugkit/Placement.h>
 
 #include <vector>
 
@@ -68,4 +69,44 @@ TEST_CASE ("With External, a mono main follows the louder of a stereo Sidechain'
     CHECK (std::vector<float> (detection.channels[1], detection.channels[1] + 4) == right);
     const float* followed = detection.channelFollowedBy (0);
     CHECK (std::vector<float> (followed, followed + 4) == std::vector<float> { 0.5f, 0.3f, -0.4f, -0.9f });
+}
+
+// Stereo Placement routing: a stereo detection signal's Mid and Side, encoded as plugkit encodes them, whichever
+// Placement plays; a mono detection signal is its own Mid and Side, so it drives every Placement, Side included. The
+// same with External, from the Sidechain's channels.
+TEST_CASE ("The detection signal carries the Mid and the Side of a stereo detection signal, and a mono one is both")
+{
+    const int numChannels = GENERATE (1, 2);
+    const auto source = GENERATE (DetectionSource::Internal, DetectionSource::External);
+    CAPTURE (numChannels, source);
+    constexpr int numSamples = 16;
+    std::vector<std::vector<float>> signal (static_cast<std::size_t> (numChannels));
+    for (int i = 0; i < numSamples; ++i)
+    {
+        signal[0].push_back (0.03f * static_cast<float> (i + 1));
+        if (numChannels == 2)
+            signal[1].push_back (-0.01f * static_cast<float> (i * i));
+    }
+    std::vector<const float*> channels;
+    for (const auto& channel : signal)
+        channels.push_back (channel.data());
+    const ConstAudioBlock block { channels.data(), numChannels, numSamples };
+    // With External the main input is a stereo signal of its own, which the detection signal doesn't carry.
+    const std::vector<float> mainSamples (numSamples, 0.7f);
+    const float* mainChannels[] = { mainSamples.data(), mainSamples.data() };
+    const bool internal = source == DetectionSource::Internal;
+
+    DetectionStage stage;
+    stage.prepare (48000.0, internal ? numChannels : 2, numSamples);
+    stage.setSource (source);
+    const auto detection = internal ? stage.process (block, nullptr) : stage.process ({ mainChannels, 2, numSamples }, &block);
+
+    std::vector<float> mid, side;
+    for (std::size_t i = 0; i < numSamples; ++i)
+    {
+        mid.push_back (numChannels == 2 ? plugkit::encodeMid (signal[0][i], signal[1][i]) : signal[0][i]);
+        side.push_back (numChannels == 2 ? plugkit::encodeSide (signal[0][i], signal[1][i]) : signal[0][i]);
+    }
+    CHECK (std::vector<float> (detection.mid, detection.mid + numSamples) == mid);
+    CHECK (std::vector<float> (detection.side, detection.side + numSamples) == side);
 }

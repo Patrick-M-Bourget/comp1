@@ -193,6 +193,14 @@ _Avoid_: Automation (unqualified)
 How large the whole editor is drawn, per instance; it changes the view, never the sound.
 _Avoid_: Zoom, size
 
+**Input Level**:
+The main input's sample peak as the plugin receives it, before any stage, in dBFS. Not what the detector hears, which is the Detection Level.
+_Avoid_: Input meter, pre level, Detection Level
+
+**Output Level**:
+What the plugin sends on, after every stage, per channel: its sample peak and its RMS over 300 ms, in dBFS.
+_Avoid_: Output meter (for the level itself), post level, output volume
+
 **Output Meter**:
 The display of the output's sample peak and RMS per channel, with a Clip Light.
 _Avoid_: Meter (unqualified), level meter, VU

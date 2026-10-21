@@ -2,6 +2,8 @@
 
 #include "comp1/Settings.h"
 
+#include <plugkit/OutputLevel.h>
+
 #include <memory>
 
 namespace comp1
@@ -21,6 +23,19 @@ struct ConstAudioBlock
     int numSamples = 0;
 };
 
+// The levels of one completed run of the Engine's 16-sample grid, each in dB, the floor (plugkit::levelFloorDb) for
+// silence. The level history holds one per run. Each level is the run's as its stage meets it: in High Quality, the
+// Input Level is of the input as it arrives, and the others are of audio the stages before them have delayed. The Gain
+// Reduction is the compressor's own, as the gain it applies, without Auto Gain or Output Gain; the Detection Level is
+// what the detector compares with Threshold, in dB where a full-scale sine reads 0.
+struct LevelRecord
+{
+    double inputDb = plugkit::levelFloorDb;          // the Input Level's sample peak, the louder channel's
+    double outputDb = plugkit::levelFloorDb;         // the Output Level's sample peak, the louder channel's
+    double gainReductionDb = 0.0;                    // the compressor's most Gain Reduction, the larger channel's
+    double detectionLevelDb = plugkit::levelFloorDb; // the loudest Detection Level, the louder channel's
+};
+
 // The DSP Engine: plain C++, with no JUCE. prepare() may allocate; setSettings() and process() never allocate,
 // lock or do I/O. process() flushes subnormal numbers to zero, whatever the caller's floating-point mode, and
 // leaves that mode as it found it.
@@ -31,8 +46,10 @@ struct ConstAudioBlock
 // Latency: in High Quality the output is delayed by comp1/Latency.h's latencySamples() for the sample rate, the same
 // whatever the other settings; what is said of the output below holds of it delayed so. Zero Latency has none.
 //
-// Analysis taps: none yet. The level taps (input level, output level, Gain Reduction and Detection Level) are read
-// here (#7).
+// The level taps: the Output Level is read with readOutputLevel(), and the level history with readLevels() and
+// skipLevels(), each from one reader thread while process() runs on the audio thread. Reading never allocates, locks or does I/O, and stays safe through any prepare(), at any sample rate or
+// channel count: nothing a reader touches is freed or moved while the Engine lives. Silence, anything quieter than
+// plugkit::levelFloorDb, and NaN read the floor.
 class Engine
 {
 public:
@@ -59,6 +76,29 @@ public:
     //
     // The Detection EQ filters what the detector hears, and Detection Audition plays, never the processed sound.
     void process (AudioBlock main, const ConstAudioBlock* sidechain = nullptr);
+
+    // How many channels the Output Level has: one per channel the Engine was prepared with, up to two.
+    int outputLevelChannels() const;
+
+    // The Output Level of a channel (0 to outputLevelChannels() - 1): what process() sends on, after everything, so
+    // after Output Gain. Its peak is the sample peak since the last read, and reading resets it, so a peak between two
+    // reads is reported once, by the next; its RMS is over the last 300 ms on the run grid. Another channel reads the
+    // floor.
+    plugkit::OutputLevel readOutputLevel (int channel);
+
+    // Copies up to maxRecords of the level history, oldest first, and returns how many were copied: a record per run
+    // process() has completed since the last read, the same record for record however the host cuts the audio into
+    // blocks. When the reader falls behind, the history holds levelHistoryCapacity() records and drops new ones.
+    int readLevels (LevelRecord* destination, int maxRecords);
+
+    // Drops what the level history holds, so the next readLevels() copies only runs completed after this: a reader
+    // starting afresh, the editor opening, sees current levels rather than what piled up while nothing read them. From
+    // readLevels()'s reader thread.
+    void skipLevels();
+
+    // How many records the level history holds between reads, at least 150 ms of runs: the reader's buffer is this
+    // big. Safe to call from any thread.
+    int levelHistoryCapacity() const;
 
 private:
     struct Impl;

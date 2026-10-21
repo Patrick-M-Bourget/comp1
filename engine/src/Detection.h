@@ -2,12 +2,15 @@
 
 // The detection stage: what the detector hears, worked out apart from the audio the compressor applies gain to, so
 // the audio can be delayed (High Quality's Lookahead, Lookahead.h) and the detection signal shaped (the Detection EQ,
-// DetectionEq.h; Stereo Placement and Stereo Link #15) without touching the gain computer or the detector.
+// DetectionEq.h, then Stereo Placement) without touching the gain computer or the detector.
 
 #include "DetectionEq.h"
 #include "comp1/Engine.h"
 
+#include <plugkit/Placement.h>
+
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -18,14 +21,18 @@ namespace comp1
 
 // The detection signal for one piece of a run: its detection channels, the signal Detection Audition plays, and for
 // each main channel the samples it follows. A main channel follows a detection channel, except a mono main under a
-// stereo detection signal, which follows the louder of the two at each sample. It points into the detection stage's
+// stereo detection signal, which follows the louder of the two at each sample. Stereo Placement Mid and Side follow the
+// detection signal's Mid and Side: a stereo one's, encoded from its two channels, or a mono one itself, so a mono
+// detection signal drives every Placement, Side included. It points into the detection stage's
 // own storage, never at the audio, and holds until the stage's next process().
 struct DetectionSignal
 {
     const float* const* channels = nullptr;
     int numChannels = 0;
     int numSamples = 0;
-    const float* const* followed = nullptr; // per main channel
+    const float* const* followed = nullptr; // per main channel, under Stereo Placement Stereo
+    const float* mid = nullptr;             // what Stereo Placement Mid follows
+    const float* side = nullptr;            // and Side
 
     const float* channelFollowedBy (int mainChannel) const { return followed[mainChannel]; }
 };
@@ -61,6 +68,8 @@ public:
         for (std::size_t ch = 0; ch < channels; ++ch)
             pointers[ch] = writable[ch] = storage[ch].data();
         louder.assign (samples, 0.0f);
+        for (auto& part : parts)
+            part.assign (samples, 0.0f);
         followed.assign (mainChannels, nullptr);
     }
 
@@ -120,7 +129,35 @@ private:
             }
         for (int ch = 0; ch < internal.numChannels; ++ch)
             followed[static_cast<std::size_t> (ch)] = takeLouder ? louder.data() : pointers[static_cast<std::size_t> (std::min (ch, numChannels - 1))];
-        return { .channels = pointers.data(), .numChannels = numChannels, .numSamples = internal.numSamples, .followed = followed.data() };
+        DetectionSignal routed { .channels = pointers.data(), .numChannels = numChannels, .numSamples = internal.numSamples, .followed = followed.data() };
+        routeMidAndSide (routed);
+        return routed;
+    }
+
+    // Stereo Placement routing, last, through plugkit's routePlacement and encoders, so every site that encodes the Mid
+    // and the Side encodes them the same way. Both are worked out whichever Placement plays, so a Placement fading in,
+    // or heard through Lookahead's delay, hears its part from the first sample.
+    void routeMidAndSide (DetectionSignal& routed)
+    {
+        if (routed.numChannels < 2)
+        {
+            routed.mid = routed.side = routed.numChannels == 1 ? routed.channels[0] : nullptr;
+            return;
+        }
+        const float* left = routed.channels[0];
+        const float* right = routed.channels[1];
+        const auto encode = [&] (bool mid) {
+            auto& part = parts[mid ? 0 : 1];
+            for (int i = 0; i < routed.numSamples; ++i)
+            {
+                const auto s = static_cast<std::size_t> (i);
+                part[s] = mid ? plugkit::encodeMid (left[s], right[s]) : plugkit::encodeSide (left[s], right[s]);
+            }
+        };
+        for (const auto placement : { plugkit::StereoPlacement::Mid, plugkit::StereoPlacement::Side })
+            plugkit::routePlacement (placement, routed.numChannels, [] (int, int) {}, encode);
+        routed.mid = parts[0].data();
+        routed.side = parts[1].data();
     }
 
     DetectionSource source = DetectionSource::Internal;
@@ -130,6 +167,7 @@ private:
     std::vector<float*> writable;            // the same, for the Detection EQ to filter in place
     std::vector<float> louder;               // a mono main's, under a stereo detection signal
     std::vector<const float*> followed;      // per main channel, into storage or louder
+    std::array<std::vector<float>, 2> parts; // a stereo detection signal's Mid and Side
 };
 
 } // namespace comp1

@@ -35,11 +35,14 @@ inline const juce::String detectionBandShapeId { "detection_band_shape" };
 inline const juce::String detectionBandFrequencyId { "detection_band_frequency" };
 inline const juce::String detectionBandGainId { "detection_band_gain" };
 inline const juce::String detectionBandQId { "detection_band_q" };
+inline const juce::String stereoPlacementId { "stereo_placement" };
+inline const juce::String stereoLinkId { "stereo_link" };
 inline const juce::String processingModeId { "processing_mode" };
 inline const juce::String lookaheadId { "lookahead" };
 
-// Every host parameter, in the order hosts list them: Detection Source and the Detection EQ, then the compressor's, then
-// Saturation's, then Output Gain, as the signal meets them; then the whole plugin's, Processing Mode and Lookahead.
+// Every host parameter, in the order hosts list them: Detection Source, the Detection EQ, Stereo Placement and Stereo
+// Link, then the compressor's, then Saturation's, then Output Gain, as the signal meets them; then the whole plugin's,
+// Processing Mode and Lookahead.
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
 // The host parameters as Settings, each resolved once. Reads from any thread, with no allocation or lock.
@@ -76,6 +79,8 @@ private:
     std::atomic<float>* bandFrequency;
     std::atomic<float>* bandGain;
     std::atomic<float>* bandQ;
+    std::atomic<float>* stereoPlacement;
+    std::atomic<float>* stereoLink;
     std::atomic<float>* processingMode;
     std::atomic<float>* lookahead;
 };
