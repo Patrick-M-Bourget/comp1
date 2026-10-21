@@ -36,6 +36,18 @@ struct RenderScene
     bool sidechain = false;         // fed noise bursts on the Sidechain, half a period out from the main input's
 };
 
+// Comp Follow on or off at Comp 100%, the stored Threshold and Ratio compressing nothing (0 dB, 1:1): the Comp Follow
+// scenes switch between the two, far from the curve.
+inline Settings compFollowFar (bool compFollow)
+{
+    Settings settings;
+    settings.comp = 100.0;
+    settings.compFollow = compFollow;
+    settings.thresholdDb = 0.0;
+    settings.ratio = 1.0;
+    return settings;
+}
+
 // The scenes, one per line where they fit, so tickets adding scenes in parallel merge cleanly.
 inline std::vector<RenderScene> renderScenes()
 {
@@ -78,6 +90,16 @@ inline std::vector<RenderScene> renderScenes()
         { .name = "fet-style", .settings = styled (Style::FET) },
         { .name = "opto-style", .settings = styled (Style::Opto) },
         { .name = "clean-to-fet-style", .settings = styled (Style::Clean), .change = styled (Style::FET) },
+        // Comp: each Character Style following its Comp Curve at a Comp off its default; Comp Follow switched on, and
+        // off, with the stored Threshold and Ratio far from Clean's curve at 100% (-36 dB, 8:1); and Comp moving while
+        // following.
+        { .name = "clean-comp-80", .settings = with ([] (Settings& s) { s = styled (Style::Clean); s.comp = 80.0; }) },
+        { .name = "vca-comp-20", .settings = with ([] (Settings& s) { s = styled (Style::VCA); s.comp = 20.0; }) },
+        { .name = "fet-comp-90", .settings = with ([] (Settings& s) { s = styled (Style::FET); s.comp = 90.0; }) },
+        { .name = "opto-comp-70", .settings = with ([] (Settings& s) { s = styled (Style::Opto); s.comp = 70.0; }) },
+        { .name = "comp-follow-on", .settings = compFollowFar (false), .change = compFollowFar (true) },
+        { .name = "comp-follow-off", .settings = compFollowFar (true), .change = compFollowFar (false) },
+        { .name = "comp-move", .settings = with ([] (Settings& s) { s.compFollow = true; s.comp = 20.0; }), .change = with ([] (Settings& s) { s.compFollow = true; s.comp = 90.0; }) },
         // Saturation, and Dry/Wet.
         { .name = "saturation", .settings = with ([] (Settings& s) { s.saturation = true; }) },
         { .name = "saturation-before-drive-12", .settings = with ([] (Settings& s) {

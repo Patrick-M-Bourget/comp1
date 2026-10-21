@@ -47,6 +47,8 @@ const std::vector<Covered>& hostParameters()
         { "gate_attack", [] (const Settings& s) { return s.gate.on && s.gate.attackMs != defaults.gate.attackMs; } },
         { "gate_release", [] (const Settings& s) { return s.gate.on && s.gate.releaseMs != defaults.gate.releaseMs; } },
         { "gate_hold", [] (const Settings& s) { return s.gate.on && s.gate.holdMs != defaults.gate.holdMs; } },
+        { "comp", [] (const Settings& s) { return s.compFollow && s.comp != defaults.comp; } },
+        { "comp_follow", [] (const Settings& s) { return s.compFollow != defaults.compFollow; } },
         { "threshold", [] (const Settings& s) { return s.thresholdDb != defaults.thresholdDb; } },
         { "ratio", [] (const Settings& s) { return s.ratio != defaults.ratio; } },
         { "knee", [] (const Settings& s) { return s.kneeDb != defaults.kneeDb; } },
@@ -140,6 +142,28 @@ TEST_CASE ("Render scenes play VCA's, FET's and Opto's Style defaults, and a cha
         CHECK (some ([style] (const test::RenderScene& s) { return ! s.change && s.settings == styled (style); }));
     }
     CHECK (some ([] (const test::RenderScene& s) { return s.settings == styled (Style::Clean) && s.change == styled (Style::FET); }));
+}
+
+TEST_CASE ("Render scenes play each Character Style following its curve off its default Comp, Comp Follow switched on and off far from the curve, and Comp moving while following", "[render]")
+{
+    const auto scenes = test::renderScenes();
+    const auto some = [&scenes] (const std::function<bool (const test::RenderScene&)>& wanted) {
+        return std::any_of (scenes.begin(), scenes.end(), wanted);
+    };
+    for (const auto style : { Style::Clean, Style::VCA, Style::FET, Style::Opto })
+    {
+        CAPTURE (static_cast<int> (style));
+        CHECK (some ([style] (const test::RenderScene& s) {
+            auto atDefault = s.settings;
+            atDefault.comp = describe (style).defaults->comp;
+            return ! s.change && s.settings.compFollow && s.settings.comp != atDefault.comp && atDefault == styled (style);
+        }));
+    }
+    // Far: the stored settings compress nothing, and the curve at its deepest.
+    const auto far = [] (const Settings& s) { return s.ratio == 1.0 && s.comp == 100.0; };
+    CHECK (some ([&far] (const test::RenderScene& s) { return s.change && far (s.settings) && ! s.settings.compFollow && s.change->compFollow && far (*s.change); }));
+    CHECK (some ([&far] (const test::RenderScene& s) { return s.change && far (s.settings) && s.settings.compFollow && ! s.change->compFollow && far (*s.change); }));
+    CHECK (some ([] (const test::RenderScene& s) { return s.change && s.settings.compFollow && s.change->compFollow && s.change->comp != s.settings.comp; }));
 }
 
 TEST_CASE ("Render scenes play the Sidechain, Threshold gliding, Auto Gain and Global Bypass switched on, and the worst case", "[render]")
