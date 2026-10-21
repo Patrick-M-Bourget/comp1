@@ -16,7 +16,8 @@ namespace
 {
 // Output Gain's glide, from the spec of the Smoother it uses: two one-pole stages, critically damped, with a time
 // constant of 7 ms. Its step response, 1 - (1 + t/T) e^(-t/T), rises fastest at t = T, by 1/(e T) of the jump per
-// sample: no sample's step is larger than that, with 1% for the steps being discrete.
+// sample: no sample's step is larger than that, with 1% for the steps being discrete. Written here rather than read
+// from plugkit::glideTimeConstantSeconds, on purpose: a change to plugkit's glide is meant to fail this test.
 constexpr double glideTimeConstantSeconds = 0.007;
 double largestGlideStep (double jump, double sampleRate)
 {
