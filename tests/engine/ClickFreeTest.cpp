@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <iterator>
 #include <limits>
 #include <numbers>
 #include <string>
@@ -121,8 +122,66 @@ const std::vector<Jump>& jumps()
              s.processingMode = ProcessingMode::HighQuality; // Zero Latency doesn't read it
              s.lookaheadMs = b ? 5.0 : 0.0;
          } },
+        // The Detection EQ's, each moving across the tone or switching how it filters it.
+        { "Detection EQ high-pass on", [] (Settings& s, bool b) {
+             s.detectionEq.highPass.filter.frequency = 1000.0;
+             s.detectionEq.highPass.on = b;
+         } },
+        { "Detection EQ high-pass Frequency", [] (Settings& s, bool b) {
+             s.detectionEq.highPass.on = true;
+             s.detectionEq.highPass.filter.frequency = b ? 2000.0 : 20.0;
+         } },
+        { "Detection EQ high-pass Slope", [] (Settings& s, bool b) {
+             s.detectionEq.highPass.on = true;
+             s.detectionEq.highPass.filter.frequency = 300.0;
+             s.detectionEq.highPass.filter.slope = b ? 96.0 : 6.0;
+         } },
+        { "Detection EQ low-pass on", [] (Settings& s, bool b) {
+             s.detectionEq.lowPass.filter.frequency = 50.0;
+             s.detectionEq.lowPass.on = b;
+         } },
+        { "Detection EQ low-pass Frequency", [] (Settings& s, bool b) {
+             s.detectionEq.lowPass.on = true;
+             s.detectionEq.lowPass.filter.frequency = b ? 50.0 : 20000.0;
+         } },
+        { "Detection EQ low-pass Slope", [] (Settings& s, bool b) {
+             s.detectionEq.lowPass.on = true;
+             s.detectionEq.lowPass.filter.frequency = 150.0;
+             s.detectionEq.lowPass.filter.slope = b ? 48.0 : 6.0;
+         } },
+        { "Detection EQ band on", [] (Settings& s, bool b) {
+             s.detectionEq.band.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = 1.0 };
+             s.detectionEq.band.on = b;
+         } },
+        { "Detection EQ band Shape", [] (Settings& s, bool b) {
+             s.detectionEq.band.on = true;
+             s.detectionEq.band.filter = { .shape = shapeOf (b ? DetectionBandShape::HighShelf : DetectionBandShape::Bell),
+                                           .gain = 18.0,
+                                           .frequency = toneFrequency,
+                                           .q = 1.0 };
+         } },
+        { "Detection EQ band Frequency", [] (Settings& s, bool b) {
+             s.detectionEq.band.on = true;
+             s.detectionEq.band.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = b ? 20000.0 : 20.0, .q = 1.0 };
+         } },
+        { "Detection EQ band Gain", [] (Settings& s, bool b) {
+             s.detectionEq.band.on = true;
+             s.detectionEq.band.filter = { .shape = plugkit::Shape::Bell, .gain = b ? 30.0 : -30.0, .frequency = toneFrequency, .q = 1.0 };
+         } },
+        { "Detection EQ band Q", [] (Settings& s, bool b) {
+             s.detectionEq.band.on = true;
+             s.detectionEq.band.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = b ? 40.0 : 0.025 };
+         } },
     };
     return all;
+}
+
+// The jumps in a Detection EQ setting, which Detection Audition plays too.
+std::vector<Jump> detectionEqJumps()
+{
+    std::vector<Jump> eq;
+    std::copy_if (jumps().begin(), jumps().end(), std::back_inserter (eq), [] (const Jump& j) { return j.setting.starts_with ("Detection EQ"); });
+    return eq;
 }
 
 } // namespace
@@ -202,6 +261,18 @@ const std::vector<MidRelease>& midReleaseJumps()
 }
 
 } // namespace
+
+TEST_CASE ("Jumps in each Detection EQ setting do not click in Detection Audition")
+{
+    const auto& jump = GENERATE (from_range (detectionEqJumps()));
+    const auto host = anyHost();
+    CAPTURE (jump.setting, host.sampleRate, host.blockSize);
+    const auto output = playTone (host, [&jump] (double time, Settings& s) {
+        s.detectionAudition = true;
+        jump.set (s, alternating (time));
+    });
+    CHECK (discontinuity (output, host.sampleRate) < threshold);
+}
 
 TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
 {
