@@ -176,6 +176,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                                               static_cast<int> (defaults.processingMode),
                                                               juce::AudioParameterChoiceAttributes().withAutomatable (false)),
                 floatParameter (lookaheadId, "Lookahead", linearRange (parameterRanges::lookahead), defaults.lookaheadMs, withText (2, "ms")));
+    // Not JUCE's bypass parameter (the processor doesn't override getBypassParameter()), so the host's own bypass
+    // stays separate from it.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { globalBypassId, 1 }, "Global Bypass", defaults.globalBypass));
     return layout;
 }
 
@@ -208,7 +211,8 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       stereoPlacement (parameters.getRawParameterValue (stereoPlacementId)),
       stereoLink (parameters.getRawParameterValue (stereoLinkId)),
       processingMode (parameters.getRawParameterValue (processingModeId)),
-      lookahead (parameters.getRawParameterValue (lookaheadId))
+      lookahead (parameters.getRawParameterValue (lookaheadId)),
+      globalBypass (parameters.getRawParameterValue (globalBypassId))
 {
 }
 
@@ -252,7 +256,8 @@ Settings SettingsReader::read() const
              .stereoPlacement = choice (stereoPlacement, StereoPlacement::Side),
              .stereoLink = plain (stereoLink),
              .processingMode = choice (processingMode, ProcessingMode::HighQuality),
-             .lookaheadMs = plain (lookahead) };
+             .lookaheadMs = plain (lookahead),
+             .globalBypass = on (globalBypass) };
 }
 
 } // namespace comp1::parameters
