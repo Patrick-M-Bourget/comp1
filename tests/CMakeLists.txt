@@ -58,6 +58,14 @@ target_include_directories(comp1_engine_tests PRIVATE ${PROJECT_SOURCE_DIR}/engi
 target_link_libraries(comp1_engine_tests PRIVATE comp1::engine plugkit::dsp plugkit::test_support Catch2::Catch2WithMain)
 catch_discover_tests(comp1_engine_tests ADD_TAGS_AS_LABELS)
 
+# The performance tools (docs/performance.md), linked against the Engine only and built with the tests. Neither is a
+# ctest test: the CPU budget (scripts/check.sh cpu) needs the machine to itself, and the render tool (scripts/check.sh
+# null) compares two trees' renders; its scenes are tested in comp1_engine_tests.
+add_executable(comp1_cpu_budget cpu/CpuBudget.cpp)
+target_link_libraries(comp1_cpu_budget PRIVATE comp1::engine)
+add_executable(comp1_render render/RenderTool.cpp)
+target_link_libraries(comp1_render PRIVATE comp1::engine)
+
 # The Engine is plain C++: no source of it includes JUCE, and its target links nothing of JUCE's.
 add_test(NAME engine_has_no_juce
     COMMAND ${CMAKE_COMMAND} "-DENGINE_DIR=${PROJECT_SOURCE_DIR}/engine"
