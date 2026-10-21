@@ -25,6 +25,7 @@ add_executable(comp1_engine_tests
     engine/LatencyTest.cpp
     engine/NonFiniteInputTest.cpp
     engine/OutputGainTest.cpp
+    engine/ProcessingModeTest.cpp
     engine/RealtimeSafetyTest.cpp
     engine/SettingsHandoffTest.cpp
     engine/StepResponseTest.cpp

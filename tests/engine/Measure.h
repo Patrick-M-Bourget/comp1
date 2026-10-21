@@ -88,4 +88,32 @@ inline const std::vector<std::vector<int>>& blockCuts()
     return cuts;
 }
 
+// --- Delay -------------------------------------------------------------------------------------------------------
+
+// How many samples an Engine with settings at sampleRate delays an impulse by, played in blocks of blockSize: where
+// the output's largest sample falls, on every channel, or -1 when the channels disagree. The settings should apply
+// no Gain Reduction (Ratio 1:1, say), so the impulse comes out whole.
+inline int impulseDelaySamples (const Settings& settings, double sampleRate, int blockSize = 512, int numChannels = 2)
+{
+    const int length = static_cast<int> (0.05 * sampleRate);
+    Channels audio (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (length)));
+    for (auto& channel : audio)
+        channel[100] = 0.5f;
+    Engine engine;
+    engine.prepare (sampleRate, blockSize, numChannels);
+    engine.setSettings (settings);
+    processInBlocks (engine, audio, { blockSize });
+    int delay = -1;
+    for (const auto& channel : audio)
+    {
+        const auto peak = static_cast<int> (std::max_element (channel.begin(), channel.end(), [] (float a, float b) {
+                                                return std::abs (a) < std::abs (b);
+                                            }) - channel.begin());
+        if (delay >= 0 && peak - 100 != delay)
+            return -1;
+        delay = peak - 100;
+    }
+    return delay;
+}
+
 } // namespace comp1::test
