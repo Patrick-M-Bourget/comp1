@@ -22,11 +22,19 @@ namespace
 // The Clean Character's gain computer settings, from Settings.
 clean::Curve curveOf (const Settings& settings)
 {
-    return { .thresholdDb = settings.thresholdDb, .inverseRatio = 1.0 / settings.ratio, .kneeDb = settings.kneeDb, .rangeDb = settings.rangeDb };
+    return { .thresholdDb = settings.thresholdDb,
+             .inverseRatio = 1.0 / settings.ratio,
+             .kneeDb = settings.kneeDb,
+             .rangeDb = settings.rangeDb };
 }
 
 // The compressor: the Clean Character's gain computer and detector on every sample of every channel, each channel
 // detected and compressed on its own.
+//
+// Its settings glide with plugkit's Smoother, a step of a whole run at each run's start, so a change, Host Automation
+// included, is click-free and glides the same at every host block size; the gain computer and detector read the
+// settings as they stand for the run. Ratio glides as 1/Ratio, so ∞:1 (0) is reached; Attack and Release glide in
+// log time, as their host parameters move.
 class Compressor
 {
 public:
@@ -34,12 +42,38 @@ public:
     {
         sampleRate = newSampleRate;
         detectors.assign (static_cast<std::size_t> (std::max (numChannels, 0)), {});
+        for (auto& setting : glides)
+            setting.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
     }
 
-    void setSettings (const Settings& settings)
+    // With snap, the settings take effect at once instead of gliding.
+    void setSettings (const Settings& settings, bool snap)
     {
-        curve = curveOf (settings);
-        timing = clean::timing (settings.attackMs, settings.releaseMs, settings.holdMs, sampleRate);
+        const double targets[] = { settings.thresholdDb, 1.0 / settings.ratio, settings.kneeDb, settings.rangeDb,
+                                   std::log (settings.attackMs), std::log (settings.releaseMs), settings.holdMs };
+        for (std::size_t s = 0; s < count; ++s)
+        {
+            if (snap)
+                glides[s].reset (targets[s]);
+            else
+                glides[s].setTarget (targets[s]);
+        }
+        if (snap)
+            update();
+    }
+
+    // At the start of each run: the settings move on by a run, and the gain computer and detector take them.
+    void startRun()
+    {
+        bool moving = false;
+        for (auto& setting : glides)
+            if (! setting.isSettled())
+            {
+                setting.skip (plugkit::runSamples);
+                moving = true;
+            }
+        if (moving)
+            update();
     }
 
     void process (AudioBlock block)
@@ -60,7 +94,21 @@ public:
     }
 
 private:
+    enum Glide : std::size_t { threshold, inverseRatio, knee, range, logAttack, logRelease, hold, count };
+    // Close enough to count as arrived, in each glide's units (dB, 1/Ratio, log ms, ms): far below what can be heard.
+    static constexpr double arrivalTolerance = 1.0e-7;
+
+    void update()
+    {
+        curve = { .thresholdDb = glides[threshold].value(),
+                  .inverseRatio = glides[inverseRatio].value(),
+                  .kneeDb = glides[knee].value(),
+                  .rangeDb = glides[range].value() };
+        timing = clean::timing (std::exp (glides[logAttack].value()), std::exp (glides[logRelease].value()), glides[hold].value(), sampleRate);
+    }
+
     double sampleRate = 44100.0;
+    plugkit::Smoother glides[count];
     clean::Curve curve;
     clean::Timing timing;
     std::vector<clean::Detector> detectors; // per channel
@@ -136,7 +184,7 @@ struct Engine::Impl
             return;
         if (latest != nullptr)
             settings = *latest;
-        compressor.setSettings (settings);
+        compressor.setSettings (settings, snapToSettings);
         autoGain.setTargetDb (settings.autoGain ? clean::autoGainDb (curveOf (settings)) : 0.0, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
         snapToSettings = false;
@@ -175,11 +223,13 @@ void Engine::process (AudioBlock main, const ConstAudioBlock*)
         for (int ch = 0; ch < channels; ++ch)
             impl->subBlock[static_cast<std::size_t> (ch)] = main.channels[ch] + start;
 
-        // The grid cuts the block into pieces, but Auto Gain and Output Gain glide a sample at a time with next(), not
-        // a step per run, so where the pieces fall changes nothing: from the sample a new setting is taken (the start
-        // of the host's block, so the host decides when a change lands), each gain is the same sample for sample
-        // however the audio is cut.
-        // The Wet path: the compressor, then Auto Gain. Then Output Gain.
+        // The Wet path, the compressor then Auto Gain, then Output Gain. The compressor's settings step at the start of
+        // each run, wherever the host's blocks fall; Auto Gain and Output Gain glide a sample at a time with next(),
+        // so where the pieces fall changes nothing either. From the sample a new setting is taken (the start of the
+        // host's block, so the host decides when a change lands), the output is the same sample for sample however
+        // the audio is cut.
+        if (impl->gridPosition == 0)
+            impl->compressor.startRun();
         impl->compressor.process ({ impl->subBlock.data(), channels, count });
         impl->autoGain.process ({ impl->subBlock.data(), channels, count });
         impl->outputGain.process ({ impl->subBlock.data(), channels, count });

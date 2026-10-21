@@ -20,6 +20,7 @@ include(Catch)
 # One source per line, sorted, so tickets adding tests in parallel merge cleanly.
 add_executable(comp1_engine_tests
     engine/AutoGainTest.cpp
+    engine/ClickFreeTest.cpp
     engine/OutputGainTest.cpp
     engine/RealtimeSafetyTest.cpp
     engine/SettingsHandoffTest.cpp
