@@ -116,10 +116,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 // Hold starts at 0 ms, which a log range can't reach; 50 ms sits at its centre.
                 floatParameter (holdId, "Hold", skewedRange (parameterRanges::hold, 50.0f), defaults.holdMs, withText (1, "ms")),
                 floatParameter (rangeId, "Range", linearRange (parameterRanges::range), defaults.rangeDb, withText (2, "dB")),
-                std::make_unique<juce::AudioParameterBool> (juce::ParameterID { autoGainId, 1 }, "Auto Gain", defaults.autoGain),
-                // Linear in dB, symmetric about 0 dB, which is the default and the range's exact centre: the default
-                // passes audio through bit for bit.
-                floatParameter (outputGainId, "Output Gain", linearRange (parameterRanges::outputGain), defaults.outputGainDb, withText (2, "dB")));
+                std::make_unique<juce::AudioParameterBool> (juce::ParameterID { autoGainId, 1 }, "Auto Gain", defaults.autoGain));
+    // Saturation Position's choices are SaturationPosition's, stored in sessions by index, so their order never
+    // changes (ADR 0003).
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { saturationId, 1 }, "Saturation", defaults.saturation),
+                floatParameter (driveId, "Drive", linearRange (parameterRanges::drive), defaults.driveDb, withText (2, "dB")),
+                std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { saturationPositionId, 1 },
+                                                              "Saturation Position",
+                                                              juce::StringArray { "Before", "After" },
+                                                              static_cast<int> (defaults.saturationPosition)));
+    // Linear in dB, symmetric about 0 dB, which is the default and the range's exact centre: the default passes audio
+    // through bit for bit.
+    layout.add (floatParameter (outputGainId, "Output Gain", linearRange (parameterRanges::outputGain), defaults.outputGainDb, withText (2, "dB")));
     // Processing Mode's choices are stored in sessions by index, so their order never changes (ADR 0003). Hosts can't
     // automate it: a switch changes the latency the host compensates for, and fades the output out and in.
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { processingModeId, 1 },
@@ -141,6 +149,9 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       hold (parameters.getRawParameterValue (holdId)),
       range (parameters.getRawParameterValue (rangeId)),
       autoGain (parameters.getRawParameterValue (autoGainId)),
+      saturation (parameters.getRawParameterValue (saturationId)),
+      drive (parameters.getRawParameterValue (driveId)),
+      saturationPosition (parameters.getRawParameterValue (saturationPositionId)),
       outputGain (parameters.getRawParameterValue (outputGainId)),
       detectionSource (parameters.getRawParameterValue (detectionSourceId)),
       stereoPlacement (parameters.getRawParameterValue (stereoPlacementId)),
@@ -162,6 +173,10 @@ Settings SettingsReader::read() const
              .holdMs = plain (hold),
              .rangeDb = plain (range),
              .autoGain = autoGain->load (std::memory_order_relaxed) >= 0.5f,
+             .saturation = saturation->load (std::memory_order_relaxed) >= 0.5f,
+             .driveDb = plain (drive),
+             .saturationPosition = saturationPosition->load (std::memory_order_relaxed) < 0.5f ? SaturationPosition::Before
+                                                                                               : SaturationPosition::After,
              .outputGainDb = plain (outputGain),
              .detectionSource = detectionSource->load (std::memory_order_relaxed) >= 0.5f ? DetectionSource::External : DetectionSource::Internal,
              .stereoPlacement = static_cast<StereoPlacement> (std::clamp (static_cast<int> (std::lround (stereoPlacement->load (std::memory_order_relaxed))), 0, 2)),

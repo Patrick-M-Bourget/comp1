@@ -115,8 +115,18 @@ struct Jump
 {
     std::string setting;
     std::function<void (Settings&, bool)> set; // sets a when the bool is false, b when true
-    int numChannels = 1;                       // the track it is heard on
+    // When it has any, the jump is measured against the steady tone with each of these settings, rather than against
+    // a pure sine: Saturation's own harmonics sharpen the tone's corners past a sine's.
+    std::vector<std::function<void (Settings&)>> steady = {};
+    int numChannels = 1; // the track it is heard on
 };
+
+// Saturation on at Drive 24 dB, which pushes the tone (-12 dB) 12 dB into the shape.
+void saturating (Settings& s)
+{
+    s.saturation = true;
+    s.driveDb = 24.0;
+}
 
 // Stereo Link and Stereo Placement, which only a stereo track hears, with Threshold low enough that the Mid and the
 // Side are compressed too.
@@ -127,6 +137,7 @@ Jump onStereo (std::string setting, std::function<void (Settings&, bool)> set)
                  s.thresholdDb = -30.0;
                  set (s, b);
              },
+             {},
              2 };
 }
 
@@ -147,6 +158,28 @@ const std::vector<Jump>& jumps()
         { "Hold", [] (Settings& s, bool b) { s.holdMs = b ? 500.0 : 0.0; } },
         { "Range", [] (Settings& s, bool b) { s.rangeDb = b ? 60.0 : 0.0; } },
         { "Auto Gain", [] (Settings& s, bool b) { s.autoGain = b; } },
+        { "Saturation",
+          [] (Settings& s, bool b) {
+              saturating (s);
+              s.saturation = b;
+          },
+          { saturating } },
+        { "Drive",
+          [] (Settings& s, bool b) {
+              saturating (s);
+              s.driveDb = b ? 24.0 : 0.0;
+          },
+          { saturating } },
+        { "Saturation Position",
+          [] (Settings& s, bool b) {
+              saturating (s);
+              s.saturationPosition = b ? SaturationPosition::Before : SaturationPosition::After;
+          },
+          { [] (Settings& s) {
+               saturating (s);
+               s.saturationPosition = SaturationPosition::Before;
+           },
+            saturating } },
         // Held, the uncompressed input plays in place of the compressed one.
         { "Detection Audition", [] (Settings& s, bool b) { s.detectionAudition = b; } },
         { "Lookahead", [] (Settings& s, bool b) {
@@ -168,10 +201,15 @@ TEST_CASE ("Jumps in each compressor setting do not click")
     const auto& jump = GENERATE (from_range (jumps()));
     const auto host = anyHost();
     CAPTURE (jump.setting, host.sampleRate, host.blockSize);
-    const auto output = playTone (
-        host, [&jump] (double time, Settings& s) { jump.set (s, alternating (time)); }, [] (double) { return toneAmplitude; },
-        toneSeconds, jump.numChannels);
-    CHECK (discontinuity (output, host.sampleRate) < threshold);
+    const auto play = [&host, &jump] (const std::function<void (double, Settings&)>& change) {
+        return playTone (host, change, [] (double) { return toneAmplitude; }, toneSeconds, jump.numChannels);
+    };
+    const auto output = play ([&jump] (double time, Settings& s) { jump.set (s, alternating (time)); });
+    double steady = 1.0;
+    for (const auto& settings : jump.steady)
+        steady = std::max (steady, discontinuity (play ([&settings] (double, Settings& s) { settings (s); }), host.sampleRate));
+    CAPTURE (steady);
+    CHECK (discontinuity (output, host.sampleRate) < threshold * steady);
 }
 
 namespace

@@ -23,9 +23,10 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
     plugkit::test::AllocationGuard guard;
     for (int block = 0; block < 64; ++block)
     {
-        // Every setting moving every block, Output Gain back to 0 dB every few, Auto Release and Auto Gain on and off,
-        // Detection Source, Detection Audition and Stereo Placement moving every few, Stereo Link every block; blocks
-        // cutting the grid's runs; the Sidechain coming and going, and changing between mono and stereo.
+        // Every setting moving every block, Output Gain back to 0 dB every few, Auto Release, Auto Gain and Saturation
+        // on and off, Saturation moving Before and After, Detection Source, Detection Audition and Stereo Placement
+        // moving every few, Stereo Link every block; blocks cutting the grid's runs; the Sidechain coming and going, and
+        // changing between mono and stereo.
         engine.setSettings ({ .thresholdDb = -6.0 * (block % 10),
                               .ratio = block % 5 == 4 ? std::numeric_limits<double>::infinity() : 1.0 + block % 5,
                               .kneeDb = 8.0 * (block % 9),
@@ -35,6 +36,9 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
                               .holdMs = 50.0 * (block % 10),
                               .rangeDb = 6.0 * (block % 11),
                               .autoGain = block % 2 == 0,
+                              .saturation = block % 4 != 1,
+                              .driveDb = 3.0 * (block % 9),
+                              .saturationPosition = block % 6 < 3 ? SaturationPosition::Before : SaturationPosition::After,
                               .outputGainDb = block % 4 == 3 ? 0.0 : 6.0 * (block % 7) - 18.0,
                               .detectionSource = block % 6 < 3 ? DetectionSource::External : DetectionSource::Internal,
                               .stereoPlacement = static_cast<StereoPlacement> ((block / 4) % 3),
