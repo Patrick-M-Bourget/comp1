@@ -313,3 +313,55 @@ TEST_CASE ("Back in High Quality, the Limiter doesn't hear what the path played 
     for (std::size_t ch = 0; ch < 2; ++ch)
         CHECK (std::vector<float> (out[ch].begin() + settled, out[ch].end()) == std::vector<float> (expected[ch].begin() + settled, expected[ch].end()));
 }
+
+namespace
+{
+
+// What each mode promises of a peak: the sample peak in Zero Latency, the true peak in High Quality, from sample from
+// on, the audio before it heard.
+double promisedPeak (ProcessingMode mode, const test::Channels& audio, int from = 0)
+{
+    if (mode == highQuality)
+        return test::truePeak (audio, from);
+    double peak = 0.0;
+    for (const auto& channel : audio)
+        for (auto i = static_cast<std::size_t> (from); i < channel.size(); ++i)
+            peak = std::max (peak, static_cast<double> (std::abs (channel[i])));
+    return peak;
+}
+
+} // namespace
+
+TEST_CASE ("While the Ceiling glides, no peak passes the higher of the two Ceilings, and once settled the new one holds")
+{
+    const auto mode = GENERATE (zeroLatency, highQuality);
+    const auto [fromDb, toDb] = GENERATE (table<double, double> ({ { 0.0, -30.0 }, { -30.0, 0.0 }, { -6.0, -12.0 } }));
+    const double sampleRate = GENERATE (44100.0, 192000.0);
+    CAPTURE (static_cast<int> (mode), fromDb, toDb, sampleRate);
+    // Noise 12 dB over the higher Ceiling, limited throughout.
+    const auto input = stereo (test::bandLimitedNoise (12.0, sampleRate, static_cast<int> (1.0 * sampleRate)));
+    const int at = static_cast<int> (0.1 * sampleRate);
+    const test::SettingsChange jumped { .at = at, .settings = limiting (mode, toDb) };
+    const auto out = test::played (limiting (mode, fromDb), sampleRate, input, { 512 }, nullptr, jumped);
+    CHECK (promisedPeak (mode, out) <= test::gainOf (std::max (fromDb, toDb)));
+    // The Ceiling's glide settles within 0.7 s (24 of its time constants, 28 ms); then, past the latency, the audio
+    // heard came in after it.
+    const int settled = at + static_cast<int> (0.7 * sampleRate) + latencySamples (mode, sampleRate);
+    CHECK (promisedPeak (mode, out, settled) <= test::gainOf (toDb));
+    CHECK (promisedPeak (mode, out, settled) > test::gainOf (toDb - 1.0));
+}
+
+TEST_CASE ("Once the Limiter has switched on, the Ceiling holds")
+{
+    const auto mode = GENERATE (zeroLatency, highQuality);
+    const double sampleRate = GENERATE (44100.0, 192000.0);
+    CAPTURE (static_cast<int> (mode), sampleRate);
+    const auto input = stereo (test::bandLimitedNoise (6.0, sampleRate, static_cast<int> (0.5 * sampleRate)));
+    auto off = limiting (mode, -6.0);
+    off.limiter = false;
+    const int at = static_cast<int> (0.1 * sampleRate);
+    const auto out = test::played (off, sampleRate, input, { 512 }, nullptr, test::SettingsChange { .at = at, .settings = limiting (mode, -6.0) });
+    // Over the Ceiling before the switch; the switch's crossfade settles within 0.1 s.
+    CHECK (promisedPeak (mode, out) > test::gainOf (0.0));
+    CHECK (promisedPeak (mode, out, at + static_cast<int> (0.1 * sampleRate) + latencySamples (mode, sampleRate)) <= test::gainOf (-6.0));
+}

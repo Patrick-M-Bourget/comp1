@@ -391,8 +391,9 @@ inline double worstAliasDb (const std::vector<double>& spectrum, int bin)
 // The true peak of every channel, linear, by dyn-lab's 16x reference: each channel interpolated at 16 points per
 // host sample by a Kaiser-windowed sinc (β 10) 64 host samples long, its cutoff the host's Nyquist. Written here
 // apart from the Engine's own estimator, which it measures. It reads silence before the audio, and stops at the last
-// sample whose interpolation reads nothing past the end, where the audio would go on.
-inline double truePeak (const Channels& audio)
+// sample whose interpolation reads nothing past the end, where the audio would go on. From sample from on, when given,
+// with the audio before it heard.
+inline double truePeak (const Channels& audio, int from = 0)
 {
     constexpr int factor = 16, taps = 64, half = taps / 2;
     constexpr double beta = 10.0;
@@ -431,7 +432,7 @@ inline double truePeak (const Channels& audio)
     {
         const auto length = static_cast<int> (channel.size());
         const auto at = [&channel, length] (int n) { return n >= 0 && n < length ? static_cast<double> (channel[static_cast<std::size_t> (n)]) : 0.0; };
-        for (int m = 0; m + half < length; ++m)
+        for (int m = from; m + half < length; ++m)
         {
             peak = std::max (peak, std::abs (at (m)));
             for (const auto& kernel : phases)

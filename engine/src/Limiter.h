@@ -47,6 +47,9 @@ public:
     static constexpr int estimatorTaps = 16;
     static constexpr double estimatorBeta = 6.0;
     static constexpr int estimatorDelay = estimatorTaps / 2;
+    // The Ceiling glides this many times plugkit's glide time. Zero Latency's zero attack follows a falling Ceiling
+    // at once, a step down at each peak, and at plugkit's glide time those steps are corners the click test hears.
+    static constexpr double ceilingGlides = 4.0;
 
     Limiter()
         : headroomGain (std::pow (10.0, -truePeakHeadroomDb / 20.0))
@@ -73,7 +76,7 @@ public:
         constexpr double glide = plugkit::glideTimeConstantSeconds;
         onShare.configure (glide * sampleRate, 1.0e-6);
         onShare.reset (0.0);
-        ceiling.configure (glide * sampleRate, 1.0e-9);
+        ceiling.configure (ceilingGlides * glide * sampleRate, 1.0e-9);
         ceiling.reset (1.0);
         startPath (ProcessingMode::ZeroLatency);
         startPath (ProcessingMode::HighQuality);

@@ -23,8 +23,8 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
     plugkit::test::AllocationGuard guard;
     for (int block = 0; block < 64; ++block)
     {
-        // Every setting moving every block, Output Gain back to 0 dB every few, Auto Release, Auto Gain and Saturation
-        // on and off, Saturation moving Before and After, Detection Source, Detection Audition and Stereo Placement
+        // Every setting moving every block, Output Gain back to 0 dB every few, Auto Release, Auto Gain, Saturation and
+        // the Limiter on and off, Saturation moving Before and After, Detection Source, Detection Audition and Stereo Placement
         // moving every few, Stereo Link and every Detection EQ setting moving every block, each band switching on and
         // off, and changing Shape or Slope; blocks cutting the grid's runs; the Sidechain coming and going, and
         // changing between mono and stereo.
@@ -53,6 +53,8 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
                               .driveDb = 3.0 * (block % 9),
                               .saturationPosition = block % 6 < 3 ? SaturationPosition::Before : SaturationPosition::After,
                               .outputGainDb = block % 4 == 3 ? 0.0 : 6.0 * (block % 7) - 18.0,
+                              .limiter = block % 3 != 1,
+                              .ceilingDb = -3.0 * (block % 11),
                               .detectionSource = block % 6 < 3 ? DetectionSource::External : DetectionSource::Internal,
                               .detectionEq = eq,
                               .stereoPlacement = static_cast<StereoPlacement> ((block / 4) % 3),

@@ -181,6 +181,43 @@ void freeBandAtTone (Settings& s)
     s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = 1.0 };
 }
 
+// The Limiter on, the tone (-12 dB) pushed 24 dB by Output Gain, 12 dB over the Ceiling's top, in mode.
+void limitingTone (Settings& s, ProcessingMode mode)
+{
+    s.processingMode = mode;
+    s.outputGainDb = 24.0;
+    s.limiter = true;
+}
+
+// The Limiter switching on and off on the tone, in mode, against the steady tone limited, whose corners are sharper
+// than a sine's.
+Jump limiterJump (ProcessingMode mode, std::string setting)
+{
+    return { std::move (setting),
+             [mode] (Settings& s, bool b) {
+                 limitingTone (s, mode);
+                 s.limiter = b;
+             },
+             { [mode] (Settings& s) { limitingTone (s, mode); } } };
+}
+
+// The Ceiling jumping across its range, the Limiter on, in mode: from no limiting to 18 dB of it, against the steady
+// tone limited at the bottom.
+Jump ceilingJump (ProcessingMode mode, std::string setting)
+{
+    const auto atBottom = [mode] (Settings& s) {
+        s.processingMode = mode;
+        s.limiter = true;
+        s.ceilingDb = parameterRanges::ceiling.low;
+    };
+    return { std::move (setting),
+             [mode, atBottom] (Settings& s, bool b) {
+                 atBottom (s);
+                 s.ceilingDb = b ? parameterRanges::ceiling.low : parameterRanges::ceiling.high;
+             },
+             { atBottom } };
+}
+
 Jump placementJump (StereoPlacement a, StereoPlacement b, std::string setting)
 {
     return onStereo (std::move (setting), [a, b] (Settings& s, bool toB) { s.stereoPlacement = toB ? b : a; });
@@ -285,6 +322,10 @@ const std::vector<Jump>& jumps()
         placementJump (StereoPlacement::Stereo, StereoPlacement::Mid, "Stereo Placement, Stereo and Mid"),
         placementJump (StereoPlacement::Mid, StereoPlacement::Side, "Stereo Placement, Mid and Side"),
         placementJump (StereoPlacement::Side, StereoPlacement::Stereo, "Stereo Placement, Side and Stereo"),
+        limiterJump (ProcessingMode::ZeroLatency, "Limiter"),
+        limiterJump (ProcessingMode::HighQuality, "Limiter, High Quality"),
+        ceilingJump (ProcessingMode::ZeroLatency, "Ceiling"),
+        ceilingJump (ProcessingMode::HighQuality, "Ceiling, High Quality"),
     };
     return all;
 }
@@ -454,9 +495,20 @@ TEST_CASE ("While a compressor setting glides, the output is the same however th
 TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click")
 {
     const auto host = anyHost();
-    CAPTURE (host.sampleRate, host.blockSize);
-    const auto output = playTone (host, [] (double time, Settings& s) {
-        s.processingMode = alternating (time) ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency;
+    // With the Limiter on, the tone pushed into it: measured against the steady tone limited in each mode.
+    const bool limiter = GENERATE (false, true);
+    CAPTURE (host.sampleRate, host.blockSize, limiter);
+    const auto pushed = [limiter] (Settings& s, ProcessingMode mode) {
+        if (limiter)
+            limitingTone (s, mode);
+        s.processingMode = mode;
+    };
+    const auto output = playTone (host, [&pushed] (double time, Settings& s) {
+        pushed (s, alternating (time) ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency);
     });
-    CHECK (discontinuity (output, host.sampleRate) < clickLimit);
+    double steady = 1.0;
+    for (const auto mode : { ProcessingMode::ZeroLatency, ProcessingMode::HighQuality })
+        if (limiter)
+            steady = std::max (steady, discontinuity (playTone (host, [&pushed, mode] (double, Settings& s) { pushed (s, mode); }), host.sampleRate));
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit * steady);
 }
