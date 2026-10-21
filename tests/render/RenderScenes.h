@@ -7,6 +7,7 @@
 // renderBlockSize-sample blocks, at each of renderSampleRates.
 
 #include "../engine/Measure.h"
+#include "comp1/Style.h"
 
 #include <array>
 #include <optional>
@@ -72,6 +73,11 @@ inline std::vector<RenderScene> renderScenes()
         { .name = "vca-threshold-glide",
           .settings = with ([] (Settings& s) { s.character = Character::VCA; }),
           .change = with ([] (Settings& s) { s.character = Character::VCA; s.thresholdDb = -50.0; }) },
+        // The Character Styles' defaults, from the Style table, and a Style change from Clean's to FET's.
+        { .name = "vca-style", .settings = styled (Style::VCA) },
+        { .name = "fet-style", .settings = styled (Style::FET) },
+        { .name = "opto-style", .settings = styled (Style::Opto) },
+        { .name = "clean-to-fet-style", .settings = styled (Style::Clean), .change = styled (Style::FET) },
         // Saturation, and Dry/Wet.
         { .name = "saturation", .settings = with ([] (Settings& s) { s.saturation = true; }) },
         { .name = "saturation-before-drive-12", .settings = with ([] (Settings& s) {

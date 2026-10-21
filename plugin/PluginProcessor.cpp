@@ -1,6 +1,9 @@
 #include "PluginProcessor.h"
 
 #include "comp1/Latency.h"
+#include "plugkit/ui/SetTogether.h"
+
+#include <utility>
 
 namespace comp1
 {
@@ -21,6 +24,34 @@ void migrate (juce::ValueTree& state)
         state.appendChild (plugkit::ui::ABCompare::initialState(), nullptr);
         state.setProperty (versionProperty, 2, nullptr);
     }
+}
+
+// The host parameters choosing a Style writes, as plain values from settings: Style itself, then the settings ADR 0002
+// lists (the Character is Style's). Every other parameter is routing or a level, which a Style never touches.
+std::vector<std::pair<juce::String, float>> styleWrites (Style style, const Settings& s)
+{
+    const auto plain = [] (double value) { return static_cast<float> (value); };
+    const auto onOff = [] (bool on) { return on ? 1.0f : 0.0f; };
+    return {
+        { parameters::styleId, static_cast<float> (style) },
+        { parameters::colourId, plain (s.colour) },
+        { parameters::thresholdId, plain (s.thresholdDb) },
+        { parameters::ratioId, plain (s.ratio) },
+        { parameters::kneeId, plain (s.kneeDb) },
+        { parameters::attackId, plain (s.attackMs) },
+        { parameters::releaseId, plain (s.releaseMs) },
+        { parameters::autoReleaseId, onOff (s.autoRelease) },
+        { parameters::holdId, plain (s.holdMs) },
+        { parameters::rangeId, plain (s.rangeDb) },
+        { parameters::gateId, onOff (s.gate.on) },
+        { parameters::gateThresholdId, plain (s.gate.thresholdDb) },
+        { parameters::gateRangeId, plain (s.gate.rangeDb) },
+        { parameters::gateAttackId, plain (s.gate.attackMs) },
+        { parameters::gateReleaseId, plain (s.gate.releaseMs) },
+        { parameters::gateHoldId, plain (s.gate.holdMs) },
+        { parameters::limiterId, onOff (s.limiter) },
+        { parameters::ceilingId, plain (s.ceilingDb) },
+    };
 }
 
 plugkit::ui::Session::Config sessionConfig (juce::File userSettingsFile, juce::File presetFolder)
@@ -112,6 +143,37 @@ void PluginProcessor::play (juce::AudioBuffer<float>& buffer, bool hostBypassed)
     const ConstAudioBlock sidechain { sidechainBuffer.getArrayOfReadPointers(), sidechainBuffer.getNumChannels(), sidechainBuffer.getNumSamples() };
     engine.process ({ main.getArrayOfWritePointers(), main.getNumChannels(), main.getNumSamples() },
                     sidechain.numChannels > 0 ? &sidechain : nullptr);
+}
+
+const std::vector<Style>& PluginProcessor::offeredStyles()
+{
+    static const std::vector<Style> offered = [] {
+        std::vector<Style> withDefaults;
+        for (int i = 0; i < styleCount; ++i)
+            if (hasDefaults (static_cast<Style> (i)))
+                withDefaults.push_back (static_cast<Style> (i));
+        return withDefaults;
+    }();
+    return offered;
+}
+
+bool PluginProcessor::chooseStyle (Style style)
+{
+    auto settings = reader.read();
+    if (! applyStyle (style, settings))
+        return false;
+    std::vector<plugkit::ui::NewValue> values;
+    for (const auto& [id, plain] : styleWrites (style, settings))
+    {
+        auto* parameter = parameters.getParameter (id);
+        values.push_back ({ parameter, parameter->convertTo0to1 (plain) });
+    }
+    // One transaction around the gestures, so the edit is one undo step however the host orders them.
+    auto& history = sessionState.editHistory();
+    history.beginTransaction();
+    plugkit::ui::setTogether (values);
+    history.endTransaction();
+    return true;
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()

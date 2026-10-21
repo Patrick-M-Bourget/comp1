@@ -48,6 +48,7 @@ add_executable(comp1_engine_tests
     engine/StepResponseTest.cpp
     engine/StereoLinkTest.cpp
     engine/StereoPlacementTest.cpp
+    engine/StyleTest.cpp
     engine/SubnormalsTest.cpp
     engine/TransferCurveTest.cpp
 )
@@ -88,6 +89,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/SessionTest.cpp
         plugin/StateTest.cpp
         plugin/StereoParametersTest.cpp
+        plugin/StyleParameterTest.cpp
     )
     # tests/engine for Measure.h, the test helpers both targets share. plugkit-ui's headers, not its sources, which
     # compile into the plugin target alone.

@@ -4,6 +4,7 @@
 #include "../render/Compare.h"
 #include "../render/RenderScenes.h"
 #include "Measure.h"
+#include "comp1/Style.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -125,6 +126,20 @@ TEST_CASE ("Render scenes play every Character, each at a Colour off its default
         CHECK (someScenePlays ([placement] (const Settings& s) { return s.stereoPlacement == placement; }));
     // Colour tracking Threshold: Colour on at a low Threshold, where it would be inaudible were it not.
     CHECK (someScenePlays ([] (const Settings& s) { return (s.character == Character::VCA || s.character == Character::FET) && s.colour > 0.0 && s.thresholdDb <= -40.0; }));
+}
+
+TEST_CASE ("Render scenes play VCA's, FET's and Opto's Style defaults, and a change from Clean's Style to FET's", "[render]")
+{
+    const auto scenes = test::renderScenes();
+    const auto some = [&scenes] (const std::function<bool (const test::RenderScene&)>& wanted) {
+        return std::any_of (scenes.begin(), scenes.end(), wanted);
+    };
+    for (const auto style : { Style::VCA, Style::FET, Style::Opto })
+    {
+        CAPTURE (static_cast<int> (style));
+        CHECK (some ([style] (const test::RenderScene& s) { return ! s.change && s.settings == styled (style); }));
+    }
+    CHECK (some ([] (const test::RenderScene& s) { return s.settings == styled (Style::Clean) && s.change == styled (Style::FET); }));
 }
 
 TEST_CASE ("Render scenes play the Sidechain, Threshold gliding, Auto Gain and Global Bypass switched on, and the worst case", "[render]")

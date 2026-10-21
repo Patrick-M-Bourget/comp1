@@ -1,5 +1,7 @@
 #include "Parameters.h"
 
+#include "comp1/Style.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -148,6 +150,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     // Each default is Settings' own, so the host's defaults and the Engine's are one.
     const Settings defaults;
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
+    // Style: its choices are Style's, in its frozen order (ADR 0003), which sessions save by index. It sets the
+    // Character the Engine plays (SettingsReader); choosing one through the Plugin Shell writes its defaults too
+    // (PluginProcessor::chooseStyle). Hosts can't automate it: a Style arriving without its defaults would play a
+    // Character at another Style's settings, and writing them would change many parameters during playback (ADR 0002).
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { styleId, 1 },
+                                                              "Style",
+                                                              juce::StringArray { "Clean", "VCA", "FET", "Opto", "Vocal", "Instrument", "Bus", "Drums" },
+                                                              static_cast<int> (Style::Clean),
+                                                              juce::AudioParameterChoiceAttributes().withAutomatable (false)));
     // Its choices are DetectionSource's, in its order, which sessions save by index.
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { detectionSourceId, 1 },
                                                               "Detection Source",
@@ -202,8 +213,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 // Hold starts at 0 ms, which a log range can't reach; 50 ms sits at its centre.
                 floatParameter (holdId, "Hold", skewedRange (parameterRanges::hold, 50.0f), defaults.holdMs, withText (1, "ms")),
                 floatParameter (rangeId, "Range", linearRange (parameterRanges::range), defaults.rangeDb, withText (2, "dB")),
-                // Colour, the Character's own distortion, which Clean doesn't have; the Character itself is Style's to
-                // set (#24), not a host parameter.
+                // Colour, the Character's own distortion, which Clean doesn't have; the Character itself is Style's.
                 floatParameter (colourId, "Colour", linearRange (parameterRanges::colour), defaults.colour, withText (1, "%")),
                 std::make_unique<juce::AudioParameterBool> (juce::ParameterID { autoGainId, 1 }, "Auto Gain", defaults.autoGain));
     // Saturation Position's choices are SaturationPosition's, stored in sessions by index, so their order never
@@ -246,7 +256,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 }
 
 SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
-    : gate (parameters.getRawParameterValue (gateId)),
+    : style (parameters.getRawParameterValue (styleId)),
+      gate (parameters.getRawParameterValue (gateId)),
       gateThreshold (parameters.getRawParameterValue (gateThresholdId)),
       gateRange (parameters.getRawParameterValue (gateRangeId)),
       gateAttack (parameters.getRawParameterValue (gateAttackId)),
@@ -319,6 +330,8 @@ Settings SettingsReader::read() const
                        .attackMs = plain (gateAttack),
                        .releaseMs = plain (gateRelease),
                        .holdMs = plain (gateHold) },
+             // Style alone decides the Character.
+             .character = characterOf (choice (style, Style::Drums)),
              .thresholdDb = plain (threshold),
              .ratio = plain (ratio),
              .kneeDb = plain (knee),

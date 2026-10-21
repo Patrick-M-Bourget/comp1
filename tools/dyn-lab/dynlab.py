@@ -6,7 +6,7 @@ Design — A Tutorial and Analysis" (J. Audio Eng. Soc. 60(6)): feedforward, wit
 and a smooth branching peak detector in the log domain, with Hold, Auto Release and Range, and Auto Gain after it;
 the VCA Character, an RMS Detection Level into Clean's gain computer and detector, and its Colour; the FET Character,
 feedback detection solved within each sample, and its Colour; the Opto Character, FET's loop with a material-dependent
-attack, a two-stage release and a history of its own, and its Colour; High Quality's Lookahead and fixed latency; Saturation; and the Limiter. Standard library only. See tools/dyn-lab/USAGE.md for every
+attack, a two-stage release and a history of its own, and its Colour; High Quality's Lookahead and fixed latency; Saturation; the Limiter; the Gate; and the Character Styles' defaults. Standard library only. See tools/dyn-lab/USAGE.md for every
 command.
 """
 
@@ -15,7 +15,7 @@ import functools
 import math
 import operator
 import os
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from fractions import Fraction
 from math import inf
 
@@ -1499,7 +1499,7 @@ def colour_aliases(settings, rates=ALIAS_RATES, frequencies=ALIAS_FREQUENCIES, r
 def colour_options(parser):
     transfer_options(parser)
     character_option(parser)
-    parser.add_argument("--colour", type=float, default=Settings().colour, metavar="%")
+    parser.add_argument("--colour", type=float, metavar="%")
     parser.add_argument("--rates", type=float, nargs="+", default=list(ALIAS_RATES), metavar="Hz")
     parser.add_argument("--oversampling", type=int, default=1, choices=OVERSAMPLING_FACTORS, metavar="N",
                         help="the factor: 1 (the base rate, the default), 2, 4 or 8")
@@ -2056,26 +2056,29 @@ def _ratio(text):
     return float(text)
 
 
+# The compressor's options default to None, given or not: settings_from fills each one left out from the Style's
+# defaults (--style), or from Settings' when no Style is given.
 def transfer_options(parser):
-    defaults = Settings()
-    parser.add_argument("--threshold", type=float, default=defaults.threshold, metavar="dB")
-    parser.add_argument("--ratio", type=_ratio, default=defaults.ratio, metavar="N|inf")
-    parser.add_argument("--knee", type=float, default=defaults.knee, metavar="dB")
-    parser.add_argument("--range", type=float, default=defaults.range, metavar="dB")
+    parser.add_argument("--threshold", type=float, metavar="dB")
+    parser.add_argument("--ratio", type=_ratio, metavar="N|inf")
+    parser.add_argument("--knee", type=float, metavar="dB")
+    parser.add_argument("--range", type=float, metavar="dB")
 
 
 def timing_options(parser):
-    defaults = Settings()
     transfer_options(parser)
-    parser.add_argument("--attack", type=float, default=defaults.attack, metavar="ms")
-    parser.add_argument("--release", type=float, default=defaults.release, metavar="ms")
-    parser.add_argument("--hold", type=float, default=defaults.hold, metavar="ms")
+    parser.add_argument("--attack", type=float, metavar="ms")
+    parser.add_argument("--release", type=float, metavar="ms")
+    parser.add_argument("--hold", type=float, metavar="ms")
     parser.add_argument("--rates", type=float, nargs="+", default=list(SAMPLE_RATES), metavar="Hz")
     parser.add_argument("--lookahead", type=float, default=LOOKAHEAD_DEFAULT, metavar="ms")
 
 
 def character_option(parser):
-    parser.add_argument("--character", choices=CHARACTERS, default=Settings().character)
+    """--character, and --style, whose defaults the other options start from."""
+    parser.add_argument("--character", choices=CHARACTERS)
+    parser.add_argument("--style", choices=STYLE_DEFAULTS,
+                        help="start from a Character Style's defaults (STYLE_DEFAULTS); the other options override them")
 
 
 def transfer_command_options(parser):
@@ -2086,7 +2089,7 @@ def transfer_command_options(parser):
 def step_options(parser):
     timing_options(parser)
     character_option(parser)
-    parser.add_argument("--auto-release", action="store_true")
+    parser.add_argument("--auto-release", action="store_true", default=None)
     parser.add_argument("--external", action="store_true")
     parser.add_argument("--over", type=float, default=STEP_DB, metavar="dB",
                         help=f"how far over Threshold the step goes ({STEP_DB:g} dB by default)")
@@ -2098,9 +2101,12 @@ def _check_rates(rates):
 
 
 def settings_from(args):
-    """The Settings the parsed args name, checked against their ranges."""
-    settings = Settings(**{field.name: getattr(args, field.name) for field in fields(Settings)
-                           if hasattr(args, field.name)})
+    """The Settings the parsed args name, checked against their ranges: the Style's defaults (--style), or Settings'
+    without one, with each option given in place of its default."""
+    style = getattr(args, "style", None)
+    defaults = Settings() if style is None else STYLE_DEFAULTS[style].settings
+    settings = replace(defaults, **{field.name: getattr(args, field.name) for field in fields(Settings)
+                                    if getattr(args, field.name, None) is not None})
     check_ranges(settings)
     return settings
 
@@ -2825,6 +2831,55 @@ def report_gate(gate, sample_rates=SAMPLE_RATES):
         mark = "  chosen" if (row.level_hold, row.hysteresis) == chosen else ""
         print(f"{row.level_hold:12g} {row.hysteresis:14g} " + " ".join(f"{row.ripple[n]:8.3f}" for n in names)
               + f" {row.stop:8.2f} {row.fade:8.2f}{mark}")
+
+
+# --- Styles ---------------------------------------------------------------------------------------------
+
+@dataclass
+class StyleDefaults:
+    """What choosing a Character Style writes (ADR 0002): the compressor's Settings, its Character among them, the
+    Gate's, and the Limiter on or off with its Ceiling."""
+    settings: Settings
+    gate: Gate = field(default_factory=Gate)
+    limiter: bool = False
+    ceiling: float = CEILING_DEFAULT
+
+
+# Each Character Style's defaults, in the Style order (ADR 0003), Characters first; the Source Styles add theirs with
+# their own ticket (#26). Clean's are the lab's defaults, so a new instance, which plays Clean, holds its own Style's.
+# Every Style writes the Gate and the Limiter off, at their defaults: each is a tool for the material, not a part of a
+# Character. USAGE.md ("Styles") gives each row's reasons and its `step --style` figures.
+STYLE_DEFAULTS = {
+    "clean": StyleDefaults(Settings()),
+    "vca": StyleDefaults(Settings(character="vca", knee=3.0)),
+    "fet": StyleDefaults(Settings(character="fet", knee=3.0, attack=0.5, release=50.0)),
+    "opto": StyleDefaults(Settings(character="opto", ratio=3.0, knee=12.0)),
+}
+
+
+def _on_off(on):
+    return "on" if on else "off"
+
+
+@command("styles")
+def run_styles(args):
+    report_styles()
+
+
+def report_styles():
+    """Each Character Style's Character and the defaults choosing it writes."""
+    print("Each Character Style's Character and defaults: the compressor's (Threshold, Ratio, Knee and Range in dB or :1, "
+          "Attack, Release and Hold in ms, Colour in %), the Gate's (on or off, Gate Threshold, Gate Range, Gate Attack, "
+          "Gate Release, Gate Hold) and the Limiter's (on or off, Ceiling in dBFS)")
+    print(f"{'style':<6} {'character':<9} {'threshold':>9} {'ratio':>5} {'knee':>5} {'attack':>6} {'release':>7} "
+          f"{'auto release':>12} {'hold':>5} {'range':>5} {'colour':>6} {'gate':>5} {'threshold':>9} {'range':>5} "
+          f"{'attack':>6} {'release':>7} {'hold':>5} {'limiter':>7} {'ceiling':>7}")
+    for name, style in STYLE_DEFAULTS.items():
+        s, g = style.settings, style.gate
+        print(f"{name:<6} {s.character:<9} {s.threshold:9g} {_shown(s.ratio):>5} {s.knee:5g} {s.attack:6g} "
+              f"{s.release:7g} {_on_off(s.auto_release):>12} {s.hold:5g} {s.range:5g} {s.colour:6g} "
+              f"{_on_off(g.on):>5} {g.threshold:9g} {g.range:5g} {g.attack:6g} {g.release:7g} {g.hold:5g} "
+              f"{_on_off(style.limiter):>7} {style.ceiling:7g}")
 
 
 if __name__ == "__main__":

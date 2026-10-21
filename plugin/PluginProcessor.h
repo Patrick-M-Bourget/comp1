@@ -2,11 +2,13 @@
 
 #include "Parameters.h"
 #include "comp1/Engine.h"
+#include "comp1/Style.h"
 #include "plugkit/ui/Session.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
+#include <vector>
 
 namespace comp1
 {
@@ -34,7 +36,9 @@ public:
     void processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
     using AudioProcessor::processBlockBypassed;
 
-    // A placeholder: the host parameters, as JUCE's generic editor lays them out.
+    // A placeholder: the host parameters, as JUCE's generic editor lays them out. Its Style box sets the Style
+    // parameter alone, as a host would: the Character changes, and the Style's defaults are not written
+    // (chooseStyle() writes them).
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
@@ -68,6 +72,16 @@ public:
     // load, an A/B switch or Copy, and their undo and redo may change Processing Mode, and the reported latency
     // follows it.
     plugkit::ui::Session& session() { return sessionState; }
+
+    // The Styles the editor offers: the four Character Styles, the ones with defaults to write (comp1/Style.h). The
+    // Source Styles join them with their defaults (#26).
+    static const std::vector<Style>& offeredStyles();
+    // Chooses an offered Style, from the message thread, as the editor's Style picker does: writes the Style parameter
+    // and exactly that Style's defaults (ADR 0002), inside gestures, as one undo step, and returns true. Choosing the
+    // Style already chosen writes its defaults again. A Style not offered changes nothing and returns false. Nothing
+    // else writes a Style's defaults: restoring a session, loading a Preset, an A/B switch, undo and redo put back the
+    // values they hold, and Host Automation can't set Style.
+    bool chooseStyle (Style style);
 
     // Whether the editor offers Stereo Placement and Stereo Link: only on a stereo track. On a mono one both keep
     // their stored values and change nothing, the mono channel compressed as Stereo.

@@ -1,5 +1,6 @@
 #include "Measure.h"
 #include "comp1/Latency.h"
+#include "comp1/Style.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -279,6 +280,18 @@ Jump gateTimeJump (std::string setting, void (*set) (Settings&, bool))
              gatingAmplitude };
 }
 
+// A Style change mid-compression, at Colour 100%: from's Character and defaults, then to's, every one of them applied
+// at once from the Style table, as the Plugin Shell hands them over. The Character crossfades, and every setting the
+// Style writes glides or fades as it does alone. Against the steady tone at each Style.
+Jump styleJump (Style from, Style to, std::string setting)
+{
+    return { std::move (setting),
+             [from, to] (Settings& s, bool b) { applyStyle (b ? to : from, s); },
+             { [from] (Settings& s) { applyStyle (from, s); }, [to] (Settings& s) { applyStyle (to, s); } },
+             1,
+             colourful };
+}
+
 Jump placementJump (StereoPlacement a, StereoPlacement b, std::string setting)
 {
     return onStereo (std::move (setting), [a, b] (Settings& s, bool toB) { s.stereoPlacement = toB ? b : a; });
@@ -457,6 +470,11 @@ const std::vector<Jump>& jumps()
           { onOpto, onFet },
           1,
           colourful },
+        // A Style change: from Clean's Style to each other Character Style's, and between FET's and Opto's.
+        styleJump (Style::Clean, Style::VCA, "Style, Clean and VCA"),
+        styleJump (Style::Clean, Style::FET, "Style, Clean and FET"),
+        styleJump (Style::Clean, Style::Opto, "Style, Clean and Opto"),
+        styleJump (Style::FET, Style::Opto, "Style, FET and Opto"),
         // In High Quality at the largest Oversampling allowed, where Colour is oversampled: VCA's and FET's Colour
         // crossfade in the After section, each worked out on the compressed signal.
         { "Character, VCA and FET, oversampled",
