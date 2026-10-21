@@ -22,13 +22,14 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
     plugkit::test::AllocationGuard guard;
     for (int block = 0; block < 64; ++block)
     {
-        // Every setting moving every block, Output Gain back to 0 dB every few and Auto Gain on and off; blocks cutting
-        // the grid's runs; the Sidechain coming and going.
+        // Every setting moving every block, Output Gain back to 0 dB every few, Auto Release and Auto Gain on and off;
+        // blocks cutting the grid's runs; the Sidechain coming and going.
         engine.setSettings ({ .thresholdDb = -6.0 * (block % 10),
                               .ratio = block % 5 == 4 ? std::numeric_limits<double>::infinity() : 1.0 + block % 5,
                               .kneeDb = 8.0 * (block % 9),
                               .attackMs = 0.005 + 25.0 * (block % 10),
                               .releaseMs = 5.0 + 500.0 * (block % 10),
+                              .autoRelease = block % 3 != 0,
                               .holdMs = 50.0 * (block % 10),
                               .rangeDb = 6.0 * (block % 11),
                               .autoGain = block % 2 == 0,

@@ -99,6 +99,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 floatParameter (kneeId, "Knee", linearRange (parameterRanges::knee), defaults.kneeDb, withText (2, "dB")),
                 floatParameter (attackId, "Attack", logRange (parameterRanges::attack), defaults.attackMs, withText (3, "ms")),
                 floatParameter (releaseId, "Release", logRange (parameterRanges::release), defaults.releaseMs, withText (1, "ms")),
+                std::make_unique<juce::AudioParameterBool> (juce::ParameterID { autoReleaseId, 1 }, "Auto Release", defaults.autoRelease),
                 // Hold starts at 0 ms, which a log range can't reach; 50 ms sits at its centre.
                 floatParameter (holdId, "Hold", skewedRange (parameterRanges::hold, 50.0f), defaults.holdMs, withText (1, "ms")),
                 floatParameter (rangeId, "Range", linearRange (parameterRanges::range), defaults.rangeDb, withText (2, "dB")),
@@ -123,6 +124,7 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       knee (parameters.getRawParameterValue (kneeId)),
       attack (parameters.getRawParameterValue (attackId)),
       release (parameters.getRawParameterValue (releaseId)),
+      autoRelease (parameters.getRawParameterValue (autoReleaseId)),
       hold (parameters.getRawParameterValue (holdId)),
       range (parameters.getRawParameterValue (rangeId)),
       autoGain (parameters.getRawParameterValue (autoGainId)),
@@ -140,6 +142,7 @@ Settings SettingsReader::read() const
              .kneeDb = plain (knee),
              .attackMs = plain (attack),
              .releaseMs = plain (release),
+             .autoRelease = autoRelease->load (std::memory_order_relaxed) >= 0.5f,
              .holdMs = plain (hold),
              .rangeDb = plain (range),
              .autoGain = autoGain->load (std::memory_order_relaxed) >= 0.5f,

@@ -48,6 +48,8 @@ public:
     {
         sampleRate = newSampleRate;
         detectors.assign (static_cast<std::size_t> (std::max (numChannels, 0)), {});
+        for (auto& detector : detectors)
+            detector.prepare (sampleRate);
         for (auto& setting : glides)
             setting.configure (plugkit::glideTimeConstantSeconds * sampleRate, arrivalTolerance);
     }
@@ -66,9 +68,12 @@ public:
         }
         if (snap)
             update();
+        // Auto Release switches without a glide: the switch changes only how fast the gain comes back, not where it is.
+        autoRelease = settings.autoRelease;
     }
 
-    // At the start of each run: the settings move on by a run, and the gain computer and detector take them.
+    // At the start of each run: the settings move on by a run, and the gain computer and detector take them; then
+    // each detector's Auto Release moves on by the run just heard.
     void startRun()
     {
         bool moving = false;
@@ -80,6 +85,8 @@ public:
             }
         if (moving)
             update();
+        for (auto& detector : detectors)
+            detector.startRun (releaseMs, autoRelease);
     }
 
     // Applies gain to audio, sample for sample, from the detection signal of the same samples: each main channel's
@@ -113,13 +120,16 @@ private:
                   .inverseRatio = glides[inverseRatio].value(),
                   .kneeDb = glides[knee].value(),
                   .rangeDb = glides[range].value() };
-        timing = clean::timing (std::exp (glides[logAttack].value()), std::exp (glides[logRelease].value()), glides[hold].value(), sampleRate);
+        releaseMs = std::exp (glides[logRelease].value());
+        timing = clean::timing (std::exp (glides[logAttack].value()), releaseMs, glides[hold].value(), sampleRate);
     }
 
     double sampleRate = 44100.0;
     plugkit::Smoother glides[count];
     clean::Curve curve;
     clean::Timing timing;
+    double releaseMs = 100.0;
+    bool autoRelease = false;
     std::vector<clean::Detector> detectors; // per channel
 };
 
