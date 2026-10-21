@@ -78,3 +78,13 @@ TEST_CASE ("With External and a mono Sidechain, every main channel is compressed
     CHECK (gains[0] == Catch::Approx (-18.0).margin (0.1));
     CHECK (gains[1] == Catch::Approx (-18.0).margin (0.1));
 }
+
+TEST_CASE ("With External, a stereo Sidechain and a mono main, the main is compressed by the louder Sidechain channel")
+{
+    const double sampleRate = GENERATE (from_range (test::sampleRates()));
+    // The louder channel on either side: following one side alone, or the two's average, takes off less.
+    const auto levelsDb = GENERATE (std::vector<double> { 0.0, -6.0 }, std::vector<double> { -6.0, 0.0 });
+    CAPTURE (sampleRate, levelsDb);
+    const auto sidechainSamples = steadySidechain (levelsDb, sampleRate);
+    CHECK (gainsDb (external(), sampleRate, 1, &sidechainSamples)[0] == Catch::Approx (-18.0).margin (0.1));
+}

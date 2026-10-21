@@ -45,8 +45,27 @@ TEST_CASE ("With Internal, each main channel follows a detection channel of its 
     for (int ch = 0; ch < numChannels; ++ch)
     {
         CAPTURE (ch);
-        CHECK (detection.followedBy[ch] == ch);
+        CHECK (detection.channelFollowedBy (ch) == detection.channels[ch]);
         const float* followed = detection.channelFollowedBy (ch);
         CHECK (std::vector<float> (followed, followed + numSamples) == expected[static_cast<std::size_t> (ch)]);
     }
+}
+
+TEST_CASE ("With External, a mono main follows the louder of a stereo Sidechain's channels at each sample, and the detection signal is the Sidechain's")
+{
+    const std::vector<float> left { 0.5f, -0.1f, 0.0f, -0.9f }, right { -0.2f, 0.3f, -0.4f, 0.8f }, mainSamples (4, 0.25f);
+    const float* sidechainChannels[] = { left.data(), right.data() };
+    const float* internalChannels[] = { mainSamples.data() };
+    const ConstAudioBlock sidechain { sidechainChannels, 2, 4 };
+
+    DetectionStage stage;
+    stage.prepare (1, 4);
+    stage.setSource (DetectionSource::External);
+    const auto detection = stage.process ({ internalChannels, 1, 4 }, &sidechain);
+
+    REQUIRE (detection.numChannels == 2);
+    CHECK (std::vector<float> (detection.channels[0], detection.channels[0] + 4) == left);
+    CHECK (std::vector<float> (detection.channels[1], detection.channels[1] + 4) == right);
+    const float* followed = detection.channelFollowedBy (0);
+    CHECK (std::vector<float> (followed, followed + 4) == std::vector<float> { 0.5f, 0.3f, -0.4f, -0.9f });
 }
