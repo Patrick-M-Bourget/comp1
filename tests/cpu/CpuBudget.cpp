@@ -90,6 +90,14 @@ Settings highQuality()
     return settings;
 }
 
+// The worst case with the Limiter off: what the rest of the Engine costs, and so what the Limiter costs on.
+Settings worstCaseLimiterOff()
+{
+    auto settings = test::worstCaseSettings();
+    settings.limiter = false;
+    return settings;
+}
+
 // The CPU scenes, in the order printed, one per line, so tickets adding scenes in parallel merge cleanly. The quiet
 // reference comes before the quiet scenes.
 std::vector<Scene> scenes()
@@ -98,6 +106,7 @@ std::vector<Scene> scenes()
         { .name = "Defaults", .settings = {}, .ceiling = Ceiling { 4.0, 7.0 } },
         { .name = "Defaults, Threshold automated", .settings = {}, .automate = automateThreshold, .ceiling = Ceiling { 4.0, 7.0 } },
         { .name = "Worst case", .settings = test::worstCaseSettings(), .ceiling = Ceiling { 17.0, 28.0 }, .quietReference = true },
+        { .name = "Worst case, Limiter off", .settings = worstCaseLimiterOff() },
         { .name = "Clean, Colour 100%", .settings = withCharacter (Character::Clean) },
         { .name = "VCA, Colour 100%", .settings = withCharacter (Character::VCA) },
         { .name = "FET, Colour 100%", .settings = withCharacter (Character::FET) },
