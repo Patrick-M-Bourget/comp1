@@ -5,6 +5,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <atomic>
+
 namespace comp1
 {
 
@@ -43,7 +45,12 @@ public:
     static constexpr int stateVersion = 1;
 
     void getStateInformation (juce::MemoryBlock& destData) override;
+    // Restoring a state lets go of Detection Audition.
     void setStateInformation (const void* data, int sizeInBytes) override;
+
+    // Detection Audition, while the editor holds it: not a host parameter, and never saved. Any thread.
+    void setDetectionAudition (bool held) { heldDetectionAudition.store (held, std::memory_order_relaxed); }
+    bool detectionAudition() const { return heldDetectionAudition.load (std::memory_order_relaxed); }
 
 private:
     juce::AudioProcessorValueTreeState parameters;
@@ -53,6 +60,7 @@ private:
     // hands over whatever it reads.
     Settings publishedSettings;
     bool publishedSincePrepare = false;
+    std::atomic<bool> heldDetectionAudition { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

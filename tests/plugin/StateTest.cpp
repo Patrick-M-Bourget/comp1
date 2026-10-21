@@ -111,6 +111,37 @@ TEST_CASE ("A session missing a parameter restores it to its default")
     CHECK (host::value (processor, "output_gain") == 0.0f);
 }
 
+TEST_CASE ("Detection Source survives save and load, and a session without it restores Internal")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    comp1::PluginProcessor saved;
+    host::set (saved, "detection_source", 1.0f);
+    const auto first = host::saved (saved);
+    comp1::PluginProcessor restored;
+    host::restore (restored, first);
+    CHECK (host::value (restored, "detection_source") == 1.0f);
+    CHECK (host::saved (restored) == first);
+
+    auto xml = host::savedXml (saved);
+    REQUIRE (xml != nullptr);
+    auto* source = xml->getChildByAttribute ("id", "detection_source");
+    REQUIRE (source != nullptr);
+    xml->removeChildElement (source, true);
+    host::restore (restored, *xml);
+    CHECK (host::value (restored, "detection_source") == 0.0f);
+}
+
+TEST_CASE ("Detection Audition isn't saved, and restoring state lets go of it")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    comp1::PluginProcessor processor;
+    const auto letGo = host::saved (processor);
+    processor.setDetectionAudition (true);
+    CHECK (host::saved (processor) == letGo);
+    host::restore (processor, letGo);
+    CHECK_FALSE (processor.detectionAudition());
+}
+
 TEST_CASE ("Anything that isn't comp1's state changes nothing")
 {
     juce::ScopedJuceInitialiser_GUI juce;
