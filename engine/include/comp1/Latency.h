@@ -8,15 +8,43 @@
 
 #include "comp1/Settings.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace comp1
 {
 
-// Reserved for Oversampling (#10): its filters' delay, a fixed count of host samples at every sample rate, as ADR
-// 0001's cap on the internal rate keeps it (dyn-lab's OVERSAMPLING_RESERVE_SAMPLES gives the reasoning). Until then a
-// plain delay of this length on the Wet path, before the Dry/Wet sum, holds its place.
+// The Oversampling reserve: the delay of Oversampling's two sections on the Wet path, before the Dry/Wet sum, a fixed
+// count of host samples at every sample rate and factor, as ADR 0001's cap on the internal rate keeps it (dyn-lab's
+// OVERSAMPLING_RESERVE_SAMPLES gives the reasoning).
 inline constexpr int oversamplingReserveSamples = 128;
+
+// Each Oversampling section's delay, half the reserve: its linear part is delayed by exactly this, and its residual's
+// filters are padded to it (ADR 0009, dyn-lab's OVERSAMPLING_SECTION_SAMPLES).
+inline constexpr int oversamplingSectionSamples = oversamplingReserveSamples / 2;
+
+// The highest internal rate Oversampling runs at, in Hz (ADR 0001, dyn-lab's MAX_INTERNAL_RATE_HZ).
+inline constexpr double maxInternalRateHz = 384000.0;
+
+// How many times the host's sample rate an Oversampling runs at.
+inline constexpr int factorOf (Oversampling oversampling) { return 1 << static_cast<int> (oversampling); }
+
+// The largest Oversampling allowed at sampleRate: the largest whose internal rate is at or under maxInternalRateHz.
+// For the editor to offer only the allowed choices (#27).
+inline Oversampling maxOversampling (double sampleRate)
+{
+    auto allowed = Oversampling::x1;
+    for (const auto oversampling : { Oversampling::x2, Oversampling::x4, Oversampling::x8 })
+        if (factorOf (oversampling) * sampleRate <= maxInternalRateHz)
+            allowed = oversampling;
+    return allowed;
+}
+
+// The Oversampling a setting plays at sampleRate: the setting, or the cap when it is over it.
+inline Oversampling oversamplingInForce (Oversampling setting, double sampleRate)
+{
+    return std::min (setting, maxOversampling (sampleRate));
+}
 
 // The Lookahead budget: Lookahead's top, so every Lookahead fits within it.
 inline constexpr double lookaheadBudgetMs = parameterRanges::lookahead.high;

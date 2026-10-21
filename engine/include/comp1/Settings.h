@@ -120,6 +120,17 @@ enum class ProcessingMode
     HighQuality,
 };
 
+// Oversampling, in High Quality: the factor the nonlinear stages' residual runs at, over the host's sample rate
+// (ADR 0009), capped at each rate (comp1/Latency.h's maxOversampling). Stored in sessions in this order, which never
+// changes (ADR 0003).
+enum class Oversampling
+{
+    x1,
+    x2,
+    x4,
+    x8,
+};
+
 // Which part of the stereo signal the compressor compresses: both channels, or the Mid or the Side alone. comp1's own
 // list, stored in sessions in this order, which never changes once released; the Engine maps it onto plugkit's
 // StereoPlacement where it routes.
@@ -171,9 +182,11 @@ struct Settings
     // detection signal in place of the Dry and Wet sum, before Output Gain.
     bool detectionAudition = false;
 
-    // Whole-plugin: the Processing Mode, and Lookahead in ms, which High Quality alone reads.
+    // Whole-plugin: the Processing Mode, and Lookahead in ms and Oversampling, which High Quality alone reads. A setting
+    // over the sample rate's cap plays the cap.
     ProcessingMode processingMode = ProcessingMode::ZeroLatency;
     double lookaheadMs = 0.0;
+    Oversampling oversampling = Oversampling::x2;
 
 #if defined(__GNUC__)
     #pragma GCC diagnostic push
