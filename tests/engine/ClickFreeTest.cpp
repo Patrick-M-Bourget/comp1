@@ -1,4 +1,5 @@
 #include "Measure.h"
+#include "comp1/Latency.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -451,12 +452,41 @@ TEST_CASE ("While a compressor setting glides, the output is the same however th
     CHECK (test::played (before, 48000.0, input, cut, nullptr, jumped) == test::played (before, 48000.0, input, wholeCut, nullptr, jumped));
 }
 
-TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click")
+TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click, at every Oversampling")
 {
     const auto host = anyHost();
-    CAPTURE (host.sampleRate, host.blockSize);
-    const auto output = playTone (host, [] (double time, Settings& s) {
+    const auto oversampling = GENERATE (Oversampling::x1, Oversampling::x2, Oversampling::x4, Oversampling::x8);
+    CAPTURE (host.sampleRate, host.blockSize, static_cast<int> (oversampling));
+    const auto output = playTone (host, [oversampling] (double time, Settings& s) {
         s.processingMode = alternating (time) ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency;
+        s.oversampling = oversampling;
     });
     CHECK (discontinuity (output, host.sampleRate) < clickLimit);
+}
+
+TEST_CASE ("An Oversampling change, each way between 1x and the largest allowed, mid-tone, with Saturation on, does not click")
+{
+    const auto host = anyHost();
+    const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
+    CAPTURE (host.sampleRate, host.blockSize, static_cast<int> (position));
+    const auto largest = maxOversampling (host.sampleRate);
+    // In High Quality, Saturation on at Drive 12 dB with the tone at -6 dB, 6 dB into the shape, and Ratio 1:1, so the
+    // shape works as hard at either position.
+    const auto saturatingAt = [position] (Settings& s, Oversampling oversampling) {
+        s.processingMode = ProcessingMode::HighQuality;
+        s.ratio = 1.0;
+        s.saturation = true;
+        s.driveDb = 12.0;
+        s.saturationPosition = position;
+        s.oversampling = oversampling;
+    };
+    // Saturation's harmonics sharpen the tone's corners past a sine's, so the change is measured against the steady
+    // tone at each end.
+    const Envelope loud = [] (double) { return 2.0 * toneAmplitude; };
+    double steady = 1.0;
+    for (const auto oversampling : { Oversampling::x1, largest })
+        steady = std::max (steady, discontinuity (playTone (host, [&] (double, Settings& s) { saturatingAt (s, oversampling); }, loud), host.sampleRate));
+    CAPTURE (steady);
+    const auto output = playTone (host, [&] (double time, Settings& s) { saturatingAt (s, alternating (time) ? largest : Oversampling::x1); }, loud);
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit * steady);
 }

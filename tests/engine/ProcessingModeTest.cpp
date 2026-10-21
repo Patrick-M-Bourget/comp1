@@ -172,15 +172,19 @@ TEST_CASE ("A Processing Mode switch falls to silence and rises again within the
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     const auto [from, to] = GENERATE (table<ProcessingMode, ProcessingMode> ({ { zeroLatency, highQuality }, { highQuality, zeroLatency } }));
-    CAPTURE (sampleRate, static_cast<int> (to));
+    const auto oversampling = GENERATE (Oversampling::x1, Oversampling::x2, Oversampling::x4, Oversampling::x8);
+    CAPTURE (sampleRate, static_cast<int> (to), factorOf (oversampling));
     const int fade = static_cast<int> (std::lround (modeFadeMs * sampleRate / 1000.0));
-    // Into High Quality, the silence lasts while its delays after the compressor, the reserves' padding, fill with the
-    // new path's audio, so the fade-in starts from it: High Quality's latency less the Lookahead budget.
-    const int padding = to == highQuality ? latencySamples (highQuality, sampleRate) - lookaheadBudgetSamples (sampleRate) : 0;
+    // Into High Quality, the silence lasts while its delays fill with the new path's audio, so the fade-in starts from
+    // it: every one of them, its whole latency, as the Oversampling section ahead of the detection stage moves what the
+    // Lookahead budget is fed.
+    const int padding = to == highQuality ? latencySamples (highQuality, sampleRate) : 0;
     // Part-way through a run, once the old path has played long enough to fill its delays.
     const int switchAt = 4003;
     const auto input = test::noise (2, switchAt + 2 * fade + padding + 3000);
-    const Settings before { .ratio = 1.0, .processingMode = from }, after { .ratio = 1.0, .processingMode = to };
+    const Settings before { .ratio = 1.0, .processingMode = from, .oversampling = oversampling };
+    auto after = before;
+    after.processingMode = to;
     const auto reference = play (input, sampleRate, { 4096 }, before, after, switchAt);
 
     const auto oldPath = test::delayed (input, latencySamples (from, sampleRate));

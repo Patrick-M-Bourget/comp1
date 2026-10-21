@@ -24,11 +24,12 @@ public:
     void prepare (double sampleRate)
     {
         fadeSamples = std::max (1, static_cast<int> (std::lround (fadeMs * sampleRate / 1000.0)));
-        // High Quality's delays after the compressor, the reserves' padding, hold the path left behind until they
-        // have taken this many of the new path's samples, so the fade-in into High Quality waits for them in the
-        // silence: it then rises from the new path's own audio. Its delays before the compressor are fed in both
-        // modes, so they hold its audio already.
-        highQualityFill = latencySamples (ProcessingMode::HighQuality, sampleRate) - lookaheadBudgetSamples (sampleRate);
+        // High Quality's delays hold the path left behind until they have taken this many of the new path's samples,
+        // so the fade-in into High Quality waits for them in the silence: it then rises from the new path's own audio.
+        // That is every one of them, its whole latency: those fed in both modes, the Oversampling section ahead of the
+        // detection stage and the Lookahead budget, hold Zero Latency's audio, which the section's delay moves against
+        // what High Quality feeds the Lookahead budget.
+        highQualityFill = latencySamples (ProcessingMode::HighQuality, sampleRate);
         reset (path);
     }
 
