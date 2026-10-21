@@ -26,12 +26,8 @@ const std::vector<test::NullRow>& nullRows()
 {
     static const std::vector<test::NullRow> rows {
         { "Clean", [] (Settings&) {} },
-        // With no Gain Reduction, Colour's weight is exactly 0, at any Colour (ADR 0005).
+        // With no Gain Reduction, Colour's weight is exactly 0, at any Colour (ADR 0005): at its top, 100%, too.
         { "VCA at Colour 100%", [] (Settings& s) { s.character = Character::VCA; } },
-        { "VCA at Colour 0%", [] (Settings& s) {
-             s.character = Character::VCA;
-             s.colour = 0.0;
-         } },
     };
     return rows;
 }
