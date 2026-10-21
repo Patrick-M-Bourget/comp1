@@ -11,6 +11,8 @@ namespace comp1::parameters
 
 // Parameter IDs are stable: hosts store them in sessions and automation, so they never change.
 inline const juce::String styleId { "style" };
+inline const juce::String compId { "comp" };
+inline const juce::String compFollowId { "comp_follow" };
 inline const juce::String thresholdId { "threshold" };
 inline const juce::String ratioId { "ratio" };
 inline const juce::String kneeId { "knee" };
@@ -55,7 +57,7 @@ inline const juce::String oversamplingId { "oversampling" };
 inline const juce::String globalBypassId { "global_bypass" };
 
 // Every host parameter, in the order hosts list them: Style first, then Detection Source, the Detection EQ, Stereo Placement and Stereo
-// Link, then the Gate's, then the compressor's, then Saturation's, then Dry and Wet, then Output Gain and the Limiter's,
+// Link, then the Gate's, then the compressor's (Comp and Comp Follow first), then Saturation's, then Dry and Wet, then Output Gain and the Limiter's,
 // as the signal meets them; then the whole plugin's, Processing Mode, Lookahead, Oversampling and Global Bypass.
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
@@ -75,6 +77,8 @@ private:
     std::atomic<float>* gateAttack;
     std::atomic<float>* gateRelease;
     std::atomic<float>* gateHold;
+    std::atomic<float>* comp;
+    std::atomic<float>* compFollow;
     std::atomic<float>* threshold;
     std::atomic<float>* ratio;
     std::atomic<float>* knee;

@@ -15,7 +15,7 @@ constexpr const char* gateIds[] = { "gate", "gate_threshold", "gate_range", "gat
 
 } // namespace
 
-TEST_CASE ("The Gate's six host parameters are listed after Stereo Link and before Threshold, with the compressor's ranges")
+TEST_CASE ("The Gate's six host parameters are listed after Stereo Link and before the compressor's, Comp first, with the compressor's ranges")
 {
     juce::ScopedJuceInitialiser_GUI juce;
     comp1::PluginProcessor processor;
@@ -26,7 +26,7 @@ TEST_CASE ("The Gate's six host parameters are listed after Stereo Link and befo
         CHECK (host::parameter (processor, gateIds[i]).getParameterIndex() == stereoLink + 1 + i);
         CHECK (host::parameter (processor, gateIds[i]).isAutomatable());
     }
-    CHECK (host::parameter (processor, "threshold").getParameterIndex() == stereoLink + 7);
+    CHECK (host::parameter (processor, "comp").getParameterIndex() == stereoLink + 7);
 
     auto& gate = host::parameter (processor, "gate");
     CHECK (gate.getName (100) == "Gate");
