@@ -70,7 +70,7 @@ inline int wetPathLatencySamples (ProcessingMode mode, double sampleRate)
 }
 
 // The latency the Engine's output has in mode, at sampleRate: the Wet path's, then the Limiter reserve. What the
-// Plugin Shell reports to the host, and what Global Bypass is delayed by (#12).
+// Plugin Shell reports to the host, and what Global Bypass is delayed by.
 inline int latencySamples (ProcessingMode mode, double sampleRate)
 {
     return mode == ProcessingMode::HighQuality ? wetPathLatencySamples (mode, sampleRate) + limiterReserveSamples (sampleRate) : 0;

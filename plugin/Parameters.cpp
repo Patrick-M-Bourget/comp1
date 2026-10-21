@@ -184,6 +184,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                                               juce::StringArray { "1x", "2x", "4x", "8x" },
                                                               static_cast<int> (defaults.oversampling),
                                                               juce::AudioParameterChoiceAttributes().withAutomatable (false)));
+    // Not JUCE's bypass parameter (the processor doesn't override getBypassParameter()), so the host's own bypass
+    // stays separate from it.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { globalBypassId, 1 }, "Global Bypass", defaults.globalBypass));
     return layout;
 }
 
@@ -217,7 +220,8 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       stereoLink (parameters.getRawParameterValue (stereoLinkId)),
       processingMode (parameters.getRawParameterValue (processingModeId)),
       lookahead (parameters.getRawParameterValue (lookaheadId)),
-      oversampling (parameters.getRawParameterValue (oversamplingId))
+      oversampling (parameters.getRawParameterValue (oversamplingId)),
+      globalBypass (parameters.getRawParameterValue (globalBypassId))
 {
 }
 
@@ -262,7 +266,8 @@ Settings SettingsReader::read() const
              .stereoLink = plain (stereoLink),
              .processingMode = choice (processingMode, ProcessingMode::HighQuality),
              .lookaheadMs = plain (lookahead),
-             .oversampling = choice (oversampling, Oversampling::x8) };
+             .oversampling = choice (oversampling, Oversampling::x8),
+             .globalBypass = on (globalBypass) };
 }
 
 } // namespace comp1::parameters
