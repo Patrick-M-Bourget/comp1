@@ -3,6 +3,7 @@
 // The Detection EQ: a high-pass, a low-pass and one free band, filtering the detection source's channels inside the
 // detection stage (Detection.h), so the detector hears them shaped and the processed sound is never touched.
 
+#include "Glide.h"
 #include "comp1/Settings.h"
 
 #include <plugkit/Biquad.h>
@@ -48,12 +49,7 @@ public:
         target = band;
         const double values[] = { std::log (band.filter.frequency), band.filter.gain, std::log (band.filter.q) };
         for (std::size_t g = 0; g < count; ++g)
-        {
-            if (snap)
-                glides[g].reset (values[g]);
-            else
-                glides[g].setTarget (values[g]);
-        }
+            glideTo (glides[g], values[g], snap);
         if (snap)
         {
             current = { .on = band.on, .structure = plugkit::structureOf (band.filter) };
@@ -183,7 +179,7 @@ public:
     {
         for (auto& band : bands)
             band.prepare (sampleRate);
-        runPosition = 0;
+        position = 0;
     }
 
     void setTarget (const DetectionEq& eq, bool snap)
@@ -193,21 +189,24 @@ public:
         bands[2].setTarget (eq.freeBand, snap);
     }
 
+    // Where the next piece starts in the run grid.
+    int runPosition() const { return position; }
+
     void process (float* const* channels, int numChannels, int numSamples)
     {
-        if (runPosition == 0)
+        if (position == 0)
             for (auto& band : bands)
                 band.startRun();
         for (auto& band : bands)
-            band.process (channels, std::min (numChannels, DetectionEqBand::maxChannels), numSamples, runPosition);
-        runPosition += numSamples;
-        if (runPosition >= plugkit::runSamples)
-            runPosition = 0;
+            band.process (channels, std::min (numChannels, DetectionEqBand::maxChannels), numSamples, position);
+        position += numSamples;
+        if (position >= plugkit::runSamples)
+            position = 0;
     }
 
 private:
     std::array<DetectionEqBand, 3> bands;
-    int runPosition = 0;
+    int position = 0;
 };
 
 } // namespace comp1

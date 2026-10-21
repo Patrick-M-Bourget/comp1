@@ -186,13 +186,8 @@ DetectionEq everyBandOn()
 // withSidechain, other noise on a stereo Sidechain.
 test::Channels play (const Settings& settings, bool withSidechain)
 {
-    auto audio = test::noise (2, 24000);
     const auto sidechainSamples = test::noise (2, 24000, 3);
-    Engine engine;
-    engine.prepare (48000.0, 512, 2);
-    engine.setSettings (settings);
-    test::processInBlocks (engine, audio, { 512 }, withSidechain ? &sidechainSamples : nullptr);
-    return audio;
+    return test::played (settings, 48000.0, test::noise (2, 24000), { 512 }, withSidechain ? &sidechainSamples : nullptr);
 }
 
 } // namespace

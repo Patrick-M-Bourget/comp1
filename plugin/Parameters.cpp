@@ -94,6 +94,15 @@ std::unique_ptr<juce::AudioParameterFloat> floatParameter (const juce::String& i
     return std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { id, 1 }, name, range, static_cast<float> (defaultValue), attributes);
 }
 
+// The choice index of the free band's Shape that designs as shape.
+int freeBandShapeIndex (plugkit::Shape shape)
+{
+    for (const auto choice : { FreeBandShape::Bell, FreeBandShape::LowShelf, FreeBandShape::HighShelf })
+        if (shapeOf (choice) == shape)
+            return static_cast<int> (choice);
+    return static_cast<int> (FreeBandShape::Bell);
+}
+
 } // namespace
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
@@ -128,7 +137,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { detectionBandShapeId, 1 },
                                                               "Detection Free Band Shape",
                                                               juce::StringArray { "Bell", "Low Shelf", "High Shelf" },
-                                                              static_cast<int> (FreeBandShape::Bell)),
+                                                              freeBandShapeIndex (eq.freeBand.filter.shape)),
                 frequency (detectionBandFrequencyId, "Detection Free Band Frequency", eq.freeBand.filter.frequency),
                 floatParameter (detectionBandGainId, "Detection Free Band Gain", linearRange (parameterRanges::detectionGain), eq.freeBand.filter.gain, withText (2, "dB")),
                 floatParameter (detectionBandQId, "Detection Free Band Q", logRange (parameterRanges::detectionQ), eq.freeBand.filter.q, withText (3, {})));
@@ -207,6 +216,10 @@ Settings SettingsReader::read() const
 {
     const auto plain = [] (const std::atomic<float>* value) { return static_cast<double> (value->load (std::memory_order_relaxed)); };
     const auto on = [] (const std::atomic<float>* value) { return value->load (std::memory_order_relaxed) >= 0.5f; };
+    // A choice's index, as its enum, the choices in the enum's order up to last.
+    const auto choice = [&plain]<typename Choice> (const std::atomic<float>* value, Choice last) {
+        return static_cast<Choice> (std::clamp (static_cast<int> (std::lround (plain (value))), 0, static_cast<int> (last)));
+    };
     // Each band's filter starts from the defaults, which hold what no host parameter sets (the cuts' Q, the shelves'
     // Slope).
     DetectionEq eq;
@@ -217,8 +230,7 @@ Settings SettingsReader::read() const
     eq.lowPass.filter.frequency = plain (lowPassFrequency);
     eq.lowPass.filter.slope = plain (lowPassSlope);
     eq.freeBand.on = on (bandOn);
-    const auto shapeIndex = std::clamp (static_cast<int> (std::lround (plain (bandShape))), 0, static_cast<int> (FreeBandShape::HighShelf));
-    eq.freeBand.filter.shape = shapeOf (static_cast<FreeBandShape> (shapeIndex));
+    eq.freeBand.filter.shape = shapeOf (choice (bandShape, FreeBandShape::HighShelf));
     eq.freeBand.filter.frequency = plain (bandFrequency);
     eq.freeBand.filter.gain = plain (bandGain);
     eq.freeBand.filter.q = plain (bandQ);
@@ -227,20 +239,19 @@ Settings SettingsReader::read() const
              .kneeDb = plain (knee),
              .attackMs = plain (attack),
              .releaseMs = plain (release),
-             .autoRelease = autoRelease->load (std::memory_order_relaxed) >= 0.5f,
+             .autoRelease = on (autoRelease),
              .holdMs = plain (hold),
              .rangeDb = plain (range),
-             .autoGain = autoGain->load (std::memory_order_relaxed) >= 0.5f,
-             .saturation = saturation->load (std::memory_order_relaxed) >= 0.5f,
+             .autoGain = on (autoGain),
+             .saturation = on (saturation),
              .driveDb = plain (drive),
-             .saturationPosition = saturationPosition->load (std::memory_order_relaxed) < 0.5f ? SaturationPosition::Before
-                                                                                               : SaturationPosition::After,
+             .saturationPosition = choice (saturationPosition, SaturationPosition::After),
              .outputGainDb = plain (outputGain),
-             .detectionSource = detectionSource->load (std::memory_order_relaxed) >= 0.5f ? DetectionSource::External : DetectionSource::Internal,
+             .detectionSource = choice (detectionSource, DetectionSource::External),
              .detectionEq = eq,
-             .stereoPlacement = static_cast<StereoPlacement> (std::clamp (static_cast<int> (std::lround (stereoPlacement->load (std::memory_order_relaxed))), 0, 2)),
+             .stereoPlacement = choice (stereoPlacement, StereoPlacement::Side),
              .stereoLink = plain (stereoLink),
-             .processingMode = processingMode->load (std::memory_order_relaxed) >= 0.5f ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency,
+             .processingMode = choice (processingMode, ProcessingMode::HighQuality),
              .lookaheadMs = plain (lookahead) };
 }
 

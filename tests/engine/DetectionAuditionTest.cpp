@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <plugkit/Placement.h>
 
 #include <vector>
 
@@ -22,13 +23,9 @@ Settings compressing (DetectionSource source, bool audition)
 
 // The output of an Engine given settings from the start, so Detection Audition is held from the first sample with no
 // fade, for main and the Sidechain samples given (none when null).
-test::Channels play (const Settings& settings, test::Channels main, const test::Channels* sidechainSamples = nullptr)
+test::Channels play (const Settings& settings, const test::Channels& main, const test::Channels* sidechainSamples = nullptr)
 {
-    Engine engine;
-    engine.prepare (48000.0, 512, static_cast<int> (main.size()));
-    engine.setSettings (settings);
-    test::processInBlocks (engine, main, { 512 }, sidechainSamples);
-    return main;
+    return test::played (settings, 48000.0, main, { 512 }, sidechainSamples);
 }
 
 } // namespace
@@ -64,6 +61,33 @@ TEST_CASE ("With Detection Audition held and External, the output is the Sidecha
             else
                 expected[ch][i] = static_cast<float> ((static_cast<double> (sidechainSamples[0][i]) + sidechainSamples[1][i]) / 2.0);
         }
+    CHECK (output == expected);
+}
+
+TEST_CASE ("With Detection Audition held under Stereo Placement Mid or Side, the output is that part, placed as it plays back")
+{
+    const auto placement = GENERATE (StereoPlacement::Mid, StereoPlacement::Side);
+    const auto source = GENERATE (DetectionSource::Internal, DetectionSource::External);
+    const int sidechainChannels = GENERATE (1, 2);
+    CAPTURE (placement, source, sidechainChannels);
+    const auto input = test::noise (2, numSamples);
+    const auto sidechainSamples = test::noise (sidechainChannels, numSamples, 5);
+    auto settings = compressing (source, true);
+    settings.stereoPlacement = placement;
+    const auto output = play (settings, input, &sidechainSamples);
+
+    // The detection signal's Mid or Side, as plugkit encodes it, or a mono one itself: the Mid on both channels, the
+    // Side on the left and, inverted, on the right.
+    const auto& detected = source == DetectionSource::Internal ? input : sidechainSamples;
+    test::Channels expected (2, std::vector<float> (numSamples));
+    for (std::size_t i = 0; i < numSamples; ++i)
+    {
+        const float left = detected[0][i], right = detected.back()[i];
+        const bool mono = detected.size() == 1;
+        const float part = mono ? left : placement == StereoPlacement::Mid ? plugkit::encodeMid (left, right) : plugkit::encodeSide (left, right);
+        expected[0][i] = part;
+        expected[1][i] = placement == StereoPlacement::Mid ? part : -part;
+    }
     CHECK (output == expected);
 }
 

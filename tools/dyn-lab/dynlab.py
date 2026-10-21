@@ -510,8 +510,8 @@ class AntiAliased:
         return out
 
 
-def static_curve_db(level_db, drive_db):
-    """The static curve: the output level in dB for a steady input of level_db (a constant sample value whose
+def steady_curve_db(level_db, drive_db):
+    """The steady-level curve: the output level in dB for a steady input of level_db (a constant sample value whose
     magnitude reads level_db, so ADAA's two samples are equal and it gives the residual itself)."""
     g = 10 ** (drive_db / 20)
     return 20 * math.log10(shape(g * 10 ** (level_db / 20)) / g)
@@ -533,15 +533,15 @@ def chain(level_db, settings, saturation):
         reduction = gain_reduction(level_db, settings)
         return Chain(level_db - reduction, reduction)
     if saturation.position == "before":
-        saturated = static_curve_db(level_db, saturation.drive)
+        saturated = steady_curve_db(level_db, saturation.drive)
         reduction = gain_reduction(saturated, settings)
         return Chain(saturated - reduction, reduction)
     reduction = gain_reduction(level_db, settings)
-    return Chain(static_curve_db(level_db - reduction, saturation.drive), reduction)
+    return Chain(steady_curve_db(level_db - reduction, saturation.drive), reduction)
 
 
-# The static curve's grid, in dB: from STATIC_LOWEST to STATIC_HIGHEST, STATIC_SPACING apart, with the onset.
-STATIC_LOWEST, STATIC_HIGHEST, STATIC_SPACING = -36.0, 6.0, 3.0
+# The steady-level curve's grid, in dB: from STEADY_LOWEST to STEADY_HIGHEST, STEADY_SPACING apart, with the onset.
+STEADY_LOWEST, STEADY_HIGHEST, STEADY_SPACING = -36.0, 6.0, 3.0
 
 
 def saturation_options(parser):
@@ -557,14 +557,14 @@ def run_saturation(args):
 
 
 def report_saturation(settings, drive_db, level_db):
-    """The static curve at drive_db, then the compressor-plus-Saturation chain at level_db, Before and After."""
+    """The steady-level curve at drive_db, then the compressor-plus-Saturation chain at level_db, Before and After."""
     onset = -drive_db
-    print(f"Saturation static curve, Drive {drive_db:g} dB: steady input; the shape leaves the line at {onset:g} dB")
+    print(f"Saturation steady-level curve, Drive {drive_db:g} dB: steady input; the shape leaves the line at {onset:g} dB")
     print(f"{'input dB':>9} {'output dB':>10}  region")
-    count = round((STATIC_HIGHEST - STATIC_LOWEST) / STATIC_SPACING)
-    grid = sorted({round(STATIC_LOWEST + i * STATIC_SPACING, 6) for i in range(count + 1)} | {onset})
+    count = round((STEADY_HIGHEST - STEADY_LOWEST) / STEADY_SPACING)
+    grid = sorted({round(STEADY_LOWEST + i * STEADY_SPACING, 6) for i in range(count + 1)} | {onset})
     for level in grid:
-        print(f"{level:9.2f} {static_curve_db(level, drive_db):10.2f}  {'linear' if level <= onset else 'saturating'}")
+        print(f"{level:9.2f} {steady_curve_db(level, drive_db):10.2f}  {'linear' if level <= onset else 'saturating'}")
     print(f"ceiling {20 * math.log10(2 / 10 ** (drive_db / 20)):.2f} dB: the shape saturates toward 2, over Drive")
     print(f"Compressor and Saturation, steady input {level_db:g} dB, Drive {drive_db:g} dB, {_transfer_heading(settings)}")
     print(f"{'position':>9} {'output dB':>10} {'reduction':>10}")

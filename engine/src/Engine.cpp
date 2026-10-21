@@ -3,6 +3,7 @@
 #include "Clean.h"
 #include "DelayLine.h"
 #include "Detection.h"
+#include "Glide.h"
 #include "LevelTaps.h"
 #include "Lookahead.h"
 #include "ModeFade.h"
@@ -22,6 +23,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <vector>
 
 namespace comp1
@@ -77,6 +79,8 @@ public:
             voice.detectors.assign (static_cast<std::size_t> (std::max (numChannels, 0)), {});
             for (auto& detector : voice.detectors)
                 detector.prepare (sampleRate);
+            voice.levelsDb.assign (voice.detectors.size(), plugkit::levelFloorDb);
+            voice.reductionsDb.assign (voice.detectors.size(), 0.0);
             voice.gains.assign (voice.detectors.size(), 1.0);
         }
         reductions.assign (voices[0].detectors.size(), 0.0);
@@ -92,30 +96,25 @@ public:
     // With snap, the settings take effect at once instead of gliding.
     void setSettings (const Settings& settings, bool snap)
     {
-        const double targets[] = { settings.thresholdDb, 1.0 / settings.ratio, settings.kneeDb, settings.rangeDb,
-                                   std::log (settings.attackMs), std::log (settings.releaseMs), settings.holdMs };
-        for (std::size_t s = 0; s < count; ++s)
-        {
-            if (snap)
-                glides[s].reset (targets[s]);
-            else
-                glides[s].setTarget (targets[s]);
-        }
-        if (snap)
-            update();
-        if (snap)
-            stereoLink.reset (settings.stereoLink / 100.0);
-        else
-            stereoLink.setTarget (settings.stereoLink / 100.0);
+        const auto target = curveOf (settings);
+        for (std::size_t s = 0; s < std::size (curveGlides); ++s)
+            glideTo (glides[s], target.*curveGlides[s], snap);
+        glideTo (glides[logAttack], std::log (settings.attackMs), snap);
+        glideTo (glides[logRelease], std::log (settings.releaseMs), snap);
+        glideTo (glides[hold], settings.holdMs, snap);
+        glideTo (stereoLink, settings.stereoLink / 100.0, snap);
         placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
         if (snap)
+        {
+            update();
             voices[playing].placement = placement;
+        }
         // Auto Release switches without a glide: the switch changes only how fast the gain comes back, not where it is.
         autoRelease = settings.autoRelease;
     }
 
-    // At the start of each run: the settings move on by a run, and the gain computer and detector take them; then
-    // each detector heard's Auto Release moves on by the run just heard. Then a change of Placement starts its fade.
+    // At the start of each run: the settings move on by a run, and the gain computer and detector take them. Then a
+    // change of Placement starts its fade.
     void startRun()
     {
         bool moving = false;
@@ -127,10 +126,6 @@ public:
             }
         if (moving)
             update();
-        for (std::size_t v = 0; v < voices.size(); ++v)
-            if (v == playing || fading)
-                for (auto& detector : voices[v].detectors)
-                    detector.startRun (releaseMs, autoRelease);
         if (! fading && placement != voices[playing].placement)
         {
             playing = 1 - playing;
@@ -145,25 +140,39 @@ public:
 
     // Applies gain to audio, sample for sample, from the detection signal of the same samples: each main channel's
     // Detection Level comes from what it follows, or the Mid or the Side, never from the audio. Each sample's
-    // Detection Level and Gain Reduction, as the Placement heard applies it (after Stereo Link), go to levels, taken
-    // where the detector reads them, so they follow whatever it hears.
+    // Detection Level, as the Placement heard reads it, and Gain Reduction, as the gain applied (after Stereo Link),
+    // go to levels, taken where the detector reads them, so they follow whatever it hears. During a Placement's fade
+    // the gain applied is each Placement's gain weighted by its share, exactly so where both compress the same part.
+    //
+    // At each start of a run of the detection signal's own grid, which High Quality's delay moves off the audio's, each
+    // detector heard's Auto Release moves on by the run just heard, so Auto Release runs on the samples the detector
+    // hears in every Processing Mode.
     void process (const DetectionSignal& detection, AudioBlock audio, RunLevels& levels)
     {
         auto& heard = voices[playing];
         for (int i = 0; i < audio.numSamples; ++i)
         {
+            if ((detection.runPosition + i) % plugkit::runSamples == 0)
+                startDetectorRuns();
             const double link = stereoLink.isSettled() ? stereoLink.value() : stereoLink.next();
-            askGains (heard, detection, audio.numChannels, i, link, &levels);
+            askGains (heard, detection, audio.numChannels, i, link);
             if (! fading)
             {
+                for (std::size_t c = 0; c < partsOf (heard); ++c)
+                    levels.noteDetection (heard.levelsDb[c], heard.reductionsDb[c]);
                 applyGains (heard, audio, i);
                 continue;
             }
             auto& leaving = voices[1 - playing];
-            askGains (leaving, detection, audio.numChannels, i, link, nullptr);
+            askGains (leaving, detection, audio.numChannels, i, link);
             const double in = fade.next();
             if (fade.isSettled())
                 fading = false;
+            for (int ch = 0; ch < audio.numChannels; ++ch)
+            {
+                const double gain = in * gainOn (heard, ch) + (1.0 - in) * gainOn (leaving, ch);
+                levels.noteDetection (heard.levelsDb[partOf (heard, ch)], gain < 1.0 ? -plugkit::gainToDecibels (gain) : 0.0);
+            }
             // Each Placement's change to the sample, weighted by its share of the fade.
             const float left = audio.channels[0][i];
             const float right = audio.numChannels > 1 ? audio.channels[1][i] : left;
@@ -178,34 +187,55 @@ public:
     }
 
 private:
-    // One Placement, with detectors of its own (per channel under Stereo, the first for Mid or Side) and the gains it
-    // asks for at the sample (likewise).
+    void startDetectorRuns()
+    {
+        for (std::size_t v = 0; v < voices.size(); ++v)
+            if (v == playing || fading)
+                for (auto& detector : voices[v].detectors)
+                    detector.startRun (releaseMs, autoRelease);
+    }
+
+    // One Placement, with detectors of its own (per channel under Stereo, the first for Mid or Side), and at the sample
+    // the Detection Levels they read, the Gain Reductions it asks for and the gains they make (likewise).
     struct Voice
     {
         plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo;
         std::vector<clean::Detector> detectors;
-        std::vector<double> gains;
+        std::vector<double> levelsDb, reductionsDb, gains;
     };
 
-    // The gain voice asks for at sample i, as a factor, exactly 1 with no Gain Reduction.
+    // How many parts voice compresses: each channel under Stereo, or the one part, Mid or Side.
+    static std::size_t partsOf (const Voice& voice)
+    {
+        return voice.placement == plugkit::StereoPlacement::Stereo ? voice.detectors.size() : 1;
+    }
+
+    // The part of voice channel ch follows: its own under Stereo, the Mid or Side otherwise.
+    static std::size_t partOf (const Voice& voice, int ch)
+    {
+        return voice.placement == plugkit::StereoPlacement::Stereo ? static_cast<std::size_t> (ch) : 0;
+    }
+
+    // The gain voice applies to what channel ch carries of the part it compresses.
+    static double gainOn (const Voice& voice, int ch) { return voice.gains[partOf (voice, ch)]; }
+
+    // The gain voice asks for at sample i, as a factor, exactly 1 with no Gain Reduction, and the Detection Level and
+    // Gain Reduction it comes from.
     //
     // Stereo Link, after each channel's detector: each channel's Gain Reduction is its own plus Stereo Link times the
     // larger of the two less its own, worked out as (1 - Stereo Link) times its own plus Stereo Link times the larger,
     // so that 0% is exactly each channel's own and 100% exactly the larger, the same on both. A mono track has nothing
-    // to link. With levels, each Detection Level the voice reads and the Gain Reduction it applies for it go there.
-    void askGains (Voice& voice, const DetectionSignal& detection, int numChannels, int i, double link, RunLevels* levels)
+    // to link.
+    void askGains (Voice& voice, const DetectionSignal& detection, int numChannels, int i, double link)
     {
         const auto gainOf = [] (double reduction) { return reduction > 0.0 ? plugkit::decibelsToGain (-reduction) : 1.0; };
         // The Detection Level: the detection signal's peak level, in dB where a full-scale sine reads 0.
         const auto levelDb = [] (float sample) { return plugkit::gainToDecibels (std::abs (static_cast<double> (sample))); };
         if (voice.placement != plugkit::StereoPlacement::Stereo)
         {
-            const float* detected = voice.placement == plugkit::StereoPlacement::Mid ? detection.mid : detection.side;
-            const double partDb = levelDb (detected[i]);
-            const double reduction = voice.detectors[0].process (clean::gainReduction (partDb, curve), timing);
-            if (levels != nullptr)
-                levels->noteDetection (partDb, reduction);
-            voice.gains[0] = gainOf (reduction);
+            voice.levelsDb[0] = levelDb (detection.partFollowedBy (voice.placement)[i]);
+            voice.reductionsDb[0] = voice.detectors[0].process (clean::gainReduction (voice.levelsDb[0], curve), timing);
+            voice.gains[0] = gainOf (voice.reductionsDb[0]);
             return;
         }
         double largest = 0.0;
@@ -218,10 +248,9 @@ private:
         }
         for (std::size_t c = 0; c < reductions.size(); ++c)
         {
-            const double reduction = numChannels > 1 ? (1.0 - link) * reductions[c] + link * largest : reductions[c];
-            if (levels != nullptr)
-                levels->noteDetection (channelDb[c], reduction);
-            voice.gains[c] = gainOf (reduction);
+            voice.levelsDb[c] = channelDb[c];
+            voice.reductionsDb[c] = numChannels > 1 ? (1.0 - link) * reductions[c] + link * largest : reductions[c];
+            voice.gains[c] = gainOf (voice.reductionsDb[c]);
         }
     }
 
@@ -245,32 +274,30 @@ private:
     }
 
     // What the gains voice asks for add to channel ch of a sample whose Left and Right are left and right: (g - 1) times
-    // what it compresses. Under Stereo, the channel itself; under Mid, the Mid, on Left and on Right; under Side, the
-    // Side, added to Left and taken from Right.
+    // what channel ch carries of the part it compresses, as plugkit places a part (placedSample). Under Stereo, the
+    // channel itself; under Mid, the Mid, on Left and on Right; under Side, the Side, added to Left and taken from Right.
     static double changeTo (const Voice& voice, int ch, float left, float right)
     {
-        switch (voice.placement)
-        {
-            case plugkit::StereoPlacement::Mid: return (voice.gains[0] - 1.0) * plugkit::encodeMid (left, right);
-            case plugkit::StereoPlacement::Side: return (ch == 0 ? 1.0 : -1.0) * (voice.gains[0] - 1.0) * plugkit::encodeSide (left, right);
-            case plugkit::StereoPlacement::Stereo:
-            case plugkit::StereoPlacement::Left:
-            case plugkit::StereoPlacement::Right: break;
-        }
-        return (voice.gains[static_cast<std::size_t> (ch)] - 1.0) * (ch == 0 ? left : right);
+        const float carried = plugkit::placedSample (voice.placement, 2, ch, [&] (int part) {
+            if (voice.placement == plugkit::StereoPlacement::Stereo)
+                return part == 0 ? left : right;
+            return voice.placement == plugkit::StereoPlacement::Mid ? plugkit::encodeMid (left, right) : plugkit::encodeSide (left, right);
+        });
+        return (gainOn (voice, ch) - 1.0) * carried;
     }
 
     enum Glide : std::size_t { threshold, inverseRatio, knee, range, logAttack, logRelease, hold, count };
+    // The gain computer's settings, each gliding as the Glide of its index.
+    static constexpr double clean::Curve::* curveGlides[] = { &clean::Curve::thresholdDb, &clean::Curve::inverseRatio, &clean::Curve::kneeDb,
+                                                              &clean::Curve::rangeDb };
     // Close enough to count as arrived, in each glide's units (dB, 1/Ratio, log ms, ms, a fraction): far below what
     // can be heard.
     static constexpr double arrivalTolerance = 1.0e-7;
 
     void update()
     {
-        curve = { .thresholdDb = glides[threshold].value(),
-                  .inverseRatio = glides[inverseRatio].value(),
-                  .kneeDb = glides[knee].value(),
-                  .rangeDb = glides[range].value() };
+        for (std::size_t s = 0; s < std::size (curveGlides); ++s)
+            curve.*curveGlides[s] = glides[s].value();
         releaseMs = std::exp (glides[logRelease].value());
         timing = clean::timing (std::exp (glides[logAttack].value()), releaseMs, glides[hold].value(), sampleRate);
     }
@@ -306,11 +333,7 @@ public:
     // With snap, the new gain takes effect at once instead of gliding.
     void setTargetDb (double db, bool snap)
     {
-        const double target = plugkit::decibelsToGain (db);
-        if (snap)
-            gain.reset (target);
-        else
-            gain.setTarget (target);
+        glideTo (gain, plugkit::decibelsToGain (db), snap);
     }
 
     void process (AudioBlock block)
@@ -338,18 +361,26 @@ private:
 };
 
 // Detection Audition: plays the detection signal in place of the Wet path, fading between the two over the Smoother's
-// glide time, so holding it and letting go never jump. Mapping the detection channels to the output's: a stereo
-// detection signal plays each channel on its own output channel, a mono one on every output channel, and a stereo one
-// on a mono output as the average of its two channels. In High Quality it is delayed as the Wet path is up to here
-// (comp1/Latency.h's wetPathLatencySamples), so it keeps the reported latency and fades against the Wet path in time.
+// glide time, so holding it and letting go never jump. It plays the part Stereo Placement compresses, as the
+// detector hears it. Under Stereo, mapping the detection channels to the output's: a stereo detection signal plays
+// each channel on its own output channel, a mono one on every output channel, and a stereo one on a mono output as the
+// average of its two channels. Under Mid or Side, on a stereo track, the detection signal's Mid or Side as plugkit
+// places a part on its own (placedSample): the Mid on both channels, the Side on the left and, inverted, the right. A
+// change of Placement fades from the old part to the new over the glide time; one asked for during the fade starts
+// once it is over. In High Quality it is delayed as the Wet path is up to here (comp1/Latency.h's
+// wetPathLatencySamples), so it keeps the reported latency and fades against the Wet path in time.
 class Audition
 {
 public:
     // Allocates for up to numChannels output channels of up to a run a piece.
     void prepare (double sampleRate, int numChannels)
     {
-        mix.configure (plugkit::glideTimeConstantSeconds * sampleRate, 1.0e-6);
-        mix.reset (0.0);
+        stereoTrack = numChannels == 2;
+        auditionShare.configure (plugkit::glideTimeConstantSeconds * sampleRate, 1.0e-6);
+        auditionShare.reset (0.0);
+        placementFade.configure (plugkit::glideTimeConstantSeconds * sampleRate, 1.0e-6);
+        placementFade.reset (1.0);
+        placementFading = false;
         const auto channels = static_cast<std::size_t> (std::max (numChannels, 0));
         storage.assign (channels, std::vector<float> (static_cast<std::size_t> (plugkit::runSamples)));
         pointers.assign (channels, nullptr);
@@ -361,10 +392,18 @@ public:
     // With snap, it is held or let go at once instead of fading.
     void setHeld (bool held, bool snap)
     {
+        glideTo (auditionShare, held ? 1.0 : 0.0, snap);
+    }
+
+    // With snap, the new Placement plays at once instead of fading in. A mono track plays as Stereo.
+    void setPlacement (StereoPlacement newPlacement, bool snap)
+    {
+        asked = stereoTrack ? routed (newPlacement) : plugkit::StereoPlacement::Stereo;
         if (snap)
-            mix.reset (held ? 1.0 : 0.0);
-        else
-            mix.setTarget (held ? 1.0 : 0.0);
+        {
+            placement = asked;
+            placementFading = false;
+        }
     }
 
     // detection is the piece of the detection signal of the samples now coming in, audio the Wet path's piece, which
@@ -373,36 +412,56 @@ public:
     void process (const DetectionSignal& detection, AudioBlock audio, bool highQuality)
     {
         const AudioBlock heard { pointers.data(), audio.numChannels, audio.numSamples };
-        for (int ch = 0; ch < heard.numChannels; ++ch)
-            for (int i = 0; i < heard.numSamples; ++i)
-                heard.channels[ch][i] = detectionSample (detection, audio.numChannels, ch, i);
+        for (int i = 0; i < heard.numSamples; ++i)
+        {
+            if (! placementFading && asked != placement)
+            {
+                leaving = placement;
+                placement = asked;
+                placementFade.reset (0.0);
+                placementFade.setTarget (1.0);
+                placementFading = true;
+            }
+            const double in = placementFading ? placementFade.next() : 1.0;
+            for (int ch = 0; ch < heard.numChannels; ++ch)
+            {
+                const float now = detectionSample (detection, placement, audio.numChannels, ch, i);
+                heard.channels[ch][i] = placementFading
+                                            ? static_cast<float> (in * now + (1.0 - in) * detectionSample (detection, leaving, audio.numChannels, ch, i))
+                                            : now;
+            }
+            if (placementFading && placementFade.isSettled())
+                placementFading = false;
+        }
         if (highQuality)
             delay.process (heard);
         else
             delay.write ({ heard.channels, heard.numChannels, heard.numSamples });
 
         // Let go and settled: the Wet path plays, bit for bit.
-        if (mix.isSettled() && mix.value() == 0.0)
+        if (auditionShare.isSettled() && auditionShare.value() == 0.0)
             return;
         int i = 0;
-        for (; i < audio.numSamples && ! mix.isSettled(); ++i)
+        for (; i < audio.numSamples && ! auditionShare.isSettled(); ++i)
         {
-            const double m = mix.next();
+            const double share = auditionShare.next();
             for (int ch = 0; ch < audio.numChannels; ++ch)
             {
                 float& sample = audio.channels[ch][i];
-                sample = static_cast<float> ((1.0 - m) * sample + m * heard.channels[ch][i]);
+                sample = static_cast<float> ((1.0 - share) * sample + share * heard.channels[ch][i]);
             }
         }
-        if (mix.value() == 0.0)
+        if (auditionShare.value() == 0.0)
             return;
         for (int ch = 0; ch < audio.numChannels; ++ch)
             std::copy (heard.channels[ch] + i, heard.channels[ch] + audio.numSamples, audio.channels[ch] + i);
     }
 
 private:
-    static float detectionSample (const DetectionSignal& detection, int outputChannels, int ch, int i)
+    static float detectionSample (const DetectionSignal& detection, plugkit::StereoPlacement placement, int outputChannels, int ch, int i)
     {
+        if (placement != plugkit::StereoPlacement::Stereo)
+            return plugkit::placedSample (placement, outputChannels, ch, [&] (int) { return detection.partFollowedBy (placement)[i]; });
         if (detection.numChannels == 1)
             return detection.channels[0][i];
         if (outputChannels == 1)
@@ -410,7 +469,13 @@ private:
         return detection.channels[ch][i];
     }
 
-    plugkit::Smoother mix; // 0 plays the Wet path, 1 the detection signal
+    plugkit::Smoother auditionShare; // 0 plays the Wet path, 1 the detection signal
+    bool stereoTrack = false;
+    plugkit::StereoPlacement asked = plugkit::StereoPlacement::Stereo;     // the Placement asked for
+    plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo; // the one playing, or fading in
+    plugkit::StereoPlacement leaving = plugkit::StereoPlacement::Stereo;   // while one fades in, the one fading out
+    plugkit::Smoother placementFade;                                       // the share of placement, while it fades in
+    bool placementFading = false;
     std::vector<std::vector<float>> storage; // per output channel, the detection signal as heard
     std::vector<float*> pointers;            // per output channel, into storage
     DelayLine delay;                         // High Quality's, per output channel
@@ -462,12 +527,71 @@ struct Engine::Impl
         saturation.setSettings (settings, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
         audition.setHeld (settings.detectionAudition, snapToSettings);
+        audition.setPlacement (settings.stereoPlacement, snapToSettings);
         lookahead.setLookahead (settings.lookaheadMs, snapToSettings);
-        if (snapToSettings)
-            modeFade.reset (settings.processingMode);
-        else
-            modeFade.setTarget (settings.processingMode);
+        glideTo (modeFade, settings.processingMode, snapToSettings);
         snapToSettings = false;
+    }
+
+    // The piece of main's first channels from start, for count samples, in place: a non-finite input sample (nan,
+    // inf) never reaches the output, nor the detector, whose Gain Reduction it would hold forever, so it plays as
+    // silence. Its Input Level is noted.
+    AudioBlock sanitisedInput (AudioBlock main, int channels, int start, int count)
+    {
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            float* samples = main.channels[ch] + start;
+            subBlock[static_cast<std::size_t> (ch)] = samples;
+            for (int i = 0; i < count; ++i)
+                samples[i] = std::isfinite (samples[i]) ? samples[i] : 0.0f;
+            runLevels.noteInput (samples, count);
+        }
+        return { subBlock.data(), channels, count };
+    }
+
+    // The Wet path, on a piece of a run, in place, with the Sidechain's piece (or none), on path: Saturation Before,
+    // the detection stage, fed the compressor's input as the Internal signal, then the compressor, Saturation After,
+    // Auto Gain, Detection Audition and Output Gain; Saturation runs at one of its two positions. The compressor's
+    // settings step at the start of each run, wherever the host's blocks fall; Saturation, Auto Gain, Detection
+    // Audition and Output Gain glide a sample at a time with next(), so where the pieces fall changes nothing either.
+    // From the sample a new setting is taken (the start of the host's block, so the host decides when a change lands),
+    // the output is the same sample for sample however the audio is cut. The detector runs while Detection Audition
+    // is held, so letting go doesn't restart compression from zero.
+    //
+    // In High Quality the audio is delayed by the Lookahead budget and the detection signal by less, so the compressor
+    // meets the audio Lookahead early; then the Oversampling padding before the Dry/Wet sum, and the Limiter padding.
+    // Last, the mode fade, which swaps the paths in silence.
+    void wetPath (AudioBlock wet, const ConstAudioBlock* sidechainPiece, ProcessingMode path)
+    {
+        if (gridPosition == 0)
+            saturation.startRun();
+        saturation.process (SaturationPosition::Before, wet);
+        const auto detected = detection.process ({ wet.channels, wet.numChannels, wet.numSamples }, sidechainPiece);
+        if (gridPosition == 0)
+        {
+            compressor.startRun();
+            lookahead.startRun();
+        }
+        const bool highQuality = path == ProcessingMode::HighQuality;
+        compressor.process (lookahead.process (detected, wet, highQuality), wet, runLevels);
+        saturation.process (SaturationPosition::After, wet);
+        autoGain.process (wet);
+        if (highQuality)
+            oversamplingPadding.process (wet);
+        audition.process (detected, wet, highQuality);
+        outputGain.process (wet);
+        if (highQuality)
+            limiterPadding.process (wet);
+        modeFade.process (wet);
+    }
+
+    // The Output Level of what the piece sends on, after everything.
+    void noteOutputLevels (AudioBlock out)
+    {
+        for (int ch = 0; ch < std::min (out.numChannels, maxOutputLevelChannels); ++ch)
+            outputLevels[static_cast<std::size_t> (ch)].process (out.channels[ch], out.numSamples);
+        for (int ch = 0; ch < out.numChannels; ++ch)
+            runLevels.noteOutput (out.channels[ch], out.numSamples);
     }
 };
 
@@ -520,57 +644,12 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         // Processing Mode switch swaps paths between pieces.
         const auto path = impl->modeFade.startPiece();
         count = std::min ({ plugkit::runSamples - impl->gridPosition, main.numSamples - start, impl->modeFade.pieceLimit() });
-        for (int ch = 0; ch < channels; ++ch)
-        {
-            float* samples = main.channels[ch] + start;
-            impl->subBlock[static_cast<std::size_t> (ch)] = samples;
-            // A non-finite input sample (nan, inf) never reaches the output, nor the detector, whose Gain Reduction
-            // it would hold forever: it plays as silence.
-            for (int i = 0; i < count; ++i)
-                samples[i] = std::isfinite (samples[i]) ? samples[i] : 0.0f;
-            impl->runLevels.noteInput (samples, count);
-        }
+        const auto wet = impl->sanitisedInput (main, channels, start, count);
         for (int ch = 0; ch < sidechainChannels; ++ch)
             sidechainPiece[static_cast<std::size_t> (ch)] = sidechain->channels[ch] + start;
         const ConstAudioBlock sidechainBlock { sidechainPiece.data(), sidechainChannels, count };
-
-        // The Wet path: Saturation Before, the detection stage, fed the compressor's input as the Internal signal,
-        // then the compressor, Saturation After, Auto Gain, Detection Audition and Output Gain; Saturation runs at one
-        // of its two positions. The compressor's settings step at the start of each run, wherever the host's blocks
-        // fall; Saturation, Auto Gain, Detection Audition and Output Gain glide a sample at a time with next(), so
-        // where the pieces fall changes nothing either. From the sample a new setting is taken (the start of the
-        // host's block, so the host decides when a change lands), the output is the same sample for sample however
-        // the audio is cut. The detector runs while Detection Audition is held, so letting go doesn't restart
-        // compression from zero.
-        const AudioBlock wet { impl->subBlock.data(), channels, count };
-        if (impl->gridPosition == 0)
-            impl->saturation.startRun();
-        impl->saturation.process (SaturationPosition::Before, wet);
-        const auto detected = impl->detection.process ({ wet.channels, wet.numChannels, wet.numSamples },
-                                                       sidechainConnected ? &sidechainBlock : nullptr);
-        if (impl->gridPosition == 0)
-        {
-            impl->compressor.startRun();
-            impl->lookahead.startRun();
-        }
-        // In High Quality the audio is delayed by the Lookahead budget and the detection signal by less, so the
-        // compressor meets the audio Lookahead early; then the Oversampling padding before the Dry/Wet sum, and the
-        // Limiter padding. Last, the mode fade, which swaps the paths in silence.
-        const bool highQuality = path == ProcessingMode::HighQuality;
-        impl->compressor.process (impl->lookahead.process (detected, wet, highQuality), wet, impl->runLevels);
-        impl->saturation.process (SaturationPosition::After, wet);
-        impl->autoGain.process (wet);
-        if (highQuality)
-            impl->oversamplingPadding.process (wet);
-        impl->audition.process (detected, wet, highQuality);
-        impl->outputGain.process (wet);
-        if (highQuality)
-            impl->limiterPadding.process (wet);
-        impl->modeFade.process (wet);
-        for (int ch = 0; ch < std::min (channels, Impl::maxOutputLevelChannels); ++ch)
-            impl->outputLevels[static_cast<std::size_t> (ch)].process (wet.channels[ch], count);
-        for (int ch = 0; ch < channels; ++ch)
-            impl->runLevels.noteOutput (wet.channels[ch], count);
+        impl->wetPath (wet, sidechainConnected ? &sidechainBlock : nullptr, path);
+        impl->noteOutputLevels (wet);
 
         impl->gridPosition += count;
         if (impl->gridPosition == plugkit::runSamples)

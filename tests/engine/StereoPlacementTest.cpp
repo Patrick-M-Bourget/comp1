@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
+#include <catch2/generators/catch_generators_adapters.hpp>
 #include <plugkit/Placement.h>
 
 #include <cmath>
@@ -56,15 +57,6 @@ std::vector<float> part (const test::Channels& stereo, bool mid)
     return encoded;
 }
 
-test::Channels compressed (test::Channels audio, const Settings& settings, const test::Channels* sidechainSamples = nullptr)
-{
-    Engine engine;
-    engine.prepare (sampleRate, 512, static_cast<int> (audio.size()));
-    engine.setSettings (settings);
-    test::processInBlocks (engine, audio, { 512 }, sidechainSamples);
-    return audio;
-}
-
 // The gain in dB the Mid (true) or the Side of input got by the end of output.
 double partGainDb (const test::Channels& input, const test::Channels& output, bool mid)
 {
@@ -82,7 +74,7 @@ TEST_CASE ("Stereo Placement Mid or Side compresses that part by the Transfer Cu
     const auto input = midLoud ? decoded (loud, quiet) : decoded (quiet, loud);
     auto settings = partSettings;
     settings.stereoPlacement = midLoud ? StereoPlacement::Mid : StereoPlacement::Side;
-    const auto output = compressed (input, settings);
+    const auto output = test::played (settings, sampleRate, input);
 
     // The quiet part passes untouched, decoded back from the output.
     CHECK (part (output, ! midLoud) == quiet);
@@ -98,7 +90,7 @@ TEST_CASE ("With no Gain Reduction the output is the input bit for bit in every 
     CAPTURE (placement, stereoLink);
     // Noise peaking at -6 dB, under the Knee of a 0 dB Threshold, in every part.
     const auto input = test::noise (2, numSamples);
-    CHECK (compressed (input, { .thresholdDb = 0.0, .stereoPlacement = placement, .stereoLink = stereoLink }) == input);
+    CHECK (test::played ({ .thresholdDb = 0.0, .stereoPlacement = placement, .stereoLink = stereoLink }, sampleRate, input) == input);
 }
 
 TEST_CASE ("A mono track is compressed as Stereo whatever Stereo Placement and Stereo Link hold")
@@ -107,7 +99,7 @@ TEST_CASE ("A mono track is compressed as Stereo whatever Stereo Placement and S
     const double stereoLink = GENERATE (0.0, 37.0, 100.0);
     CAPTURE (placement, stereoLink);
     const auto input = test::noise (1, numSamples);
-    CHECK (compressed (input, { .stereoPlacement = placement, .stereoLink = stereoLink }) == compressed (input, {}));
+    CHECK (test::played ({ .stereoPlacement = placement, .stereoLink = stereoLink }, sampleRate, input) == test::played ({}, sampleRate, input));
 }
 
 namespace
@@ -115,17 +107,17 @@ namespace
 
 // A Sidechain whose loud part is a steady -6 dB: on the Mid (both channels alike), on the Side (one the other's
 // negative), or a mono one.
-enum class Key
+enum class SidechainPart
 {
     loudMid,
     loudSide,
     mono,
 };
 
-test::Channels sidechainOf (Key key)
+test::Channels sidechainOf (SidechainPart loud)
 {
-    auto channels = test::steadyLevel (key == Key::mono ? 1 : 2, numSamples, -6.0);
-    if (key == Key::loudSide)
+    auto channels = test::steadyLevel (loud == SidechainPart::mono ? 1 : 2, numSamples, -6.0);
+    if (loud == SidechainPart::loudSide)
         for (auto& sample : channels[1])
             sample = -sample;
     return channels;
@@ -135,19 +127,66 @@ test::Channels sidechainOf (Key key)
 
 TEST_CASE ("With External, a stereo Sidechain's Mid or Side drives Stereo Placement Mid or Side, and a mono one drives every Placement")
 {
-    const auto key = GENERATE (Key::loudMid, Key::loudSide, Key::mono);
+    const auto loud = GENERATE (SidechainPart::loudMid, SidechainPart::loudSide, SidechainPart::mono);
     const auto placement = GENERATE (StereoPlacement::Mid, StereoPlacement::Side);
-    CAPTURE (key, placement);
+    CAPTURE (loud, placement);
     // The main input's Mid and Side are steady and far under Threshold, so only the Sidechain moves them.
     const auto input = decoded (test::steadyLevel (1, numSamples, -30.0).front(), test::steadyLevel (1, numSamples, -36.0).front());
-    const auto sidechainSamples = sidechainOf (key);
-    const auto output = compressed (input, { .detectionSource = DetectionSource::External, .stereoPlacement = placement }, &sidechainSamples);
+    const auto sidechainSamples = sidechainOf (loud);
+    const auto output = test::played ({ .detectionSource = DetectionSource::External, .stereoPlacement = placement }, sampleRate, input, { 512 }, &sidechainSamples);
 
     // The Placement's part takes the Transfer Curve's 9 dB at the Sidechain's -6 dB (python3 tools/dyn-lab/dynlab.py
     // transfer) when its part of the Sidechain is the loud one, or the Sidechain is mono, and none otherwise; the
     // other part passes.
     const bool mid = placement == StereoPlacement::Mid;
-    const bool driven = key == Key::mono || (key == Key::loudMid) == mid;
+    const bool driven = loud == SidechainPart::mono || (loud == SidechainPart::loudMid) == mid;
     CHECK (std::abs (partGainDb (input, output, mid) + (driven ? 9.0 : 0.0)) <= 0.01);
     CHECK (std::abs (partGainDb (input, output, ! mid)) <= 0.01);
+}
+
+TEST_CASE ("During a Stereo Placement fade, the Gain Reduction is the gain the Engine applies")
+{
+    const auto [from, to] = GENERATE (table<StereoPlacement, StereoPlacement> ({ { StereoPlacement::Stereo, StereoPlacement::Side },
+                                                                                 { StereoPlacement::Side, StereoPlacement::Stereo },
+                                                                                 { StereoPlacement::Stereo, StereoPlacement::Mid },
+                                                                                 { StereoPlacement::Mid, StereoPlacement::Side } }));
+    CAPTURE (from, to);
+    // Both channels alike, the loud part's steady level: all Mid, with no Side. So Stereo and Mid take the Transfer
+    // Curve's 1.5 dB off both channels and Side none, and through each fade the gain moves between the two on both
+    // channels alike.
+    const auto input = test::steadyLevel (2, numSamples, loudDb);
+    auto before = partSettings, after = partSettings;
+    before.stereoPlacement = from;
+    after.stereoPlacement = to;
+    // Once Attack has long settled.
+    const int changeAt = numSamples / 2;
+    const auto records = test::levelHistory (before, sampleRate, input, test::SettingsChange { .at = changeAt, .settings = after });
+    REQUIRE (records.size() == static_cast<std::size_t> (numSamples / 16));
+    // Within what the gain moves in a run as it fades.
+    for (auto run = static_cast<std::size_t> (changeAt / 16 - 10); run < records.size(); ++run)
+    {
+        CAPTURE (run);
+        REQUIRE (std::abs (records[run].gainReductionDb - (records[run].inputDb - records[run].outputDb)) <= 0.05);
+    }
+}
+
+TEST_CASE ("Under Stereo Placement Mid or Side, the level taps read that part's Detection Level and Gain Reduction")
+{
+    const bool midLoud = GENERATE (true, false);
+    const auto placement = GENERATE (StereoPlacement::Mid, StereoPlacement::Side);
+    CAPTURE (midLoud, placement);
+    // The loud part alone: all Mid (both channels alike) or all Side (one the other's negative), the other part silent.
+    const auto loud = test::steadyLevel (1, numSamples, loudDb).front();
+    const std::vector<float> silent (numSamples, 0.0f);
+    const auto input = midLoud ? decoded (loud, silent) : decoded (silent, loud);
+    auto settings = partSettings;
+    settings.stereoPlacement = placement;
+    const auto records = test::levelHistory (settings, sampleRate, input);
+    REQUIRE (! records.empty());
+
+    // The Placement's part, when it is the loud one, reads its level and takes the Transfer Curve's 1.5 dB there;
+    // otherwise it reads silence, the floor, and takes none.
+    const bool heard = midLoud == (placement == StereoPlacement::Mid);
+    CHECK (std::abs (records.back().gainReductionDb - (heard ? loudReductionDb : 0.0)) <= 0.01);
+    CHECK (std::abs (records.back().detectionLevelDb - (heard ? loudDb : plugkit::levelFloorDb)) <= 0.01);
 }

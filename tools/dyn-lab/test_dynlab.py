@@ -292,11 +292,11 @@ class Saturation(unittest.TestCase):
         quiet = [s / 4 for s in x]  # under -12 dB, so under the knee at Drive 6 dB
         self.assertEqual(dynlab.driven(quiet, 6.0, dynlab.AntiAliased()), quiet)
 
-    def test_the_static_curve_is_level_compensated(self):
+    def test_the_steady_curve_is_level_compensated(self):
         # Below the knee, the line; at full scale and Drive 12 dB (g about 3.98), (1 + tanh(g - 1)) / g.
-        self.assertAlmostEqual(dynlab.static_curve_db(-20, 12), -20, places=12)
+        self.assertAlmostEqual(dynlab.steady_curve_db(-20, 12), -20, places=12)
         g = 10 ** (12 / 20)
-        self.assertAlmostEqual(dynlab.static_curve_db(0, 12), 20 * math.log10((1 + math.tanh(g - 1)) / g), places=12)
+        self.assertAlmostEqual(dynlab.steady_curve_db(0, 12), 20 * math.log10((1 + math.tanh(g - 1)) / g), places=12)
 
     def test_before_the_compressor_hears_the_saturated_signal_after_it_hears_the_input(self):
         settings = dynlab.Settings()
@@ -304,9 +304,9 @@ class Saturation(unittest.TestCase):
         before = dynlab.chain(12, settings, dynlab.Saturation(True, 12.0, "before"))
         after = dynlab.chain(12, settings, dynlab.Saturation(True, 12.0, "after"))
         self.assertEqual(after.gain_reduction, off.gain_reduction)
-        self.assertAlmostEqual(before.gain_reduction, dynlab.gain_reduction(dynlab.static_curve_db(12, 12), settings), places=12)
+        self.assertAlmostEqual(before.gain_reduction, dynlab.gain_reduction(dynlab.steady_curve_db(12, 12), settings), places=12)
         self.assertLess(before.gain_reduction, off.gain_reduction)
-        self.assertAlmostEqual(after.output, dynlab.static_curve_db(off.output, 12), places=12)
+        self.assertAlmostEqual(after.output, dynlab.steady_curve_db(off.output, 12), places=12)
         self.assertLess(after.output, off.output)
         self.assertGreater(abs(before.output - after.output), 1)
 

@@ -1,4 +1,5 @@
 #include "Measure.h"
+#include "comp1/Latency.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -82,20 +83,21 @@ constexpr double stepDb = 20.0;
 constexpr double multiplier = 5.0;
 constexpr double transientMargin = 0.01;
 
-// The Gain Reduction in dB on each sample of a steady level held for loudSamples STEP_DB over Threshold, then for
-// quietSamples STEP_DB under it, through an Engine prepared just before, so the run grid starts with the first sample.
+// The Gain Reduction in dB the listener hears on each sample of a steady level held for loudSamples STEP_DB over
+// Threshold, then for quietSamples STEP_DB under it, through an Engine prepared just before, so the run grid starts
+// with the first sample: each output sample against the input sample it carries, the latency the Processing Mode
+// reports earlier.
 std::vector<double> gainReductionOverBurst (const Settings& settings, double sampleRate, int loudSamples, int quietSamples)
 {
     auto loud = test::steadyLevel (1, loudSamples, settings.thresholdDb + stepDb).front();
     const auto quiet = test::steadyLevel (1, quietSamples, settings.thresholdDb - stepDb).front();
     loud.insert (loud.end(), quiet.begin(), quiet.end());
-    const auto input = loud;
-    test::Channels audio { loud };
-    Engine engine;
-    engine.prepare (sampleRate, 512, 1);
-    engine.setSettings (settings);
-    test::processInBlocks (engine, audio, { 512 });
-    return test::gainReductionDb (input, audio.front());
+    const int latency = latencySamples (settings.processingMode, sampleRate);
+    loud.resize (loud.size() + static_cast<std::size_t> (latency), loud.back());
+    const test::Channels input { loud };
+    const auto output = test::played (settings, sampleRate, input);
+    const std::vector<float> heard (output.front().begin() + latency, output.front().end());
+    return test::gainReductionDb ({ input.front().begin(), input.front().end() - latency }, heard);
 }
 
 // The Release after loudSamples of compression, as dyn-lab measures it: from the Gain Reduction the loud level
@@ -129,6 +131,20 @@ TEST_CASE ("After each burst, Release matches dyn-lab's bursts within one sample
     CAPTURE (bursts.command, burst.sampleRate, burst.lengthMs);
     const int loudSamples = static_cast<int> (std::lround (burst.lengthMs * burst.sampleRate / 1000.0));
     auto settings = bursts.settings;
+    settings.autoRelease = false;
+    checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, 1.0), burst.off, burst.sampleRate);
+    settings.autoRelease = true;
+    checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, 2.0), burst.on, burst.sampleRate);
+}
+
+TEST_CASE ("In High Quality too, after each burst, Release matches dyn-lab's bursts within one sample, Auto Release off and on")
+{
+    const auto& bursts = GENERATE (from_range (allBursts()));
+    const auto& burst = GENERATE_REF (from_range (bursts.rows));
+    CAPTURE (bursts.command, burst.sampleRate, burst.lengthMs);
+    const int loudSamples = static_cast<int> (std::lround (burst.lengthMs * burst.sampleRate / 1000.0));
+    auto settings = bursts.settings;
+    settings.processingMode = ProcessingMode::HighQuality;
     settings.autoRelease = false;
     checkWithinOneSample (releaseAfter (settings, burst.sampleRate, loudSamples, 1.0), burst.off, burst.sampleRate);
     settings.autoRelease = true;

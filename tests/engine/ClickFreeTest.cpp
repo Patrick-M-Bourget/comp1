@@ -97,16 +97,28 @@ double discontinuity (const test::Channels& output, double sampleRate)
     return worst;
 }
 
-constexpr double threshold = 2.0;
+// A discontinuity() at or over this is a click.
+constexpr double clickLimit = 2.0;
 
 // False until the onset has passed, then flips every 50 ms.
 bool alternating (double seconds) { return seconds >= onsetSeconds && static_cast<int> ((seconds - onsetSeconds) / 0.05) % 2 == 0; }
 
-// A sample at a time, odd and large blocks, at every sample rate comp1 supports.
+// Every sample rate comp1 supports, each with a host block size in turn from a sample at a time, odd and large ones.
+const std::vector<Host>& hosts()
+{
+    static const std::vector<Host> all = [] {
+        const std::vector<int> blockSizes { 17, 512, 1, 64, 33, 4096 };
+        std::vector<Host> h;
+        for (std::size_t r = 0; r < test::sampleRates().size(); ++r)
+            h.push_back ({ test::sampleRates()[r], blockSizes[r % blockSizes.size()] });
+        return h;
+    }();
+    return all;
+}
+
 Host anyHost()
 {
-    return GENERATE (Host { 44100.0, 17 }, Host { 48000.0, 64 }, Host { 48000.0, 512 }, Host { 88200.0, 1 }, Host { 96000.0, 17 },
-                     Host { 96000.0, 512 }, Host { 176400.0, 33 }, Host { 192000.0, 4096 });
+    return GENERATE (from_range (hosts()));
 }
 
 constexpr double infinity = std::numeric_limits<double>::infinity();
@@ -120,6 +132,7 @@ struct Jump
     // a pure sine: Saturation's own harmonics sharpen the tone's corners past a sine's.
     std::vector<std::function<void (Settings&)>> steady = {};
     int numChannels = 1; // the track it is heard on
+    Envelope amplitude = [] (double) { return toneAmplitude; };
 };
 
 // Saturation on at Drive 24 dB, which pushes the tone (-12 dB) 12 dB into the shape.
@@ -140,6 +153,32 @@ Jump onStereo (std::string setting, std::function<void (Settings&, bool)> set)
              },
              {},
              2 };
+}
+
+// High Quality, where Lookahead is read, with a compressor quick enough to follow the tremolo below.
+void lookingAhead (Settings& s)
+{
+    s.processingMode = ProcessingMode::HighQuality;
+    s.thresholdDb = -40.0;
+    s.ratio = 4.0;
+    s.attackMs = 5.0;
+    s.releaseMs = 50.0;
+}
+
+// The tone swelling and fading by 30 dB twenty times a second. On a steady tone the detector hears the same level at
+// any Lookahead, so a jump would move nothing; here a jump moves what the detector hears to a level up to 9 dB away.
+// Without Lookahead's glide that clicks at 44.1, 88.2 and 176.4 kHz, up to 3 times the limit; with it, it stays under
+// the limit at every host.
+double tremolo (double seconds)
+{
+    return toneAmplitude * std::pow (10.0, -15.0 * (1.0 - std::cos (2.0 * std::numbers::pi * 20.0 * seconds)) / 20.0);
+}
+
+// The Detection EQ's free band on, a Bell boosting 18 dB at the tone, which each free band row moves from.
+void freeBandAtTone (Settings& s)
+{
+    s.detectionEq.freeBand.on = true;
+    s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = 1.0 };
 }
 
 Jump placementJump (StereoPlacement a, StereoPlacement b, std::string setting)
@@ -183,10 +222,18 @@ const std::vector<Jump>& jumps()
             saturating } },
         // Held, the uncompressed input plays in place of the compressed one.
         { "Detection Audition", [] (Settings& s, bool b) { s.detectionAudition = b; } },
-        { "Lookahead", [] (Settings& s, bool b) {
-             s.processingMode = ProcessingMode::HighQuality; // Zero Latency doesn't read it
-             s.lookaheadMs = b ? 5.0 : 0.0;
-         } },
+        { "Lookahead",
+          [] (Settings& s, bool b) {
+              lookingAhead (s);
+              s.lookaheadMs = b ? 5.0 : 0.0;
+          },
+          { lookingAhead,
+            [] (Settings& s) {
+                lookingAhead (s);
+                s.lookaheadMs = 5.0;
+            } },
+          1,
+          tremolo },
         // The Detection EQ's, each moving across the tone or switching how it filters it.
         { "Detection EQ high-pass on", [] (Settings& s, bool b) {
              s.detectionEq.highPass.filter.frequency = 1000.0;
@@ -215,27 +262,24 @@ const std::vector<Jump>& jumps()
              s.detectionEq.lowPass.filter.slope = b ? 48.0 : 6.0;
          } },
         { "Detection EQ free band on", [] (Settings& s, bool b) {
-             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = 1.0 };
+             freeBandAtTone (s);
              s.detectionEq.freeBand.on = b;
          } },
         { "Detection EQ free band Shape", [] (Settings& s, bool b) {
-             s.detectionEq.freeBand.on = true;
-             s.detectionEq.freeBand.filter = { .shape = shapeOf (b ? FreeBandShape::HighShelf : FreeBandShape::Bell),
-                                           .gain = 18.0,
-                                           .frequency = toneFrequency,
-                                           .q = 1.0 };
+             freeBandAtTone (s);
+             s.detectionEq.freeBand.filter.shape = shapeOf (b ? FreeBandShape::HighShelf : FreeBandShape::Bell);
          } },
         { "Detection EQ free band Frequency", [] (Settings& s, bool b) {
-             s.detectionEq.freeBand.on = true;
-             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = b ? 20000.0 : 20.0, .q = 1.0 };
+             freeBandAtTone (s);
+             s.detectionEq.freeBand.filter.frequency = b ? 20000.0 : 20.0;
          } },
         { "Detection EQ free band Gain", [] (Settings& s, bool b) {
-             s.detectionEq.freeBand.on = true;
-             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = b ? 30.0 : -30.0, .frequency = toneFrequency, .q = 1.0 };
+             freeBandAtTone (s);
+             s.detectionEq.freeBand.filter.gain = b ? 30.0 : -30.0;
          } },
         { "Detection EQ free band Q", [] (Settings& s, bool b) {
-             s.detectionEq.freeBand.on = true;
-             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = b ? 40.0 : 0.025 };
+             freeBandAtTone (s);
+             s.detectionEq.freeBand.filter.q = b ? 40.0 : 0.025;
          } },
         onStereo ("Stereo Link", [] (Settings& s, bool b) { s.stereoLink = b ? 100.0 : 0.0; }),
         placementJump (StereoPlacement::Stereo, StereoPlacement::Mid, "Stereo Placement, Stereo and Mid"),
@@ -261,14 +305,14 @@ TEST_CASE ("Jumps in each compressor setting do not click")
     const auto host = anyHost();
     CAPTURE (jump.setting, host.sampleRate, host.blockSize);
     const auto play = [&host, &jump] (const std::function<void (double, Settings&)>& change) {
-        return playTone (host, change, [] (double) { return toneAmplitude; }, toneSeconds, jump.numChannels);
+        return playTone (host, change, jump.amplitude, toneSeconds, jump.numChannels);
     };
     const auto output = play ([&jump] (double time, Settings& s) { jump.set (s, alternating (time)); });
     double steady = 1.0;
     for (const auto& settings : jump.steady)
         steady = std::max (steady, discontinuity (play ([&settings] (double, Settings& s) { settings (s); }), host.sampleRate));
     CAPTURE (steady);
-    CHECK (discontinuity (output, host.sampleRate) < threshold * steady);
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit * steady);
 }
 
 namespace
@@ -347,7 +391,24 @@ TEST_CASE ("Jumps in each Detection EQ setting do not click in Detection Auditio
         s.detectionAudition = true;
         jump.set (s, alternating (time));
     });
-    CHECK (discontinuity (output, host.sampleRate) < threshold);
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit);
+}
+
+TEST_CASE ("Jumps in Stereo Placement do not click in Detection Audition")
+{
+    const auto& jump = GENERATE (filter ([] (const Jump& j) { return j.setting.starts_with ("Stereo Placement"); }, from_range (jumps())));
+    const auto host = anyHost();
+    CAPTURE (jump.setting, host.sampleRate, host.blockSize);
+    const auto output = playTone (
+        host,
+        [&jump] (double time, Settings& s) {
+            s.detectionAudition = true;
+            jump.set (s, alternating (time));
+        },
+        [] (double) { return toneAmplitude; },
+        toneSeconds,
+        jump.numChannels);
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }
 
 TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
@@ -369,7 +430,7 @@ TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
         },
         midReleaseAmplitude,
         cycles * cycleSeconds);
-    CHECK (discontinuity (output, host.sampleRate) < threshold);
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }
 
 TEST_CASE ("While a compressor setting glides, the output is the same however the audio is cut into blocks")
@@ -382,22 +443,12 @@ TEST_CASE ("While a compressor setting glides, the output is the same however th
     CAPTURE (jump.setting, cut);
     // Noise, loud enough to be compressed throughout.
     const auto input = test::noise (2, 20000);
-    auto whole = input, cutUp = input;
-    for (auto* audio : { &whole, &cutUp })
-    {
-        Engine engine;
-        engine.prepare (48000.0, 4096, 2);
-        Settings settings;
-        jump.set (settings, false);
-        engine.setSettings (settings);
-        // The jump lands 100 samples in, part-way through a run.
-        auto lead = test::noise (2, 100, 9);
-        test::processInBlocks (engine, lead, { 100 });
-        jump.set (settings, true);
-        engine.setSettings (settings);
-        test::processInBlocks (engine, *audio, audio == &whole ? wholeCut : cut);
-    }
-    CHECK (cutUp == whole);
+    Settings before, after;
+    jump.set (before, false);
+    jump.set (after, true);
+    // The jump lands 100 samples in, part-way through a run.
+    const test::SettingsChange jumped { .at = 100, .settings = after };
+    CHECK (test::played (before, 48000.0, input, cut, nullptr, jumped) == test::played (before, 48000.0, input, wholeCut, nullptr, jumped));
 }
 
 TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click")
@@ -407,5 +458,5 @@ TEST_CASE ("A Processing Mode switch, each way, mid-tone, does not click")
     const auto output = playTone (host, [] (double time, Settings& s) {
         s.processingMode = alternating (time) ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency;
     });
-    CHECK (discontinuity (output, host.sampleRate) < threshold);
+    CHECK (discontinuity (output, host.sampleRate) < clickLimit);
 }

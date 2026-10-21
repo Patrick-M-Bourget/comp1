@@ -25,6 +25,10 @@ namespace comp1
 // detection signal's Mid and Side: a stereo one's, encoded from its two channels, or a mono one itself, so a mono
 // detection signal drives every Placement, Side included. It points into the detection stage's
 // own storage, never at the audio, and holds until the stage's next process().
+//
+// It carries its own place in the run grid: where its first sample fell in the grid as the detection stage took it
+// in. A delay of the detection signal (High Quality's Lookahead, Lookahead.h) delays that place with it, so what runs
+// on the grid as the detector hears it (Auto Release) runs on the same samples in every Processing Mode.
 struct DetectionSignal
 {
     const float* const* channels = nullptr;
@@ -33,8 +37,12 @@ struct DetectionSignal
     const float* const* followed = nullptr; // per main channel, under Stereo Placement Stereo
     const float* mid = nullptr;             // what Stereo Placement Mid follows
     const float* side = nullptr;            // and Side
+    int runPosition = 0;                    // where the first sample fell in the run grid, 0 to a run less one
 
     const float* channelFollowedBy (int mainChannel) const { return followed[mainChannel]; }
+
+    // What Stereo Placement Mid or Side follows.
+    const float* partFollowedBy (plugkit::StereoPlacement placement) const { return placement == plugkit::StereoPlacement::Mid ? mid : side; }
 };
 
 // Takes the Internal signal and the Sidechain (or none) for one piece of a run, each a block of that piece's samples,
@@ -44,7 +52,7 @@ struct DetectionSignal
 // With Detection Source Internal there is one detection channel per main channel, carrying the Internal signal sample
 // for sample, and each main channel follows its own; the Sidechain changes nothing. With External the detection
 // channels are the Sidechain's: each main channel follows the Sidechain channel of its own index, a mono Sidechain is
-// followed by every main channel, so a mono key, like a kick, ducks the whole track, and a mono main follows the
+// followed by every main channel, so a mono Sidechain, like a kick, ducks the whole track, and a mono main follows the
 // louder of a stereo Sidechain's two channels at each sample. With External and no Sidechain, the detection signal is
 // silence, a channel of it per main channel: no Gain Reduction starts, and any in progress returns at Release.
 //
@@ -113,8 +121,11 @@ private:
     // The first numChannels of storage through the Detection EQ, then routed by signal().
     DetectionSignal filtered (int numChannels, ConstAudioBlock internal)
     {
+        const int runPosition = eq.runPosition();
         eq.process (writable.data(), numChannels, internal.numSamples);
-        return signal (numChannels, internal);
+        auto routed = signal (numChannels, internal);
+        routed.runPosition = runPosition;
+        return routed;
     }
 
     // The detection signal of the first numChannels of storage, for the main channels of internal.

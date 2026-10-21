@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <string>
 #include <vector>
 
 using namespace comp1;
@@ -23,25 +24,12 @@ constexpr auto highQuality = ProcessingMode::HighQuality;
 test::Channels play (const test::Channels& audio, double sampleRate, const std::vector<int>& cut, const Settings& settings,
                      const Settings& later, int switchAt)
 {
-    auto first = audio, second = audio;
-    for (auto& channel : first)
-        channel.resize (static_cast<std::size_t> (switchAt));
-    for (auto& channel : second)
-        channel.erase (channel.begin(), channel.begin() + switchAt);
-    Engine engine;
-    engine.prepare (sampleRate, 4096, static_cast<int> (audio.size()));
-    engine.setSettings (settings);
-    test::processInBlocks (engine, first, cut);
-    engine.setSettings (later);
-    test::processInBlocks (engine, second, cut);
-    for (std::size_t ch = 0; ch < audio.size(); ++ch)
-        first[ch].insert (first[ch].end(), second[ch].begin(), second[ch].end());
-    return first;
+    return test::played (settings, sampleRate, audio, cut, nullptr, test::SettingsChange { .at = switchAt, .settings = later });
 }
 
 test::Channels play (const test::Channels& audio, double sampleRate, const std::vector<int>& cut, const Settings& settings)
 {
-    return play (audio, sampleRate, cut, settings, settings, 0);
+    return test::played (settings, sampleRate, audio, cut);
 }
 
 } // namespace
@@ -83,6 +71,81 @@ TEST_CASE ("High Quality at Lookahead 0 is Zero Latency's output delayed by the 
     const auto input = test::noise (2, 6000);
     const auto zeroLatencyOutput = play (input, sampleRate, cut, compressing);
     CHECK (play (input, sampleRate, cut, highQualitySettings) == test::delayed (zeroLatencyOutput, latencySamples (highQuality, sampleRate)));
+}
+
+TEST_CASE ("High Quality at Lookahead 0 is Zero Latency's output delayed by the reported latency with Auto Release on, bit for bit")
+{
+    const double sampleRate = GENERATE (from_range (test::sampleRates()));
+    const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
+    CAPTURE (sampleRate, cut);
+    // Auto Release moves on a run at a time, on the run grid of what the detector hears, which High Quality delays.
+    const Settings compressing { .thresholdDb = -30.0, .attackMs = 1.0, .releaseMs = 20.0, .autoRelease = true };
+    auto highQualitySettings = compressing;
+    highQualitySettings.processingMode = highQuality;
+    const auto input = test::noise (2, 6000);
+    const auto zeroLatencyOutput = play (input, sampleRate, cut, compressing);
+    CHECK (play (input, sampleRate, cut, highQualitySettings) == test::delayed (zeroLatencyOutput, latencySamples (highQuality, sampleRate)));
+}
+
+namespace
+{
+
+// A compressor setting that shapes what the detector hears, or how its Gain Reduction is applied.
+struct Scene
+{
+    std::string name;
+    Settings settings;
+};
+
+const std::vector<Scene>& detectionScenes()
+{
+    static const std::vector<Scene> all = [] {
+        const Settings compressing { .thresholdDb = -30.0, .attackMs = 1.0, .releaseMs = 20.0 };
+        std::vector<Scene> scenes;
+        const auto add = [&] (std::string name, auto change) {
+            auto settings = compressing;
+            change (settings);
+            scenes.push_back ({ std::move (name), settings });
+        };
+        add ("Detection EQ", [] (Settings& s) {
+            s.detectionEq.highPass.on = true;
+            s.detectionEq.highPass.filter.frequency = 400.0;
+            s.detectionEq.highPass.filter.slope = 24.0;
+            s.detectionEq.freeBand.on = true;
+            s.detectionEq.freeBand.filter.gain = 12.0;
+            s.detectionEq.freeBand.filter.frequency = 3000.0;
+        });
+        add ("Stereo Link 50%", [] (Settings& s) { s.stereoLink = 50.0; });
+        add ("Stereo Placement Mid", [] (Settings& s) { s.stereoPlacement = StereoPlacement::Mid; });
+        add ("Stereo Placement Side", [] (Settings& s) { s.stereoPlacement = StereoPlacement::Side; });
+        add ("Auto Release", [] (Settings& s) { s.autoRelease = true; });
+        return scenes;
+    }();
+    return all;
+}
+
+} // namespace
+
+TEST_CASE ("High Quality at any Lookahead is Zero Latency fed the input Lookahead early as its Sidechain, delayed by the latency less Lookahead, bit for bit")
+{
+    // In High Quality the compressor meets the audio delayed by the Lookahead budget and the detection signal by
+    // Lookahead less: as Zero Latency does the audio delayed by Lookahead with the input itself on the Sidechain. The
+    // two outputs then differ only by the rest of the latency.
+    const auto& scene = GENERATE (from_range (detectionScenes()));
+    const double sampleRate = GENERATE (from_range (test::sampleRates()));
+    const double lookaheadMs = GENERATE (0.0, 2.0, 5.0);
+    const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
+    CAPTURE (scene.name, sampleRate, lookaheadMs, cut);
+    const auto input = test::noise (2, 6000);
+    const int lookahead = static_cast<int> (std::lround (lookaheadMs * sampleRate / 1000.0));
+
+    auto external = scene.settings;
+    external.detectionSource = DetectionSource::External;
+    const auto zeroLatencyOutput = test::played (external, sampleRate, test::delayed (input, lookahead), cut, &input);
+    auto highQualitySettings = scene.settings;
+    highQualitySettings.processingMode = highQuality;
+    highQualitySettings.lookaheadMs = lookaheadMs;
+    CHECK (play (input, sampleRate, cut, highQualitySettings) == test::delayed (zeroLatencyOutput, latencySamples (highQuality, sampleRate) - lookahead));
 }
 
 TEST_CASE ("In Zero Latency, Lookahead changes nothing, at every sample rate and block size")
