@@ -24,8 +24,8 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
     for (int block = 0; block < 64; ++block)
     {
         // Every setting moving every block, Output Gain back to 0 dB every few, Auto Release and Auto Gain on and off,
-        // Detection Source and Detection Audition moving every few; blocks cutting the grid's runs; the Sidechain
-        // coming and going, and changing between mono and stereo.
+        // Detection Source, Detection Audition and Stereo Placement moving every few, Stereo Link every block; blocks
+        // cutting the grid's runs; the Sidechain coming and going, and changing between mono and stereo.
         engine.setSettings ({ .thresholdDb = -6.0 * (block % 10),
                               .ratio = block % 5 == 4 ? std::numeric_limits<double>::infinity() : 1.0 + block % 5,
                               .kneeDb = 8.0 * (block % 9),
@@ -37,6 +37,8 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
                               .autoGain = block % 2 == 0,
                               .outputGainDb = block % 4 == 3 ? 0.0 : 6.0 * (block % 7) - 18.0,
                               .detectionSource = block % 6 < 3 ? DetectionSource::External : DetectionSource::Internal,
+                              .stereoPlacement = static_cast<StereoPlacement> ((block / 4) % 3),
+                              .stereoLink = 12.5 * (block % 9),
                               .detectionAudition = block % 5 < 2 });
         const int count = block % 3 == 0 ? blockSize : 1 + (block * 37) % blockSize;
         engine.process ({ main, 2, count }, sidechains[(block / 2) % 3]);

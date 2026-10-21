@@ -56,13 +56,19 @@ std::vector<float> part (const test::Channels& stereo, bool mid)
     return encoded;
 }
 
-test::Channels compressed (test::Channels audio, const Settings& settings)
+test::Channels compressed (test::Channels audio, const Settings& settings, const test::Channels* sidechainSamples = nullptr)
 {
     Engine engine;
     engine.prepare (sampleRate, 512, static_cast<int> (audio.size()));
     engine.setSettings (settings);
-    test::processInBlocks (engine, audio, { 512 });
+    test::processInBlocks (engine, audio, { 512 }, sidechainSamples);
     return audio;
+}
+
+// The gain in dB the Mid (true) or the Side of input got by the end of output.
+double partGainDb (const test::Channels& input, const test::Channels& output, bool mid)
+{
+    return 20.0 * std::log10 (static_cast<double> (part (output, mid).back()) / static_cast<double> (part (input, mid).back()));
 }
 
 } // namespace
@@ -102,4 +108,46 @@ TEST_CASE ("A mono track is compressed as Stereo whatever Stereo Placement and S
     CAPTURE (placement, stereoLink);
     const auto input = test::noise (1, numSamples);
     CHECK (compressed (input, { .stereoPlacement = placement, .stereoLink = stereoLink }) == compressed (input, {}));
+}
+
+namespace
+{
+
+// A Sidechain whose loud part is a steady -6 dB: on the Mid (both channels alike), on the Side (one the other's
+// negative), or a mono one.
+enum class Key
+{
+    loudMid,
+    loudSide,
+    mono,
+};
+
+test::Channels sidechainOf (Key key)
+{
+    auto channels = test::steadyLevel (key == Key::mono ? 1 : 2, numSamples, -6.0);
+    if (key == Key::loudSide)
+        for (auto& sample : channels[1])
+            sample = -sample;
+    return channels;
+}
+
+} // namespace
+
+TEST_CASE ("With External, a stereo Sidechain's Mid or Side drives Stereo Placement Mid or Side, and a mono one drives every Placement")
+{
+    const auto key = GENERATE (Key::loudMid, Key::loudSide, Key::mono);
+    const auto placement = GENERATE (StereoPlacement::Mid, StereoPlacement::Side);
+    CAPTURE (key, placement);
+    // The main input's Mid and Side are steady and far under Threshold, so only the Sidechain moves them.
+    const auto input = decoded (test::steadyLevel (1, numSamples, -30.0).front(), test::steadyLevel (1, numSamples, -36.0).front());
+    const auto sidechainSamples = sidechainOf (key);
+    const auto output = compressed (input, { .detectionSource = DetectionSource::External, .stereoPlacement = placement }, &sidechainSamples);
+
+    // The Placement's part takes the Transfer Curve's 9 dB at the Sidechain's -6 dB (python3 tools/dyn-lab/dynlab.py
+    // transfer) when its part of the Sidechain is the loud one, or the Sidechain is mono, and none otherwise; the
+    // other part passes.
+    const bool mid = placement == StereoPlacement::Mid;
+    const bool driven = key == Key::mono || (key == Key::loudMid) == mid;
+    CHECK (std::abs (partGainDb (input, output, mid) + (driven ? 9.0 : 0.0)) <= 0.01);
+    CHECK (std::abs (partGainDb (input, output, ! mid)) <= 0.01);
 }
