@@ -23,6 +23,16 @@ struct ConstAudioBlock
     int numSamples = 0;
 };
 
+// The levels of one completed run of the Engine's 16-sample grid, each in dB, the floor (plugkit::levelFloorDb) for
+// silence. The level history holds one per run.
+struct LevelRecord
+{
+    double inputDb = plugkit::levelFloorDb;          // the Input Level: the main input's sample peak, the louder channel's
+    double outputDb = plugkit::levelFloorDb;         // the Output Level's sample peak, the louder channel's
+    double gainReductionDb = 0.0;                    // the compressor's most Gain Reduction, the larger channel's
+    double detectionLevelDb = plugkit::levelFloorDb; // the loudest Detection Level, the louder channel's
+};
+
 // The DSP Engine: plain C++, with no JUCE. prepare() may allocate; setSettings() and process() never allocate,
 // lock or do I/O. process() flushes subnormal numbers to zero, whatever the caller's floating-point mode, and
 // leaves that mode as it found it.
@@ -33,8 +43,8 @@ struct ConstAudioBlock
 // Latency: in High Quality the output is delayed by comp1/Latency.h's latencySamples() for the sample rate, the same
 // whatever the other settings; what is said of the output below holds of it delayed so. Zero Latency has none.
 //
-// The level taps: the Output Level is read with readOutputLevel(), from one reader thread while process() runs on the
-// audio thread. Reading never allocates, locks or does I/O, and stays safe through any prepare(), at any sample rate or
+// The level taps: the Output Level is read with readOutputLevel(), and the level history with readLevels() and
+// skipLevels(), each from one reader thread while process() runs on the audio thread. Reading never allocates, locks or does I/O, and stays safe through any prepare(), at any sample rate or
 // channel count: nothing a reader touches is freed or moved while the Engine lives. Silence, anything quieter than
 // plugkit::levelFloorDb, and NaN read the floor.
 class Engine
@@ -69,6 +79,20 @@ public:
     // reads is reported once, by the next; its RMS is over the last 300 ms on the run grid. Another channel reads the
     // floor.
     plugkit::OutputLevel readOutputLevel (int channel);
+
+    // Copies up to maxRecords of the level history, oldest first, and returns how many were copied: a record per run
+    // process() has completed since the last read, the same record for record however the host cuts the audio into
+    // blocks. When the reader falls behind, the history holds levelHistoryCapacity() records and drops new ones.
+    int readLevels (LevelRecord* destination, int maxRecords);
+
+    // Drops what the level history holds, so the next readLevels() copies only runs completed after this: a reader
+    // starting afresh, the editor opening, sees current levels rather than what piled up while nothing read them. From
+    // readLevels()'s reader thread.
+    void skipLevels();
+
+    // How many records the level history holds between reads, at least 150 ms of runs: the reader's buffer is this
+    // big. Safe to call from any thread.
+    int levelHistoryCapacity() const;
 
 private:
     struct Impl;

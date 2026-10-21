@@ -3,6 +3,7 @@
 #include "Clean.h"
 #include "DelayLine.h"
 #include "Detection.h"
+#include "LevelTaps.h"
 #include "Lookahead.h"
 #include "ModeFade.h"
 #include "comp1/Latency.h"
@@ -287,6 +288,8 @@ struct Engine::Impl
     static constexpr int maxOutputLevelChannels = 2;
     std::array<plugkit::OutputLevelTap, maxOutputLevelChannels> outputLevels;
     std::atomic<int> outputLevelChannels { 0 };
+    RunLevels runLevels;
+    LevelHistory levelHistory;
 
     void applySettings()
     {
@@ -330,6 +333,8 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     for (int ch = 0; ch < outputLevelChannels; ++ch)
         impl->outputLevels[static_cast<std::size_t> (ch)].prepare (sampleRate);
     impl->outputLevelChannels.store (outputLevelChannels, std::memory_order_release);
+    impl->runLevels = {};
+    impl->levelHistory.prepare (sampleRate);
     impl->snapToSettings = true;
 }
 
@@ -363,6 +368,7 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
             // it would hold forever: it plays as silence.
             for (int i = 0; i < count; ++i)
                 samples[i] = std::isfinite (samples[i]) ? samples[i] : 0.0f;
+            impl->runLevels.noteInput (samples, count);
         }
         for (int ch = 0; ch < sidechainChannels; ++ch)
             sidechainPiece[static_cast<std::size_t> (ch)] = sidechain->channels[ch] + start;
@@ -398,10 +404,15 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         impl->modeFade.process (wet);
         for (int ch = 0; ch < std::min (channels, Impl::maxOutputLevelChannels); ++ch)
             impl->outputLevels[static_cast<std::size_t> (ch)].process (wet.channels[ch], count);
+        for (int ch = 0; ch < channels; ++ch)
+            impl->runLevels.noteOutput (wet.channels[ch], count);
 
         impl->gridPosition += count;
         if (impl->gridPosition == plugkit::runSamples)
+        {
             impl->gridPosition = 0;
+            impl->levelHistory.push (impl->runLevels.take());
+        }
     }
 }
 
@@ -413,6 +424,21 @@ int Engine::outputLevelChannels() const
 plugkit::OutputLevel Engine::readOutputLevel (int channel)
 {
     return channel >= 0 && channel < outputLevelChannels() ? impl->outputLevels[static_cast<std::size_t> (channel)].read() : plugkit::OutputLevel {};
+}
+
+int Engine::readLevels (LevelRecord* destination, int maxRecords)
+{
+    return impl->levelHistory.pop (destination, maxRecords);
+}
+
+void Engine::skipLevels()
+{
+    impl->levelHistory.skip();
+}
+
+int Engine::levelHistoryCapacity() const
+{
+    return impl->levelHistory.capacity();
 }
 
 } // namespace comp1
