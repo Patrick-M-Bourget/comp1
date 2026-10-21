@@ -1,4 +1,4 @@
-"""Tests for dyn-lab, at its three seams: the gain computer, the step response and the command line.
+"""Tests for dyn-lab, at its four seams: the gain computer, the step response, Auto Gain and the command line.
 
     python3 tools/dyn-lab/test_dynlab.py
 """
@@ -39,6 +39,22 @@ class GainComputer(unittest.TestCase):
         hard = dynlab.Settings(threshold=-20, ratio=math.inf, knee=0)
         self.assertAlmostEqual(dynlab.gain_computer(0, hard), -20, places=9)
 
+    def test_range_caps_the_gain_reduction_so_the_transfer_curve_rises_again_past_it(self):
+        # Hard knee at 4:1 from -20 dB: 0.75 dB of Gain Reduction per dB over Threshold, capped at 6 dB, which
+        # it reaches 8 dB over.
+        capped = dynlab.Settings(threshold=-20, ratio=4, knee=0, range=6)
+        self.assertAlmostEqual(dynlab.gain_reduction(-16, capped), 3, places=9)
+        self.assertAlmostEqual(dynlab.gain_reduction(-12, capped), 6, places=9)
+        self.assertAlmostEqual(dynlab.gain_reduction(0, capped), 6, places=9)
+        self.assertAlmostEqual(dynlab.transfer(0, capped), -6, places=9)
+        curve = dynlab.transfer_curve(capped)
+        self.assertIn((-12, -18, "range"), [(level, round(out, 9), region) for level, out, region in curve.rows])
+        self.assertAlmostEqual(curve.slope_above, 1, places=9)
+
+    def test_range_0_leaves_the_signal_alone(self):
+        for level in (-60, -18, 0):
+            self.assertEqual(dynlab.gain_reduction(level, dynlab.Settings(range=0)), 0)
+
 
 class StepResponse(unittest.TestCase):
     """A ±20 dB level step around Threshold: up for Attack, down for Release. The detector is one pole
@@ -65,6 +81,57 @@ class StepResponse(unittest.TestCase):
                 self.assertWithinOneSample(step.release_63, 100, fs)
                 self.assertWithinOneSample(step.attack_63, 10, fs)
 
+    def test_range_leaves_the_times_unchanged(self):
+        # Range caps what the detector is asked for, before it smooths it, so each time is the same fraction of
+        # a smaller step.
+        for fs in dynlab.SAMPLE_RATES:
+            step = dynlab.step_response(dynlab.Settings(attack=10, release=100, hold=20, range=6), fs)
+            self.assertWithinOneSample(step.attack_63, 10, fs)
+            self.assertWithinOneSample(step.release_90, 100 * math.log(10), fs)
+            self.assertWithinOneSample(step.hold, 20, fs)
+
+    def test_range_0_has_no_gain_reduction_to_measure(self):
+        self.assertIsNone(dynlab.step_response(dynlab.Settings(range=0), 48000))
+
+
+class AutoGain(unittest.TestCase):
+    def test_the_estimate_is_the_average_gain_reduction_over_the_reference_levels(self):
+        # Worked by hand at the defaults over -40 to 0 dB in 2 dB steps (21 levels). The Knee runs from -21 to
+        # -15 dB: 0.75 (L + 21)^2 / 12 at -20, -18 and -16 dB is 0.0625, 0.5625 and 1.5625. Above it, 0.75 (L + 18)
+        # from -14 to 0 dB sums to 66. Below it, nothing. (66 + 2.1875) / 21.
+        self.assertAlmostEqual(dynlab.auto_gain(dynlab.Settings()), 68.1875 / 21, places=9)
+        # Range 6 caps the six levels from -10 dB up at 6 dB: 3 + 4.5 + 6 * 6 above the Knee.
+        self.assertAlmostEqual(dynlab.auto_gain(dynlab.Settings(range=6)), 45.6875 / 21, places=9)
+        self.assertEqual(dynlab.auto_gain(dynlab.Settings(ratio=1)), 0)
+
+    def test_the_estimate_is_far_below_the_textbook_makeup(self):
+        # Making up the Gain Reduction at 0 dBFS gives 13.5 dB at the defaults: loud material would get louder.
+        defaults = dynlab.Settings()
+        self.assertAlmostEqual(dynlab.gain_reduction(0, defaults), 13.5, places=9)
+        self.assertLess(dynlab.auto_gain(defaults), 13.5 / 3)
+
+    def test_the_reference_signal_is_fixed_and_steps_through_the_reference_levels(self):
+        first, again = dynlab.reference_signal(), dynlab.reference_signal()
+        self.assertEqual(first, again)
+        self.assertEqual(len(first), len(dynlab.REFERENCE_LEVELS))
+        for level, segment in zip(dynlab.REFERENCE_LEVELS, first):
+            with self.subTest(level):
+                # A segment at a Detection Level has the power of a sine whose peak reads that level: half its
+                # peak squared.
+                power = sum(x * x for x in segment) / len(segment)
+                self.assertAlmostEqual(10 * math.log10(power), level - 10 * math.log10(2), places=9)
+                self.assertEqual(len(segment), round(dynlab.REFERENCE_SEGMENT_SECONDS * dynlab.REFERENCE_RATE))
+
+    def test_with_auto_gain_the_reference_signal_keeps_its_level(self):
+        for settings in (dynlab.Settings(), dynlab.Settings(ratio=math.inf, range=6)):
+            with self.subTest(settings):
+                self.assertLessEqual(abs(dynlab.level_difference(settings)), dynlab.AUTO_GAIN_TOLERANCE)
+
+    def test_without_auto_gain_the_reference_signal_would_be_quieter(self):
+        # The check can fail: the same signal compressed without Auto Gain loses about the estimate.
+        defaults = dynlab.Settings()
+        self.assertLess(dynlab.level_difference(defaults, auto_gain_db=0), -dynlab.AUTO_GAIN_TOLERANCE)
+
 
 LAB = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(LAB))
@@ -80,7 +147,7 @@ class CommandLine(unittest.TestCase):
         with open(os.path.join(LAB, "USAGE.md")) as doc:
             examples = [line.strip() for line in doc if line.strip().startswith("python3 tools/dyn-lab/dynlab.py")]
         commands = {example.split()[2] for example in examples}
-        self.assertEqual(commands, {"transfer", "step"}, "the usage doc shows every command")
+        self.assertEqual(commands, set(dynlab.COMMANDS), "the usage doc shows every command")
         for example in examples:
             with self.subTest(example):
                 result = subprocess.run(example, shell=True, cwd=ROOT, capture_output=True, text=True)
@@ -111,12 +178,20 @@ class CommandLine(unittest.TestCase):
                             (("step", "--hold", "501"), ("Hold", "0", "500")),
                             (("transfer", "--threshold", "3"), ("Threshold", "-60", "0")),
                             (("transfer", "--ratio", "0.5"), ("Ratio", "1", "∞")),
-                            (("transfer", "--knee", "80"), ("Knee", "0", "72"))):
+                            (("transfer", "--knee", "80"), ("Knee", "0", "72")),
+                            (("step", "--range", "61"), ("Range", "0", "60")),
+                            (("autogain", "--range", "-1"), ("Range", "0", "60"))):
             with self.subTest(args):
                 result = run(*args)
                 self.assertNotEqual(result.returncode, 0)
                 for word in named:
                     self.assertIn(word, result.stderr)
+
+    def test_autogain_exits_non_zero_when_the_level_moves_past_the_tolerance(self):
+        # Threshold -60 dB at Ratio inf asks for more than the estimate can keep level (USAGE.md says why).
+        result = run("autogain", "--threshold", "-60", "--ratio", "inf")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("outside", result.stdout)
 
     def test_ratio_reads_inf_and_the_infinity_sign(self):
         for spelling in ("inf", "∞"):
