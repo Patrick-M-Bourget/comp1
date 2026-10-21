@@ -219,8 +219,9 @@ TEST_CASE ("Oversampled, the worst alias at each of dyn-lab's reference conditio
 {
     const auto conditions = oversampledConditions();
     const auto& [oversampling, row] = GENERATE_REF (from_range (conditions));
-    const auto position = GENERATE (SaturationPosition::Before, SaturationPosition::After);
-    CAPTURE (factorOf (oversampling), row.sampleRate, row.frequency, row.driveDb, static_cast<int> (position));
+    // One position: both run the same oversampled section, and the base-rate rows check both.
+    const auto position = SaturationPosition::After;
+    CAPTURE (factorOf (oversampling), row.sampleRate, row.frequency, row.driveDb);
     const int bin = test::toneBin (row.frequency, row.sampleRate);
     const auto spectrum = saturatedSpectrum (row.sampleRate, bin, row.driveDb, position, ProcessingMode::HighQuality, oversampling);
     const double worst = test::worstAliasDb (spectrum, bin);

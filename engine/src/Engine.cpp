@@ -7,6 +7,7 @@
 #include "DryWet.h"
 #include "Glide.h"
 #include "LevelTaps.h"
+#include "Limiter.h"
 #include "Lookahead.h"
 #include "ModeFade.h"
 #include "OversampledSection.h"
@@ -538,8 +539,8 @@ struct Engine::Impl
     SaturationStage saturation;
     GlidingGain autoGain, outputGain;
     // High Quality's delays (comp1/Latency.h): the Oversampling sections, Before the detection stage (with the
-    // Sidechain's delay, so External detection meets the audio as Internal does) and After the compressor, the
-    // Lookahead budget around the compressor, and the Limiter reserve's padding.
+    // Sidechain's delay, so External detection meets the audio as Internal does) and After the compressor, and the
+    // Lookahead budget around the compressor; the Limiter fills the Limiter reserve.
     OversampledSection beforeSection, afterSection;
     DelayLine sidechainDelay;
     std::array<std::vector<float>, 2> sidechainStorage; // the Sidechain's piece, delayed, or silence
@@ -548,7 +549,7 @@ struct Engine::Impl
     ConstAudioBlock heardSidechain;
     std::vector<float> silence; // a run of it, for the Sidechain's delay when nothing is connected
     LookaheadStage lookahead;
-    DelayLine limiterPadding;
+    Limiter limiter;
     ModeFade modeFade;
     Audition audition;
     DryWet dryWet;
@@ -575,6 +576,8 @@ struct Engine::Impl
         saturation.setSettings (settings, snapToSettings);
         dryWet.setLevels (settings.dryDb, settings.wetDb, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
+        limiter.setOn (settings.limiter, snapToSettings);
+        limiter.setCeiling (settings.ceilingDb, snapToSettings);
         audition.setHeld (settings.detectionAudition, snapToSettings);
         audition.setPlacement (settings.stereoPlacement, snapToSettings);
         lookahead.setLookahead (settings.lookaheadMs, snapToSettings);
@@ -616,10 +619,10 @@ struct Engine::Impl
     // by a section whether Saturation is in it or not, the Sidechain delayed with the Before one. Colour (#19) goes in
     // the After section, ahead of Saturation. The audio is delayed by the Lookahead budget and the detection signal by
     // less, so the compressor meets the audio Lookahead early; the two sections and the budget are the Wet path's delay
-    // up to the Dry/Wet sum. Then the Limiter padding after Output Gain. Then Global Bypass, which crossfades to the
-    // input as it came in, delayed to match; it takes precedence over Detection Audition, and everything before it runs
-    // on while it is on, so turning it off has no restart transient.
-    // Last, the mode fade, which swaps the paths in silence.
+    // up to the Dry/Wet sum. After Output Gain, the Limiter, on the path playing. Then Global Bypass, which crossfades
+    // to the input as it came in, delayed to match; it takes precedence over Detection Audition, and everything before
+    // it runs on while it is on, so turning it off has no restart transient. Last, the mode fade, which swaps the paths
+    // in silence.
     void wetPath (AudioBlock wet, const ConstAudioBlock* sidechainPiece, ProcessingMode path)
     {
         globalBypass.takeInput ({ wet.channels, wet.numChannels, wet.numSamples }, path);
@@ -644,8 +647,7 @@ struct Engine::Impl
         dryWet.sum (wet);
         audition.process (detected, wet, highQuality);
         outputGain.process (wet);
-        if (highQuality)
-            limiterPadding.process (wet);
+        limiter.process (wet, path);
         globalBypass.process (wet);
         modeFade.process (wet);
     }
@@ -722,7 +724,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
         impl->sidechainPointers[ch] = impl->sidechainStorage[ch].data();
         impl->sidechainConstPointers[ch] = impl->sidechainStorage[ch].data();
     }
-    impl->limiterPadding.prepare (numChannels, limiterReserveSamples (sampleRate));
+    impl->limiter.prepare (sampleRate, numChannels);
     impl->modeFade.prepare (sampleRate);
     impl->audition.prepare (sampleRate, numChannels);
     impl->dryWet.prepare (sampleRate, numChannels, plugkit::runSamples);

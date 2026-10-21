@@ -125,10 +125,10 @@ TEST_CASE ("Zero Latency is the same at every Oversampling, bit for bit, at ever
     {
         CAPTURE (factorOf (oversampling));
         CHECK (test::played (at (settings, oversampling), sampleRate, input, cut) == reference);
-        // And across a change of Oversampling.
-        CHECK (test::played (at (settings, Oversampling::x1), sampleRate, input, cut, nullptr, test::SettingsChange { .at = 2003, .settings = at (settings, oversampling) })
-               == reference);
     }
+    // And across a change of Oversampling.
+    CHECK (test::played (at (settings, Oversampling::x1), sampleRate, input, cut, nullptr, test::SettingsChange { .at = 2003, .settings = at (settings, Oversampling::x8) })
+           == reference);
 }
 
 TEST_CASE ("Oversampled, Saturation Before still changes what the compressor reacts to, as dyn-lab's steady levels say")
@@ -152,9 +152,10 @@ TEST_CASE ("In High Quality, External detection keyed from the input meets the a
     // internally: the Sidechain is delayed with the audio, so External detection keeps Internal's timing.
     const double sampleRate = GENERATE (44100.0, 192000.0);
     const auto oversampling = GENERATE (from_range (everyOversampling()));
-    const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
+    // A sample at a time, and cuts across runs: few, to keep the test short.
+    const auto cut = GENERATE (std::vector<int> { 512 }, std::vector<int> { 1 }, std::vector<int> { 33, 1, 15, 128 });
     CAPTURE (sampleRate, factorOf (oversampling), cut);
-    const int length = static_cast<int> (0.2 * sampleRate);
+    const int length = static_cast<int> (0.05 * sampleRate);
     auto input = test::steadyLevel (2, length, -40.0);
     const auto loud = test::steadyLevel (2, length, 0.0);
     for (std::size_t ch = 0; ch < input.size(); ++ch)

@@ -49,8 +49,8 @@ inline Oversampling oversamplingInForce (Oversampling setting, double sampleRate
 // The Lookahead budget: Lookahead's top, so every Lookahead fits within it.
 inline constexpr double lookaheadBudgetMs = parameterRanges::lookahead.high;
 
-// Reserved for the Limiter (#18): its own lookahead, about 1 ms (ADR 0001). Until then a plain delay of this length,
-// last in the chain, holds its place.
+// The Limiter reserve: High Quality's Limiter's own lookahead, about 1 ms (ADR 0001), last in the chain. The
+// Limiter's true-peak estimator's delay and its lookahead window fill it exactly (dyn-lab's `limiter` prints both).
 inline constexpr double limiterReserveMs = 1.0;
 
 // A time in host samples, rounded up so the time always fits.

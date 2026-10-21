@@ -209,6 +209,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     // Linear in dB, symmetric about 0 dB, which is the default and the range's exact centre: the default passes audio
     // through bit for bit.
     layout.add (floatParameter (outputGainId, "Output Gain", linearRange (parameterRanges::outputGain), defaults.outputGainDb, withText (2, "dB")));
+    // The Limiter, last: on or off, and its Ceiling, linear in dB.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { limiterId, 1 }, "Limiter", defaults.limiter),
+                floatParameter (ceilingId, "Ceiling", linearRange (parameterRanges::ceiling), defaults.ceilingDb, withText (2, "dBFS")));
     // Processing Mode's choices are stored in sessions by index, so their order never changes (ADR 0003). Hosts can't
     // automate it: a switch changes the latency the host compensates for, and fades the output out and in.
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { processingModeId, 1 },
@@ -247,6 +250,8 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       dry (parameters.getRawParameterValue (dryId)),
       wet (parameters.getRawParameterValue (wetId)),
       outputGain (parameters.getRawParameterValue (outputGainId)),
+      limiter (parameters.getRawParameterValue (limiterId)),
+      ceiling (parameters.getRawParameterValue (ceilingId)),
       detectionSource (parameters.getRawParameterValue (detectionSourceId)),
       highPassOn (parameters.getRawParameterValue (detectionHighPassOnId)),
       highPassFrequency (parameters.getRawParameterValue (detectionHighPassFrequencyId)),
@@ -305,6 +310,8 @@ Settings SettingsReader::read() const
              .dryDb = plain (dry),
              .wetDb = plain (wet),
              .outputGainDb = plain (outputGain),
+             .limiter = on (limiter),
+             .ceilingDb = plain (ceiling),
              .detectionSource = choice (detectionSource, DetectionSource::External),
              .detectionEq = eq,
              .stereoPlacement = choice (stereoPlacement, StereoPlacement::Side),
