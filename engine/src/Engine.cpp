@@ -114,8 +114,8 @@ public:
         autoRelease = settings.autoRelease;
     }
 
-    // At the start of each run: the settings move on by a run, and the gain computer and detector take them; then
-    // each detector heard's Auto Release moves on by the run just heard. Then a change of Placement starts its fade.
+    // At the start of each run: the settings move on by a run, and the gain computer and detector take them. Then a
+    // change of Placement starts its fade.
     void startRun()
     {
         bool moving = false;
@@ -127,10 +127,6 @@ public:
             }
         if (moving)
             update();
-        for (std::size_t v = 0; v < voices.size(); ++v)
-            if (v == playing || fading)
-                for (auto& detector : voices[v].detectors)
-                    detector.startRun (releaseMs, autoRelease);
         if (! fading && placement != voices[playing].placement)
         {
             playing = 1 - playing;
@@ -147,11 +143,17 @@ public:
     // Detection Level comes from what it follows, or the Mid or the Side, never from the audio. Each sample's
     // Detection Level and Gain Reduction, as the Placement heard applies it (after Stereo Link), go to levels, taken
     // where the detector reads them, so they follow whatever it hears.
+    //
+    // At each start of a run of the detection signal's own grid, which High Quality's delay moves off the audio's, each
+    // detector heard's Auto Release moves on by the run just heard, so Auto Release runs on the samples the detector
+    // hears in every Processing Mode.
     void process (const DetectionSignal& detection, AudioBlock audio, RunLevels& levels)
     {
         auto& heard = voices[playing];
         for (int i = 0; i < audio.numSamples; ++i)
         {
+            if ((detection.runPosition + i) % plugkit::runSamples == 0)
+                startDetectorRuns();
             const double link = stereoLink.isSettled() ? stereoLink.value() : stereoLink.next();
             askGains (heard, detection, audio.numChannels, i, link, &levels);
             if (! fading)
@@ -178,6 +180,14 @@ public:
     }
 
 private:
+    void startDetectorRuns()
+    {
+        for (std::size_t v = 0; v < voices.size(); ++v)
+            if (v == playing || fading)
+                for (auto& detector : voices[v].detectors)
+                    detector.startRun (releaseMs, autoRelease);
+    }
+
     // One Placement, with detectors of its own (per channel under Stereo, the first for Mid or Side) and the gains it
     // asks for at the sample (likewise).
     struct Voice

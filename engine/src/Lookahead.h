@@ -61,8 +61,8 @@ public:
     // Feeds the audio and what each of its channels follows in its detection signal, then the Mid and the Side, the
     // same piece of a run, into the delays, in both Processing Modes, so a switch to High Quality starts from the latest
     // audio. In High Quality, delays audio in place and returns the detection signal to compress it by, Lookahead ahead
-    // of it: one channel per audio channel, each followed by its own, and its Mid and Side; in Zero Latency, leaves
-    // audio alone and returns detected. The detection signal returned holds until the next process().
+    // of it: one channel per audio channel, each followed by its own, and its Mid and Side, with its place in the run
+    // grid delayed as it is; in Zero Latency, leaves audio alone and returns detected. The detection signal returned holds until the next process().
     DetectionSignal process (const DetectionSignal& detected, AudioBlock audio, bool highQuality)
     {
         // What the compressor follows, a channel per audio channel: a stereo Sidechain under a mono main is followed
@@ -90,7 +90,8 @@ public:
                  .numSamples = detectedBlock.numSamples,
                  .followed = pointers.data(),
                  .mid = withParts ? pointers[parts] : nullptr,
-                 .side = withParts ? pointers[parts + 1] : nullptr };
+                 .side = withParts ? pointers[parts + 1] : nullptr,
+                 .runPosition = ((detected.runPosition - delay) % plugkit::runSamples + plugkit::runSamples) % plugkit::runSamples };
     }
 
 private:

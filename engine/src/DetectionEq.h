@@ -183,7 +183,7 @@ public:
     {
         for (auto& band : bands)
             band.prepare (sampleRate);
-        runPosition = 0;
+        position = 0;
     }
 
     void setTarget (const DetectionEq& eq, bool snap)
@@ -193,21 +193,24 @@ public:
         bands[2].setTarget (eq.freeBand, snap);
     }
 
+    // Where the next piece starts in the run grid.
+    int runPosition() const { return position; }
+
     void process (float* const* channels, int numChannels, int numSamples)
     {
-        if (runPosition == 0)
+        if (position == 0)
             for (auto& band : bands)
                 band.startRun();
         for (auto& band : bands)
-            band.process (channels, std::min (numChannels, DetectionEqBand::maxChannels), numSamples, runPosition);
-        runPosition += numSamples;
-        if (runPosition >= plugkit::runSamples)
-            runPosition = 0;
+            band.process (channels, std::min (numChannels, DetectionEqBand::maxChannels), numSamples, position);
+        position += numSamples;
+        if (position >= plugkit::runSamples)
+            position = 0;
     }
 
 private:
     std::array<DetectionEqBand, 3> bands;
-    int runPosition = 0;
+    int position = 0;
 };
 
 } // namespace comp1

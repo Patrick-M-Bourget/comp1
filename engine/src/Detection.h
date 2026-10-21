@@ -25,6 +25,10 @@ namespace comp1
 // detection signal's Mid and Side: a stereo one's, encoded from its two channels, or a mono one itself, so a mono
 // detection signal drives every Placement, Side included. It points into the detection stage's
 // own storage, never at the audio, and holds until the stage's next process().
+//
+// It carries its own place in the run grid: where its first sample fell in the grid as the detection stage took it
+// in. A delay of the detection signal (High Quality's Lookahead, Lookahead.h) delays that place with it, so what runs
+// on the grid as the detector hears it (Auto Release) runs on the same samples in every Processing Mode.
 struct DetectionSignal
 {
     const float* const* channels = nullptr;
@@ -33,6 +37,7 @@ struct DetectionSignal
     const float* const* followed = nullptr; // per main channel, under Stereo Placement Stereo
     const float* mid = nullptr;             // what Stereo Placement Mid follows
     const float* side = nullptr;            // and Side
+    int runPosition = 0;                    // where the first sample fell in the run grid, 0 to a run less one
 
     const float* channelFollowedBy (int mainChannel) const { return followed[mainChannel]; }
 };
@@ -113,8 +118,11 @@ private:
     // The first numChannels of storage through the Detection EQ, then routed by signal().
     DetectionSignal filtered (int numChannels, ConstAudioBlock internal)
     {
+        const int runPosition = eq.runPosition();
         eq.process (writable.data(), numChannels, internal.numSamples);
-        return signal (numChannels, internal);
+        auto routed = signal (numChannels, internal);
+        routed.runPosition = runPosition;
+        return routed;
     }
 
     // The detection signal of the first numChannels of storage, for the main channels of internal.

@@ -72,6 +72,20 @@ TEST_CASE ("High Quality at Lookahead 0 is Zero Latency's output delayed by the 
     CHECK (play (input, sampleRate, cut, highQualitySettings) == test::delayed (zeroLatencyOutput, latencySamples (highQuality, sampleRate)));
 }
 
+TEST_CASE ("High Quality at Lookahead 0 is Zero Latency's output delayed by the reported latency with Auto Release on, bit for bit")
+{
+    const double sampleRate = GENERATE (from_range (test::sampleRates()));
+    const auto& cut = GENERATE_REF (from_range (test::blockCuts()));
+    CAPTURE (sampleRate, cut);
+    // Auto Release moves on a run at a time, on the run grid of what the detector hears, which High Quality delays.
+    const Settings compressing { .thresholdDb = -30.0, .attackMs = 1.0, .releaseMs = 20.0, .autoRelease = true };
+    auto highQualitySettings = compressing;
+    highQualitySettings.processingMode = highQuality;
+    const auto input = test::noise (2, 6000);
+    const auto zeroLatencyOutput = play (input, sampleRate, cut, compressing);
+    CHECK (play (input, sampleRate, cut, highQualitySettings) == test::delayed (zeroLatencyOutput, latencySamples (highQuality, sampleRate)));
+}
+
 TEST_CASE ("In Zero Latency, Lookahead changes nothing, at every sample rate and block size")
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
