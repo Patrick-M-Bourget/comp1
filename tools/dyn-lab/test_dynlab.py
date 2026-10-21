@@ -278,6 +278,131 @@ class Vca(unittest.TestCase):
         self.assertLessEqual(abs(dynlab.level_difference(dynlab.Settings(character="vca"))), dynlab.AUTO_GAIN_TOLERANCE)
 
 
+class Fet(unittest.TestCase):
+    RATES = dynlab.SAMPLE_RATES
+    # Settings whose loop crosses every region of the Transfer Curve: the Knee, above it, Range, and ∞:1.
+    SETTINGS = ({}, {"ratio": math.inf}, {"knee": 0}, {"knee": 72}, {"range": 6}, {"ratio": 1.5, "knee": 24},
+                {"threshold": -60, "ratio": math.inf, "knee": 0}, {"ratio": 1})
+
+    def fet(self, **options):
+        return dynlab.Settings(character="fet", **options)
+
+    def test_the_loop_solves_its_own_equation_between_where_it_starts_and_its_steady_state(self):
+        for options in self.SETTINGS:
+            settings = self.fet(**options)
+            w = lambda y: dynlab.gain_reduction(self.input_for(y, settings), settings)  # noqa: E731
+            for level in range(-60, 13, 3):
+                steady = dynlab.gain_reduction(level, settings)
+                for previous in (0.0, steady / 2, steady, steady + 5):
+                    with self.subTest(options=options, level=level, previous=previous):
+                        g = dynlab.fet_loop(previous, level, 0.9, settings)
+                        self.assertGreaterEqual(g, min(previous, steady) - 1e-9)
+                        self.assertLessEqual(g, max(previous, steady) + 1e-9)
+                        if settings.ratio != math.inf:
+                            self.assertAlmostEqual(g, 0.9 * previous + 0.1 * w(level - g), places=9)
+
+    @staticmethod
+    def input_for(output_db, settings):
+        """The input level whose Transfer Curve output is output_db, by bisection: an independent inverse."""
+        low, high = output_db, output_db + 200
+        for _ in range(200):
+            middle = (low + high) / 2
+            low, high = (middle, high) if dynlab.transfer(middle, settings) < output_db else (low, middle)
+        return (low + high) / 2
+
+    def test_its_steady_output_is_cleans_transfer_curve(self):
+        for options in self.SETTINGS:
+            with self.subTest(options=options):
+                clean = dynlab.transfer_curve(dynlab.Settings(**options))
+                fet = dynlab.transfer_curve(self.fet(**options))
+                for (level, expected, region), (_, measured, fet_region) in zip(clean.rows, fet.rows):
+                    self.assertAlmostEqual(measured, expected, delta=1e-8)
+                    self.assertEqual(region, fet_region)
+                self.assertAlmostEqual(fet.slope_above, clean.slope_above, places=6)
+
+    def test_attack_runs_ratio_times_faster_up_to_the_cap(self):
+        for ratio in (1.5, 2, 3):
+            clean = dynlab.step_response(dynlab.Settings(ratio=ratio), 48000)
+            fet = dynlab.step_response(self.fet(ratio=ratio), 48000)
+            self.assertAlmostEqual(clean.attack_63 / fet.attack_63, ratio, delta=0.05 * ratio)
+        for ratio in (8, 20, math.inf):
+            clean = dynlab.step_response(dynlab.Settings(ratio=ratio), 48000)
+            fet = dynlab.step_response(self.fet(ratio=ratio), 48000)
+            speedup = clean.attack_63 / fet.attack_63
+            self.assertLessEqual(speedup, dynlab.FET_SPEEDUP_MAX)
+            self.assertGreater(speedup, 0.9 * dynlab.FET_SPEEDUP_MAX)
+
+    def test_a_release_under_the_knee_and_hold_are_cleans(self):
+        for options in ({}, {"attack": 0.5, "release": 50, "hold": 20}, {"ratio": math.inf}):
+            for fs in self.RATES:
+                clean = dynlab.step_response(dynlab.Settings(**options), fs)
+                fet = dynlab.step_response(self.fet(**options), fs)
+                self.assertEqual((fet.release_63, fet.release_90, fet.hold),
+                                 (clean.release_63, clean.release_90, clean.hold))
+
+    def test_a_release_above_the_knee_is_sped_up_too(self):
+        levels = {"quiet": -18 + dynlab.PARTIAL_QUIET_DB, "loud": -18 + dynlab.PARTIAL_LOUD_DB}
+        clean = dynlab.step_response(dynlab.Settings(ratio=4), 48000, **levels)
+        fet = dynlab.step_response(self.fet(ratio=4), 48000, **levels)
+        self.assertLess(fet.release_63, clean.release_63 / 2)
+
+    def test_its_attack_is_under_a_millisecond_at_the_reference_attack_at_every_rate(self):
+        for fs in dynlab.supported_rates():
+            for ratio in (4, math.inf):
+                step = dynlab.step_response(self.fet(attack=dynlab.FET_REFERENCE_ATTACK_MS, ratio=ratio), fs)
+                self.assertLess(step.attack_90, 1.0)
+
+    def test_the_loop_is_stable_at_the_fastest_attack_and_infinite_ratio(self):
+        for fs in dynlab.supported_rates():
+            settings = self.fet(attack=dynlab.ATTACK_RANGE[0], ratio=math.inf)
+            detector = dynlab.Detector(settings, fs, level_db=-40)
+            reductions = [detector.hear_steady(level) for level in [-40] * 10 + [0] * 50]
+            steps = [b - a for a, b in zip(reductions, reductions[1:])]
+            self.assertTrue(all(step >= 0 for step in steps))
+            self.assertAlmostEqual(reductions[-1], 18.0, places=6)
+            noise = dynlab._white(7)
+            detector = dynlab.Detector(settings, fs)
+            for _ in range(2000):
+                reduction = detector.hear_sample(next(noise))
+                self.assertTrue(math.isfinite(reduction) and reduction >= 0)
+
+    def test_with_an_external_detection_source_it_is_feedforward_with_cleans_times(self):
+        for options in ({}, {"attack": 0.5, "release": 50, "hold": 20}, {"ratio": math.inf}):
+            for fs in self.RATES:
+                self.assertEqual(dynlab.step_response(self.fet(**options), fs, external=True),
+                                 dynlab.step_response(dynlab.Settings(**options), fs))
+
+    def test_lookahead_brings_its_attack_forward_against_the_delayed_audio(self):
+        for fs in self.RATES:
+            plain = dynlab.step_response(self.fet(), fs)
+            ahead = dynlab.step_response(self.fet(), fs, lookahead=5)
+            self.assertAlmostEqual(ahead.attack_63, plain.attack_63 - 5, places=9)
+            self.assertEqual(ahead.release_63, plain.release_63)
+
+    def test_auto_release_bursts_release_as_on_clean(self):
+        clean, fet = dynlab.bursts(dynlab.Settings(), 48000), dynlab.bursts(self.fet(), 48000)
+        self.assertEqual(clean, fet)
+
+    def test_with_auto_gain_the_reference_signal_keeps_its_level(self):
+        for options in ({}, {"ratio": math.inf}, {"threshold": -40, "ratio": math.inf}):
+            with self.subTest(options=options):
+                self.assertLessEqual(abs(dynlab.level_difference(self.fet(**options))), dynlab.AUTO_GAIN_TOLERANCE)
+
+    def test_its_colour_is_steeper_than_vcas_about_1_percent_at_10_db_and_3_at_20(self):
+        k = dynlab.tone_bin(*dynlab.COLOUR_TONE)
+        for reduction, thd in ((10, 1.0), (20, 3.0)):
+            fet = dynlab.colour_row(self.fet(), reduction, k)
+            vca = dynlab.colour_row(dynlab.Settings(character="vca"), reduction, k)
+            self.assertAlmostEqual(fet.thd, thd, delta=0.1)
+            self.assertGreater(fet.thd, 2 * vca.thd)
+        self.assertEqual(dynlab.colour_at(self.fet(), 0), dynlab.ColourAt(0.0, 0.0))
+
+    def test_every_colour_aliasing_row_is_under_the_ceiling(self):
+        rows = dynlab.colour_aliases(self.fet())
+        self.assertEqual(len(rows), len(dynlab.ALIAS_RATES) * len(dynlab.ALIAS_FREQUENCIES) * 3)
+        self.assertTrue(all(row.within for row in rows))
+
+
 class Colour(unittest.TestCase):
     """Colour: the Character's own distortion, the Saturation shape's residual weighted and driven by the Gain
     Reduction."""
@@ -648,12 +773,13 @@ class CommandLine(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("burst", result.stderr)
 
-    def test_character_is_clean_or_vca(self):
+    def test_character_is_clean_vca_or_fet(self):
         for command in ("transfer", "step", "bursts", "autogain", "colour"):
             with self.subTest(command):
-                self.assertEqual(run(command, "--character", "vca", *(("--lengths", "1") if command == "bursts" else ()))
-                                 .returncode, 0)
-                result = run(command, "--character", "fet")
+                for character in ("vca", "fet"):
+                    self.assertEqual(run(command, "--character", character,
+                                         *(("--lengths", "1") if command == "bursts" else ())).returncode, 0)
+                result = run(command, "--character", "opto")
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("character", result.stderr)
 

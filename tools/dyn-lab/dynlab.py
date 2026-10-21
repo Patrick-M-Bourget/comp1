@@ -4,8 +4,8 @@
 Models the Clean Character after Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor
 Design — A Tutorial and Analysis" (J. Audio Eng. Soc. 60(6)): feedforward, with a soft-knee gain computer
 and a smooth branching peak detector in the log domain, with Hold, Auto Release and Range, and Auto Gain after it;
-the VCA Character, an RMS Detection Level into Clean's gain computer and detector, and its Colour; High Quality's
-Lookahead and fixed latency; Saturation; and the Limiter. Standard library only. See tools/dyn-lab/USAGE.md for every
+the VCA Character, an RMS Detection Level into Clean's gain computer and detector, and its Colour; the FET Character,
+feedback detection solved within each sample, and its Colour; High Quality's Lookahead and fixed latency; Saturation; and the Limiter. Standard library only. See tools/dyn-lab/USAGE.md for every
 command.
 """
 
@@ -204,8 +204,8 @@ class AutoRelease:
 
 # --- The Characters' Detection Levels -------------------------------------------------------------
 
-# The Characters dyn-lab models. FET and Opto (#20, #21) aren't modelled yet.
-CHARACTERS = ("clean", "vca")
+# The Characters dyn-lab models. Opto (#21) isn't modelled yet.
+CHARACTERS = ("clean", "vca", "fet")
 # VCA's RMS time constant: the one-pole mean-square average covers 1 - 1/e of a step in this many ms. USAGE.md gives
 # the reasons.
 VCA_RMS_MS = 5.0
@@ -252,7 +252,54 @@ class RmsLevel:
         return self._level(x * x)
 
 
-LEVELS = {"clean": PeakLevel, "vca": RmsLevel}
+LEVELS = {"clean": PeakLevel, "vca": RmsLevel, "fet": PeakLevel}
+
+
+# --- FET: feedback detection ----------------------------------------------------------------------
+
+# The most FET's loop may speed up Attack or Release: where the loop would move the Gain Reduction faster than one
+# pole of the time over FET_SPEEDUP_MAX toward the Transfer Curve's Gain Reduction, it moves at that pace instead.
+# USAGE.md gives the reasons.
+FET_SPEEDUP_MAX = 4.0
+# FET's reference Attack in ms, the fast setting at which `step --character fet` shows its sub-millisecond attack.
+FET_REFERENCE_ATTACK_MS = 0.02
+
+
+def fet_loop(previous_db, level_db, pole, settings):
+    """FET's loop, solved within the sample: the Gain Reduction G that one step of a one-pole detector reaches from
+    previous_db when its gain computer reads the detection sample's level less G itself,
+    G = pole·previous + (1 - pole)·w(level - G). w is the Transfer Curve's inverse in the output's domain: for an output
+    level y, the Gain Reduction that brings the input whose Transfer Curve output is y down to it, capped at Range, so at
+    steady state the output is the Transfer Curve's. w never falls as y rises, so the solution is unique and lies
+    between previous_db and the steady Gain Reduction; it is found region by region of the Transfer Curve in closed
+    form."""
+    a, b = pole * previous_db, 1 - pole
+    t, knee, q = settings.threshold, settings.knee, 1 / settings.ratio
+    half = knee / 2
+    if level_db - a <= t - half:
+        loop = a  # below the Knee in the output's domain, where w is 0
+    elif knee > 0 and a + b * (1 - q) * half >= level_db - t - q * half:
+        # Across the Knee. With u = x - T + W/2 for the input x whose output is the loop's, the output's y - T + W/2 is
+        # u + (q - 1)u²/2W, so the loop is pole·(q - 1)u²/2W + u = level - T + W/2 - a, a quadratic in u.
+        e = level_db - t + half - a
+        c = pole * (q - 1) / (2 * knee)
+        u = 2 * e / (1 + math.sqrt(max(0.0, 1 + 4 * c * e)))
+        loop = a + b * (1 - q) * u * u / (2 * knee)
+    else:
+        # Above it, w is (Ratio - 1)(y - T), written with 1/Ratio so that ∞:1 holds the output at Threshold.
+        loop = (q * a + b * (1 - q) * (level_db - t)) / (q + b * (1 - q))
+    # Range caps w, and so the loop's solution.
+    return min(loop, a + b * settings.range)
+
+
+def fet_step(previous_db, level_db, wanted_db, pole, settings):
+    """One sample of FET's detector from previous_db, pole Attack's or Release's: the loop's solution (fet_loop), but
+    never further than one pole of the time over FET_SPEEDUP_MAX moves toward wanted_db, the Transfer Curve's Gain
+    Reduction at the detection sample's level, which is the loop's steady state."""
+    loop = fet_loop(previous_db, level_db, pole, settings)
+    fastest = pole ** FET_SPEEDUP_MAX
+    capped = fastest * previous_db + (1 - fastest) * wanted_db
+    return min(loop, capped) if wanted_db > previous_db else max(loop, capped)
 
 
 # --- Clean: detector ------------------------------------------------------------------------------
@@ -269,12 +316,19 @@ class Detector:
     gives back gain more slowly than Release says.
 
     Every Character's: its Detection Level (LEVELS) feeds the gain computer, and this detector smooths what that asks
-    for, so hear_steady() and hear_sample() take the detection signal, and process() a Detection Level."""
+    for, so hear_steady() and hear_sample() take the detection signal, and process() a Detection Level.
 
-    def __init__(self, settings, fs, gain_reduction=0.0, auto_release=None, level_db=-math.inf):
+    On FET with an Internal Detection Source the detector is fed back: each step is FET's loop (fet_step) rather than
+    the one pole, so the gain computer reads the Detection Level less the Gain Reduction of the same sample. Attack,
+    Release, Hold and Auto Release branch as on Clean, on whether the Transfer Curve asks for more Gain Reduction than
+    the detector holds, which is whether the loop's solution rises. With an External Detection Source (external) the
+    gain applied never reaches the key, so FET is feedforward, as Clean is."""
+
+    def __init__(self, settings, fs, gain_reduction=0.0, auto_release=None, level_db=-math.inf, external=False):
         """auto_release is the AutoRelease state to start from: empty by default. The Character's Detection Level
         starts settled at level_db."""
         self.level = LEVELS[settings.character](fs, level_db)
+        self.feedback = settings.character == "fet" and not external
         self.settings = settings
         self.fs = fs
         self.attack = _pole(settings.attack, fs)
@@ -302,7 +356,10 @@ class Detector:
             return self.gain_reduction
         else:
             pole = self.release
-        self.gain_reduction = pole * self.gain_reduction + (1 - pole) * wanted
+        if self.feedback:
+            self.gain_reduction = fet_step(self.gain_reduction, level_db, wanted, pole, self.settings)
+        else:
+            self.gain_reduction = pole * self.gain_reduction + (1 - pole) * wanted
         return self.gain_reduction
 
     def hear_steady(self, level_db):
@@ -353,25 +410,31 @@ def _times(detector, level_db, start, end, fractions):
     return reached, held
 
 
-def step_response(settings, fs, lookahead=LOOKAHEAD_DEFAULT):
-    """Steps the Detection Level from STEP_DB below Threshold to STEP_DB above it and back, from steady
-    state, and measures the Gain Reduction's Attack, Release and Hold. None when there is no Gain
+def step_response(settings, fs, lookahead=LOOKAHEAD_DEFAULT, external=False, quiet=None, loud=None):
+    """Steps the Detection Level from STEP_DB below Threshold (quiet, in dB, when given) to STEP_DB above it (loud)
+    and back, from steady state, and measures the Gain Reduction's Attack, Release and Hold. None when there is no Gain
     Reduction to measure (Ratio 1:1 or Range 0 dB). Steady state above Threshold is sustained compression, so with
     Auto Release on, its sustain state starts full: the longest release.
 
     With Lookahead (ms), the detector meets each step Lookahead before the listener hears it in the delayed audio.
     Attack's times count from the step the listener hears, so they come Lookahead earlier and can be negative: the
     Gain Reduction starts before the step. Hold and Release are durations from when the detector meets the step down,
-    so Lookahead doesn't move them."""
-    quiet, loud = settings.threshold - STEP_DB, settings.threshold + STEP_DB
+    so Lookahead doesn't move them.
+
+    With external, the step is the key's, on an External Detection Source, while the main stays steady: the Gain
+    Reduction never reaches what the detector hears."""
+    quiet = settings.threshold - STEP_DB if quiet is None else quiet
+    loud = settings.threshold + STEP_DB if loud is None else loud
     low, high = gain_reduction(quiet, settings), gain_reduction(loud, settings)
     if high - low < 1e-9:
         return None
     ms = 1000 / fs
     fractions = (ONE_TIME_CONSTANT, NINETY_PERCENT)
-    (attack_63, attack_90), _ = _times(Detector(settings, fs, low, level_db=quiet), loud, low, high, fractions)
+    (attack_63, attack_90), _ = _times(Detector(settings, fs, low, level_db=quiet, external=external), loud, low, high,
+                                       fractions)
     sustained = AutoRelease(fs, sustain=1.0, heard=RUN_SAMPLES)
-    (release_63, release_90), held = _times(Detector(settings, fs, high, sustained, loud), quiet, high, low, fractions)
+    (release_63, release_90), held = _times(Detector(settings, fs, high, sustained, loud, external), quiet, high, low,
+                                            fractions)
     return Step(attack_63 * ms - lookahead, attack_90 * ms - lookahead, (release_63 - held) * ms,
                 (release_90 - held) * ms, held * ms)
 
@@ -898,12 +961,24 @@ def _rising(reduction_db, scale_db):
     return -math.expm1(-reduction_db / scale_db) if reduction_db > 0 else 0.0
 
 
+# FET's Colour mapping, VCA's form with its own constants, steeper: FET_COLOUR_WEIGHT, FET_COLOUR_WEIGHT_DB and
+# FET_COLOUR_DRIVE_DB play VCA's parts. USAGE.md gives the reasons.
+FET_COLOUR_WEIGHT = 0.25
+FET_COLOUR_WEIGHT_DB = 10.0
+FET_COLOUR_DRIVE_DB = 4.0
+
+# Each Character with Colour: its weight, the Gain Reduction its weight rises over and the one its drive rises over.
+COLOUR_MAPPINGS = {"vca": (VCA_COLOUR_WEIGHT, VCA_COLOUR_WEIGHT_DB, VCA_COLOUR_DRIVE_DB),
+                   "fet": (FET_COLOUR_WEIGHT, FET_COLOUR_WEIGHT_DB, FET_COLOUR_DRIVE_DB)}
+
+
 def colour_at(settings, reduction_db):
     """The Character's Colour at a Gain Reduction in dB, or None for a Character with none (Clean)."""
-    if settings.character != "vca":
+    if settings.character not in COLOUR_MAPPINGS:
         return None
-    return ColourAt(settings.colour / 100 * VCA_COLOUR_WEIGHT * _rising(reduction_db, VCA_COLOUR_WEIGHT_DB),
-                    DRIVE_RANGE[1] * _rising(reduction_db, VCA_COLOUR_DRIVE_DB))
+    weight, weight_db, drive_db = COLOUR_MAPPINGS[settings.character]
+    return ColourAt(settings.colour / 100 * weight * _rising(reduction_db, weight_db),
+                    DRIVE_RANGE[1] * _rising(reduction_db, drive_db))
 
 
 def coloured(x, reduction_db, colour, residual_of):
@@ -1467,6 +1542,7 @@ def step_options(parser):
     timing_options(parser)
     character_option(parser)
     parser.add_argument("--auto-release", action="store_true")
+    parser.add_argument("--external", action="store_true")
 
 
 def _check_rates(rates):
@@ -1510,9 +1586,31 @@ class TransferCurve:
     slope_above: float
 
 
+# FET's Transfer Curve is measured rather than worked out: its loop runs at each steady level, at FET_TRANSFER_RATE and
+# the default Attack, from no Gain Reduction until the Gain Reduction moves less than FET_SETTLED_DB in a sample. What
+# is left to go is then under 1e-9 dB, far under the 0.01 dB the curve is printed to.
+FET_TRANSFER_RATE = 48000
+FET_SETTLED_DB = 1e-12
+
+
+def steady_output(level_db, settings):
+    """The Character's steady output level in dB for a steady input of level_db: the Transfer Curve, or on FET, its
+    loop run to steady state."""
+    if settings.character != "fet":
+        return transfer(level_db, settings)
+    detector = Detector(settings, FET_TRANSFER_RATE, level_db=level_db)
+    previous = 0.0
+    while True:
+        reduction = detector.hear_steady(level_db)
+        if abs(reduction - previous) < FET_SETTLED_DB:
+            return level_db - reduction
+        previous = reduction
+
+
 def transfer_curve(settings):
     """The Transfer Curve on its grid, always including Threshold, both Knee edges, and the level where the
-    Gain Reduction reaches Range when that falls on the grid."""
+    Gain Reduction reaches Range when that falls on the grid. On FET, each level's output is measured
+    (steady_output)."""
     t, half_knee = settings.threshold, settings.knee / 2
     lowest, highest = t - half_knee - GRID_BELOW, t + half_knee + GRID_ABOVE
     count = round((highest - lowest) / GRID_SPACING)
@@ -1526,10 +1624,10 @@ def transfer_curve(settings):
             region = "range"
         else:
             region = "below" if level <= t - half_knee else "knee" if level < t + half_knee else "above"
-        rows.append((level, transfer(level, settings), region))
+        rows.append((level, steady_output(level, settings), region))
 
     def slope(lower):
-        return (transfer(lower + GRID_SPACING, settings) - transfer(lower, settings)) / GRID_SPACING
+        return (steady_output(lower + GRID_SPACING, settings) - steady_output(lower, settings)) / GRID_SPACING
 
     return TransferCurve(rows, slope(lowest), slope(highest - GRID_SPACING))
 
@@ -1551,6 +1649,11 @@ def report_transfer(settings):
     if settings.character == "vca":
         print(f"levels are VCA's RMS Detection Level, sine-calibrated: the steady test signal is a square wave whose "
               f"peak is {SINE_CALIBRATION_DB:.4f} dB under each level")
+    if settings.character == "fet":
+        clean = replace(settings, character="clean")
+        largest = max(abs(out - transfer(level, clean)) for level, out, _ in curve.rows)
+        print(f"measured: FET's loop run at each level to steady state, at {FET_TRANSFER_RATE:g} Hz and Attack "
+              f"{settings.attack:g} ms; it is at most {largest:.1e} dB from Clean's Transfer Curve")
 
 
 @command("step", options=step_options)
@@ -1558,24 +1661,74 @@ def run_step(args):
     settings = settings_from(args)
     check_range("lookahead", args.lookahead, LOOKAHEAD_RANGE, " ms")
     _check_rates(args.rates)
-    report_step(settings, args.rates, args.lookahead)
+    report_step(settings, args.rates, args.lookahead, args.external)
 
 
-def report_step(settings, sample_rates=SAMPLE_RATES, lookahead=LOOKAHEAD_DEFAULT):
-    """The step response's times at each sample rate, for a level step STEP_DB either side of Threshold."""
+def report_step(settings, sample_rates=SAMPLE_RATES, lookahead=LOOKAHEAD_DEFAULT, external=False):
+    """The step response's times at each sample rate, for a level step STEP_DB either side of Threshold: the detection
+    signal's own, or with external, the key's on an External Detection Source while the main stays steady."""
     print(f"Step ±{STEP_DB:g} dB around Threshold, {_transfer_heading(settings)}, {_timing_heading(settings)}, "
           f"Auto Release {'on' if settings.auto_release else 'off'}, Lookahead {lookahead:g} ms")
+    if external:
+        print("External Detection Source: the key steps while the main stays steady, so the Gain Reduction never "
+              "reaches the detector")
     print("times in ms; Attack counts from the step in the delayed audio the listener hears, which the detector meets "
           "Lookahead earlier; Hold counts from when the detector meets the step down, and Release from when it "
           "begins, after Hold; 63% is 1 - 1/e")
     print(f"{'rate Hz':>8} {'attack 63%':>11} {'attack 90%':>11} {'release 63%':>12} {'release 90%':>12} {'hold':>9}")
     for fs in sample_rates:
-        step = step_response(settings, fs, lookahead)
+        step = step_response(settings, fs, lookahead, external)
         if step is None:
             print(f"{fs:8g}  no Gain Reduction to measure at Ratio 1:1 or Range 0 dB")
             continue
         print(f"{fs:8g} {step.attack_63:11.4f} {step.attack_90:11.4f} {step.release_63:12.4f} "
               f"{step.release_90:12.4f} {step.hold:9.4f}")
+
+
+# The Ratios and Attacks `speedup` compares FET's times with Clean's at, and the partial step's levels: from
+# PARTIAL_LOUD_DB over Threshold to PARTIAL_QUIET_DB over it and back, both above the Knee at the defaults, so the loop
+# speeds Release up too.
+SPEEDUP_RATIOS = (1.5, 2, 4, 8, 20, math.inf)
+SPEEDUP_ATTACKS = (Settings().attack, 0.5, FET_REFERENCE_ATTACK_MS)
+SPEEDUP_RATE = 48000
+PARTIAL_LOUD_DB, PARTIAL_QUIET_DB = 20.0, 10.0
+
+
+def speedup_options(parser):
+    parser.add_argument("--rates", type=float, nargs="+", default=[SPEEDUP_RATE], metavar="Hz")
+
+
+@command("speedup", options=speedup_options)
+def run_speedup(args):
+    _check_rates(args.rates)
+    report_speedup(args.rates)
+
+
+def report_speedup(sample_rates=(SPEEDUP_RATE,)):
+    """FET's step times beside Clean's at each Ratio and Attack, and the speed-up at 63%; then the partial step's,
+    whose Release the loop speeds up too."""
+    print(f"FET's speed-up against Clean, capped at {FET_SPEEDUP_MAX:g}x (FET_SPEEDUP_MAX); the defaults otherwise; "
+          f"times in ms, as `step` measures them")
+    print(f"{'rate Hz':>8} {'attack ms':>10} {'ratio':>6} {'clean 63%':>10} {'clean 90%':>10} {'FET 63%':>9} "
+          f"{'FET 90%':>9} {'speed-up':>9}")
+    for fs in sample_rates:
+        for attack in SPEEDUP_ATTACKS:
+            for ratio in SPEEDUP_RATIOS:
+                clean = step_response(Settings(attack=attack, ratio=ratio), fs)
+                fet = step_response(Settings(attack=attack, ratio=ratio, character="fet"), fs)
+                print(f"{fs:8g} {attack:10g} {_shown(ratio):>6} {clean.attack_63:10.4f} {clean.attack_90:10.4f} "
+                      f"{fet.attack_63:9.4f} {fet.attack_90:9.4f} {clean.attack_63 / fet.attack_63:9.2f}")
+    print(f"the partial step: from {PARTIAL_LOUD_DB:g} dB over Threshold to {PARTIAL_QUIET_DB:g} dB over it, above the "
+          f"Knee, then back; Release {Settings().release:g} ms, its times counted from when it begins")
+    print(f"{'rate Hz':>8} {'ratio':>6} {'clean 63%':>10} {'clean 90%':>10} {'FET 63%':>9} {'FET 90%':>9} "
+          f"{'speed-up':>9}")
+    for fs in sample_rates:
+        for ratio in SPEEDUP_RATIOS:
+            levels = {"quiet": Settings().threshold + PARTIAL_QUIET_DB, "loud": Settings().threshold + PARTIAL_LOUD_DB}
+            clean = step_response(Settings(ratio=ratio), fs, **levels)
+            fet = step_response(Settings(ratio=ratio, character="fet"), fs, **levels)
+            print(f"{fs:8g} {_shown(ratio):>6} {clean.release_63:10.4f} {clean.release_90:10.4f} "
+                  f"{fet.release_63:9.4f} {fet.release_90:9.4f} {clean.release_63 / fet.release_63:9.2f}")
 
 
 def latency_options(parser):
