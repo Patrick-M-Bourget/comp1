@@ -494,3 +494,55 @@ TEST_CASE ("Settled closed, the Gate's Gain Reduction is Gate Range, and settled
     for (const auto& record : open)
         REQUIRE (record.gateGainReductionDb == 0.0);
 }
+
+TEST_CASE ("Settled off, the Gate's Gain Reduction is exactly none at a level that would close it")
+{
+    for (const auto& record : steadyRecords ({ .ratio = 1.0 }, { -60.0 }))
+        REQUIRE (record.gateGainReductionDb == 0.0);
+}
+
+TEST_CASE ("Across a Gate step and an on/off glide the Gate's Gain Reduction records follow the Engine's own, run for run")
+{
+    // dyn-lab's gate step at the defaults: 20 dB under Gate Threshold, 20 dB over it, and under again. Then the Gate
+    // glides off and on again while it is closed, so its on/off share is heard too.
+    constexpr double sampleRate = 48000.0;
+    constexpr int length = 24000;
+    std::vector<float> input;
+    for (const double level : { -60.0, -20.0, -60.0, -60.0 })
+    {
+        const auto more = test::steadyLevel (1, length, level).front();
+        input.insert (input.end(), more.begin(), more.end());
+    }
+    test::Channels audio { input };
+    Engine engine;
+    engine.prepare (sampleRate, 512, 1);
+    engine.setSettings (gated());
+    std::vector<LevelRecord> records;
+    test::Channels piece (1);
+    for (int start = 0; start < static_cast<int> (input.size()); start += length / 2)
+    {
+        if (start == 3 * length)
+            engine.setSettings ({ .ratio = 1.0 });
+        if (start == 3 * length + length / 2)
+            engine.setSettings (gated());
+        piece.front().assign (audio.front().begin() + start, audio.front().begin() + start + length / 2);
+        const auto read = playAndRead (engine, piece, { 512 });
+        records.insert (records.end(), read.begin(), read.end());
+        std::copy (piece.front().begin(), piece.front().end(), audio.front().begin() + start);
+    }
+
+    const auto heard = test::gainReductionDb (input, audio.front());
+    REQUIRE (records.size() == heard.size() / 16);
+    bool closed = false, glided = false;
+    for (std::size_t r = 0; r < records.size(); ++r)
+    {
+        CAPTURE (r);
+        const auto run = heard.begin() + static_cast<std::ptrdiff_t> (r * 16);
+        const double most = std::max (*std::max_element (run, run + 16), 0.0);
+        REQUIRE_THAT (records[r].gateGainReductionDb, WithinAbs (most, 0.01));
+        closed = closed || most > 19.5;
+        glided = glided || (r * 16 > 3 * length && most > 1.0 && most < 19.0);
+    }
+    CHECK (closed);
+    CHECK (glided);
+}
