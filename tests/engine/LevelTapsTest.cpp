@@ -259,6 +259,25 @@ TEST_CASE ("At a steady level the Gain Reduction is the gain the Engine applies,
     }
 }
 
+TEST_CASE ("On FET the Detection Level is the detection signal's, before the feedback, while its Gain Reduction is its own")
+{
+    // FET's loop compares the level less the Gain Reduction with Threshold, but what the level taps report is the
+    // detection signal's level: Clean's, record for record, on the same noise. FET's faster attack moves its Gain
+    // Reduction off Clean's.
+    const auto input = test::noise (2, 9600);
+    const auto clean = test::levelHistory ({ .thresholdDb = -30.0 }, 48000.0, input);
+    const auto fet = test::levelHistory ({ .character = Character::FET, .thresholdDb = -30.0 }, 48000.0, input);
+    REQUIRE (fet.size() == clean.size());
+    bool sameLevels = true, sameReductions = true;
+    for (std::size_t r = 0; r < fet.size(); ++r)
+    {
+        sameLevels = sameLevels && fet[r].detectionLevelDb == clean[r].detectionLevelDb;
+        sameReductions = sameReductions && fet[r].gainReductionDb == clean[r].gainReductionDb;
+    }
+    CHECK (sameLevels);
+    CHECK_FALSE (sameReductions);
+}
+
 TEST_CASE ("Across channels the Gain Reduction is the larger, and the Detection Level the louder")
 {
     // At the defaults, dyn-lab's transfer gives 4.50 dB of Gain Reduction at -12 dB and 13.50 dB at 0 dB.
