@@ -45,20 +45,7 @@ private:
     double meanSquare = 0.0;
 };
 
-// dyn-lab's VCA_COLOUR_WEIGHT, VCA_COLOUR_WEIGHT_DB and VCA_COLOUR_DRIVE_DB.
-inline constexpr double colourWeight = 0.11;
-inline constexpr double colourWeightDb = 10.0;
-inline constexpr double colourDriveDb = 5.0;
-
-// VCA's Colour at a Gain Reduction in dB, before the Colour control scales its weight: the weight colourWeight ×
-// (1 - e^(-GR / colourWeightDb)), and the drive Drive's top × (1 - e^(-GR / colourDriveDb)), which nears it and never
-// passes it. Each is exactly 0 with no Gain Reduction, and rises smoothly with it.
-inline ColourAt colourAt (double gainReductionDb)
-{
-    if (! (gainReductionDb > 0.0))
-        return {};
-    return { .weight = colourWeight * -std::expm1 (-gainReductionDb / colourWeightDb),
-             .driveDb = parameterRanges::drive.high * -std::expm1 (-gainReductionDb / colourDriveDb) };
-}
+// VCA's Colour mapping: dyn-lab's VCA_COLOUR_WEIGHT, VCA_COLOUR_WEIGHT_DB and VCA_COLOUR_DRIVE_DB.
+inline constexpr ColourMapping colour { .weight = 0.11, .weightDb = 10.0, .driveDb = 5.0 };
 
 } // namespace comp1::vca

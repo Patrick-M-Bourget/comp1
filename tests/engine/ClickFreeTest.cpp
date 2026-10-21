@@ -171,6 +171,7 @@ void freeBandAtTone (Settings& s)
 double colourful (double) { return 4.0; }
 
 void onVca (Settings& s) { s.character = Character::VCA; }
+void onFet (Settings& s) { s.character = Character::FET; }
 // The Limiter on, the tone (-12 dB) pushed 24 dB by Output Gain, 12 dB over the Ceiling's top, in mode.
 void limitingTone (Settings& s, ProcessingMode mode)
 {
@@ -339,6 +340,12 @@ const std::vector<Jump>& jumps()
         { "Character, Clean and VCA",
           [] (Settings& s, bool b) { s.character = b ? Character::VCA : Character::Clean; },
           { onVca, [] (Settings&) {} },
+          1,
+          colourful },
+        // And Clean's gain and FET's loop and Colour.
+        { "Character, Clean and FET",
+          [] (Settings& s, bool b) { s.character = b ? Character::FET : Character::Clean; },
+          { onFet, [] (Settings&) {} },
           1,
           colourful },
         // Dry and Wet, each from Off and from far below unity, with the other at 0 dB, so the two paths sum.

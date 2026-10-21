@@ -2,7 +2,7 @@
 
 A Python model of comp1's Characters. It prints the figures the Engine's tests check, so a ticket brief can cite a command and its output exactly. It needs only the standard library: no installs, no numpy. Run it from the repo root.
 
-It models the Clean and VCA Characters (see [VCA](#vca)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's Colour (see [Colour](#colour)) and the Limiter (see [Limiter](#limiter)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
+It models the Clean, VCA and FET Characters (see [VCA](#vca) and [FET](#fet)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's and FET's Colour (see [Colour](#colour)) and the Limiter (see [Limiter](#limiter)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
 
 Hold freezes the Gain Reduction for Hold ms whenever it stops rising, mid-Attack included, before Release begins. Any rise restarts the count.
 
@@ -26,7 +26,7 @@ Every option has a default, and a setting outside its range exits with an error 
 | Auto Release | off or on (`--auto-release`) | off |
 | Lookahead | 0 to 5 ms | 0 ms |
 | Ceiling | −30 to 0 dBFS | 0 dBFS |
-| Character | `clean` or `vca` (`--character`) | `clean` |
+| Character | `clean`, `vca` or `fet` (`--character`) | `clean` |
 
 `--character` is taken by `transfer`, `step`, `bursts`, `autogain` and `colour`. Clean's figures are the same with it as without.
 
@@ -50,6 +50,8 @@ Prints the step response at each sample rate (44.1, 48 and 96 kHz by default). T
 At Ratio 1:1 or Range 0 dB there is no Gain Reduction to measure, and the row says so.
 
 With `--auto-release`, the step down follows steady compression, so the sustain state starts full and Release starts at its longest, 5 times Release, shortening as the sustain state discharges. Attack and Hold are unchanged.
+
+With `--external`, the step is the key's on an External Detection Source, while the main stays steady, so the Gain Reduction never reaches what the detector hears. Clean and VCA are feedforward either way, so their times are unchanged; FET's are Clean's (see [FET](#fet)).
 
 `--lookahead ms` (0 by default) models High Quality's Lookahead: the detector meets each step that many ms before the listener hears it in the delayed audio. Attack's times count from the step the listener hears, so they come Lookahead earlier, and the 63% time is negative when Lookahead is longer than Attack: the Gain Reduction starts before the step. Hold and Release are durations, counted from when the detector meets the step down as before, so Lookahead doesn't move them.
 
@@ -155,6 +157,73 @@ VCA is Clean with an RMS Detection Level. On each detection channel, a one-pole 
 
 **A proposed default Knee for VCA, 3 dB** (for the Style defaults of #24; nothing applies it yet): firmer than Clean's 6 dB, for the precise, controlled onset VCA compression is chosen for on buses and drums. It needn't be harder: the RMS stage already rounds a transient's onset over its 5 ms, and a hard knee on a level held near Threshold would switch compression in and out at each small change of level.
 
+## FET
+
+FET is a feedback compressor. It reads a peak Detection Level, as Clean does, but with an Internal Detection Source the level its gain computer reads is the detection sample's level less the Gain Reduction being applied in that same sample: the output's level. The detector is Clean's smooth branching detector, with Hold and Auto Release, around that loop.
+
+**The loop is solved within the sample** (`fet_loop`), so it never waits a sample to hear its own gain, and never rings. Each sample, the detector's one pole (Attack's or Release's) steps from the Gain Reduction it holds, G₀, to G = pole · G₀ + (1 − pole) · w(L − G), where L is the detection sample's level and w is the gain computer in the output's domain: for an output level y, the Gain Reduction that brings the input whose Transfer Curve output is y down to it, capped at Range. So at steady state the output is exactly Clean's Transfer Curve, at every Threshold, Ratio, Knee and Range. w never falls as y rises, so G is unique and lies between G₀ and the steady Gain Reduction. It is solved in closed form region by region of the Transfer Curve:
+
+- below the Knee, in the output's domain, w is 0, and G is pole · G₀;
+- across the Knee, w is the Knee's quadratic turned around, and G comes from a quadratic in the input's place in the Knee;
+- above it, w is (Ratio − 1)(y − Threshold), which gives G directly, written with 1/Ratio so that ∞:1 holds the output at Threshold;
+- Range caps w, and so G.
+
+Attack applies while the solved Gain Reduction rises, and Release otherwise. That is when the Transfer Curve's Gain Reduction at L is over G₀, so Attack, Release, Hold and Auto Release branch exactly as on Clean.
+
+**The speed-up and its cap, `FET_SPEEDUP_MAX`, 4×:** above the Knee the loop runs about Ratio times faster than its one pole, since every dB the Gain Reduction rises takes Ratio − 1 dB off what the gain computer asks for. At 4:1, Attack's 63% comes in 2.5 ms rather than 10 ms; at ∞:1 the loop would reach its steady state in a sample, whatever Attack says. So where the loop would move the Gain Reduction further in a sample than one pole of Attack (or Release) over 4 would toward the Transfer Curve's Gain Reduction, it moves that far instead: as if the loop's time constants were lengthened to hold it at the cap. Above the Knee, at Ratios over 4, that is exactly a one pole of a quarter of the time. 4× is the speed-up the loop reaches by itself at 4:1, a FET's classic Ratio, so the cap leaves Ratios up to 4 as the loop has them and keeps Attack the control of the timing at the higher ones: without it, Attack would do nothing at ∞:1. Release below the Knee is Clean's: there the gain computer asks for none, whatever the loop hears.
+
+`speedup` prints the times beside Clean's, at 48 kHz (`--rates` for others). Attack's 63% and 90%, in ms:
+
+| At Ratio | Clean, 10 ms | FET, 10 ms | Clean, 0.5 ms | FET, 0.5 ms | Clean, 0.02 ms | FET, 0.02 ms |
+|---|---|---|---|---|---|---|
+| 1.5 | 10.02, 23.04 | 6.69, 15.38 | 0.50, 1.17 | 0.35, 0.79 | 0.021, 0.063 | 0.021, 0.042 |
+| 2 | 10.02, 23.04 | 5.02, 11.54 | 0.50, 1.17 | 0.27, 0.60 | 0.021, 0.063 | 0.021, 0.042 |
+| 4 | 10.02, 23.04 | 2.52, 5.79 | 0.50, 1.17 | 0.15, 0.31 | 0.021, 0.063 | 0.021, 0.042 |
+| 8 | 10.02, 23.04 | 2.56, 5.81 | 0.50, 1.17 | 0.15, 0.29 | 0.021, 0.063 | 0.021, 0.021 |
+| 20 | 10.00, 23.04 | 2.63, 5.88 | 0.50, 1.17 | 0.15, 0.31 | 0.021, 0.063 | 0.021, 0.021 |
+| ∞ | 10.02, 23.04 | 2.67, 5.94 | 0.50, 1.17 | 0.15, 0.31 | 0.021, 0.063 | 0.021, 0.021 |
+
+Past 4:1 the cap holds the speed-up at 3.8 to 3.9×: the step starts far over Threshold, where the gain computer asks for more than Range, and there w is flat, so the loop speeds up less until the Gain Reduction nears its steady state. At 0.5 ms a pole is 24 samples, and a quarter of it 6, so the speed-up reads 3.4×. At 0.02 ms every time is a sample or two.
+
+**The partial release:** from 20 dB over Threshold down to 10 dB over it, both above the Knee, the loop speeds Release up as well. At the default 100 ms Release, Release's 63% is 66.7 ms at 1.5:1, 50.4 ms at 2:1, 38.5 ms at 4:1 and 38.0 ms from 8:1 on. It is 2.6× faster at most, not 4×: the step down leaves the output under the Knee, where the gain computer asks for none, so Release runs at its own pace until the output is back over it. A step down to under the Knee, as `step` makes, releases as on Clean.
+
+**The sub-millisecond attack:** at the reference Attack, `FET_REFERENCE_ATTACK_MS`, 0.02 ms, 90% of the step takes at most 0.045 ms at every rate, a sample or two: FET can catch a transient's first peak. At Attack 0.005 ms, Range's bottom, and ∞:1 the loop reaches its steady state within the first sample, and stays there.
+
+**An External Detection Source** feeds FET's gain computer and detector from the key, which the gain applied never reaches, so there is no feedback: it is feedforward, as Clean is, with the same times as Clean's at the same settings. `step --character fet --external` prints them. FET's Colour still follows the Gain Reduction.
+
+**With Lookahead** the loop reads the detection signal Lookahead early, times the gain it applies in that sample, so it acts ahead of the delayed audio, as Clean does: `step --lookahead` reports Attack's times against the delayed audio.
+
+**`transfer --character fet`** measures each row by running the loop at that steady level, at 48 kHz (`FET_TRANSFER_RATE`) and the default Attack, from no Gain Reduction until it moves less than 10⁻¹² dB in a sample (`FET_SETTLED_DB`). Its last line gives the largest difference from Clean's Transfer Curve: under 10⁻⁹ dB at every setting listed. The steady test signal is Clean's, a square wave at each level.
+
+**Auto Gain on FET:** the estimate is the Transfer Curve's, Clean's. The measured check runs the reference signal through FET's loop. It holds at every setting `autogain` lists, FET's output within 0.6 dB of the input, and at Threshold −40 dB, Ratio ∞ too (−0.17 dB), where Clean's overshoots: the loop catches the noise's peaks a few times faster than its Attack, so it holds the level nearer the Transfer Curve's.
+
+**Auto Release on FET** is Clean's: a step down to under the Knee releases as on Clean, so `bursts --character fet` prints Clean's figures.
+
+    python3 tools/dyn-lab/dynlab.py transfer --character fet
+    python3 tools/dyn-lab/dynlab.py transfer --character fet --ratio inf
+    python3 tools/dyn-lab/dynlab.py transfer --character fet --knee 0
+    python3 tools/dyn-lab/dynlab.py transfer --character fet --knee 72
+    python3 tools/dyn-lab/dynlab.py transfer --character fet --range 6
+    python3 tools/dyn-lab/dynlab.py step --character fet
+    python3 tools/dyn-lab/dynlab.py step --character fet --attack 0.5 --release 50 --hold 20
+    python3 tools/dyn-lab/dynlab.py step --character fet --ratio 20
+    python3 tools/dyn-lab/dynlab.py step --character fet --ratio inf
+    python3 tools/dyn-lab/dynlab.py step --character fet --attack 0.02 --rates 44100 48000 88200 96000 176400 192000
+    python3 tools/dyn-lab/dynlab.py step --character fet --external
+    python3 tools/dyn-lab/dynlab.py step --character fet --lookahead 5
+    python3 tools/dyn-lab/dynlab.py step --character fet --lookahead 2 --attack 0.5 --release 50 --hold 20
+    python3 tools/dyn-lab/dynlab.py bursts --character fet
+    python3 tools/dyn-lab/dynlab.py autogain --character fet
+    python3 tools/dyn-lab/dynlab.py autogain --character fet --ratio inf
+    python3 tools/dyn-lab/dynlab.py autogain --character fet --threshold -30 --ratio inf
+    python3 tools/dyn-lab/dynlab.py speedup
+
+### `speedup`
+
+Prints FET's Attack times beside Clean's at each of `SPEEDUP_RATIOS` (1.5, 2, 4, 8, 20 and ∞) and Attacks of 10, 0.5 and 0.02 ms, with the speed-up at 63%, then the partial release, from 20 to 10 dB over Threshold (`PARTIAL_LOUD_DB`, `PARTIAL_QUIET_DB`), against Clean's. At 48 kHz by default, `--rates` for others.
+
+    python3 tools/dyn-lab/dynlab.py speedup --rates 44100 96000
+
 ## Saturation
 
 The Saturation stage is one soft-clip shape, f(u), with level-compensated Drive. The shape is exactly linear for |u| ≤ 1. Above that it is 1 + tanh(|u| − 1), with u's sign, so it leaves the line with the same slope (1) and curvature (0): it is C²-smooth, and it saturates toward 2. Its nonlinear residual is r(u) = f(u) − u, which is 0 for |u| ≤ 1 and tanh(t) − t, with u's sign, above it, where t = |u| − 1. The residual's antiderivative is R(u) = ln cosh t − t²/2 above the knee, and 0 below it. Drive, in dB, gives g = 10^(Drive/20), and the stage's output is x + r(g·x)/g. So below the knee the output is the input exactly, and the knee sits at full scale at Drive 0 dB and Drive dB under it above that. The output saturates toward 2/g.
@@ -228,6 +297,8 @@ The constants, named once in `dynlab.py`:
 - **`VCA_COLOUR_DRIVE_DB`, 5 dB:** the drive is 10.8 dB at 3 dB of Gain Reduction, 20.8 dB at 10 dB and 23.6 dB at 20 dB, so the harder the compressor works, the further its output is pushed into the shape. The shape is linear up to its knee, which the drive sets at full scale less the drive, so Colour is heard only where the compressed signal comes within the drive of full scale: at the defaults, from about 6 dB of Gain Reduction. A quieter compressed signal (a low Threshold) gets less Colour at the same Gain Reduction.
 - **`VCA_COLOUR_WEIGHT`, 0.11, and `VCA_COLOUR_WEIGHT_DB`, 10 dB:** the residual's weight rises to 63% of its most at 10 dB of Gain Reduction and nears it by 30 dB. Together with the drive, they make Colour slight: 0.30% THD at 10 dB of Gain Reduction at Colour 100%, at the defaults, rising to 1.2% at 20 dB and 1.3% at 30 dB. That is a hint of density, well under where distortion reads as an effect, and leaves heavy distortion to Saturation.
 
+**FET's Colour** has VCA's form, with its own constants, `FET_COLOUR_WEIGHT`, 0.25, `FET_COLOUR_WEIGHT_DB`, 10 dB, and `FET_COLOUR_DRIVE_DB`, 4 dB. It is steeper than VCA's: 1.06% THD at 10 dB of Gain Reduction at Colour 100%, at the defaults, 2.99% at 20 dB and 3.24% at 30 dB, where VCA's are 0.30%, 1.2% and 1.3%. A FET's distortion is part of what it is chosen for, on vocals and drums: heard as grit once it works hard, though still under Saturation's. The weight's most, 0.25, sets the level at 20 dB and over, about 3%. The drive rising over 4 dB rather than 5 dB pushes the compressed signal into the shape sooner, so 10 dB of Gain Reduction already gives about 1%, and 6 dB a trace (0.04%). FET's Colour follows the Gain Reduction it applies, and stays outside the loop: the detector hears the detection signal times the gain, never Colour.
+
 The even harmonics are absent, as the shape is odd and a steady Gain Reduction is symmetric.
 
 ### `colour`
@@ -240,10 +311,14 @@ Then it prints Colour's worst alias for bin-centred tones at the rates and frequ
 
 **`ALIASING_TOLERANCE` for Colour:** the ceiling holds by a wide margin. The worst alias at Colour 100% is −47.4 dB (10 kHz at 30 dB of Gain Reduction, at 48 kHz), since the residual's weight is small. The improvement over the naive shaper does not hold everywhere: it is 23.4 and 19.8 dB at 10 kHz at 10 dB of Gain Reduction, but 14.6 and 10.7 dB at 20 dB and 12.1 and 9.1 dB at 30 dB (44.1 and 48 kHz), under the 15 dB Saturation's hardest condition meets. There the driven signal is 12 to 16 dB over the knee, where first-order ADAA at the base rate gains least, as Saturation's own milder Drives do. The improvement is printed and not checked: the ceiling, which is what is heard, holds with 23 dB to spare. Oversampled, Colour's residual gains far more at 10 kHz: the PR for Oversampling gives the lab's figures, and Colour still runs at the host rate.
 
+FET's Colour, with more than twice VCA's weight, aliases more, and the ceiling still holds with 15.8 dB to spare: its worst alias is −39.8 dB (10 kHz at 30 dB of Gain Reduction, at 48 kHz). Its improvement over the naive shaper is printed and not checked, as VCA's: at 10 kHz it is 25.7 and 16.6 dB at 10 dB of Gain Reduction, but 14.6 and 10.8 dB at 20 dB and 12.5 and 9.5 dB at 30 dB (44.1 and 48 kHz).
+
     python3 tools/dyn-lab/dynlab.py colour
     python3 tools/dyn-lab/dynlab.py colour --character vca
     python3 tools/dyn-lab/dynlab.py colour --character vca --colour 50
     python3 tools/dyn-lab/dynlab.py colour --character vca --rates 44100
+    python3 tools/dyn-lab/dynlab.py colour --character fet
+    python3 tools/dyn-lab/dynlab.py colour --character fet --colour 50
 
 ## Auto Release
 

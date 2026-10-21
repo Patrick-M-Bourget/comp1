@@ -118,6 +118,7 @@ public:
         glideTo (colourShare, settings.colour / 100.0, snap);
         placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
         character = played (settings.character);
+        source = settings.detectionSource;
         if (snap)
         {
             update();
@@ -262,7 +263,7 @@ private:
         if (voice.placement != plugkit::StereoPlacement::Stereo)
         {
             auto& detector = voice.detectors[0];
-            voice.reductionsDb[0] = detector.process (voice.character, detection.partFollowedBy (voice.placement)[i], curve, timing);
+            voice.reductionsDb[0] = detector.process (voice.character, source, detection.partFollowedBy (voice.placement)[i], curve, timing);
             voice.levelsDb[0] = detector.detectionLevelDb();
             voice.gains[0] = gainOf (voice.reductionsDb[0]);
             return;
@@ -271,7 +272,7 @@ private:
         for (int ch = 0; ch < numChannels; ++ch)
         {
             const auto c = static_cast<std::size_t> (ch);
-            reductions[c] = voice.detectors[c].process (voice.character, detection.channelFollowedBy (ch)[i], curve, timing);
+            reductions[c] = voice.detectors[c].process (voice.character, source, detection.channelFollowedBy (ch)[i], curve, timing);
             channelDb[c] = voice.detectors[c].detectionLevelDb();
             largest = std::max (largest, reductions[c]);
         }
@@ -378,6 +379,7 @@ private:
     bool stereoTrack = false;
     plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo; // the Placement asked for
     Character character = Character::Clean;                                // the Character asked for, as it plays
+    DetectionSource source = DetectionSource::Internal;                    // whether FET's detector is fed back
     std::array<Voice, 2> voices;
     std::size_t playing = 0; // the voice heard, or fading in
     plugkit::Smoother fade;  // the share of the voice playing, while the other fades out

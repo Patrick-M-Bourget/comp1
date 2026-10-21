@@ -49,8 +49,8 @@ inline constexpr ParameterRange detectionQ { 0.025, 40.0 };           // comp1's
 } // namespace parameterRanges
 
 // The Characters: the four Styles that carry DSP (ADR 0002), in Style's order, Style's first four, so frozen with it
-// (ADR 0003). The Engine always plays a Character, never a Style: the Plugin Shell maps Style to one (#24). FET and
-// Opto play as Clean until they bring their own DSP (#20, #21).
+// (ADR 0003). The Engine always plays a Character, never a Style: the Plugin Shell maps Style to one (#24). Opto plays
+// as Clean until it brings its own DSP (#21).
 enum class Character
 {
     Clean,

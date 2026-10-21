@@ -26,7 +26,7 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
         // Every setting moving every block, Output Gain back to 0 dB every few, Auto Release, Auto Gain, Saturation and
         // the Limiter on and off, Saturation moving Before and After, Detection Source, Detection Audition and Stereo Placement
         // moving every few, Stereo Link and every Detection EQ setting moving every block, each band switching on and
-        // off, and changing Shape or Slope; the Character moving every few, Clean and VCA in turn crossfading, with
+        // off, and changing Shape or Slope; the Character moving every few, Clean, VCA and FET in turn crossfading, with
         // Colour moving every block; blocks cutting the grid's runs; the Sidechain coming and going, and changing
         // between mono and stereo.
         DetectionEq eq;
