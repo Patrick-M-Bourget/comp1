@@ -19,6 +19,7 @@ include(Catch)
 
 # One source per line, sorted, so tickets adding tests in parallel merge cleanly.
 add_executable(comp1_engine_tests
+    engine/AliasingTest.cpp
     engine/AutoGainTest.cpp
     engine/AutoReleaseTest.cpp
     engine/ClickFreeTest.cpp
@@ -32,6 +33,7 @@ add_executable(comp1_engine_tests
     engine/OutputGainTest.cpp
     engine/ProcessingModeTest.cpp
     engine/RealtimeSafetyTest.cpp
+    engine/SaturationTest.cpp
     engine/SettingsHandoffTest.cpp
     engine/StepResponseTest.cpp
     engine/SubnormalsTest.cpp
@@ -55,6 +57,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/AutoReleaseParameterTest.cpp
         plugin/LatencyReportTest.cpp
         plugin/PluginShellTest.cpp
+        plugin/SaturationParameterTest.cpp
         plugin/StateTest.cpp
     )
     # tests/engine for Measure.h, the test helpers both targets share.

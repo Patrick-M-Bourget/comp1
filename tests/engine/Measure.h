@@ -4,8 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <numbers>
 #include <optional>
 #include <random>
 #include <vector>
@@ -70,6 +72,15 @@ inline Channels steadyLevel (int numChannels, int numSamples, double levelDb)
     return channels;
 }
 
+// A steady level that doesn't alternate: the same sample value, levelDb, every sample. Saturation's ADAA averages the
+// residual between neighbouring samples, and a square wave's two values average out (the residual is odd), so a
+// steady level through Saturation is this one, as dyn-lab's static curve is.
+inline Channels constantLevel (int numChannels, int numSamples, double levelDb)
+{
+    const auto magnitude = static_cast<float> (std::pow (10.0, levelDb / 20.0));
+    return Channels (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (numSamples), magnitude));
+}
+
 // The Gain Reduction in dB the Engine gave each sample: how far the output is under the input.
 inline std::vector<double> gainReductionDb (const std::vector<float>& input, const std::vector<float>& output)
 {
@@ -115,9 +126,15 @@ inline Crossings crossings (const std::vector<double>& reduction, double start, 
 
 // The output level in dB, on every channel, after seconds of a steady level through an Engine with settings: the
 // input level plus the gain the last sample got. NaN when the channels differ.
-inline double steadyOutputDb (const Settings& settings, double levelDb, double sampleRate, int numChannels = 1, double seconds = 0.5)
+// level makes the steady level: steadyLevel, or constantLevel.
+inline double steadyOutputDb (const Settings& settings,
+                              double levelDb,
+                              double sampleRate,
+                              int numChannels = 1,
+                              double seconds = 0.5,
+                              Channels (*level) (int, int, double) = steadyLevel)
 {
-    const auto input = steadyLevel (numChannels, static_cast<int> (seconds * sampleRate), levelDb);
+    const auto input = level (numChannels, static_cast<int> (seconds * sampleRate), levelDb);
     auto output = input;
     Engine engine;
     engine.prepare (sampleRate, 512, numChannels);
@@ -196,6 +213,83 @@ inline int impulseDelaySamples (const Settings& settings, double sampleRate, int
         delay = peak - 100;
     }
     return delay;
+}
+
+// --- Spectra: aliasing and harmonics, as dyn-lab's `aliasing` measures them ------------------------
+
+// The length of each spectrum, a power of two, as dyn-lab's ALIAS_SAMPLES: a tone of a whole number of cycles over it
+// is bin-centred, so a rectangular window has no leakage.
+inline constexpr int spectrumLength = 4096;
+
+// The discrete Fourier transform of a power-of-two count of samples: iterative radix-2, in double.
+inline std::vector<std::complex<double>> fft (const std::vector<double>& samples)
+{
+    const std::size_t n = samples.size();
+    std::vector<std::complex<double>> out (n);
+    for (std::size_t i = 0, j = 0; i < n; ++i)
+    {
+        out[j] = samples[i];
+        // j is i with its bits reversed: add one to j from the top bit down.
+        auto bit = n >> 1;
+        for (; bit > 0 && (j & bit) != 0; bit >>= 1)
+            j ^= bit;
+        j |= bit;
+    }
+    for (std::size_t size = 2; size <= n; size *= 2)
+    {
+        const std::size_t half = size / 2;
+        for (std::size_t k = 0; k < half; ++k)
+        {
+            const double angle = -2.0 * std::numbers::pi * static_cast<double> (k) / static_cast<double> (size);
+            const std::complex<double> twiddle { std::cos (angle), std::sin (angle) };
+            for (std::size_t start = 0; start < n; start += size)
+            {
+                const auto a = out[start + k], b = out[start + k + half] * twiddle;
+                out[start + k] = a + b;
+                out[start + k + half] = a - b;
+            }
+        }
+    }
+    return out;
+}
+
+// The bin of the tone nearest frequency at sampleRate over spectrumLength: an odd one, so, for an odd shape, no alias
+// of a harmonic lands on a harmonic's own bin (dyn-lab's tone_bin).
+inline int toneBin (double frequency, double sampleRate)
+{
+    const auto k = static_cast<int> (std::lround (frequency * spectrumLength / sampleRate));
+    return k % 2 != 0 ? k : k + 1;
+}
+
+// A sine of bin whole cycles over spectrumLength, its peak at levelDb, starting at 0, for lengths spectrumLengths.
+inline std::vector<float> binCentredTone (int bin, double levelDb, int lengths = 2)
+{
+    const double amplitude = std::pow (10.0, levelDb / 20.0);
+    std::vector<float> tone (static_cast<std::size_t> (lengths * spectrumLength));
+    for (std::size_t n = 0; n < tone.size(); ++n)
+        tone[n] = static_cast<float> (amplitude * std::sin (2.0 * std::numbers::pi * bin * static_cast<double> (n) / spectrumLength));
+    return tone;
+}
+
+// Each bin's peak amplitude, DC to Nyquist, over the last spectrumLength samples.
+inline std::vector<double> amplitudes (const std::vector<float>& samples)
+{
+    const std::vector<double> last (samples.end() - spectrumLength, samples.end());
+    const auto bins = fft (last);
+    std::vector<double> out (spectrumLength / 2 + 1);
+    for (std::size_t b = 0; b < out.size(); ++b)
+        out[b] = std::abs (bins[b]) * 2.0 / spectrumLength;
+    return out;
+}
+
+// The worst alias in dB relative to the fundamental, the tone in bin: the loudest bin that holds no in-band harmonic.
+inline double worstAliasDb (const std::vector<double>& spectrum, int bin)
+{
+    double worst = 0.0;
+    for (std::size_t b = 0; b < spectrum.size(); ++b)
+        if (b % static_cast<std::size_t> (bin) != 0 || b == 0)
+            worst = std::max (worst, spectrum[b]);
+    return 20.0 * std::log10 (std::max (worst, 1.0e-300) / spectrum[static_cast<std::size_t> (bin)]);
 }
 
 } // namespace comp1::test
