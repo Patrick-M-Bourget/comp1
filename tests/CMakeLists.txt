@@ -32,6 +32,7 @@ add_executable(comp1_engine_tests
     engine/LookaheadTest.cpp
     engine/NonFiniteInputTest.cpp
     engine/OutputGainTest.cpp
+    engine/OversamplerTest.cpp
     engine/ProcessingModeTest.cpp
     engine/RealtimeSafetyTest.cpp
     engine/SaturationTest.cpp
