@@ -11,14 +11,16 @@ tools/dyn-lab/USAGE.md for every command.
 import argparse
 import math
 from dataclasses import dataclass, fields
+from math import inf
 
-# The compressor's parameter ranges, low to high, named once so a check can compare them with the
-# plugin's. Each follows FabFilter's public Pro-C 3 documentation where it gives one, and
-# docs/adr/0008-threshold-and-release-ranges-are-comp1s-own.md where it doesn't.
+# The compressor's parameter ranges, low to high, named once. The check harness's docs stage fails when one
+# differs from the Engine's parameterRanges (plugkit.conf's LAB_RANGES), comparing the two as written, so
+# infinity is inf on both sides. Each follows FabFilter's public Pro-C 3 documentation where it gives one,
+# and docs/adr/0008-threshold-and-release-ranges-are-comp1s-own.md where it doesn't.
 # ADR 0008: the Pro-C 2 manual's version history gives the minimum; 0 dB is full scale on the Detection Level.
 THRESHOLD_RANGE = (-60, 0)
 # Pro-C 3 manual, "Dynamics controls": from 1:1 (no compression) to infinity (a limiter).
-RATIO_RANGE = (1, math.inf)
+RATIO_RANGE = (1, inf)
 # Pro-C 3 manual, "Dynamics controls": "from 0 dB (hard knee) to 72 dB (soft knee)".
 KNEE_RANGE = (0, 72)
 # Pro-C 3 manual, "Time controls": "ranging from 0.005 ms (very fast) to 250 ms (very slow)".
