@@ -6,6 +6,7 @@
 
 #include "DelayLine.h"
 #include "Detection.h"
+#include "Glide.h"
 #include "comp1/Latency.h"
 
 #include <plugkit/RunGrid.h>
@@ -44,11 +45,7 @@ public:
     // same at every host block size; with snap it takes effect at once.
     void setLookahead (double ms, bool snap)
     {
-        const double samples = ms * sampleRate / 1000.0;
-        if (snap)
-            lookahead.reset (samples);
-        else
-            lookahead.setTarget (samples);
+        glideTo (lookahead, ms * sampleRate / 1000.0, snap);
     }
 
     // At the start of each run: Lookahead moves on by a run.

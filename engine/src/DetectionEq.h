@@ -3,6 +3,7 @@
 // The Detection EQ: a high-pass, a low-pass and one free band, filtering the detection source's channels inside the
 // detection stage (Detection.h), so the detector hears them shaped and the processed sound is never touched.
 
+#include "Glide.h"
 #include "comp1/Settings.h"
 
 #include <plugkit/Biquad.h>
@@ -48,12 +49,7 @@ public:
         target = band;
         const double values[] = { std::log (band.filter.frequency), band.filter.gain, std::log (band.filter.q) };
         for (std::size_t g = 0; g < count; ++g)
-        {
-            if (snap)
-                glides[g].reset (values[g]);
-            else
-                glides[g].setTarget (values[g]);
-        }
+            glideTo (glides[g], values[g], snap);
         if (snap)
         {
             current = { .on = band.on, .structure = plugkit::structureOf (band.filter) };

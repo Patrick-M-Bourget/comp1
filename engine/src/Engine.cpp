@@ -3,6 +3,7 @@
 #include "Clean.h"
 #include "DelayLine.h"
 #include "Detection.h"
+#include "Glide.h"
 #include "LevelTaps.h"
 #include "Lookahead.h"
 #include "ModeFade.h"
@@ -97,21 +98,14 @@ public:
         const double targets[] = { settings.thresholdDb, 1.0 / settings.ratio, settings.kneeDb, settings.rangeDb,
                                    std::log (settings.attackMs), std::log (settings.releaseMs), settings.holdMs };
         for (std::size_t s = 0; s < count; ++s)
-        {
-            if (snap)
-                glides[s].reset (targets[s]);
-            else
-                glides[s].setTarget (targets[s]);
-        }
-        if (snap)
-            update();
-        if (snap)
-            stereoLink.reset (settings.stereoLink / 100.0);
-        else
-            stereoLink.setTarget (settings.stereoLink / 100.0);
+            glideTo (glides[s], targets[s], snap);
+        glideTo (stereoLink, settings.stereoLink / 100.0, snap);
         placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
         if (snap)
+        {
+            update();
             voices[playing].placement = placement;
+        }
         // Auto Release switches without a glide: the switch changes only how fast the gain comes back, not where it is.
         autoRelease = settings.autoRelease;
     }
@@ -339,11 +333,7 @@ public:
     // With snap, the new gain takes effect at once instead of gliding.
     void setTargetDb (double db, bool snap)
     {
-        const double target = plugkit::decibelsToGain (db);
-        if (snap)
-            gain.reset (target);
-        else
-            gain.setTarget (target);
+        glideTo (gain, plugkit::decibelsToGain (db), snap);
     }
 
     void process (AudioBlock block)
@@ -402,10 +392,7 @@ public:
     // With snap, it is held or let go at once instead of fading.
     void setHeld (bool held, bool snap)
     {
-        if (snap)
-            mix.reset (held ? 1.0 : 0.0);
-        else
-            mix.setTarget (held ? 1.0 : 0.0);
+        glideTo (mix, held ? 1.0 : 0.0, snap);
     }
 
     // With snap, the new Placement plays at once instead of fading in. A mono track plays as Stereo.
@@ -544,10 +531,7 @@ struct Engine::Impl
         audition.setHeld (settings.detectionAudition, snapToSettings);
         audition.setPlacement (settings.stereoPlacement, snapToSettings);
         lookahead.setLookahead (settings.lookaheadMs, snapToSettings);
-        if (snapToSettings)
-            modeFade.reset (settings.processingMode);
-        else
-            modeFade.setTarget (settings.processingMode);
+        glideTo (modeFade, settings.processingMode, snapToSettings);
         snapToSettings = false;
     }
 };
