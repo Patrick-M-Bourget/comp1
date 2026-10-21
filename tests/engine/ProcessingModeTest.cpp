@@ -19,16 +19,6 @@ namespace
 constexpr auto zeroLatency = ProcessingMode::ZeroLatency;
 constexpr auto highQuality = ProcessingMode::HighQuality;
 
-// audio delayed by samples, the start filled with silence and the end cut off, so it keeps its length.
-test::Channels delayed (const test::Channels& audio, int samples)
-{
-    auto out = audio;
-    for (std::size_t ch = 0; ch < audio.size(); ++ch)
-        for (std::size_t i = 0; i < audio[ch].size(); ++i)
-            out[ch][i] = i < static_cast<std::size_t> (samples) ? 0.0f : audio[ch][i - static_cast<std::size_t> (samples)];
-    return out;
-}
-
 // audio through a fresh Engine at sampleRate with settings, cut as given; then, from sample switchAt on, with later.
 test::Channels play (const test::Channels& audio, double sampleRate, const std::vector<int>& cut, const Settings& settings,
                      const Settings& later, int switchAt)
@@ -73,12 +63,12 @@ TEST_CASE ("High Quality at Ratio 1:1 is the input delayed by the reported laten
     CAPTURE (sampleRate, cut, lookaheadMs);
     const auto input = test::noise (2, 6000);
     const Settings settings { .ratio = 1.0, .processingMode = highQuality, .lookaheadMs = lookaheadMs };
-    CHECK (play (input, sampleRate, cut, settings) == delayed (input, latencySamples (highQuality, sampleRate)));
+    CHECK (play (input, sampleRate, cut, settings) == test::delayed (input, latencySamples (highQuality, sampleRate)));
 
     // Lookahead jumping to the other end of its range, part-way through a run, moves nothing the listener hears.
     auto jumped = settings;
     jumped.lookaheadMs = lookaheadMs < 2.5 ? 5.0 : 0.0;
-    CHECK (play (input, sampleRate, cut, settings, jumped, 2003) == delayed (input, latencySamples (highQuality, sampleRate)));
+    CHECK (play (input, sampleRate, cut, settings, jumped, 2003) == test::delayed (input, latencySamples (highQuality, sampleRate)));
 }
 
 TEST_CASE ("High Quality at Lookahead 0 is Zero Latency's output delayed by the reported latency, bit for bit")
@@ -92,7 +82,7 @@ TEST_CASE ("High Quality at Lookahead 0 is Zero Latency's output delayed by the 
     highQualitySettings.processingMode = highQuality;
     const auto input = test::noise (2, 6000);
     const auto zeroLatencyOutput = play (input, sampleRate, cut, compressing);
-    CHECK (play (input, sampleRate, cut, highQualitySettings) == delayed (zeroLatencyOutput, latencySamples (highQuality, sampleRate)));
+    CHECK (play (input, sampleRate, cut, highQualitySettings) == test::delayed (zeroLatencyOutput, latencySamples (highQuality, sampleRate)));
 }
 
 TEST_CASE ("In Zero Latency, Lookahead changes nothing, at every sample rate and block size")
@@ -130,8 +120,8 @@ TEST_CASE ("A Processing Mode switch falls to silence and rises again within the
     const Settings before { .ratio = 1.0, .processingMode = from }, after { .ratio = 1.0, .processingMode = to };
     const auto reference = play (input, sampleRate, { 4096 }, before, after, switchAt);
 
-    const auto oldPath = delayed (input, latencySamples (from, sampleRate));
-    const auto newPath = delayed (input, latencySamples (to, sampleRate));
+    const auto oldPath = test::delayed (input, latencySamples (from, sampleRate));
+    const auto newPath = test::delayed (input, latencySamples (to, sampleRate));
     const auto at = [] (int i) { return static_cast<std::size_t> (i); };
     for (std::size_t ch = 0; ch < input.size(); ++ch)
     {
@@ -164,7 +154,7 @@ TEST_CASE ("The settings in force at prepare apply at once, with no mode fade")
     const auto mode = GENERATE (zeroLatency, highQuality);
     CAPTURE (static_cast<int> (mode));
     const auto input = test::noise (2, 3000);
-    CHECK (play (input, 48000.0, { 512 }, { .ratio = 1.0, .processingMode = mode }) == delayed (input, latencySamples (mode, 48000.0)));
+    CHECK (play (input, 48000.0, { 512 }, { .ratio = 1.0, .processingMode = mode }) == test::delayed (input, latencySamples (mode, 48000.0)));
 }
 
 TEST_CASE ("A non-finite input sample never reaches the output in High Quality, nor across a switch")

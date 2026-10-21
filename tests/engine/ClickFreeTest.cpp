@@ -147,6 +147,8 @@ const std::vector<Jump>& jumps()
                s.saturationPosition = SaturationPosition::Before;
            },
             saturating } },
+        // Held, the uncompressed input plays in place of the compressed one.
+        { "Detection Audition", [] (Settings& s, bool b) { s.detectionAudition = b; } },
         { "Lookahead", [] (Settings& s, bool b) {
              s.processingMode = ProcessingMode::HighQuality; // Zero Latency doesn't read it
              s.lookaheadMs = b ? 5.0 : 0.0;

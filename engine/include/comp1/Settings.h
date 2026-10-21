@@ -39,6 +39,14 @@ enum class SaturationPosition
     After,  // after the compressor, before Auto Gain: the compressor reacts to the unsaturated signal
 };
 
+// What the compressor's detection listens to: the main input (Internal), or the Sidechain (External). Saved by index,
+// so the order is frozen.
+enum class DetectionSource
+{
+    Internal,
+    External,
+};
+
 // How the whole plugin trades latency against quality (ADR 0001); comp1/Latency.h gives each one's latency. Stored in
 // sessions in this order, which never changes (ADR 0003).
 enum class ProcessingMode
@@ -72,6 +80,13 @@ struct Settings
 
     // Output Gain, in dB: applied to the whole output after Dry and Wet are summed, before the Limiter.
     double outputGainDb = 0.0;
+
+    // Detection Source: what the detection stage feeds the compressor's detector.
+    DetectionSource detectionSource = DetectionSource::Internal;
+
+    // Detection Audition: not a host parameter, and never saved. Held while the editor holds it, it plays the
+    // detection signal in place of the Dry and Wet sum, before Output Gain.
+    bool detectionAudition = false;
 
     // Whole-plugin: the Processing Mode, and Lookahead in ms, which High Quality alone reads.
     ProcessingMode processingMode = ProcessingMode::ZeroLatency;

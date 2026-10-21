@@ -94,6 +94,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     // Each default is Settings' own, so the host's defaults and the Engine's are one.
     const Settings defaults;
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
+    // Its choices are DetectionSource's, in its order, which sessions save by index.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { detectionSourceId, 1 },
+                                                              "Detection Source",
+                                                              juce::StringArray { "Internal", "External" },
+                                                              static_cast<int> (defaults.detectionSource)));
     layout.add (floatParameter (thresholdId, "Threshold", linearRange (parameterRanges::threshold), defaults.thresholdDb, withText (2, "dB")),
                 floatParameter (ratioId, "Ratio", ratioRange(), defaults.ratio, ratioText()),
                 floatParameter (kneeId, "Knee", linearRange (parameterRanges::knee), defaults.kneeDb, withText (2, "dB")),
@@ -140,6 +145,7 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       drive (parameters.getRawParameterValue (driveId)),
       saturationPosition (parameters.getRawParameterValue (saturationPositionId)),
       outputGain (parameters.getRawParameterValue (outputGainId)),
+      detectionSource (parameters.getRawParameterValue (detectionSourceId)),
       processingMode (parameters.getRawParameterValue (processingModeId)),
       lookahead (parameters.getRawParameterValue (lookaheadId))
 {
@@ -162,6 +168,7 @@ Settings SettingsReader::read() const
              .saturationPosition = saturationPosition->load (std::memory_order_relaxed) < 0.5f ? SaturationPosition::Before
                                                                                                : SaturationPosition::After,
              .outputGainDb = plain (outputGain),
+             .detectionSource = detectionSource->load (std::memory_order_relaxed) >= 0.5f ? DetectionSource::External : DetectionSource::Internal,
              .processingMode = processingMode->load (std::memory_order_relaxed) >= 0.5f ? ProcessingMode::HighQuality : ProcessingMode::ZeroLatency,
              .lookaheadMs = plain (lookahead) };
 }

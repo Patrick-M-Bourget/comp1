@@ -56,13 +56,16 @@ public:
             lookahead.skip (plugkit::runSamples);
     }
 
-    // Feeds the audio and its detection signal, the same piece of a run, into the delays, in both Processing Modes, so
-    // a switch to High Quality starts from the latest audio. In High Quality, delays audio in place and returns the
-    // detection signal to compress it by, Lookahead ahead of it; in Zero Latency, leaves audio alone and returns
-    // detected. The detection signal returned holds until the next process().
+    // Feeds the audio and what each of its channels follows in its detection signal, the same piece of a run, into the
+    // delays, in both Processing Modes, so a switch to High Quality starts from the latest audio. In High Quality,
+    // delays audio in place and returns the detection signal to compress it by, Lookahead ahead of it: one channel per
+    // audio channel, each followed by its own; in Zero Latency, leaves audio alone and returns detected. The detection
+    // signal returned holds until the next process().
     DetectionSignal process (const DetectionSignal& detected, AudioBlock audio, bool highQuality)
     {
-        const ConstAudioBlock detectedBlock { detected.channels, detected.numChannels, detected.numSamples };
+        // What the compressor follows, a channel per audio channel: a stereo Sidechain under a mono main is followed
+        // as the louder of its two, so its two channels can't be delayed in its place.
+        const ConstAudioBlock detectedBlock { detected.followed, audio.numChannels, detected.numSamples };
         if (! highQuality)
         {
             audioDelay.write ({ audio.channels, audio.numChannels, audio.numSamples });
@@ -74,11 +77,11 @@ public:
         // samples, never a level between two of them. While Lookahead glides, the delay steps by a sample or two a
         // run; the detector, smoothing with Attack and Release, makes no click of it.
         const int delay = std::clamp (budget - static_cast<int> (std::lround (lookahead.value())), 0, budget);
-        detectionDelay.process (detectedBlock, { pointers.data(), detected.numChannels, detected.numSamples }, delay);
+        detectionDelay.process (detectedBlock, { pointers.data(), detectedBlock.numChannels, detectedBlock.numSamples }, delay);
         return { .channels = pointers.data(),
-                 .numChannels = detected.numChannels,
-                 .numSamples = detected.numSamples,
-                 .followedBy = detected.followedBy };
+                 .numChannels = detectedBlock.numChannels,
+                 .numSamples = detectedBlock.numSamples,
+                 .followed = pointers.data() };
     }
 
 private:
@@ -86,8 +89,8 @@ private:
     int budget = 0; // the Lookahead budget, in samples
     DelayLine audioDelay, detectionDelay;
     plugkit::Smoother lookahead;             // in samples
-    std::vector<std::vector<float>> storage; // per detection channel, the delayed detection signal
-    std::vector<float*> pointers;            // per detection channel, into storage
+    std::vector<std::vector<float>> storage; // per audio channel, the delayed samples it follows
+    std::vector<float*> pointers;            // per audio channel, into storage
 };
 
 } // namespace comp1

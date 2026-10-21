@@ -179,6 +179,85 @@ private:
     plugkit::Smoother gain;
 };
 
+// Detection Audition: plays the detection signal in place of the Wet path, fading between the two over the Smoother's
+// glide time, so holding it and letting go never jump. Mapping the detection channels to the output's: a stereo
+// detection signal plays each channel on its own output channel, a mono one on every output channel, and a stereo one
+// on a mono output as the average of its two channels. In High Quality it is delayed as the Wet path is up to here
+// (comp1/Latency.h's wetPathLatencySamples), so it keeps the reported latency and fades against the Wet path in time.
+class Audition
+{
+public:
+    // Allocates for up to numChannels output channels of up to a run a piece.
+    void prepare (double sampleRate, int numChannels)
+    {
+        mix.configure (plugkit::glideTimeConstantSeconds * sampleRate, 1.0e-6);
+        mix.reset (0.0);
+        const auto channels = static_cast<std::size_t> (std::max (numChannels, 0));
+        storage.assign (channels, std::vector<float> (static_cast<std::size_t> (plugkit::runSamples)));
+        pointers.assign (channels, nullptr);
+        for (std::size_t ch = 0; ch < channels; ++ch)
+            pointers[ch] = storage[ch].data();
+        delay.prepare (numChannels, wetPathLatencySamples (ProcessingMode::HighQuality, sampleRate));
+    }
+
+    // With snap, it is held or let go at once instead of fading.
+    void setHeld (bool held, bool snap)
+    {
+        if (snap)
+            mix.reset (held ? 1.0 : 0.0);
+        else
+            mix.setTarget (held ? 1.0 : 0.0);
+    }
+
+    // detection is the piece of the detection signal of the samples now coming in, audio the Wet path's piece, which
+    // High Quality has delayed by wetPathLatencySamples. The detection signal, mapped to the output's channels, feeds
+    // the delay in both Processing Modes, so a switch to High Quality starts from the latest of it.
+    void process (const DetectionSignal& detection, AudioBlock audio, bool highQuality)
+    {
+        const AudioBlock heard { pointers.data(), audio.numChannels, audio.numSamples };
+        for (int ch = 0; ch < heard.numChannels; ++ch)
+            for (int i = 0; i < heard.numSamples; ++i)
+                heard.channels[ch][i] = detectionSample (detection, audio.numChannels, ch, i);
+        if (highQuality)
+            delay.process (heard);
+        else
+            delay.write ({ heard.channels, heard.numChannels, heard.numSamples });
+
+        // Let go and settled: the Wet path plays, bit for bit.
+        if (mix.isSettled() && mix.value() == 0.0)
+            return;
+        int i = 0;
+        for (; i < audio.numSamples && ! mix.isSettled(); ++i)
+        {
+            const double m = mix.next();
+            for (int ch = 0; ch < audio.numChannels; ++ch)
+            {
+                float& sample = audio.channels[ch][i];
+                sample = static_cast<float> ((1.0 - m) * sample + m * heard.channels[ch][i]);
+            }
+        }
+        if (mix.value() == 0.0)
+            return;
+        for (int ch = 0; ch < audio.numChannels; ++ch)
+            std::copy (heard.channels[ch] + i, heard.channels[ch] + audio.numSamples, audio.channels[ch] + i);
+    }
+
+private:
+    static float detectionSample (const DetectionSignal& detection, int outputChannels, int ch, int i)
+    {
+        if (detection.numChannels == 1)
+            return detection.channels[0][i];
+        if (outputChannels == 1)
+            return 0.5f * (detection.channels[0][i] + detection.channels[1][i]);
+        return detection.channels[ch][i];
+    }
+
+    plugkit::Smoother mix; // 0 plays the Wet path, 1 the detection signal
+    std::vector<std::vector<float>> storage; // per output channel, the detection signal as heard
+    std::vector<float*> pointers;            // per output channel, into storage
+    DelayLine delay;                         // High Quality's, per output channel
+};
+
 } // namespace
 
 struct Engine::Impl
@@ -202,6 +281,7 @@ struct Engine::Impl
     LookaheadStage lookahead;
     DelayLine oversamplingPadding, limiterPadding;
     ModeFade modeFade;
+    Audition audition;
 
     void applySettings()
     {
@@ -210,10 +290,12 @@ struct Engine::Impl
             return;
         if (latest != nullptr)
             settings = *latest;
+        detection.setSource (settings.detectionSource);
         compressor.setSettings (settings, snapToSettings);
         autoGain.setTargetDb (settings.autoGain ? clean::autoGainDb (curveOf (settings)) : 0.0, snapToSettings);
         saturation.setSettings (settings, snapToSettings);
         outputGain.setTargetDb (settings.outputGainDb, snapToSettings);
+        audition.setHeld (settings.detectionAudition, snapToSettings);
         lookahead.setLookahead (settings.lookaheadMs, snapToSettings);
         if (snapToSettings)
             modeFade.reset (settings.processingMode);
@@ -240,6 +322,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->oversamplingPadding.prepare (numChannels, oversamplingReserveSamples);
     impl->limiterPadding.prepare (numChannels, limiterReserveSamples (sampleRate));
     impl->modeFade.prepare (sampleRate);
+    impl->audition.prepare (sampleRate, numChannels);
     impl->snapToSettings = true;
 }
 
@@ -279,11 +362,13 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         const ConstAudioBlock sidechainBlock { sidechainPiece.data(), sidechainChannels, count };
 
         // The Wet path: Saturation Before, the detection stage, fed the compressor's input as the Internal signal,
-        // then the compressor, Saturation After, Auto Gain and Output Gain; Saturation runs at one of its two
-        // positions. The compressor's settings step at the start of each run, wherever the host's blocks fall;
-        // Saturation, Auto Gain and Output Gain glide a sample at a time with next(), so where the pieces fall changes
-        // nothing either. From the sample a new setting is taken (the start of the host's block, so the host
-        // decides when a change lands), the output is the same sample for sample however the audio is cut.
+        // then the compressor, Saturation After, Auto Gain, Detection Audition and Output Gain; Saturation runs at one
+        // of its two positions. The compressor's settings step at the start of each run, wherever the host's blocks
+        // fall; Saturation, Auto Gain, Detection Audition and Output Gain glide a sample at a time with next(), so
+        // where the pieces fall changes nothing either. From the sample a new setting is taken (the start of the
+        // host's block, so the host decides when a change lands), the output is the same sample for sample however
+        // the audio is cut. The detector runs while Detection Audition is held, so letting go doesn't restart
+        // compression from zero.
         const AudioBlock wet { impl->subBlock.data(), channels, count };
         if (impl->gridPosition == 0)
             impl->saturation.startRun();
@@ -304,6 +389,7 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         impl->autoGain.process (wet);
         if (highQuality)
             impl->oversamplingPadding.process (wet);
+        impl->audition.process (detected, wet, highQuality);
         impl->outputGain.process (wet);
         if (highQuality)
             impl->limiterPadding.process (wet);
