@@ -34,11 +34,11 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
         eq.lowPass.on = block % 3 != 2;
         eq.lowPass.filter.frequency = 20000.0 - 150.0 * block;
         eq.lowPass.filter.slope = 6.0 * (1 + (block * 5) % 16);
-        eq.band.on = block % 5 != 3;
-        eq.band.filter.shape = shapeOf (static_cast<DetectionBandShape> (block % 3));
-        eq.band.filter.frequency = 30.0 + 211.0 * block;
-        eq.band.filter.gain = -30.0 + block % 61;
-        eq.band.filter.q = 0.025 + 0.6 * block;
+        eq.freeBand.on = block % 5 != 3;
+        eq.freeBand.filter.shape = shapeOf (static_cast<FreeBandShape> (block % 3));
+        eq.freeBand.filter.frequency = 30.0 + 211.0 * block;
+        eq.freeBand.filter.gain = -30.0 + block % 61;
+        eq.freeBand.filter.q = 0.025 + 0.6 * block;
         engine.setSettings ({ .thresholdDb = -6.0 * (block % 10),
                               .ratio = block % 5 == 4 ? std::numeric_limits<double>::infinity() : 1.0 + block % 5,
                               .kneeDb = 8.0 * (block % 9),

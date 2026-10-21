@@ -7,6 +7,8 @@ The spec follows Pro-C 3's parameter ranges, but FabFilter's public documentatio
 - **Range: 0 to 60 dB, default 60 dB.** FabFilter describes Range ("limits the maximum amount of applied gain change", Pro-C 3 manual, "Dynamics controls") but gives no limits. 60 dB is the most Gain Reduction the compressor can apply anyway: the lowest Threshold, −60 dB, at Ratio ∞ with a full-scale input. So the default sets no limit, and every Range below it does.
 - **Output Gain: −36 to +36 dB, default 0 dB.** The Pro-C 3 manual describes the Output Level knob ("Input and output options") but gives no range. The range is symmetric, so 0 dB sits at its exact centre and the default passes audio through bit for bit. Its top leaves enough make-up headroom for deep compression, and its 72 dB span keeps the slider usable.
 
+The Detection EQ's Slopes take their top from the Pro-C 3 manual, which gives its side chain filters "slopes up to 96 dB/oct and also the Brickwall slope" ("Side chain section") but not the steps between. comp1 steps them every 6 dB/oct from 6 dB/oct, a whole filter order each, and leaves out Brickwall. The manual gives no range for the side chain EQ's Frequency, Gain or Q, so those are comp1's own too; `parameterRanges` names each with its reason.
+
 The other ranges follow Pro-C 3's documentation: Ratio 1:1 to ∞, Knee 0 to 72 dB and Attack 0.005 to 250 ms from the manual, and Hold up to 500 ms from the Pro-C 3 product page (the manual gives no Hold range). dyn-lab (`tools/dyn-lab/dynlab.py`) names each range once and cites its source.
 
 ## Considered Options

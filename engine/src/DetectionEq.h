@@ -190,7 +190,7 @@ public:
     {
         bands[0].setTarget (eq.highPass, snap);
         bands[1].setTarget (eq.lowPass, snap);
-        bands[2].setTarget (eq.band, snap);
+        bands[2].setTarget (eq.freeBand, snap);
     }
 
     void process (float* const* channels, int numChannels, int numSamples)

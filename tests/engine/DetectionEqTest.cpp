@@ -69,7 +69,7 @@ double auditionedGainDb (Settings settings, double sampleRate, double frequency)
 double designedGainDb (const DetectionEq& eq, double sampleRate, double frequency)
 {
     std::complex<double> h = 1.0;
-    for (const auto* band : { &eq.highPass, &eq.lowPass, &eq.band })
+    for (const auto* band : { &eq.highPass, &eq.lowPass, &eq.freeBand })
         if (band->on)
             h *= plugkit::responseAt (plugkit::designBand (band->filter, sampleRate), frequency, sampleRate);
     return 20.0 * std::log10 (std::abs (h));
@@ -114,20 +114,20 @@ DetectionEq lowPass (double frequency, double slope)
     return eq;
 }
 
-DetectionEq freeBand (DetectionBandShape shape, double frequency, double gain, double q)
+DetectionEq freeBand (FreeBandShape shape, double frequency, double gain, double q)
 {
     DetectionEq eq;
-    eq.band.on = true;
-    eq.band.filter.shape = shapeOf (shape);
-    eq.band.filter.frequency = frequency;
-    eq.band.filter.gain = gain;
-    eq.band.filter.q = q;
+    eq.freeBand.on = true;
+    eq.freeBand.filter.shape = shapeOf (shape);
+    eq.freeBand.filter.frequency = frequency;
+    eq.freeBand.filter.gain = gain;
+    eq.freeBand.filter.q = q;
     return eq;
 }
 
 DetectionEq allThree()
 {
-    auto eq = freeBand (DetectionBandShape::Bell, 2000.0, -12.0, 4.0);
+    auto eq = freeBand (FreeBandShape::Bell, 2000.0, -12.0, 4.0);
     eq.highPass = highPass (80.0, 24.0).highPass;
     eq.lowPass = lowPass (8000.0, 18.0).lowPass;
     return eq;
@@ -141,9 +141,9 @@ const std::vector<Case>& cases()
         { "high-pass 200 Hz, 96 dB/oct", highPass (200.0, 96.0) },
         { "low-pass 5 kHz, 12 dB/oct", lowPass (5000.0, 12.0) },
         { "low-pass 2 kHz, 36 dB/oct", lowPass (2000.0, 36.0) },
-        { "Bell 1 kHz, +9 dB, Q 2", freeBand (DetectionBandShape::Bell, 1000.0, 9.0, 2.0) },
-        { "Low Shelf 300 Hz, -6 dB, Q 0.7", freeBand (DetectionBandShape::LowShelf, 300.0, -6.0, 0.7) },
-        { "High Shelf 3 kHz, +6 dB, Q 1", freeBand (DetectionBandShape::HighShelf, 3000.0, 6.0, 1.0) },
+        { "Bell 1 kHz, +9 dB, Q 2", freeBand (FreeBandShape::Bell, 1000.0, 9.0, 2.0) },
+        { "Low Shelf 300 Hz, -6 dB, Q 0.7", freeBand (FreeBandShape::LowShelf, 300.0, -6.0, 0.7) },
+        { "High Shelf 3 kHz, +6 dB, Q 1", freeBand (FreeBandShape::HighShelf, 3000.0, 6.0, 1.0) },
         { "all three", allThree() },
     };
     return all;
@@ -176,7 +176,7 @@ namespace
 // Every band on, each away from its defaults: a Detection EQ that changes the detection signal throughout.
 DetectionEq everyBandOn()
 {
-    auto eq = freeBand (DetectionBandShape::HighShelf, 1500.0, 12.0, 3.0);
+    auto eq = freeBand (FreeBandShape::HighShelf, 1500.0, 12.0, 3.0);
     eq.highPass = highPass (400.0, 30.0).highPass;
     eq.lowPass = lowPass (3000.0, 6.0).lowPass;
     return eq;
@@ -205,7 +205,7 @@ TEST_CASE ("With every band off, the output and Detection Audition are those of 
     const Settings plain { .thresholdDb = -30.0, .ratio = 8.0, .detectionSource = source, .detectionAudition = audition };
     auto off = plain;
     off.detectionEq = everyBandOn();
-    off.detectionEq.highPass.on = off.detectionEq.lowPass.on = off.detectionEq.band.on = false;
+    off.detectionEq.highPass.on = off.detectionEq.lowPass.on = off.detectionEq.freeBand.on = false;
     CHECK (play (off, true) == play (plain, true));
     // The bands on change it: the test can tell.
     auto on = off;
@@ -227,7 +227,7 @@ TEST_CASE ("With no Gain Reduction, the output is the input, bit for bit, at eve
     settings.detectionEq = everyBandOn();
     settings.detectionEq.highPass.on = (bandsOn & 1) != 0;
     settings.detectionEq.lowPass.on = (bandsOn & 2) != 0;
-    settings.detectionEq.band.on = (bandsOn & 4) != 0;
+    settings.detectionEq.freeBand.on = (bandsOn & 4) != 0;
     CHECK (play (settings, true) == test::noise (2, 24000));
 }
 

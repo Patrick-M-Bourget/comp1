@@ -107,7 +107,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                                               juce::StringArray { "Internal", "External" },
                                                               static_cast<int> (defaults.detectionSource)));
     // The Detection EQ: the high-pass, the low-pass and the free band, each with its own on/off. The free band's
-    // Shapes are DetectionBandShape's, in its order, which sessions save by index.
+    // Shapes are FreeBandShape's, in its order, which sessions save by index.
     const auto& eq = defaults.detectionEq;
     const auto onOff = [] (const juce::String& id, const juce::String& name, bool defaultValue) {
         return std::make_unique<juce::AudioParameterBool> (juce::ParameterID { id, 1 }, name, defaultValue);
@@ -124,14 +124,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 onOff (detectionLowPassOnId, "Detection Low-Pass", eq.lowPass.on),
                 frequency (detectionLowPassFrequencyId, "Detection Low-Pass Frequency", eq.lowPass.filter.frequency),
                 slope (detectionLowPassSlopeId, "Detection Low-Pass Slope", eq.lowPass.filter.slope),
-                onOff (detectionBandOnId, "Detection Band", eq.band.on),
+                onOff (detectionBandOnId, "Detection Free Band", eq.freeBand.on),
                 std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { detectionBandShapeId, 1 },
-                                                              "Detection Band Shape",
+                                                              "Detection Free Band Shape",
                                                               juce::StringArray { "Bell", "Low Shelf", "High Shelf" },
-                                                              static_cast<int> (DetectionBandShape::Bell)),
-                frequency (detectionBandFrequencyId, "Detection Band Frequency", eq.band.filter.frequency),
-                floatParameter (detectionBandGainId, "Detection Band Gain", linearRange (parameterRanges::detectionGain), eq.band.filter.gain, withText (2, "dB")),
-                floatParameter (detectionBandQId, "Detection Band Q", logRange (parameterRanges::detectionQ), eq.band.filter.q, withText (3, {})));
+                                                              static_cast<int> (FreeBandShape::Bell)),
+                frequency (detectionBandFrequencyId, "Detection Free Band Frequency", eq.freeBand.filter.frequency),
+                floatParameter (detectionBandGainId, "Detection Free Band Gain", linearRange (parameterRanges::detectionGain), eq.freeBand.filter.gain, withText (2, "dB")),
+                floatParameter (detectionBandQId, "Detection Free Band Q", logRange (parameterRanges::detectionQ), eq.freeBand.filter.q, withText (3, {})));
     layout.add (floatParameter (thresholdId, "Threshold", linearRange (parameterRanges::threshold), defaults.thresholdDb, withText (2, "dB")),
                 floatParameter (ratioId, "Ratio", ratioRange(), defaults.ratio, ratioText()),
                 floatParameter (kneeId, "Knee", linearRange (parameterRanges::knee), defaults.kneeDb, withText (2, "dB")),
@@ -197,12 +197,12 @@ Settings SettingsReader::read() const
     eq.lowPass.on = on (lowPassOn);
     eq.lowPass.filter.frequency = plain (lowPassFrequency);
     eq.lowPass.filter.slope = plain (lowPassSlope);
-    eq.band.on = on (bandOn);
-    const auto shapeIndex = std::clamp (static_cast<int> (std::lround (plain (bandShape))), 0, static_cast<int> (DetectionBandShape::HighShelf));
-    eq.band.filter.shape = shapeOf (static_cast<DetectionBandShape> (shapeIndex));
-    eq.band.filter.frequency = plain (bandFrequency);
-    eq.band.filter.gain = plain (bandGain);
-    eq.band.filter.q = plain (bandQ);
+    eq.freeBand.on = on (bandOn);
+    const auto shapeIndex = std::clamp (static_cast<int> (std::lround (plain (bandShape))), 0, static_cast<int> (FreeBandShape::HighShelf));
+    eq.freeBand.filter.shape = shapeOf (static_cast<FreeBandShape> (shapeIndex));
+    eq.freeBand.filter.frequency = plain (bandFrequency);
+    eq.freeBand.filter.gain = plain (bandGain);
+    eq.freeBand.filter.q = plain (bandQ);
     return { .thresholdDb = plain (threshold),
              .ratio = plain (ratio),
              .kneeDb = plain (knee),

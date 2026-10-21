@@ -149,28 +149,28 @@ const std::vector<Jump>& jumps()
              s.detectionEq.lowPass.filter.frequency = 150.0;
              s.detectionEq.lowPass.filter.slope = b ? 48.0 : 6.0;
          } },
-        { "Detection EQ band on", [] (Settings& s, bool b) {
-             s.detectionEq.band.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = 1.0 };
-             s.detectionEq.band.on = b;
+        { "Detection EQ free band on", [] (Settings& s, bool b) {
+             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = 1.0 };
+             s.detectionEq.freeBand.on = b;
          } },
-        { "Detection EQ band Shape", [] (Settings& s, bool b) {
-             s.detectionEq.band.on = true;
-             s.detectionEq.band.filter = { .shape = shapeOf (b ? DetectionBandShape::HighShelf : DetectionBandShape::Bell),
+        { "Detection EQ free band Shape", [] (Settings& s, bool b) {
+             s.detectionEq.freeBand.on = true;
+             s.detectionEq.freeBand.filter = { .shape = shapeOf (b ? FreeBandShape::HighShelf : FreeBandShape::Bell),
                                            .gain = 18.0,
                                            .frequency = toneFrequency,
                                            .q = 1.0 };
          } },
-        { "Detection EQ band Frequency", [] (Settings& s, bool b) {
-             s.detectionEq.band.on = true;
-             s.detectionEq.band.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = b ? 20000.0 : 20.0, .q = 1.0 };
+        { "Detection EQ free band Frequency", [] (Settings& s, bool b) {
+             s.detectionEq.freeBand.on = true;
+             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = b ? 20000.0 : 20.0, .q = 1.0 };
          } },
-        { "Detection EQ band Gain", [] (Settings& s, bool b) {
-             s.detectionEq.band.on = true;
-             s.detectionEq.band.filter = { .shape = plugkit::Shape::Bell, .gain = b ? 30.0 : -30.0, .frequency = toneFrequency, .q = 1.0 };
+        { "Detection EQ free band Gain", [] (Settings& s, bool b) {
+             s.detectionEq.freeBand.on = true;
+             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = b ? 30.0 : -30.0, .frequency = toneFrequency, .q = 1.0 };
          } },
-        { "Detection EQ band Q", [] (Settings& s, bool b) {
-             s.detectionEq.band.on = true;
-             s.detectionEq.band.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = b ? 40.0 : 0.025 };
+        { "Detection EQ free band Q", [] (Settings& s, bool b) {
+             s.detectionEq.freeBand.on = true;
+             s.detectionEq.freeBand.filter = { .shape = plugkit::Shape::Bell, .gain = 18.0, .frequency = toneFrequency, .q = b ? 40.0 : 0.025 };
          } },
     };
     return all;

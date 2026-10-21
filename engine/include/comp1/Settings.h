@@ -31,8 +31,8 @@ inline constexpr ParameterRange hold { 0.0, 500.0 };        // ms
 inline constexpr ParameterRange range { 0.0, 60.0 };        // dB; comp1's own: its top sets no limit
 inline constexpr ParameterRange outputGain { -36.0, 36.0 }; // dB; comp1's own
 inline constexpr ParameterRange lookahead { 0.0, 5.0 };     // ms; ADR 0001's budget for it
-// The Detection EQ's. Pro-C 3's manual gives its side chain filters' Slopes up to 96 dB/oct ("Side chain section"),
-// and no other range of its side chain EQ, so the rest are comp1's own (ADR 0008).
+// The Detection EQ's, which dyn-lab doesn't model. Pro-C 3's manual gives its side chain filters' Slopes up to
+// 96 dB/oct ("Side chain section"), and no other range of its side chain EQ, so the rest are comp1's own (ADR 0008).
 inline constexpr ParameterRange detectionFrequency { 10.0, 30000.0 }; // Hz; comp1's own: 20 Hz to 20 kHz with room each side
 inline constexpr ParameterRange detectionSlope { 6.0, 96.0 };         // dB/oct, in 6 dB/oct steps; the top Pro-C 3's
 inline constexpr ParameterRange detectionGain { -30.0, 30.0 };        // dB; comp1's own: plugkit's designs go no further
@@ -48,7 +48,7 @@ enum class DetectionSource
 };
 
 // The Detection EQ's free band's Shapes. Saved by index, so the order is frozen.
-enum class DetectionBandShape
+enum class FreeBandShape
 {
     Bell,
     LowShelf,
@@ -85,19 +85,19 @@ struct DetectionEq
 {
     DetectionBand highPass { .filter = { .shape = plugkit::Shape::LowCut, .slope = 12.0, .frequency = 20.0, .q = plugkit::butterworthQ } };
     DetectionBand lowPass { .filter = { .shape = plugkit::Shape::HighCut, .slope = 12.0, .frequency = 20000.0, .q = plugkit::butterworthQ } };
-    DetectionBand band { .filter = { .shape = plugkit::Shape::Bell, .slope = 12.0, .gain = 0.0, .frequency = 1000.0, .q = 1.0 } };
+    DetectionBand freeBand { .filter = { .shape = plugkit::Shape::Bell, .slope = 12.0, .gain = 0.0, .frequency = 1000.0, .q = 1.0 } };
 
     bool operator== (const DetectionEq&) const = default;
 };
 
 // The plugkit Shape a free band's Shape designs as.
-inline plugkit::Shape shapeOf (DetectionBandShape shape)
+inline plugkit::Shape shapeOf (FreeBandShape shape)
 {
     switch (shape)
     {
-        case DetectionBandShape::Bell: return plugkit::Shape::Bell;
-        case DetectionBandShape::LowShelf: return plugkit::Shape::LowShelf;
-        case DetectionBandShape::HighShelf: return plugkit::Shape::HighShelf;
+        case FreeBandShape::Bell: return plugkit::Shape::Bell;
+        case FreeBandShape::LowShelf: return plugkit::Shape::LowShelf;
+        case FreeBandShape::HighShelf: return plugkit::Shape::HighShelf;
     }
     return plugkit::Shape::Bell;
 }

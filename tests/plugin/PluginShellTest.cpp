@@ -133,9 +133,9 @@ TEST_CASE ("The Detection EQ's Frequencies, Slopes, Gain and Q are host paramete
         { "detection_high_pass_slope", "Detection High-Pass Slope", "dB/oct", 6.0f, 96.0f, 12.0f, 48.0f, "48" },
         { "detection_low_pass_frequency", "Detection Low-Pass Frequency", "Hz", 10.0f, 30000.0f, 20000.0f, 8000.0f, "8000.0" },
         { "detection_low_pass_slope", "Detection Low-Pass Slope", "dB/oct", 6.0f, 96.0f, 12.0f, 18.0f, "18" },
-        { "detection_band_frequency", "Detection Band Frequency", "Hz", 10.0f, 30000.0f, 1000.0f, 1500.0f, "1500.0" },
-        { "detection_band_gain", "Detection Band Gain", "dB", -30.0f, 30.0f, 0.0f, -6.5f, "-6.50" },
-        { "detection_band_q", "Detection Band Q", "", 0.025f, 40.0f, 1.0f, 2.5f, "2.500" },
+        { "detection_band_frequency", "Detection Free Band Frequency", "Hz", 10.0f, 30000.0f, 1000.0f, 1500.0f, "1500.0" },
+        { "detection_band_gain", "Detection Free Band Gain", "dB", -30.0f, 30.0f, 0.0f, -6.5f, "-6.50" },
+        { "detection_band_q", "Detection Free Band Q", "", 0.025f, 40.0f, 1.0f, 2.5f, "2.500" },
     }));
     CAPTURE (expected.id);
     auto& parameter = host::parameter (processor, expected.id);
@@ -181,7 +181,7 @@ TEST_CASE ("Each Detection EQ band has an on/off host parameter, off by default,
     comp1::PluginProcessor processor;
     const auto [id, name] = GENERATE (table<const char*, const char*> ({ { "detection_high_pass_on", "Detection High-Pass" },
                                                                           { "detection_low_pass_on", "Detection Low-Pass" },
-                                                                          { "detection_band_on", "Detection Band" } }));
+                                                                          { "detection_band_on", "Detection Free Band" } }));
     CAPTURE (id);
     auto& on = host::parameter (processor, id);
     CHECK (on.getName (100) == name);
@@ -190,7 +190,7 @@ TEST_CASE ("Each Detection EQ band has an on/off host parameter, off by default,
     CHECK (on.isAutomatable());
 
     auto& shape = host::parameter (processor, "detection_band_shape");
-    CHECK (shape.getName (100) == "Detection Band Shape");
+    CHECK (shape.getName (100) == "Detection Free Band Shape");
     CHECK (shape.getNumSteps() == 3);
     CHECK (shape.getDefaultValue() == 0.0f);
     CHECK (shape.getText (0.0f, 100) == "Bell");
@@ -224,15 +224,15 @@ TEST_CASE ("The Detection EQ's host parameters reach the Engine")
     comp1::Settings settings;
     settings.detectionAudition = true;
     auto& eq = settings.detectionEq;
-    eq.highPass.on = eq.lowPass.on = eq.band.on = true;
+    eq.highPass.on = eq.lowPass.on = eq.freeBand.on = true;
     eq.highPass.filter.frequency = host::value (processor, "detection_high_pass_frequency");
     eq.highPass.filter.slope = 24.0;
     eq.lowPass.filter.frequency = host::value (processor, "detection_low_pass_frequency");
     eq.lowPass.filter.slope = 18.0;
-    eq.band.filter.shape = plugkit::Shape::HighShelf;
-    eq.band.filter.frequency = host::value (processor, "detection_band_frequency");
-    eq.band.filter.gain = host::value (processor, "detection_band_gain");
-    eq.band.filter.q = host::value (processor, "detection_band_q");
+    eq.freeBand.filter.shape = plugkit::Shape::HighShelf;
+    eq.freeBand.filter.frequency = host::value (processor, "detection_band_frequency");
+    eq.freeBand.filter.gain = host::value (processor, "detection_band_gain");
+    eq.freeBand.filter.q = host::value (processor, "detection_band_q");
     comp1::test::Channels expected (2);
     for (int ch = 0; ch < 2; ++ch)
         expected[static_cast<std::size_t> (ch)].assign (input.getReadPointer (ch), input.getReadPointer (ch) + input.getNumSamples());
