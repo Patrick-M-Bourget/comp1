@@ -30,12 +30,18 @@ struct Host
     int blockSize;
 };
 
+// The tone's amplitude at each moment, in seconds.
+using Envelope = std::function<double (double)>;
+
 // Plays a sine through the Engine as a host would, letting change(seconds, settings) edit the settings before each
 // block, and returns the output.
-std::vector<float> playTone (Host host, const std::function<void (double, Settings&)>& change)
+std::vector<float> playTone (Host host,
+                             const std::function<void (double, Settings&)>& change,
+                             const Envelope& amplitude = [] (double) { return toneAmplitude; },
+                             double seconds = toneSeconds)
 {
     const auto [sampleRate, blockSize] = host;
-    const int numBlocks = static_cast<int> (toneSeconds * sampleRate / blockSize);
+    const int numBlocks = static_cast<int> (seconds * sampleRate / blockSize);
 
     Engine engine;
     engine.prepare (sampleRate, blockSize, 1);
@@ -50,7 +56,10 @@ std::vector<float> playTone (Host host, const std::function<void (double, Settin
         change (static_cast<double> (n) / sampleRate, settings);
         engine.setSettings (settings);
         for (auto& s : block)
-            s = static_cast<float> (toneAmplitude * std::sin (2.0 * std::numbers::pi * toneFrequency * n++ / sampleRate));
+        {
+            const double time = static_cast<double> (n) / sampleRate;
+            s = static_cast<float> (amplitude (time) * std::sin (2.0 * std::numbers::pi * toneFrequency * n++ / sampleRate));
+        }
         engine.process ({ channels, 1, blockSize });
         output.insert (output.end(), block.begin(), block.end());
     }
@@ -102,6 +111,7 @@ const std::vector<Jump>& jumps()
         { "Knee", [] (Settings& s, bool b) { s.kneeDb = b ? 72.0 : 0.0; } },
         { "Attack", [] (Settings& s, bool b) { s.attackMs = b ? 250.0 : 1.0; } },
         { "Release", [] (Settings& s, bool b) { s.releaseMs = b ? 5000.0 : 20.0; } },
+        { "Auto Release", [] (Settings& s, bool b) { s.autoRelease = b; } },
         { "Hold", [] (Settings& s, bool b) { s.holdMs = b ? 500.0 : 0.0; } },
         { "Range", [] (Settings& s, bool b) { s.rangeDb = b ? 60.0 : 0.0; } },
         { "Auto Gain", [] (Settings& s, bool b) { s.autoGain = b; } },
@@ -117,6 +127,95 @@ TEST_CASE ("Jumps in each compressor setting do not click")
     const auto host = anyHost();
     CAPTURE (jump.setting, host.sampleRate, host.blockSize);
     const auto output = playTone (host, [&jump] (double time, Settings& s) { jump.set (s, alternating (time)); });
+    CHECK (discontinuity (output, host.sampleRate) < threshold);
+}
+
+namespace
+{
+
+// Mid-release, where only Release moves the gain. Each cycle a tone holds 9 dB of Gain Reduction for loudSeconds,
+// long enough to charge Auto Release's sustain state most of the way, then fades over fadeSeconds to 1 dB under
+// Threshold, so the gain comes back at Release's pace, and fades back up after quietSeconds. The Ratio is ∞:1 and the
+// Knee hard, so the loud tone is held at Threshold and the quiet one asks for no Gain Reduction; Attack is slow enough
+// not to put a corner of its own in the gain as the tone comes back. Each cycle is a whole number of periods and an
+// eighth, so the setting jumps at a different point of the tone each time.
+//
+// A jump in how fast the gain comes back leaves the gain where it is but bends its slope: a corner, sharpest against
+// the tone at the high sample rates and the shortest Release. On the steady tone of the test above, Release never
+// gets to give much back, so a bare Release jump passes there; here it clicks at 176.4 and 192 kHz.
+constexpr double midReleaseThresholdDb = -24.0;
+constexpr double loudSeconds = 1.0, fadeSeconds = 0.005, quietSeconds = 0.200625;
+constexpr double cycleSeconds = loudSeconds + 2.0 * fadeSeconds + quietSeconds;
+constexpr int cycles = 8;
+
+// The tone's amplitude through the cycles: loud, fading down, quiet, fading up, along raised cosines.
+double midReleaseAmplitude (double seconds)
+{
+    const double loud = std::pow (10.0, (midReleaseThresholdDb + 9.0) / 20.0);
+    const double quiet = std::pow (10.0, (midReleaseThresholdDb - 1.0) / 20.0);
+    const double t = std::fmod (seconds, cycleSeconds);
+    const auto fade = [] (double from, double to, double x) { return from + (to - from) * (1.0 - std::cos (std::numbers::pi * x)) / 2.0; };
+    if (t < loudSeconds)
+        return loud;
+    if (t < loudSeconds + fadeSeconds)
+        return fade (loud, quiet, (t - loudSeconds) / fadeSeconds);
+    if (t < loudSeconds + fadeSeconds + quietSeconds)
+        return quiet;
+    return fade (quiet, loud, (t - loudSeconds - fadeSeconds - quietSeconds) / fadeSeconds);
+}
+
+// True from the end of each fade down to the start of the next fade up: the setting jumps as the gain starts coming
+// back, and jumps back once it has.
+bool midRelease (double seconds)
+{
+    const double t = std::fmod (seconds, cycleSeconds);
+    return t >= loudSeconds + fadeSeconds && t < loudSeconds + fadeSeconds + quietSeconds;
+}
+
+struct MidRelease
+{
+    std::string setting;
+    std::function<void (Settings&, bool, bool)> set; // sets it for whether it is mid-release, and whether that just began
+};
+
+const std::vector<MidRelease>& midReleaseJumps()
+{
+    static const std::vector<MidRelease> all {
+        // From the longest Release to the shortest as the gain starts coming back, and back once it has.
+        { "Release", [] (Settings& s, bool midRelease, bool) { s.releaseMs = midRelease ? 5.0 : 5000.0; } },
+        // Auto Release on, then off, in turn, as the gain starts coming back: from Release to up to 5 times it, and
+        // back.
+        { "Auto Release",
+          [] (Settings& s, bool, bool began) {
+              s.releaseMs = 20.0;
+              if (began)
+                  s.autoRelease = ! s.autoRelease;
+          } },
+    };
+    return all;
+}
+
+} // namespace
+
+TEST_CASE ("Jumps in Release and Auto Release mid-release do not click")
+{
+    const auto& jump = GENERATE (from_range (midReleaseJumps()));
+    const auto host = anyHost();
+    CAPTURE (jump.setting, host.sampleRate, host.blockSize);
+    bool wasMidRelease = false;
+    const auto output = playTone (
+        host,
+        [&jump, &wasMidRelease] (double time, Settings& s) {
+            s.thresholdDb = midReleaseThresholdDb;
+            s.ratio = infinity;
+            s.kneeDb = 0.0;
+            s.attackMs = 50.0;
+            const bool now = midRelease (time);
+            jump.set (s, now, now && ! wasMidRelease);
+            wasMidRelease = now;
+        },
+        midReleaseAmplitude,
+        cycles * cycleSeconds);
     CHECK (discontinuity (output, host.sampleRate) < threshold);
 }
 

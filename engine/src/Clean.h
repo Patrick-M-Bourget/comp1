@@ -4,6 +4,8 @@
 // Design — A Tutorial and Analysis", as dyn-lab models it (tools/dyn-lab/USAGE.md). Its gain computer and detector
 // are kept apart from the rest of the Engine, so another Character can bring its own.
 
+#include "AutoRelease.h"
+
 #include <cmath>
 
 namespace comp1::clean
@@ -71,20 +73,28 @@ inline Timing timing (double attackMs, double releaseMs, double holdMs, double s
 // Gain Reduction asked for, rising with Attack and falling with Release, each one pole. Hold keeps the Gain Reduction
 // where it is for Hold whenever it stops rising, before Release begins; a rise at any point, mid-Attack included,
 // restarts it. Not the decoupled detector (eq. 17), whose Release runs through the attack pole too, so gain comes back
-// more slowly than Release says.
+// more slowly than Release says. Release takes its pole from Auto Release, which hears every sample; Hold runs first
+// either way.
 class Detector
 {
 public:
+    void prepare (double sampleRate) { autoRelease.prepare (sampleRate); }
+
     void reset()
     {
         gainReductionDb = 0.0;
         held = 0;
+        autoRelease.reset();
     }
+
+    // At the start of each run: Auto Release moves on by the run just heard (AutoRelease::startRun).
+    void startRun (double releaseMs, bool autoReleaseOn) { autoRelease.startRun (releaseMs, autoReleaseOn); }
 
     // Takes the Gain Reduction asked for, in dB, and returns the one to apply.
     double process (double wantedDb, const Timing& t)
     {
-        double k = t.releasePole;
+        autoRelease.hear (wantedDb > 0.0);
+        double k = autoRelease.release (t.releasePole);
         if (wantedDb > gainReductionDb)
         {
             held = 0;
@@ -102,6 +112,7 @@ public:
 private:
     double gainReductionDb = 0.0;
     int held = 0;
+    AutoRelease autoRelease;
 };
 
 } // namespace comp1::clean

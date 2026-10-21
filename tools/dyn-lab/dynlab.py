@@ -3,14 +3,13 @@
 
 Models the Clean Character after Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor
 Design — A Tutorial and Analysis" (J. Audio Eng. Soc. 60(6)): feedforward, with a soft-knee gain computer
-and a smooth branching peak detector in the log domain, with Hold and Range, and Auto Gain after it. Standard
-library only. See
-tools/dyn-lab/USAGE.md for every command.
+and a smooth branching peak detector in the log domain, with Hold, Auto Release and Range, and Auto Gain after it.
+Standard library only. See tools/dyn-lab/USAGE.md for every command.
 """
 
 import argparse
 import math
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from math import inf
 
 # The compressor's parameter ranges, low to high, named once. The check harness's docs stage fails when one
@@ -51,8 +50,8 @@ def command(name, options=lambda parser: None):
 
 @dataclass
 class Settings:
-    """The compressor controls the Clean Character reads: dB, :1 (math.inf for ∞) and ms. Range 60 dB, its
-    top, sets no limit."""
+    """The compressor controls the Clean Character reads: dB, :1 (math.inf for ∞), ms and Auto Release on or off.
+    Range 60 dB, its top, sets no limit."""
     threshold: float = -18.0
     ratio: float = 4.0
     knee: float = 6.0
@@ -60,6 +59,7 @@ class Settings:
     release: float = 100.0
     hold: float = 0.0
     range: float = 60.0
+    auto_release: bool = False
 
 
 # Each Settings field's range and the unit it's shown in.
@@ -79,10 +79,12 @@ def _shown(value):
 
 
 def check_ranges(settings):
-    """Raises ValueError naming the first setting outside its range, and the range."""
+    """Raises ValueError naming the first setting outside its range, and the range. A switch has no range."""
     for field in fields(settings):
-        (low, high), unit = PARAMETERS[field.name]
         value = getattr(settings, field.name)
+        if isinstance(value, bool):
+            continue
+        (low, high), unit = PARAMETERS[field.name]
         if not low <= value <= high:
             raise ValueError(f"{field.name.capitalize()} {_shown(value)}{unit} is outside its range, "
                              f"{_shown(low)} to {_shown(high)}{unit}")
@@ -125,33 +127,86 @@ def range_edge(settings):
     return settings.threshold + over
 
 
-# --- Clean: detector ------------------------------------------------------------------------------
+# --- Auto Release ---------------------------------------------------------------------------------
+
+# The Engine's run grid: from its first sample the audio is cut into runs of this many samples (plugkit's
+# runSamples). Auto Release moves a run at a time, from the first sample, as the Engine's does.
+RUN_SAMPLES = 16
+# Release after sustained compression, as a multiple of Release: with Auto Release on, the detector releases in
+# Release × (1 + (AUTO_RELEASE_MULTIPLIER - 1) × sustain). USAGE.md gives the reasons for each constant.
+AUTO_RELEASE_MULTIPLIER = 5.0
+# The sustain state's time constants: it charges toward 1 while the Transfer Curve asks for Gain Reduction, and
+# discharges toward 0 while it doesn't, each covering 1 - 1/e of the way in its time.
+AUTO_RELEASE_CHARGE_MS = 1000.0
+AUTO_RELEASE_DISCHARGE_MS = 2000.0
+# How far past Release the shortest default burst may release, as a fraction of it.
+AUTO_RELEASE_TRANSIENT_MARGIN = 0.01
+
 
 def _pole(ms, fs):
     """A one-pole coefficient that covers 1 - 1/e of a step in ms milliseconds at fs."""
     return math.exp(-1000 / (ms * fs))
 
 
+class AutoRelease:
+    """The sustain state, from 0 to 1, and the release time it gives. Each sample, hear() counts whether the
+    Transfer Curve asked for Gain Reduction; at the start of each run, start_run() moves the sustain state on by
+    the run just heard, charging for the samples that asked and discharging for the rest."""
+
+    def __init__(self, fs, sustain=0.0, heard=0):
+        charge, discharge = _pole(AUTO_RELEASE_CHARGE_MS, fs), _pole(AUTO_RELEASE_DISCHARGE_MS, fs)
+        self.charged = [charge ** n for n in range(RUN_SAMPLES + 1)]
+        self.discharged = [discharge ** n for n in range(RUN_SAMPLES + 1)]
+        self.sustain = sustain
+        self.heard = heard
+
+    def hear(self, compressing):
+        self.heard += compressing
+
+    def start_run(self):
+        self.sustain = 1 - (1 - self.sustain) * self.charged[self.heard]
+        self.sustain *= self.discharged[RUN_SAMPLES - self.heard]
+        self.heard = 0
+
+    def release_ms(self, release_ms):
+        """The release time in ms for Release release_ms, as the sustain state stands."""
+        return release_ms * (1 + (AUTO_RELEASE_MULTIPLIER - 1) * self.sustain)
+
+
+# --- Clean: detector ------------------------------------------------------------------------------
+
+
 class Detector:
     """The smooth branching peak detector of the paper's eq. 12, run in the log domain on the gain
     computer's output: it smooths the Gain Reduction the Transfer Curve asks for, capped at Range, rising
     with Attack and falling with Release, each one pole. Hold, which the paper lacks, keeps the Gain Reduction where it
-    is for Hold ms whenever it stops rising, before Release begins; a rise at any point restarts it.
+    is for Hold ms whenever it stops rising, before Release begins; a rise at any point restarts it. With Auto
+    Release on, Release is AutoRelease's, taken at the start of each run; Hold runs first either way.
 
     Not the paper's decoupled detector (eq. 17), whose release runs through the attack pole too and so
     gives back gain more slowly than Release says."""
 
-    def __init__(self, settings, fs, gain_reduction=0.0):
+    def __init__(self, settings, fs, gain_reduction=0.0, auto_release=None):
+        """auto_release is the AutoRelease state to start from: empty by default."""
         self.settings = settings
+        self.fs = fs
         self.attack = _pole(settings.attack, fs)
         self.release = _pole(settings.release, fs)
         self.hold = round(settings.hold * fs / 1000)
         self.held = 0
         self.gain_reduction = gain_reduction
+        self.auto_release = auto_release or AutoRelease(fs)
+        self.position = 0  # where the next sample falls in its run
 
     def process(self, level_db):
         """Takes one sample's Detection Level in dB and returns the Gain Reduction in dB (0 or more)."""
+        if self.position == 0:
+            self.auto_release.start_run()
+            if self.settings.auto_release:
+                self.release = _pole(self.auto_release.release_ms(self.settings.release), self.fs)
+        self.position = (self.position + 1) % RUN_SAMPLES
         wanted = gain_reduction(level_db, self.settings)
+        self.auto_release.hear(wanted > 0)
         if wanted > self.gain_reduction:
             self.held = 0
             pole = self.attack
@@ -200,7 +255,8 @@ def _times(detector, level_db, start, end, fractions):
 def step_response(settings, fs):
     """Steps the Detection Level from STEP_DB below Threshold to STEP_DB above it and back, from steady
     state, and measures the Gain Reduction's Attack, Release and Hold. None when there is no Gain
-    Reduction to measure (Ratio 1:1 or Range 0 dB)."""
+    Reduction to measure (Ratio 1:1 or Range 0 dB). Steady state above Threshold is sustained compression, so with
+    Auto Release on, its sustain state starts full: the longest release."""
     quiet, loud = settings.threshold - STEP_DB, settings.threshold + STEP_DB
     low, high = gain_reduction(quiet, settings), gain_reduction(loud, settings)
     if high - low < 1e-9:
@@ -208,7 +264,8 @@ def step_response(settings, fs):
     ms = 1000 / fs
     fractions = (ONE_TIME_CONSTANT, NINETY_PERCENT)
     (attack_63, attack_90), _ = _times(Detector(settings, fs, low), loud, low, high, fractions)
-    (release_63, release_90), held = _times(Detector(settings, fs, high), quiet, high, low, fractions)
+    sustained = AutoRelease(fs, sustain=1.0, heard=RUN_SAMPLES)
+    (release_63, release_90), held = _times(Detector(settings, fs, high, sustained), quiet, high, low, fractions)
     return Step(attack_63 * ms, attack_90 * ms, (release_63 - held) * ms, (release_90 - held) * ms, held * ms)
 
 
@@ -304,13 +361,23 @@ def transfer_options(parser):
     parser.add_argument("--range", type=float, default=defaults.range, metavar="dB")
 
 
-def step_options(parser):
+def timing_options(parser):
     defaults = Settings()
     transfer_options(parser)
     parser.add_argument("--attack", type=float, default=defaults.attack, metavar="ms")
     parser.add_argument("--release", type=float, default=defaults.release, metavar="ms")
     parser.add_argument("--hold", type=float, default=defaults.hold, metavar="ms")
     parser.add_argument("--rates", type=float, nargs="+", default=list(SAMPLE_RATES), metavar="Hz")
+
+
+def step_options(parser):
+    timing_options(parser)
+    parser.add_argument("--auto-release", action="store_true")
+
+
+def _check_rates(rates):
+    if any(fs <= 0 for fs in rates):
+        raise ValueError("every sample rate must be above 0 Hz")
 
 
 def settings_from(args):
@@ -324,6 +391,10 @@ def settings_from(args):
 def _transfer_heading(settings):
     return (f"Threshold {settings.threshold:g} dB, Ratio {_shown(settings.ratio)}:1, Knee {settings.knee:g} dB, "
             f"Range {settings.range:g} dB")
+
+
+def _timing_heading(settings):
+    return f"Attack {settings.attack:g} ms, Release {settings.release:g} ms, Hold {settings.hold:g} ms"
 
 
 # The Transfer Curve's grid: from GRID_BELOW dB under the Knee to GRID_ABOVE dB over it, GRID_SPACING apart.
@@ -383,15 +454,14 @@ def report_transfer(settings):
 @command("step", options=step_options)
 def run_step(args):
     settings = settings_from(args)
-    if any(fs <= 0 for fs in args.rates):
-        raise ValueError("every sample rate must be above 0 Hz")
+    _check_rates(args.rates)
     report_step(settings, args.rates)
 
 
 def report_step(settings, sample_rates=SAMPLE_RATES):
     """The step response's times at each sample rate, for a level step STEP_DB either side of Threshold."""
-    print(f"Step ±{STEP_DB:g} dB around Threshold, {_transfer_heading(settings)}, "
-          f"Attack {settings.attack:g} ms, Release {settings.release:g} ms, Hold {settings.hold:g} ms")
+    print(f"Step ±{STEP_DB:g} dB around Threshold, {_transfer_heading(settings)}, {_timing_heading(settings)}, "
+          f"Auto Release {'on' if settings.auto_release else 'off'}")
     print("times in ms; Release counts from when it begins, after Hold; 63% is 1 - 1/e")
     print(f"{'rate Hz':>8} {'attack 63%':>11} {'attack 90%':>11} {'release 63%':>12} {'release 90%':>12} {'hold':>9}")
     for fs in sample_rates:
@@ -424,6 +494,84 @@ def report_autogain(settings):
           f"Hold {settings.hold:g} ms: output minus input {difference:+.2f} dB, "
           f"{'within' if within else 'outside'} the ±{AUTO_GAIN_TOLERANCE:g} dB tolerance")
     return within
+
+
+# --- Auto Release: bursts -----------------------------------------------------------------------
+
+# The default burst lengths in ms: from a transient to sustained compression.
+BURST_LENGTHS = (1, 10, 100, 1000, 3000)
+
+
+@dataclass
+class Release:
+    """A release's times in ms, counted from when Release begins, after Hold."""
+    release_63: float
+    release_90: float
+
+
+@dataclass
+class Burst:
+    """The release after a burst of length ms, with Auto Release off and on."""
+    length: float
+    off: Release
+    on: Release
+
+
+def burst_release(settings, fs, length_ms):
+    """Holds the Detection Level STEP_DB over Threshold for length_ms from steady state STEP_DB under it, the run
+    grid starting with the burst, then drops it back, and measures the Release that follows. None when there is no
+    Gain Reduction to measure (Ratio 1:1 or Range 0 dB)."""
+    quiet, loud = settings.threshold - STEP_DB, settings.threshold + STEP_DB
+    low = gain_reduction(quiet, settings)
+    if gain_reduction(loud, settings) - low < 1e-9:
+        return None
+    detector = Detector(settings, fs, low)
+    for _ in range(max(round(length_ms * fs / 1000), 1)):
+        detector.process(loud)
+    start = detector.gain_reduction
+    (release_63, release_90), held = _times(detector, quiet, start, low, (ONE_TIME_CONSTANT, NINETY_PERCENT))
+    ms = 1000 / fs
+    return Release((release_63 - held) * ms, (release_90 - held) * ms)
+
+
+def bursts(settings, fs, lengths=BURST_LENGTHS):
+    """The release after each burst length in ms, with Auto Release off and on; an empty list when there is no Gain
+    Reduction to measure."""
+    off, on = replace(settings, auto_release=False), replace(settings, auto_release=True)
+    if burst_release(off, fs, lengths[0]) is None:
+        return []
+    return [Burst(length, burst_release(off, fs, length), burst_release(on, fs, length)) for length in lengths]
+
+
+def bursts_options(parser):
+    timing_options(parser)
+    parser.add_argument("--lengths", type=float, nargs="+", default=list(BURST_LENGTHS), metavar="ms")
+
+
+@command("bursts", options=bursts_options)
+def run_bursts(args):
+    settings = settings_from(args)
+    _check_rates(args.rates)
+    if any(length <= 0 for length in args.lengths):
+        raise ValueError("every burst length must be above 0 ms")
+    report_bursts(settings, args.rates, args.lengths)
+
+
+def report_bursts(settings, sample_rates=SAMPLE_RATES, lengths=BURST_LENGTHS):
+    """The release after each burst at each sample rate, with Auto Release off and on."""
+    print(f"Bursts {STEP_DB:g} dB over Threshold, then {STEP_DB:g} dB under it, {_transfer_heading(settings)}, "
+          f"{_timing_heading(settings)}")
+    print(f"Auto Release releases in Release × (1 + {AUTO_RELEASE_MULTIPLIER - 1:g} × sustain); sustain charges in "
+          f"{AUTO_RELEASE_CHARGE_MS:g} ms, discharges in {AUTO_RELEASE_DISCHARGE_MS:g} ms")
+    print("times in ms, counted from when Release begins, after Hold; 63% is 1 - 1/e")
+    print(f"{'rate Hz':>8} {'burst ms':>9} {'off 63%':>10} {'off 90%':>10} {'on 63%':>10} {'on 90%':>10}")
+    for fs in sample_rates:
+        rows = bursts(settings, fs, lengths)
+        if not rows:
+            print(f"{fs:8g}  no Gain Reduction to measure at Ratio 1:1 or Range 0 dB")
+        for burst in rows:
+            print(f"{fs:8g} {burst.length:9g} {burst.off.release_63:10.4f} {burst.off.release_90:10.4f} "
+                  f"{burst.on.release_63:10.4f} {burst.on.release_90:10.4f}")
 
 
 if __name__ == "__main__":

@@ -6,6 +6,8 @@ It models only the Clean Character so far. Clean follows Giannoulis, Massberg & 
 
 Hold freezes the Gain Reduction for Hold ms whenever it stops rising, mid-Attack included, before Release begins. Any rise restarts the count.
 
+Auto Release, when on, lengthens Release after sustained compression and leaves it short after transients. See [Auto Release](#auto-release).
+
 Range caps the Gain Reduction the gain computer asks for, before the detector smooths it. So the Transfer Curve rises with the input again, Range below it, once the Gain Reduction reaches Range, and Attack, Release and Hold take the same times over a smaller step. At 60 dB, its top, Range sets no limit (ADR 0008).
 
 Every option has a default, and a setting outside its range exits with an error that names the range. The ranges are named once in `dynlab.py` (`THRESHOLD_RANGE`, `RATIO_RANGE` and so on), each with its source: Pro-C 3's documentation, or ADR 0008 for Threshold, Release and Range. The check harness's `docs` stage fails when one differs from the plugin's, `engine/include/comp1/Settings.h`'s `parameterRanges` (`LAB_RANGES` in `plugkit.conf`).
@@ -19,6 +21,7 @@ Every option has a default, and a setting outside its range exits with an error 
 | Release | 5 to 5000 ms | 100 ms |
 | Hold | 0 to 500 ms | 0 ms |
 | Range | 0 to 60 dB | 60 dB |
+| Auto Release | off or on (`--auto-release`) | off |
 
 ## `transfer`
 
@@ -39,10 +42,13 @@ Prints the step response at each sample rate (44.1, 48 and 96 kHz by default). T
 
 At Ratio 1:1 or Range 0 dB there is no Gain Reduction to measure, and the row says so.
 
+With `--auto-release`, the step down follows steady compression, so the sustain state starts full and Release starts at its longest, 5 times Release, shortening as the sustain state discharges. Attack and Hold are unchanged.
+
     python3 tools/dyn-lab/dynlab.py step
     python3 tools/dyn-lab/dynlab.py step --attack 10 --release 100 --hold 0
     python3 tools/dyn-lab/dynlab.py step --attack 0.5 --release 50 --hold 20 --rates 44100 192000
     python3 tools/dyn-lab/dynlab.py step --range 6
+    python3 tools/dyn-lab/dynlab.py step --auto-release
 
 ## `autogain`
 
@@ -66,6 +72,29 @@ These are the settings the check covers, the Engine's tests too:
     python3 tools/dyn-lab/dynlab.py autogain --threshold -30
     python3 tools/dyn-lab/dynlab.py autogain --threshold -30 --ratio inf
     python3 tools/dyn-lab/dynlab.py autogain --threshold -6 --ratio 2
+
+## Auto Release
+
+With Auto Release on, the detector releases in Release × (1 + (M − 1) × sustain). The sustain state runs from 0 to 1. It charges toward 1 while the Transfer Curve asks for Gain Reduction (the Detection Level is over the Knee's lower edge), and discharges toward 0 while it doesn't, each one pole with its own time constant in ms, so it is the same at every sample rate. Hold still runs first: Auto Release changes only the Release that follows it. Off, the detector is exactly as above.
+
+The Engine moves on a grid of 16-sample runs from its first sample (`RUN_SAMPLES`), and so does the model. Each sample counts whether the Transfer Curve asked for Gain Reduction. At the start of each run, the sustain state charges for the samples of the run just heard that asked and discharges for the rest, and the release pole is worked out again from it. So the lab's figures and the Engine's agree to the sample.
+
+The constants, named once in `dynlab.py`:
+
+- **`AUTO_RELEASE_MULTIPLIER`, M = 5:** the longest release is 5 times Release, 500 ms at the default 100 ms. That is long enough to stop sustained compression pumping, and short enough that Release still sets the scale: the user's control keeps its meaning across its whole range, rather than Auto Release replacing it.
+- **`AUTO_RELEASE_CHARGE_MS`, 1000 ms:** about two beats at 120 BPM. A transient (a drum hit, 10 to 100 ms over Threshold) charges the sustain state 1% to 10%, so its release stays near Release, while a held note or a dense mix over a bar charges it most of the way.
+- **`AUTO_RELEASE_DISCHARGE_MS`, 2000 ms:** twice the charge, so a short gap in sustained material (a breath, the space between phrases) doesn't snap Release back short, which would pump. It is also well over the longest release at the default Release, so the sustain state doesn't fall away during the release it set.
+- **`AUTO_RELEASE_TRANSIENT_MARGIN`, 1%:** how far past Release the shortest default burst, 1 ms, may release. It releases about 0.4% past it, at the defaults and at `--attack 0.5 --release 50 --hold 20`.
+
+### `bursts`
+
+Prints the Release that follows each of a list of bursts, with Auto Release off and on, at each sample rate (44.1, 48 and 96 kHz by default). From steady state 20 dB under Threshold, the Detection Level sits 20 dB over it for the burst's length, then drops back. The run grid starts with the burst. Release's 63% and 90% count from when Release begins, after Hold, from the Gain Reduction the burst reached. The default lengths, 1, 10, 100, 1000 and 3000 ms, run from a transient to sustained compression (`--lengths` sets others).
+
+Off, every burst releases in Release's time. On, Release grows with the burst's length: at the defaults, 100.4 ms after 1 ms, 137 ms after 100 ms and 440 ms after 3000 ms. A step from steady state (`step --auto-release`) is the longest of all, 456 ms.
+
+    python3 tools/dyn-lab/dynlab.py bursts
+    python3 tools/dyn-lab/dynlab.py bursts --attack 0.5 --release 50 --hold 20
+    python3 tools/dyn-lab/dynlab.py bursts --lengths 1 10 100 --rates 192000
 
 ## Tests
 

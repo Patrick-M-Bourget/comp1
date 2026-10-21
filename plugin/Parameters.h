@@ -15,6 +15,7 @@ inline const juce::String ratioId { "ratio" };
 inline const juce::String kneeId { "knee" };
 inline const juce::String attackId { "attack" };
 inline const juce::String releaseId { "release" };
+inline const juce::String autoReleaseId { "auto_release" };
 inline const juce::String holdId { "hold" };
 inline const juce::String rangeId { "range" };
 inline const juce::String autoGainId { "auto_gain" };
@@ -37,6 +38,7 @@ private:
     std::atomic<float>* knee;
     std::atomic<float>* attack;
     std::atomic<float>* release;
+    std::atomic<float>* autoRelease;
     std::atomic<float>* hold;
     std::atomic<float>* range;
     std::atomic<float>* autoGain;
