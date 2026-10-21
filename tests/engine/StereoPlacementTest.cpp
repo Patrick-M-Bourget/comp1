@@ -169,3 +169,24 @@ TEST_CASE ("During a Stereo Placement fade, the Gain Reduction is the gain the E
         REQUIRE (std::abs (records[run].gainReductionDb - (records[run].inputDb - records[run].outputDb)) <= 0.05);
     }
 }
+
+TEST_CASE ("Under Stereo Placement Mid or Side, the level taps read that part's Detection Level and Gain Reduction")
+{
+    const bool midLoud = GENERATE (true, false);
+    const auto placement = GENERATE (StereoPlacement::Mid, StereoPlacement::Side);
+    CAPTURE (midLoud, placement);
+    // The loud part alone: all Mid (both channels alike) or all Side (one the other's negative), the other part silent.
+    const auto loud = test::steadyLevel (1, numSamples, loudDb).front();
+    const std::vector<float> silent (numSamples, 0.0f);
+    const auto input = midLoud ? decoded (loud, silent) : decoded (silent, loud);
+    auto settings = partSettings;
+    settings.stereoPlacement = placement;
+    const auto records = test::levelHistory (settings, sampleRate, input);
+    REQUIRE (! records.empty());
+
+    // The Placement's part, when it is the loud one, reads its level and takes the Transfer Curve's 1.5 dB there;
+    // otherwise it reads silence, the floor, and takes none.
+    const bool heard = midLoud == (placement == StereoPlacement::Mid);
+    CHECK (std::abs (records.back().gainReductionDb - (heard ? loudReductionDb : 0.0)) <= 0.01);
+    CHECK (std::abs (records.back().detectionLevelDb - (heard ? loudDb : plugkit::levelFloorDb)) <= 0.01);
+}

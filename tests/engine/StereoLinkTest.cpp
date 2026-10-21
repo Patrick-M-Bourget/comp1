@@ -117,3 +117,15 @@ TEST_CASE ("At Stereo Link 50% the quieter channel's Gain Reduction lies halfway
     CHECK (std::abs (outputDb[0] - louderOutputDb) <= 0.01);
     CHECK (std::abs (outputDb[1] - (levelsDb[1] - (quieterReductionDb + 0.5 * (louderReductionDb - quieterReductionDb)))) <= 0.01);
 }
+
+TEST_CASE ("At every Stereo Link the Gain Reduction tap reads the larger channel's, as the Engine applies it")
+{
+    const double stereoLink = GENERATE (0.0, 50.0, 100.0);
+    CAPTURE (stereoLink);
+    // Stereo Link raises the quieter channel's Gain Reduction toward the louder's, never past it: the tap, the larger
+    // channel's, reads the louder's 9 dB throughout, and its Detection Level.
+    const auto records = test::levelHistory (linkedBy (stereoLink), 48000.0, test::steadyLevels (levelsDb, 24000));
+    REQUIRE (! records.empty());
+    CHECK (std::abs (records.back().gainReductionDb - louderReductionDb) <= 0.01);
+    CHECK (std::abs (records.back().detectionLevelDb - levelsDb[0]) <= 0.01);
+}
