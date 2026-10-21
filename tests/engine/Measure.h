@@ -166,6 +166,11 @@ inline Channels constantLevel (int numChannels, int numSamples, double levelDb)
     return Channels (static_cast<std::size_t> (numChannels), std::vector<float> (static_cast<std::size_t> (numSamples), magnitude));
 }
 
+// How far a sine's peak is over its RMS level, 10·log10(2) dB (dyn-lab's SINE_CALIBRATION_DB). VCA reads a
+// sine-calibrated RMS level, so its steady test signal is a steady level (steadyLevel) this far under the level it
+// stands for, and a level read off its output is this far over the square wave's.
+inline constexpr double sineCalibrationDb = 3.0102999566398120;
+
 // The Gain Reduction in dB the Engine gave each sample: how far the output is under the input.
 inline std::vector<double> gainReductionDb (const std::vector<float>& input, const std::vector<float>& output)
 {

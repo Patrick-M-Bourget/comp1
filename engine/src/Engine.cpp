@@ -1,5 +1,6 @@
 #include "comp1/Engine.h"
 
+#include "Character.h"
 #include "Clean.h"
 #include "DelayLine.h"
 #include "Detection.h"
@@ -76,7 +77,7 @@ public:
         stereoTrack = numChannels == 2;
         for (auto& voice : voices)
         {
-            voice.detectors.assign (static_cast<std::size_t> (std::max (numChannels, 0)), {});
+            voice.detectors.assign (static_cast<std::size_t> (std::max (numChannels, 0)), CharacterDetector {});
             for (auto& detector : voice.detectors)
                 detector.prepare (sampleRate);
             voice.levelsDb.assign (voice.detectors.size(), plugkit::levelFloorDb);
@@ -104,10 +105,12 @@ public:
         glideTo (glides[hold], settings.holdMs, snap);
         glideTo (stereoLink, settings.stereoLink / 100.0, snap);
         placement = stereoTrack ? routed (settings.stereoPlacement) : plugkit::StereoPlacement::Stereo;
+        character = played (settings.character);
         if (snap)
         {
             update();
             voices[playing].placement = placement;
+            voices[playing].character = character;
         }
         // Auto Release switches without a glide: the switch changes only how fast the gain comes back, not where it is.
         autoRelease = settings.autoRelease;
@@ -200,7 +203,8 @@ private:
     struct Voice
     {
         plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo;
-        std::vector<clean::Detector> detectors;
+        Character character = Character::Clean;
+        std::vector<CharacterDetector> detectors;
         std::vector<double> levelsDb, reductionsDb, gains;
     };
 
@@ -229,12 +233,11 @@ private:
     void askGains (Voice& voice, const DetectionSignal& detection, int numChannels, int i, double link)
     {
         const auto gainOf = [] (double reduction) { return reduction > 0.0 ? plugkit::decibelsToGain (-reduction) : 1.0; };
-        // The Detection Level: the detection signal's peak level, in dB where a full-scale sine reads 0.
-        const auto levelDb = [] (float sample) { return plugkit::gainToDecibels (std::abs (static_cast<double> (sample))); };
         if (voice.placement != plugkit::StereoPlacement::Stereo)
         {
-            voice.levelsDb[0] = levelDb (detection.partFollowedBy (voice.placement)[i]);
-            voice.reductionsDb[0] = voice.detectors[0].process (clean::gainReduction (voice.levelsDb[0], curve), timing);
+            auto& detector = voice.detectors[0];
+            voice.reductionsDb[0] = detector.process (voice.character, detection.partFollowedBy (voice.placement)[i], curve, timing);
+            voice.levelsDb[0] = detector.detectionLevelDb();
             voice.gains[0] = gainOf (voice.reductionsDb[0]);
             return;
         }
@@ -242,8 +245,8 @@ private:
         for (int ch = 0; ch < numChannels; ++ch)
         {
             const auto c = static_cast<std::size_t> (ch);
-            channelDb[c] = levelDb (detection.channelFollowedBy (ch)[i]);
-            reductions[c] = voice.detectors[c].process (clean::gainReduction (channelDb[c], curve), timing);
+            reductions[c] = voice.detectors[c].process (voice.character, detection.channelFollowedBy (ch)[i], curve, timing);
+            channelDb[c] = voice.detectors[c].detectionLevelDb();
             largest = std::max (largest, reductions[c]);
         }
         for (std::size_t c = 0; c < reductions.size(); ++c)
@@ -311,6 +314,7 @@ private:
     bool autoRelease = false;
     bool stereoTrack = false;
     plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo; // the Placement asked for
+    Character character = Character::Clean;                                // the Character asked for, as it plays
     std::array<Voice, 2> voices;
     std::size_t playing = 0; // the voice heard, or fading in
     plugkit::Smoother fade;  // the share of the voice playing, while the other fades out
