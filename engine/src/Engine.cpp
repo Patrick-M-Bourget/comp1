@@ -1,7 +1,6 @@
 #include "comp1/Engine.h"
 
-#include "LatestValue.h"
-
+#include <plugkit/LatestValue.h>
 #include <plugkit/NoSubnormals.h>
 #include <plugkit/RunGrid.h>
 #include <plugkit/Smoother.h>
@@ -68,7 +67,7 @@ struct Engine::Impl
 {
     int numChannels = 0;
 
-    LatestValue<Settings> handoff;
+    plugkit::LatestValue<Settings> handoff;
     Settings settings;          // the newest settings the audio thread has taken
     bool snapToSettings = true; // after prepare, settings apply at once instead of gliding
 
