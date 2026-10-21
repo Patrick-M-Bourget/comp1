@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
+#include <plugkit/test/AllocationGuard.h>
 
 #include <cmath>
 #include <cstddef>
@@ -142,4 +143,41 @@ TEST_CASE ("Parallel compression: on a steady tone, the output is the Dry path p
     parallel.wetDb = wetDb;
     const double expected = dryGain * std::pow (10.0, levelDb / 20.0) + wetGain * compressed;
     CHECK (std::abs (20.0 * std::log10 (level (parallel) / expected)) < 0.01);
+}
+
+TEST_CASE ("A non-finite input sample reaches the output through neither path")
+{
+    const auto mode = GENERATE (zeroLatency, highQuality);
+    CAPTURE (static_cast<int> (mode));
+    const auto input = test::noise (2, 8192);
+    auto broken = input, silenced = input;
+    for (const std::size_t i : { 100u, 2000u, 3001u, 5000u })
+        for (std::size_t ch = 0; ch < 2; ++ch)
+        {
+            broken[ch][i] = i % 2 == 0 ? std::numeric_limits<float>::quiet_NaN() : std::numeric_limits<float>::infinity();
+            silenced[ch][i] = 0.0f;
+        }
+    Settings settings { .autoGain = true, .processingMode = mode, .lookaheadMs = 3.0 };
+    settings.dryDb = 0.0;
+    CHECK (test::played (settings, 48000.0, broken) == test::played (settings, 48000.0, silenced));
+}
+
+TEST_CASE ("The Engine does not allocate while Dry and Wet move, in either Processing Mode")
+{
+    constexpr int blockSize = 512;
+    Engine engine;
+    engine.prepare (48000.0, blockSize, 2);
+    auto audio = test::noise (2, blockSize);
+    std::vector<float*> main { audio[0].data(), audio[1].data() };
+
+    plugkit::test::AllocationGuard guard;
+    for (int block = 0; block < 64; ++block)
+    {
+        Settings settings { .processingMode = (block / 5) % 2 == 0 ? zeroLatency : highQuality };
+        settings.dryDb = block % 3 == 0 ? off : -6.0 * (block % 4);
+        settings.wetDb = block % 7 == 0 ? off : 12.0 - (block % 5);
+        engine.setSettings (settings);
+        engine.process ({ main.data(), 2, block % 3 == 0 ? blockSize : 1 + (block * 37) % blockSize });
+    }
+    REQUIRE (guard.allocations() == 0);
 }
