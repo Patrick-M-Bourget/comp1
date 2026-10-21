@@ -43,10 +43,16 @@ inline const juce::String stereoPlacementId { "stereo_placement" };
 inline const juce::String stereoLinkId { "stereo_link" };
 inline const juce::String processingModeId { "processing_mode" };
 inline const juce::String lookaheadId { "lookahead" };
+inline const juce::String gateId { "gate" };
+inline const juce::String gateThresholdId { "gate_threshold" };
+inline const juce::String gateRangeId { "gate_range" };
+inline const juce::String gateAttackId { "gate_attack" };
+inline const juce::String gateReleaseId { "gate_release" };
+inline const juce::String gateHoldId { "gate_hold" };
 inline const juce::String globalBypassId { "global_bypass" };
 
 // Every host parameter, in the order hosts list them: Detection Source, the Detection EQ, Stereo Placement and Stereo
-// Link, then the compressor's, then Saturation's, then Dry and Wet, then Output Gain and the Limiter's, as the signal
+// Link, then the Gate's, then the compressor's, then Saturation's, then Dry and Wet, then Output Gain and the Limiter's, as the signal
 // meets them; then the whole plugin's, Processing Mode, Lookahead and Global Bypass.
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
@@ -59,6 +65,12 @@ public:
     Settings read() const;
 
 private:
+    std::atomic<float>* gate;
+    std::atomic<float>* gateThreshold;
+    std::atomic<float>* gateRange;
+    std::atomic<float>* gateAttack;
+    std::atomic<float>* gateRelease;
+    std::atomic<float>* gateHold;
     std::atomic<float>* threshold;
     std::atomic<float>* ratio;
     std::atomic<float>* knee;
