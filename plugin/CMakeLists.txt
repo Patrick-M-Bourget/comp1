@@ -6,8 +6,8 @@ FetchContent_Declare(JUCE
     SYSTEM)
 FetchContent_MakeAvailable(JUCE)
 
-# CLAP comes from clap-juce-extensions until JUCE ships native CLAP, pinned to a commit as eq1 pins it: no release
-# supports JUCE 9 yet. The patch asks the host to rescan parameter values after a state load (upstream PR
+# CLAP comes from clap-juce-extensions until JUCE ships native CLAP, pinned to a commit: no release supports JUCE 9
+# yet, and a commit, unlike a branch, can't change under the build. The patch asks the host to rescan parameter values after a state load (upstream PR
 # free-audio/clap-juce-extensions#189); drop it once merged.
 FetchContent_Declare(clap-juce-extensions
     GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git

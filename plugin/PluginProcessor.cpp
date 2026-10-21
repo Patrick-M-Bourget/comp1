@@ -101,7 +101,7 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     state.removeProperty (versionProperty, nullptr);
     // Every parameter this version knows reaches it at its saved value, restored, or at its default when the
     // session has none. Whatever else a session holds (a newer version's settings) is kept as it is, and saved
-    // again, as eq1 keeps it.
+    // again, so a session saved in this version loses nothing when the newer version opens it again.
     for (auto* p : getParameters())
     {
         const auto* ranged = dynamic_cast<const juce::RangedAudioParameter*> (p);
