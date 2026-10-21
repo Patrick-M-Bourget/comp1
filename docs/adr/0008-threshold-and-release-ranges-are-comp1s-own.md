@@ -1,12 +1,13 @@
 # Threshold, Release, Range and Output Gain ranges, and Stereo Link's default, are comp1's own
 
-The spec follows Pro-C 3's parameter ranges, but FabFilter's public documentation gives no complete range for four of comp1's controls. comp1 sets these four itself, and Drive, for its Saturation stage, too:
+The spec follows Pro-C 3's parameter ranges, but FabFilter's public documentation gives no complete range for four of comp1's controls. comp1 sets these four itself, and Drive, for its Saturation stage, and Colour, too:
 
 - **Threshold: −60 to 0 dB.** The minimum keeps the only figure FabFilter publishes ("Extended Threshold range to -60 dB", Pro-C 2 manual, version history). The maximum is full scale: the Detection Level reads 0 dB for a full-scale sine, so a Threshold above 0 dB would almost never be crossed.
 - **Release: 5 to 5000 ms.** FabFilter publishes no Release range. This span covers fast pumping at one end and slow levelling on every Character at the other. Opto's slow release stage is separate from Release (spec #1) and isn't bounded by it.
 - **Range: 0 to 60 dB, default 60 dB.** FabFilter describes Range ("limits the maximum amount of applied gain change", Pro-C 3 manual, "Dynamics controls") but gives no limits. 60 dB is the most Gain Reduction the compressor can apply anyway: the lowest Threshold, −60 dB, at Ratio ∞ with a full-scale input. So the default sets no limit, and every Range below it does.
 - **Output Gain: −36 to +36 dB, default 0 dB.** The Pro-C 3 manual describes the Output Level knob ("Input and output options") but gives no range. The range is symmetric, so 0 dB sits at its exact centre and the default passes audio through bit for bit. Its top leaves enough make-up headroom for deep compression, and its 72 dB span keeps the slider usable.
 - **Drive: 0 to 24 dB, default 6 dB.** Drive is level-compensated, so it sets only how far the signal is pushed into the Saturation shape, whose knee is full scale at 0 dB: at 0 dB a signal at or below full scale passes untouched, and at 24 dB it starts 24 dB under full scale, for heavy distortion. The default, 6 dB, shapes only the top 6 dB.
+- **Colour: 0 to 100%, default 100%.** Colour is a Character's own distortion, which grows with its Gain Reduction (dyn-lab's USAGE.md, "Colour"), and FabFilter documents no such control. 0% adds none of it, so a Character compresses with its own detection and timing but no distortion; 100% adds the amount dyn-lab tunes for the Character. The default plays each Character as tuned, so choosing VCA sounds like VCA from the start. Clean has no Colour, so it plays the same at every setting.
 
 Stereo Link's range, 0 to 100%, is the Pro-C 3 manual's ("Sidechain section": the first half of the knob runs from 0%, fully unlinked, to 100%, fully linked), but the manual gives no default. comp1 sets it itself:
 

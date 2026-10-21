@@ -12,10 +12,11 @@ using namespace comp1;
 TEST_CASE ("A non-finite input sample never reaches the output, which plays on as if it were silence")
 {
     const bool autoGain = GENERATE (false, true);
+    const auto character = GENERATE (Character::Clean, Character::VCA);
     // The Limiter on, at a Ceiling the noise passes: a non-finite sample never reaches its gain computer either.
     const bool limiter = GENERATE (false, true);
-    CAPTURE (autoGain, limiter);
-    const Settings settings { .autoGain = autoGain, .outputGainDb = 6.0, .limiter = limiter, .ceilingDb = -6.0 };
+    CAPTURE (autoGain, static_cast<int> (character), limiter);
+    const Settings settings { .character = character, .autoGain = autoGain, .outputGainDb = 6.0, .limiter = limiter, .ceilingDb = -6.0 };
     const auto input = test::noise (2, 4096);
     // The same audio with non-finite samples in it, on both channels, and with silence in their place.
     auto broken = input, silenced = input;
@@ -40,8 +41,9 @@ TEST_CASE ("A non-finite Sidechain sample never reaches the output, nor sticks i
 {
     const int sidechainChannels = GENERATE (1, 2);
     const int mainChannels = GENERATE (1, 2);
-    CAPTURE (sidechainChannels, mainChannels);
-    const Settings settings { .detectionSource = DetectionSource::External };
+    const auto character = GENERATE (Character::Clean, Character::VCA);
+    CAPTURE (sidechainChannels, mainChannels, static_cast<int> (character));
+    const Settings settings { .character = character, .detectionSource = DetectionSource::External };
     const auto input = test::noise (mainChannels, 4096);
     const auto sidechainSamples = test::noise (sidechainChannels, 4096, 3);
     auto broken = sidechainSamples, silenced = sidechainSamples;

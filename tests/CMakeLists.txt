@@ -22,7 +22,9 @@ add_executable(comp1_engine_tests
     engine/AliasingTest.cpp
     engine/AutoGainTest.cpp
     engine/AutoReleaseTest.cpp
+    engine/CharacterTest.cpp
     engine/ClickFreeTest.cpp
+    engine/ColourTest.cpp
     engine/DetectionAuditionTest.cpp
     engine/DetectionEqTest.cpp
     engine/DetectionSourceTest.cpp
@@ -62,6 +64,7 @@ if(COMP1_BUILD_PLUGIN)
     # Host-level checks drive the Plugin Shell the way a host does. One source per line, as above.
     add_executable(comp1_plugin_tests
         plugin/AutoReleaseParameterTest.cpp
+        plugin/ColourParameterTest.cpp
         plugin/DryWetParameterTest.cpp
         plugin/GlobalBypassParameterTest.cpp
         plugin/LatencyReportTest.cpp

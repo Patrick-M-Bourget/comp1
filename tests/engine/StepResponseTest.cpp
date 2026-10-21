@@ -59,6 +59,20 @@ const std::vector<Response>& responses()
           { .holdMs = 20.0, .rangeDb = 6.0 },
           6.0,
           { { 48000, { 10.0208, 23.0417, 100.0208, 230.2708, 20.0000 } } } },
+        // VCA, on the lab's steady test signal for it (test::steadyLevelOffsetDb). Colour is 0%, so the output's gain is the
+        // compressor's alone.
+        { "python3 tools/dyn-lab/dynlab.py step --character vca",
+          { .character = Character::VCA, .colour = 0.0 },
+          15.0,
+          { { 44100, { 12.1088, 25.5102, 111.7914, 242.0635, 0.0454 } },
+            { 48000, { 12.1042, 25.5208, 111.7917, 242.0625, 0.0417 } },
+            { 96000, { 12.1042, 25.5208, 111.7812, 242.0417, 0.0625 } } } },
+        { "python3 tools/dyn-lab/dynlab.py step --character vca --attack 0.5 --release 50 --hold 20",
+          { .character = Character::VCA, .attackMs = 0.5, .releaseMs = 50.0, .holdMs = 20.0, .colour = 0.0 },
+          15.0,
+          { { 44100, { 1.7007, 5.5329, 50.3175, 115.4422, 20.0000 } },
+            { 48000, { 1.6875, 5.5417, 50.3125, 115.4375, 20.0000 } },
+            { 96000, { 1.6875, 5.5312, 50.3021, 115.4375, 20.0000 } } } },
     };
     return all;
 }
@@ -90,7 +104,8 @@ TEST_CASE ("Attack, Release and Hold match dyn-lab's step response within one sa
     CAPTURE (response.command, rate.sampleRate);
     const double sampleMs = 1000.0 / rate.sampleRate;
     const auto& settings = response.settings;
-    const double quiet = settings.thresholdDb - stepDb, loud = settings.thresholdDb + stepDb;
+    const double offset = test::steadyLevelOffsetDb (settings.character);
+    const double quiet = settings.thresholdDb - stepDb + offset, loud = settings.thresholdDb + stepDb + offset;
 
     // Up from no Gain Reduction (the quiet level is below the Knee) to the full amount, for Attack.
     const auto attack = test::crossings (gainReductionAfterStep (settings, rate.sampleRate, quiet, loud, 1.0), 0.0, response.gainReductionDb);
