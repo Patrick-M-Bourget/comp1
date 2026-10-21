@@ -25,3 +25,25 @@ A comment or doc says what the code does now and why. History (what changed, wha
 ## Shared behaviour lives once
 
 A control behaviour (drag and Shift-drag, double-click reset, hover and press light, enabled dimming, tweens, overlays, accessibility handlers) or a test helper (snapshots, synthetic mouse events, layouts) that a second component needs moves into the UI kit or the editor harness, and both call it. A DSP-test helper (every Shape or Stereo Placement, the sample rates checked, a full scene, seeded noise, a measurement, a model of a Band) that a second test needs lives in the tests' shared header, `Measure.h` or one beside it, which the CPU budget includes too; a test that wants a subset filters the shared list, or names its own and says why. A second copy written beside the first drifts: two of five copied drag handlers snapped back after a double-click.
+
+## comp1's own rules
+
+### The glossary's words, in code too
+
+Names in code, tests and comments use `GLOSSARY.md`'s terms, never one it lists under _Avoid_: the Sidechain's samples are `sidechainSamples`, not `key`.
+
+### ADRs are authoritative
+
+`docs/adr/` holds the decisions comp1 is built on, and code follows them. A change that contradicts one says so in its PR and reopens the ADR, rather than working around it.
+
+### A comment gives the reason, not the sibling
+
+"As eq1 does" is no reason. A comment that follows eq1 states the reason itself, so it still holds when eq1 changes.
+
+### One source for each setting
+
+A value set in one place is read from there, not copied: the sample rates comp1 supports are `plugkit.conf`'s `SAMPLE_RATES`, which pluginval runs at and `tests/CMakeLists.txt` hands to the tests, and the plugkit tag is its `PLUGKIT_TAG`.
+
+### The Engine tests' shared header
+
+comp1's `Measure.h` is `tests/engine/Measure.h`. The Plugin Shell tests include it too, for seeded noise.
