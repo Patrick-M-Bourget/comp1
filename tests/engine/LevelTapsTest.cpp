@@ -7,9 +7,11 @@
 #include <catch2/generators/catch_generators_range.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <string>
 #include <vector>
 
 using namespace comp1;
@@ -30,6 +32,27 @@ std::vector<LevelRecord> readAll (Engine& engine)
     std::vector<LevelRecord> records (static_cast<std::size_t> (engine.levelHistoryCapacity()));
     records.resize (static_cast<std::size_t> (engine.readLevels (records.data(), static_cast<int> (records.size()))));
     return records;
+}
+
+// Runs audio through engine in place as test::processInBlocks does, reading the level history after each block, as
+// the editor reads it while the host plays, and returns every record read.
+std::vector<LevelRecord> playAndRead (Engine& engine, test::Channels& audio, const std::vector<int>& blockSizes)
+{
+    std::vector<LevelRecord> all;
+    std::vector<LevelRecord> records (static_cast<std::size_t> (engine.levelHistoryCapacity()));
+    const int numSamples = static_cast<int> (audio.front().size());
+    std::vector<float*> main (audio.size());
+    for (int start = 0, block = 0; start < numSamples; ++block)
+    {
+        const int count = std::min (blockSizes[static_cast<std::size_t> (block) % blockSizes.size()], numSamples - start);
+        for (std::size_t ch = 0; ch < audio.size(); ++ch)
+            main[ch] = audio[ch].data() + start;
+        engine.process ({ main.data(), static_cast<int> (main.size()), count });
+        start += count;
+        const int read = engine.readLevels (records.data(), static_cast<int> (records.size()));
+        all.insert (all.end(), records.begin(), records.begin() + read);
+    }
+    return all;
 }
 
 double db (double amplitude)
@@ -148,4 +171,181 @@ TEST_CASE ("The Output Level reads each channel's sample peak and 300 ms RMS, on
     }
     // A channel the Engine doesn't have reads the floor.
     CHECK (engine.readOutputLevel (numChannels).peakDb == plugkit::levelFloorDb);
+}
+
+TEST_CASE ("The Detection Level reads 0 dB for a full-scale sine and the floor for silence")
+{
+    const double sampleRate = GENERATE (44100.0, 48000.0, 96000.0);
+    CAPTURE (sampleRate);
+    Engine engine;
+    engine.prepare (sampleRate, 512, 1);
+    engine.setSettings ({});
+
+    // 100 ms of silence, then a second of a full-scale 1 kHz sine: its loudest Detection Level over the second, many
+    // cycles, has met the sine's peak at some sample to within far less than 0.01 dB.
+    const auto silent = static_cast<int> (0.1 * sampleRate);
+    test::Channels audio (1, std::vector<float> (static_cast<std::size_t> (silent + static_cast<int> (sampleRate))));
+    for (std::size_t i = static_cast<std::size_t> (silent); i < audio.front().size(); ++i)
+        audio.front()[i] = static_cast<float> (std::sin (2.0 * 3.141592653589793 * 1000.0 * static_cast<double> (i) / sampleRate));
+
+    const auto records = playAndRead (engine, audio, { 512 });
+    REQUIRE (records.size() == audio.front().size() / 16);
+    double loudest = plugkit::levelFloorDb;
+    for (std::size_t run = 0; run < records.size(); ++run)
+    {
+        if (run * 16 + 16 <= static_cast<std::size_t> (silent))
+            REQUIRE (records[run].detectionLevelDb == plugkit::levelFloorDb);
+        loudest = std::max (loudest, records[run].detectionLevelDb);
+    }
+    CHECK_THAT (loudest, WithinAbs (0.0, 0.01));
+}
+
+namespace
+{
+
+// The level history of half a second of a steady level on each channel, through an Engine with settings.
+std::vector<LevelRecord> steadyRecords (const Settings& settings, const std::vector<double>& levelsDb, double sampleRate = 48000.0)
+{
+    const auto numChannels = static_cast<int> (levelsDb.size());
+    const auto length = static_cast<int> (0.5 * sampleRate);
+    test::Channels audio;
+    for (const double level : levelsDb)
+        audio.push_back (test::steadyLevel (1, length, level).front());
+    Engine engine;
+    engine.prepare (sampleRate, 512, numChannels);
+    engine.setSettings (settings);
+    return playAndRead (engine, audio, { 512 });
+}
+
+} // namespace
+
+TEST_CASE ("At a steady level the Gain Reduction is the gain the Engine applies, and dyn-lab's within 0.01 dB")
+{
+    // A steady input level, and the Gain Reduction dyn-lab gives for it.
+    struct Row
+    {
+        double inputDb;
+        double gainReductionDb;
+    };
+    struct Curve
+    {
+        std::string command; // the dyn-lab command that printed rows
+        Settings settings;
+        std::vector<Row> rows;
+    };
+    // Rows of each command's output, as printed (to 0.01 dB).
+    const auto curve = GENERATE (values<Curve> ({
+        { "python3 tools/dyn-lab/dynlab.py transfer", {}, { { -24.0, 0.0 }, { -18.0, 0.56 }, { -12.0, 4.50 }, { 0.0, 13.50 } } },
+        { "python3 tools/dyn-lab/dynlab.py transfer --ratio inf --knee 0",
+          { .ratio = std::numeric_limits<double>::infinity(), .kneeDb = 0.0 },
+          { { -21.0, 0.0 }, { -15.0, 3.00 }, { -6.0, 12.00 }, { 0.0, 18.00 } } },
+    }));
+    CAPTURE (curve.command);
+    for (const auto& row : curve.rows)
+    {
+        CAPTURE (row.inputDb);
+        const auto records = steadyRecords (curve.settings, { row.inputDb });
+        // Once Attack has settled, each run's Gain Reduction is how far its Output Level is under its Input Level.
+        for (std::size_t r = records.size() / 2; r < records.size(); ++r)
+        {
+            CAPTURE (r);
+            CHECK_THAT (records[r].gainReductionDb, WithinAbs (records[r].inputDb - records[r].outputDb, 0.001));
+            CHECK_THAT (records[r].detectionLevelDb, WithinAbs (row.inputDb, 1.0e-4));
+        }
+        CHECK_THAT (records.back().gainReductionDb, WithinAbs (row.gainReductionDb, 0.01));
+    }
+}
+
+TEST_CASE ("Across channels the Gain Reduction is the larger, and the Detection Level the louder")
+{
+    // At the defaults, dyn-lab's transfer gives 4.50 dB of Gain Reduction at -12 dB and 13.50 dB at 0 dB.
+    for (const auto& levelsDb : { std::vector<double> { -12.0, 0.0 }, std::vector<double> { 0.0, -12.0 } })
+    {
+        const auto records = steadyRecords ({}, levelsDb);
+        CHECK_THAT (records.back().gainReductionDb, WithinAbs (13.50, 0.01));
+        CHECK_THAT (records.back().detectionLevelDb, WithinAbs (0.0, 1.0e-4));
+        CHECK_THAT (records.back().inputDb, WithinAbs (0.0, 1.0e-4));
+    }
+}
+
+TEST_CASE ("The Gain Reduction leaves out Auto Gain and Output Gain, which move the Output Level")
+{
+    struct Gain
+    {
+        Settings settings;
+        double gainDb;
+    };
+    // Auto Gain at the defaults is `python3 tools/dyn-lab/dynlab.py autogain`'s +3.2470 dB.
+    const auto gain = GENERATE (values<Gain> ({ { { .autoGain = true }, 3.2470 }, { { .outputGainDb = 6.0 }, 6.0 }, { { .outputGainDb = -9.0 }, -9.0 } }));
+    CAPTURE (gain.gainDb);
+    const auto plain = steadyRecords ({}, { -6.0 });
+    const auto moved = steadyRecords (gain.settings, { -6.0 });
+    REQUIRE (moved.size() == plain.size());
+    for (std::size_t r = 0; r < plain.size(); ++r)
+    {
+        CAPTURE (r);
+        REQUIRE (moved[r].gainReductionDb == plain[r].gainReductionDb);
+        REQUIRE (moved[r].detectionLevelDb == plain[r].detectionLevelDb);
+    }
+    // Once the gain has glided there.
+    CHECK_THAT (moved.back().outputDb - plain.back().outputDb, WithinAbs (gain.gainDb, 0.001));
+}
+
+TEST_CASE ("On a step the Gain Reduction records follow the Engine's own step response, run for run")
+{
+    // dyn-lab's `step` at the defaults: from 20 dB under Threshold to 20 dB over it, and back, each from steady state.
+    const double sampleRate = GENERATE (44100.0, 48000.0, 96000.0);
+    CAPTURE (sampleRate);
+    const auto length = static_cast<int> (0.5 * sampleRate) / 16 * 16;
+    auto input = test::steadyLevel (1, length, -38.0).front();
+    for (const double level : { 2.0, -38.0 })
+    {
+        const auto more = test::steadyLevel (1, length, level).front();
+        input.insert (input.end(), more.begin(), more.end());
+    }
+    test::Channels audio { input };
+    Engine engine;
+    engine.prepare (sampleRate, 512, 1);
+    engine.setSettings ({});
+    const auto records = playAndRead (engine, audio, { 512 });
+
+    const auto heard = test::gainReductionDb (input, audio.front());
+    REQUIRE (records.size() == heard.size() / 16);
+    for (std::size_t r = 0; r < records.size(); ++r)
+    {
+        CAPTURE (r);
+        const auto run = heard.begin() + static_cast<std::ptrdiff_t> (r * 16);
+        const double most = *std::max_element (run, run + 16);
+        // The output is float: a Gain Reduction read off it carries up to about 1e-6 dB of rounding.
+        REQUIRE_THAT (records[r].gainReductionDb, WithinAbs (std::max (most, 0.0), 1.0e-5));
+    }
+}
+
+TEST_CASE ("The level history is the same, record for record, however the host cuts the audio into blocks")
+{
+    const int numChannels = GENERATE (1, 2);
+    CAPTURE (numChannels);
+    const auto input = test::noise (numChannels, 48000, 3);
+    const auto recordsCutBy = [&] (const std::vector<int>& blockSizes) {
+        auto audio = input;
+        Engine engine;
+        engine.prepare (48000.0, 4096, numChannels);
+        engine.setSettings ({ .thresholdDb = -30.0, .autoGain = true });
+        return playAndRead (engine, audio, blockSizes);
+    };
+    const auto reference = recordsCutBy ({ 512 });
+    REQUIRE (reference.size() == 3000);
+    for (const auto& cut : test::blockCuts())
+    {
+        const auto records = recordsCutBy (cut);
+        REQUIRE (records.size() == reference.size());
+        for (std::size_t r = 0; r < records.size(); ++r)
+        {
+            CAPTURE (cut, r);
+            REQUIRE (records[r].inputDb == reference[r].inputDb);
+            REQUIRE (records[r].outputDb == reference[r].outputDb);
+            REQUIRE (records[r].gainReductionDb == reference[r].gainReductionDb);
+            REQUIRE (records[r].detectionLevelDb == reference[r].detectionLevelDb);
+        }
+    }
 }

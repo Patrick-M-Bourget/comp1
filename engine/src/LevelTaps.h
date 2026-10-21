@@ -32,10 +32,21 @@ public:
     // A piece of one channel's output, after everything.
     void noteOutput (const float* samples, int count) { outputPeak = std::max (outputPeak, peakOf (samples, count)); }
 
+    // One sample of one channel at the detector: the Detection Level it compared with Threshold, and the Gain
+    // Reduction the compressor applied for it, 0 or more.
+    void noteDetection (double detectionLevelDb, double gainReductionDb)
+    {
+        loudestDetectionDb = std::max (loudestDetectionDb, detectionLevelDb);
+        mostGainReductionDb = std::max (mostGainReductionDb, gainReductionDb);
+    }
+
     LevelRecord take()
     {
-        const LevelRecord record { .inputDb = levelDb (inputPeak), .outputDb = levelDb (outputPeak) };
-        inputPeak = outputPeak = 0.0f;
+        const LevelRecord record { .inputDb = levelDb (inputPeak),
+                                   .outputDb = levelDb (outputPeak),
+                                   .gainReductionDb = mostGainReductionDb,
+                                   .detectionLevelDb = atLeastFloor (loudestDetectionDb) };
+        *this = {};
         return record;
     }
 
@@ -48,14 +59,13 @@ private:
         return peak;
     }
 
-    // In dB, at least the floor; the floor too for NaN.
-    static double levelDb (float peak)
-    {
-        const double db = plugkit::gainToDecibels (static_cast<double> (peak));
-        return db > plugkit::levelFloorDb ? db : plugkit::levelFloorDb;
-    }
+    // At least the floor; the floor too for NaN.
+    static double atLeastFloor (double db) { return db > plugkit::levelFloorDb ? db : plugkit::levelFloorDb; }
+
+    static double levelDb (float peak) { return atLeastFloor (plugkit::gainToDecibels (static_cast<double> (peak))); }
 
     float inputPeak = 0.0f, outputPeak = 0.0f;
+    double loudestDetectionDb = plugkit::levelFloorDb, mostGainReductionDb = 0.0;
 };
 
 // The level history: a single-producer single-consumer ring of LevelRecords. The audio thread pushes a record per

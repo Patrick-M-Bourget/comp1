@@ -93,8 +93,9 @@ public:
     }
 
     // Applies gain to audio, sample for sample, from the detection signal of the same samples: each main channel's
-    // Detection Level comes from the detection channel it follows, never from the audio.
-    void process (const DetectionSignal& detection, AudioBlock audio)
+    // Detection Level comes from the detection channel it follows, never from the audio. Each sample's Detection Level
+    // and Gain Reduction go to levels, taken where the detector reads them, so they follow whatever it hears.
+    void process (const DetectionSignal& detection, AudioBlock audio, RunLevels& levels)
     {
         for (int ch = 0; ch < audio.numChannels; ++ch)
         {
@@ -105,6 +106,7 @@ public:
                 // The Detection Level: the detection signal's peak level, in dB where a full-scale sine reads 0.
                 const double levelDb = plugkit::gainToDecibels (std::abs (static_cast<double> (detected[i])));
                 const double reduction = detector.process (clean::gainReduction (levelDb, curve), timing);
+                levels.noteDetection (levelDb, reduction);
                 float& sample = audio.channels[ch][i];
                 if (reduction > 0.0)
                     sample = static_cast<float> (plugkit::decibelsToGain (-reduction) * sample);
@@ -393,7 +395,7 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         // compressor meets the audio Lookahead early; then the Oversampling padding before the Dry/Wet sum, and the
         // Limiter padding. Last, the mode fade, which swaps the paths in silence.
         const bool highQuality = path == ProcessingMode::HighQuality;
-        impl->compressor.process (impl->lookahead.process (detected, wet, highQuality), wet);
+        impl->compressor.process (impl->lookahead.process (detected, wet, highQuality), wet, impl->runLevels);
         impl->autoGain.process (wet);
         if (highQuality)
             impl->oversamplingPadding.process (wet);
