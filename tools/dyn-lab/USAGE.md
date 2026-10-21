@@ -2,7 +2,7 @@
 
 A Python model of comp1's Characters. It prints the figures the Engine's tests check, so a ticket brief can cite a command and its output exactly. It needs only the standard library: no installs, no numpy. Run it from the repo root.
 
-It models the Clean, VCA, FET and Opto Characters (see [VCA](#vca), [FET](#fet) and [Opto](#opto)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's, FET's and Opto's Colour (see [Colour](#colour)) the Limiter (see [Limiter](#limiter)) and the Gate (see [Gate](#gate)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
+It models the Clean, VCA, FET and Opto Characters (see [VCA](#vca), [FET](#fet) and [Opto](#opto)), with High Quality's Lookahead, latency and Oversampling, the Saturation stage (see [Saturation](#saturation)), VCA's, FET's and Opto's Colour (see [Colour](#colour)) the Limiter (see [Limiter](#limiter)), the Gate (see [Gate](#gate)) and the Character Styles' defaults (see [Styles](#styles)). Clean follows Giannoulis, Massberg & Reiss (2012), "Digital Dynamic Range Compressor Design — A Tutorial and Analysis". It is feedforward, with a soft-knee gain computer (the paper's eq. 4) and a smooth branching peak detector in the log domain (eq. 12), plus Hold. Each Attack and Release is a single pole, so 63% (1 − 1/e) of a step takes one time constant and 90% takes ln 10 ≈ 2.303 of them. It isn't the paper's decoupled detector (eq. 17): that one runs Release through the attack pole as well, so gain comes back more slowly than Release says.
 
 Hold freezes the Gain Reduction for Hold ms whenever it stops rising, mid-Attack included, before Release begins. Any rise restarts the count.
 
@@ -33,7 +33,7 @@ Every option has a default, and a setting outside its range exits with an error 
 | Gate Hold | 0 to 500 ms | 20 ms |
 | Character | `clean`, `vca`, `fet` or `opto` (`--character`) | `clean` |
 
-`--character` is taken by `transfer`, `step`, `bursts`, `autogain` and `colour`. Clean's figures are the same with it as without.
+`--character` is taken by `transfer`, `step`, `bursts`, `autogain` and `colour`. Clean's figures are the same with it as without. So is `--style <name>`, which runs a Character Style's Character at that Style's defaults (see [Styles](#styles)); an option given beside it overrides that one default.
 
 ## `transfer`
 
@@ -163,7 +163,7 @@ VCA is Clean with an RMS Detection Level. On each detection channel, a one-pole 
     python3 tools/dyn-lab/dynlab.py autogain --character vca --threshold -30 --ratio inf
     python3 tools/dyn-lab/dynlab.py autogain --character vca --threshold -6 --ratio 2
 
-**A proposed default Knee for VCA, 3 dB** (for the Style defaults of #24; nothing applies it yet): firmer than Clean's 6 dB, for the precise, controlled onset VCA compression is chosen for on buses and drums. It needn't be harder: the RMS stage already rounds a transient's onset over its 5 ms, and a hard knee on a level held near Threshold would switch compression in and out at each small change of level.
+**VCA's Style Knee, 3 dB** is in [Styles](#styles).
 
 ## FET
 
@@ -528,6 +528,51 @@ At Gate Range 0 dB there is nothing to measure, and the row says so. Then it pri
     python3 tools/dyn-lab/dynlab.py gate --rates 44100 48000 88200 96000 176400 192000
     python3 tools/dyn-lab/dynlab.py gate --gate-attack 0.5 --gate-release 50 --gate-hold 0 --rates 44100 48000 88200 96000 176400 192000
     python3 tools/dyn-lab/dynlab.py gate --gate-range 6 --rates 48000
+
+## Styles
+
+Choosing a Style writes its defaults (ADR 0002). `STYLE_DEFAULTS` holds each Character Style's: its Character, the compressor's Colour, Threshold, Ratio, Knee, Attack, Release, Auto Release, Hold and Range, the Gate on or off with its five settings, and the Limiter on or off with its Ceiling. The Source Styles (Vocal, Instrument, Bus and Drums) add theirs with #26.
+
+| Style | Threshold | Ratio | Knee | Attack | Release | Auto Release | Hold | Range | Colour |
+|---|---|---|---|---|---|---|---|---|---|
+| Clean | −18 dB | 4:1 | 6 dB | 10 ms | 100 ms | off | 0 ms | 60 dB | 100% |
+| VCA | −18 dB | 4:1 | 3 dB | 10 ms | 100 ms | off | 0 ms | 60 dB | 100% |
+| FET | −18 dB | 4:1 | 3 dB | 0.5 ms | 50 ms | off | 0 ms | 60 dB | 100% |
+| Opto | −18 dB | 3:1 | 12 dB | 10 ms | 100 ms | off | 0 ms | 60 dB | 100% |
+
+Every Style writes the Gate off and the Limiter off, each at its defaults (Gate Threshold −40 dB, Gate Range 20 dB, Gate Attack 1 ms, Gate Release 100 ms, Gate Hold 20 ms; Ceiling 0 dBFS): both are tools for the material in hand, not part of how a Character sounds, so a Style switches them off rather than guessing at the material. Each Style keeps Threshold −18 dB, Range 60 dB (no limit) and Colour 100% (its Character's as tuned): Threshold is the material's to set, and a Style is a Character's own sound at full. The rows, and why:
+
+- **Clean** is the lab's defaults exactly, so a new instance, which plays Clean, holds its own Style's defaults, and choosing Clean on a new instance changes nothing.
+- **VCA**, a Knee of 3 dB: firmer than Clean's 6 dB, for the precise, controlled onset VCA compression is chosen for on buses and drums. It needn't be harder: the RMS stage already rounds a transient's onset over its 5 ms, and a hard knee on a level held near Threshold would switch compression in and out at each small change of level. Its timing is the defaults: the RMS stage lengthens them a little, Attack's 63% to 12.1 ms and Release's to 111.7 ms.
+- **FET**, Attack 0.5 ms, Release 50 ms and a Knee of 3 dB: a FET is chosen for a fast grab and a quick, lively release, on drums, bass and aggressive vocals. The loop's speed-up at 4:1 brings Attack's 63% to 0.15 ms, under a millisecond at every rate, and Release's 63% is 50 ms, its own (a step down to under the Knee releases as on Clean). The Knee is VCA's, for the same firm onset.
+- **Opto**, Ratio 3:1 and a Knee of 12 dB: an optical cell is chosen for gentle, smooth levelling, so a lower Ratio over a wide Knee eases compression in across 12 dB rather than switching it on. Its timing is the defaults, since Opto's own timing varies around them: the 20 dB step's overshoot catches it in 4.0 ms at 63%, and its two-stage release gives back 63% in 297 ms and 90% in 2120 ms after a second of compression.
+
+`step --style` at each Style, at 48 kHz (63% and 90%, in ms):
+
+| Style | Attack | Release |
+|---|---|---|
+| Clean | 10.02, 23.04 | 100.02, 230.27 |
+| VCA | 12.10, 25.52 | 111.73, 241.98 |
+| FET | 0.15, 0.31 | 50.00, 115.15 |
+| Opto | 4.00, 12.04 | 297.17, 2120.04 |
+
+**Auto Gain at the Styles:** no Style writes Auto Gain (ADR 0002), but on VCA's and Opto's defaults its check holds, the reference signal coming out 0.33 and 0.37 dB quieter. On FET's it doesn't: `autogain --style fet` leaves it 1.38 dB quieter, outside the ±1 dB tolerance, and exits non-zero. The estimate is the Transfer Curve's, and a 0.5 ms Attack catches the noise's peaks, which a 10 ms one smooths over: Clean at Attack 0.5 ms and Release 50 ms comes out 1.02 dB quieter too. The fast Attack is what FET's Style is for, so it stays, and the shortfall is the cost of an estimated rather than measured Auto Gain at fast Attacks.
+
+    python3 tools/dyn-lab/dynlab.py styles
+    python3 tools/dyn-lab/dynlab.py step --style clean
+    python3 tools/dyn-lab/dynlab.py step --style vca
+    python3 tools/dyn-lab/dynlab.py step --style fet
+    python3 tools/dyn-lab/dynlab.py step --style opto
+    python3 tools/dyn-lab/dynlab.py step --style fet --attack 2
+    python3 tools/dyn-lab/dynlab.py transfer --style opto
+    python3 tools/dyn-lab/dynlab.py bursts --style fet --rates 48000
+    python3 tools/dyn-lab/dynlab.py autogain --style vca
+    python3 tools/dyn-lab/dynlab.py autogain --style opto
+    python3 tools/dyn-lab/dynlab.py colour --style opto --rates 48000
+
+### `styles`
+
+Prints each Character Style's Character and the defaults choosing it writes, one row per Style in the Style order: the compressor's, the Gate's and the Limiter's.
 
 ## Tests
 

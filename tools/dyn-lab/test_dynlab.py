@@ -1,5 +1,6 @@
 """Tests for dyn-lab, at its seams: the gain computer, the step response, Auto Release, Auto Gain, VCA's RMS
-Detection Level, the latency, the Limiter, Saturation, its aliasing, Colour, Oversampling and the command line.
+Detection Level, the latency, the Limiter, Saturation, its aliasing, Colour, Oversampling, the Styles and the command
+line.
 
     python3 tools/dyn-lab/test_dynlab.py
 """
@@ -1046,6 +1047,45 @@ class Oversampling(unittest.TestCase):
             self.assertLess(higher, lower / 2)
 
 
+class Styles(unittest.TestCase):
+    """The Character Styles' defaults: what choosing each one writes (ADR 0002)."""
+
+    def test_each_character_style_plays_its_own_character(self):
+        self.assertEqual(list(dynlab.STYLE_DEFAULTS), list(dynlab.CHARACTERS))
+        for name, style in dynlab.STYLE_DEFAULTS.items():
+            self.assertEqual(style.settings.character, name)
+
+    def test_cleans_row_is_the_labs_defaults_so_a_new_instance_holds_its_own_styles(self):
+        clean = dynlab.STYLE_DEFAULTS["clean"]
+        self.assertEqual(clean.settings, dynlab.Settings())
+        self.assertEqual(clean.gate, dynlab.Gate())
+        self.assertEqual((clean.limiter, clean.ceiling), (False, dynlab.CEILING_DEFAULT))
+
+    def test_every_style_writes_the_gate_and_the_limiter_off_at_their_defaults(self):
+        for name, style in dynlab.STYLE_DEFAULTS.items():
+            with self.subTest(name):
+                self.assertEqual(style.gate, dynlab.Gate())
+                self.assertFalse(style.gate.on)
+                self.assertEqual((style.limiter, style.ceiling), (False, dynlab.CEILING_DEFAULT))
+
+    def test_every_default_is_within_its_range(self):
+        for name, style in dynlab.STYLE_DEFAULTS.items():
+            with self.subTest(name):
+                dynlab.check_ranges(style.settings)
+                dynlab.check_gate(style.gate)
+                dynlab.check_range("ceiling", style.ceiling, dynlab.CEILING_RANGE, " dBFS")
+
+    def test_each_rows_compressor_defaults_are_the_ones_usage_gives_reasons_for(self):
+        # Threshold, Ratio, Knee, Attack, Release, Auto Release, Hold, Range and Colour, as USAGE.md's Styles table
+        # gives them.
+        rows = {name: (s.threshold, s.ratio, s.knee, s.attack, s.release, s.auto_release, s.hold, s.range, s.colour)
+                for name, s in ((name, style.settings) for name, style in dynlab.STYLE_DEFAULTS.items())}
+        self.assertEqual(rows, {"clean": (-18, 4, 6, 10, 100, False, 0, 60, 100),
+                                "vca": (-18, 4, 3, 10, 100, False, 0, 60, 100),
+                                "fet": (-18, 4, 3, 0.5, 50, False, 0, 60, 100),
+                                "opto": (-18, 3, 12, 10, 100, False, 0, 60, 100)})
+
+
 LAB = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(LAB))
 
@@ -1196,6 +1236,29 @@ class CommandLine(unittest.TestCase):
                 result = run(command, "--character", "tube")
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("character", result.stderr)
+
+    def test_styles_prints_each_character_styles_character_and_defaults(self):
+        result = run("styles")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = [line.split() for line in result.stdout.splitlines() if line.split()[:1] in (["clean"], ["vca"], ["fet"], ["opto"])]
+        self.assertEqual([row[:2] for row in rows], [["clean", "clean"], ["vca", "vca"], ["fet", "fet"], ["opto", "opto"]])
+        self.assertEqual(rows[2], ["fet", "fet", "-18", "4", "3", "0.5", "50", "off", "0", "60", "100", "off", "-40", "20",
+                                   "1", "100", "20", "off", "0"])
+
+    def test_style_runs_its_character_at_its_defaults_and_options_override_them(self):
+        for command in ("transfer", "step", "bursts", "autogain", "colour"):
+            extra = ("--lengths", "1") if command == "bursts" else ("--rates", "48000") if command == "step" else ()
+            with self.subTest(command):
+                styled = run(command, "--style", "opto", *extra)
+                self.assertEqual(styled.returncode, 0, styled.stderr)
+                explicit = run(command, "--character", "opto", "--ratio", "3", "--knee", "12", *extra)
+                self.assertEqual(styled.stdout, explicit.stdout)
+        self.assertEqual(run("step", "--style", "fet", "--rates", "48000").stdout,
+                         run("step", "--character", "fet", "--knee", "3", "--attack", "0.5", "--release", "50",
+                             "--rates", "48000").stdout)
+        overridden = run("transfer", "--style", "opto", "--ratio", "8")
+        self.assertIn("Ratio 8:1, Knee 12 dB", overridden.stdout)
+        self.assertNotEqual(run("transfer", "--style", "tube").returncode, 0)
 
     def test_limiter_prints_its_parts_and_each_modes_peaks_and_timing_for_every_rate(self):
         result = run("limiter", "--ceiling", "-6", "--rates", "44100", "96000")
