@@ -19,7 +19,7 @@ namespace comp1
 // level history; on Detection EQ, the Detection EQ display (DetectionEqDisplay); on Transfer Curve, the Transfer Curve
 // Graph (TransferCurveGraph), fed from the level history too. The Transfer Curve tab's place is provisional (#94).
 // While the Level tab shows, the Transfer Curve inset (TransferCurveInset) sits over the Level graph's top-left corner,
-// insetGap in from it, over its oldest audio: a Tab stop after the tabs, with its own mouse handling.
+// insetGap in from it, over its oldest audio: a Tab stop after the tabs, whose Threshold and Ratio handles take the mouse.
 // Named "Display", and each content by its tab, as a test finds them.
 //
 // The chosen tab is the processor's (PluginProcessor::displayTab): a tab clicked, or pressed with Space or Return,
