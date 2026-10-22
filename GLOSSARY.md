@@ -190,12 +190,16 @@ The editor showing only Style, Gate, Comp, Output Gain and a Gain Reduction mete
 _Avoid_: Simple view, mini view, basic mode
 
 **Expanded View**:
-The editor showing every control, the Level and Gain Reduction Graph, and the Detection EQ.
+The editor showing every control, the Level and Gain Reduction Graph, the Detection EQ and the Transfer Curve Graph.
 _Avoid_: Advanced view, full view, pro mode
 
 **Level and Gain Reduction Graph**:
 The Expanded View's scrolling graph of the last 5 seconds of Input Level, Output Level and the compressor's Gain Reduction, on one dB scale, the newest at its right edge.
 _Avoid_: Scope, waveform, history view
+
+**Transfer Curve Graph**:
+The Expanded View's graph of the Transfer Curve the Engine plays, output level over input level from -60 to 0 dB, with the Detection Level as a dot moving along it.
+_Avoid_: I/O graph, transfer function plot
 
 **Output Gain**:
 The gain applied to the whole plugin's output, after Dry and Wet are summed and before the Limiter, in dB.

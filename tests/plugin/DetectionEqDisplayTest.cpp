@@ -484,9 +484,11 @@ TEST_CASE ("Tab reaches the High-pass, Free band and Low-pass handles, then Dete
         titles.add (focused->getTitle());
     }
     CAPTURE (titles.joinIntoString (", "));
-    const int tabs = titles.indexOf ("Detection EQ");
-    REQUIRE (tabs >= 1);
-    CHECK (titles[tabs - 1] == "Level");
+    // After the last of the display's tabs.
+    const int tabs = titles.indexOf ("Transfer Curve");
+    REQUIRE (tabs >= 2);
+    CHECK (titles[tabs - 2] == "Level");
+    CHECK (titles[tabs - 1] == "Detection EQ");
     CHECK (titles[tabs + 1] == "High-pass handle");
     CHECK (titles[tabs + 2] == "Free band handle");
     CHECK (titles[tabs + 3] == "Low-pass handle");

@@ -18,6 +18,28 @@ const juce::Identifier versionProperty { "version" };
 // released: sessions keep them.
 const juce::Identifier displayTabProperty { "display_tab" };
 const juce::String levelTab { "level" }, detectionEqTab { "detection_eq" };
+const juce::String transferCurveTab { "transfer_curve" }; // permanent once released, as the others
+
+// A display tab as the session saves it, and back: anything else, a session saved without one included, is Level.
+const juce::String& savedTab (DisplayTab tab)
+{
+    switch (tab)
+    {
+        case DisplayTab::level: return levelTab;
+        case DisplayTab::detectionEq: return detectionEqTab;
+        case DisplayTab::transferCurve: return transferCurveTab;
+    }
+    return levelTab;
+}
+
+DisplayTab tabSaved (const juce::String& saved)
+{
+    if (saved == detectionEqTab)
+        return DisplayTab::detectionEq;
+    if (saved == transferCurveTab)
+        return DisplayTab::transferCurve;
+    return DisplayTab::level;
+}
 
 // Brings a saved state, or a Preset, from an older version up to stateVersion, one version at a time.
 void migrate (juce::ValueTree& state)
@@ -258,7 +280,7 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = sessionState.saved();
-    state.setProperty (displayTabProperty, displayTab() == DisplayTab::detectionEq ? detectionEqTab : levelTab, nullptr);
+    state.setProperty (displayTabProperty, savedTab (displayTab()), nullptr);
     if (const auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -271,7 +293,7 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     setDetectionAudition (false);
     clearClipLights();
     sessionState.restore (juce::ValueTree::fromXml (*xml), [this] (juce::ValueTree& state) {
-        setDisplayTab (state.getProperty (displayTabProperty).toString() == detectionEqTab ? DisplayTab::detectionEq : DisplayTab::level);
+        setDisplayTab (tabSaved (state.getProperty (displayTabProperty).toString()));
         state.removeProperty (displayTabProperty, nullptr);
     });
     reportLatency();

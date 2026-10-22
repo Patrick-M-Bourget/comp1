@@ -15,11 +15,13 @@
 namespace comp1
 {
 
-// The Expanded View's display tabs: the scrolling level and Gain Reduction graph, and the Detection EQ.
+// The Expanded View's three display tabs: the scrolling level and Gain Reduction graph, the Detection EQ, and the
+// Transfer Curve.
 enum class DisplayTab
 {
     level,
     detectionEq,
+    transferCurve,
 };
 
 // The Plugin Shell: the JUCE processor around the Engine. It turns the host parameters into Settings once a
