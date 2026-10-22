@@ -2,6 +2,7 @@
 
 #include "Parameters.h"
 #include "comp1/Latency.h"
+#include "plugkit/ui/Accessibility.h"
 #include "plugkit/ui/AssumedSampleRate.h"
 #include "plugkit/ui/ShowMenu.h"
 #include "plugkit/ui/staple/LookAndFeel.h"
@@ -30,7 +31,6 @@ ChoiceChip::ChoiceChip (juce::RangedAudioParameter& p, plugkit::ui::EditHistory&
     setName (parameter.getName (100));
     setTitle (parameter.getName (100));
     setTooltip (parameter.getName (100));
-    setTextIsValue (true);
     setChevron (true);
     onClick = [this] {
         plugkit::ui::showMenu (menu(), *this, juce::PopupMenu::Options().withTargetComponent (this));
@@ -52,17 +52,32 @@ std::vector<int> ChoiceChip::offered() const
 
 int ChoiceChip::shownChoice() const { return config.shown != nullptr ? config.shown() : choiceOf (parameter); }
 
+juce::String ChoiceChip::textOf (int choice) const { return config.text != nullptr ? config.text (choice) : choices[choice]; }
+
+juce::String ChoiceChip::itemOf (int choice) const { return config.item != nullptr ? config.item (choice) : choices[choice]; }
+
+std::unique_ptr<juce::AccessibilityHandler> ChoiceChip::createAccessibilityHandler()
+{
+    return plugkit::ui::accessibility::handler (*this, juce::AccessibilityRole::button, [this] { return itemOf (shownChoice()); }, [this] { triggerClick(); });
+}
+
 juce::PopupMenu ChoiceChip::menu()
 {
     juce::PopupMenu popup;
     const int shown = shownChoice();
     for (const int choice : offered())
-        popup.addItem (choices[choice], true, choice == shown, [this, choice] { pick (choice); });
+        popup.addItem (itemOf (choice), true, choice == shown, [this, choice] { pick (choice); });
     return popup;
 }
 
 void ChoiceChip::pick (int choice)
 {
+    if (config.choose != nullptr)
+    {
+        config.choose (choice);
+        show();
+        return;
+    }
     parameter.beginChangeGesture();
     parameter.setValueNotifyingHost (parameter.convertTo0to1 (static_cast<float> (choice)));
     parameter.endChangeGesture();
@@ -73,7 +88,7 @@ bool ChoiceChip::keyPressed (const juce::KeyPress& key)
 {
     const int code = key.getKeyCode();
     const int direction = code == juce::KeyPress::downKey ? 1 : code == juce::KeyPress::upKey ? -1 : 0;
-    if (direction == 0 || key.getModifiers().isAnyModifierKeyDown() || ! isEnabled())
+    if (direction == 0 || ! config.steps || key.getModifiers().isAnyModifierKeyDown() || ! isEnabled())
         return staple::TextChip::keyPressed (key);
     staple::LookAndFeel::keyUsed (*this);
     const auto choicesOffered = offered();
@@ -111,9 +126,9 @@ int ChoiceChip::widestIdealWidth()
 {
     const auto shown = getButtonText();
     int widest = 0;
-    for (const auto& choice : choices)
+    for (int choice = 0; choice < choices.size(); ++choice)
     {
-        setButtonText (choice);
+        setButtonText (textOf (choice));
         widest = std::max (widest, getIdealWidth());
     }
     setButtonText (shown);
@@ -122,7 +137,7 @@ int ChoiceChip::widestIdealWidth()
 
 void ChoiceChip::show()
 {
-    const auto text = choices[shownChoice()];
+    const auto text = textOf (shownChoice());
     if (getButtonText() != text)
         setButtonText (text);
     const bool available = config.available == nullptr || config.available();
