@@ -5,7 +5,6 @@
 #include "plugkit/ui/display/AnalyzerLayer.h"
 #include "plugkit/ui/staple/Painting.h"
 #include "plugkit/ui/staple/Tokens.h"
-#include "plugkit/ui/staple/WindowBackground.h"
 
 #include <plugkit/ShapeDesign.h>
 
@@ -20,8 +19,6 @@ namespace
 namespace colour = staple::tokens::colour;
 namespace display = plugkit::ui::display;
 
-// How far in each edge's fade reaches.
-constexpr display::EdgeFades edgeFades { .top = 12.0f, .bottom = 12.0f, .left = 24.0f, .right = 24.0f };
 constexpr float ringWidth = 1.5f, curveWidth = 1.5f, haloWidth = 6.0f;
 constexpr int auditionSize = 28, auditionInset = 8;
 // The keys' steps: a semitone of Frequency (a tenth of one with Shift), 0.5 dB of Gain (0.05 dB), and a Slope step.
@@ -480,26 +477,6 @@ void DetectionEqDisplay::resized()
     settingsChanged();
 }
 
-const display::EdgeFadeOverlay& DetectionEqDisplay::edgeFadeAt (float scale)
-{
-    // The window's background is painted over the editor's content, the component whose parent is the editor.
-    const juce::Component* window = this;
-    while (window->getParentComponent() != nullptr && dynamic_cast<const juce::AudioProcessorEditor*> (window->getParentComponent()) == nullptr)
-        window = window->getParentComponent();
-    const auto windowBounds = window->getLocalBounds();
-    const auto at = window->getLocalArea (this, getLocalBounds());
-    const EdgeFadeFor wanted { at, windowBounds, scale };
-    if (edgeFadeFor != wanted)
-    {
-        edgeFadeFor = wanted;
-        edgeFade = display::edgeFadeOverlay (geometry(), edgeFades, scale, [&] (juce::Graphics& g) {
-            g.addTransform (juce::AffineTransform::translation (-at.getPosition().toFloat()));
-            staple::paintWindowBackground (g, windowBounds.toFloat());
-        });
-    }
-    return edgeFade;
-}
-
 void DetectionEqDisplay::paint (juce::Graphics& g)
 {
     const auto shape = geometry();
@@ -509,10 +486,9 @@ void DetectionEqDisplay::paint (juce::Graphics& g)
     g.strokePath (curve, juce::PathStrokeType (haloWidth, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     g.setColour (colour::curveMain);
     g.strokePath (curve, juce::PathStrokeType (curveWidth, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    display::paintEdgeFades (g, edgeFadeAt (g.getInternalContext().getPhysicalPixelScaleFactor()));
+    fades.paint (g, *this);
     // The labels go over the fades, unfaded, from images aligned with the window's device pixels.
-    const auto* window = getTopLevelComponent();
-    gridLabelImages.paint (g, window->getLocalPoint (this, juce::Point<float>()), display::gridLabels (shape));
+    gridLabelImages.paint (g, DisplayFades::originInWindow (*this), display::gridLabels (shape));
 }
 
 void DetectionEqDisplay::paintOverChildren (juce::Graphics& g)
