@@ -5,6 +5,7 @@
 #include "LevelHistory.h"
 #include "LevelRing.h"
 #include "PluginProcessor.h"
+#include "plugkit/ui/OutputPopoverFrame.h"
 
 #include <memory>
 #include <optional>
@@ -72,8 +73,10 @@ struct DryWetSection final : ControlSection
     explicit DryWetSection (PluginProcessor& processor);
 };
 
-// Output, the output popover's (OutputPopover), in both views: Output Gain; Auto Gain and the Limiter's on/off over
-// Ceiling, with the Ceiling ring (LevelRing::limiterGainReduction). Auto Gain follows ADR 0004: while Comp Follow is
+// Output, the output popover's (OutputPopover), in both views: Output Gain and Ceiling side by side, Ceiling with its
+// ring (LevelRing::limiterGainReduction); under them one row of letter toggles (plugkit::ui::OutputToggle), A for Auto
+// Gain and L for the Limiter, the width of the knobs' row between them. Tab walks them in that order. Ceiling stays
+// enabled while the Limiter is off, as it still applies at delivery. Auto Gain follows ADR 0004: while Comp Follow is
 // on it shows on and is disabled, its tooltip saying Comp Follow holds it on; otherwise it is attached as usual.
 class OutputSection final : public ControlSection
 {
@@ -83,6 +86,12 @@ public:
 
     LevelRing& ceilingRing() { return *ring; }
 
+    int idealHeight() const override;
+    void resized() override;
+
+    // The letter toggles' row: its gap under the knobs' labels, its height, and the gap between A and L.
+    static constexpr int letterRowGap = 12, letterHeight = 30, letterGap = 4;
+
 private:
     void follow() override;
     bool isControlEnabled (juce::Component& control) const override;
@@ -90,9 +99,9 @@ private:
 
     PluginProcessor& processor;
     KnobControl* ceiling = nullptr;
-    juce::ToggleButton* autoGain = nullptr;
+    plugkit::ui::OutputToggle autoGain, limiter;
     std::unique_ptr<LevelRing> ring;
-    std::unique_ptr<juce::ButtonParameterAttachment> autoGainAttachment;
+    std::unique_ptr<juce::ButtonParameterAttachment> autoGainAttachment, limiterAttachment;
 };
 
 // Detection: Detection Source and the High-pass's on/off over its Frequency, then its Slope; the Low-pass's on/off over
