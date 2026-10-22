@@ -125,13 +125,13 @@ TEST_CASE ("The header's Undo, Redo, A/B Compare, Copy, Preset arrows and Preset
     CHECK (session.compareSide() == plugkit::ui::CompareSide::A);
     CHECK_THAT (host.value (thresholdId), WithinAbs (-12.0f, 1.0e-4));
 
-    // The arrows step through every Preset in browser order, the Factory's from Default, then the User Presets, each
-    // loading its settings: Default's Threshold is the default, -18 dB, and A's and B's their own.
+    // The arrows step through every Preset in browser order, the Factory's by name, Default among them, then the User
+    // Presets, each loading its settings: Default's Threshold is the default, -18 dB, and A's and B's their own.
     juce::StringArray order;
     for (const auto& entry : session.presetLibrary().listing())
         order.add (entry.name);
     REQUIRE (order.size() >= 3);
-    REQUIRE (order[0] == "Default");
+    REQUIRE (order.contains ("Default"));
     REQUIRE (order.getReference (order.size() - 2) == "A");
     REQUIRE (order.getReference (order.size() - 1) == "B");
     const std::map<juce::String, float> thresholds { { "Default", -18.0f }, { "A", -24.0f }, { "B", -30.0f } };

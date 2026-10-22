@@ -757,3 +757,58 @@ TEST_CASE ("Every Sidechain Preset dips the signal by at least 3 dB under a loud
             CHECK (rmsDb (input[ch].data() + settled, numSamples - settled) - rmsDb (output[ch].data() + settled, numSamples - settled) >= 3.0);
     }
 }
+
+TEST_CASE ("Duck Under Kick, the Bass Sidechain Preset, leaves the bass alone unrouted, and dips it under a kick on the Sidechain")
+{
+    const auto factory = factoryPresets();
+    const auto found = std::find_if (factory.begin(), factory.end(), [] (const auto& p) {
+        return p.name == named ("Bass \xe2\x80\x93 Duck Under Kick (Sidechain)");
+    });
+    REQUIRE (found != factory.end());
+    CHECK (unroutedSidechainProblem (*found) == "");
+
+    // A bass line, 40 to 200 Hz at -18 dBFS RMS, and on the Sidechain a kick at 120 bpm: 40 to 120 Hz in 100 ms hits
+    // at -10 dBFS RMS. Or hi-hats instead, 5 to 10 kHz in 30 ms hits between the kicks at -10 dBFS RMS, which its
+    // Detection Low-pass keeps it from hearing.
+    const auto onKick = [] (double t) { return std::fmod (t, 0.5) < 0.1; };
+    const auto onHat = [] (double t) { return std::fmod (t + 0.25, 0.5) < 0.03; };
+    const auto bass = toneBand (40.0, 200.0, -18.0, [] (double) { return true; }, 29);
+    const auto kick = toneBand (40.0, 120.0, -10.0, onKick, 31);
+    const auto hats = toneBand (5000.0, 10000.0, -10.0, onHat, 37);
+    const auto settings = settingsOf (*found);
+    // The output's level against the bass's, in dB, over the times when (t) holds, after the first second.
+    const auto changeDb = [&bass] (const Channels& output, auto when) {
+        double in = 0.0, out = 0.0;
+        for (std::size_t ch = 0; ch < 2; ++ch)
+            for (int n = static_cast<int> (sampleRate); n < referenceSamples; ++n)
+                if (when (n / sampleRate))
+                {
+                    const auto i = static_cast<std::size_t> (n);
+                    in += static_cast<double> (bass[ch][i]) * bass[ch][i];
+                    out += static_cast<double> (output[ch][i]) * output[ch][i];
+                }
+        return 10.0 * std::log10 (out / in);
+    };
+    CHECK (changeDb (comp1::test::played (settings, sampleRate, bass, { 512 }, &kick), onKick) <= -3.0);
+    CHECK (changeDb (comp1::test::played (settings, sampleRate, bass, { 512 }, &hats), onHat) > -0.5);
+}
+
+TEST_CASE ("A parallel Factory Preset's Dry path is heard: with Wet Off, its output is its input")
+{
+    std::vector<FactoryPreset> parallel;
+    for (const auto& p : factoryPresets())
+        if (! std::isinf (settingsOf (p).dryDb))
+            parallel.push_back (p);
+    REQUIRE (std::any_of (parallel.begin(), parallel.end(), [] (const auto& p) { return p.name == named ("Drums \xe2\x80\x93 All-In Crush"); }));
+    const auto input = pinkNoise (2, static_cast<int> (sampleRate) * seconds, -18.0);
+    for (const auto& p : parallel)
+    {
+        CAPTURE (p.name);
+        auto settings = settingsOf (p);
+        settings.wetDb = -comp1::parameterRanges::inf;
+        const auto latency = comp1::test::impulseDelaySamples (settings, sampleRate);
+        REQUIRE (latency >= 0);
+        const auto output = comp1::test::played (settings, sampleRate, input);
+        CHECK (comp1::test::worstRelativeError (output, comp1::test::delayed (input, latency), std::pow (10.0, settings.dryDb / 20.0)) < 1.0e-6);
+    }
+}
