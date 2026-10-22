@@ -218,9 +218,10 @@ TEST_CASE ("A full tap drops new samples, and a reader that skips reads only wha
 
 TEST_CASE ("The tap is read on a reader thread while process() runs, and reading never allocates")
 {
-    // The audio thread plays a ramp that counts the samples played, one channel, until the reader has read a second
-    // of it, or for ten minutes of audio, when the test fails. Every sample read is the next one played: what the
-    // reader gets stays in order, with nothing dropped while it keeps up.
+    // The audio thread plays a ramp that counts the samples played, one channel, as fast as it can (up to 2^24 samples,
+    // which a float holds exactly), until the reader has read a second of it. The audio thread can run ahead of the
+    // reader, which then misses what the full tap drops; but what each read gets is in order with no gap inside it, and
+    // each read comes after the one before.
     Engine engine;
     engine.prepare (48000.0, 64, 1);
     engine.setSettings ({});
@@ -229,10 +230,10 @@ TEST_CASE ("The tap is read on a reader thread while process() runs, and reading
         std::vector<float> block (64);
         float* main[] = { block.data() };
         int played = 0;
-        for (int n = 0; n < 48000 * 600 / 64 && ! done; ++n)
+        while (played + 64 <= (1 << 24) && ! done)
         {
             for (auto& sample : block)
-                sample = std::ldexp (static_cast<float> (played++ % (1 << 20)), -20);
+                sample = static_cast<float> (played++);
             engine.process ({ main, 1, 64 });
         }
         done = true;
@@ -241,15 +242,20 @@ TEST_CASE ("The tap is read on a reader thread while process() runs, and reading
     std::vector<float> samples (static_cast<std::size_t> (engine.detectionSourceSampleCapacity()));
     std::size_t allocations = 0;
     int read = 0;
+    float last = -1.0f;
     bool inOrder = true;
     while (! done && read < 48000)
     {
         plugkit::test::AllocationGuard guard;
         const int count = engine.readDetectionSourceSamples (samples.data(), static_cast<int> (samples.size()));
-        for (int i = 0; i < count; ++i)
-            inOrder = inOrder && static_cast<int> (std::ldexp (samples[static_cast<std::size_t> (i)], 20)) == (read + i) % (1 << 20);
-        read += count;
         allocations += guard.allocations();
+        for (int i = 0; i < count; ++i)
+        {
+            const float sample = samples[static_cast<std::size_t> (i)];
+            inOrder = inOrder && (i == 0 ? sample > last : static_cast<double> (sample) == static_cast<double> (last) + 1.0);
+            last = sample;
+        }
+        read += count;
     }
     done = true;
     audio.join();
