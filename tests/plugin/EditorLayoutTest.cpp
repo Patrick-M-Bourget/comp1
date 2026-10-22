@@ -1,0 +1,112 @@
+#include "EditorHost.h"
+#include "plugkit/ui/HeaderBar.h"
+#include "plugkit/ui/OutputMeter.h"
+#include "plugkit/ui/UiScaleMenu.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+
+#include <vector>
+
+namespace
+{
+
+// The editor's areas, in the content's logical pixels (as at 100%).
+struct Areas
+{
+    juce::Rectangle<int> header, display, levelTab, detectionEqTab, outputMeter, sections, style, footer;
+};
+
+juce::Component& named (juce::Component& editor, const juce::String& name)
+{
+    auto* found = harness::findChild<juce::Component> (editor, [&name] (juce::Component& c) { return c.getName() == name; });
+    INFO ("No component is named " << name);
+    REQUIRE (found != nullptr);
+    return *found;
+}
+
+Areas areasOf (juce::AudioProcessorEditor& editor)
+{
+    auto* header = harness::findChild<plugkit::ui::HeaderBar> (editor);
+    REQUIRE (header != nullptr);
+    auto& content = *header->getParentComponent();
+    const auto in = [&content] (juce::Component& c) { return content.getLocalArea (c.getParentComponent(), c.getBounds()); };
+    auto* meter = harness::findChild<plugkit::ui::OutputMeter> (editor);
+    auto* footer = harness::findChild<comp1::Footer> (editor);
+    REQUIRE (meter != nullptr);
+    REQUIRE (footer != nullptr);
+    auto& tabs = dynamic_cast<comp1::PluginEditor&> (editor).display();
+    return { in (*header),
+             in (named (editor, "Display")),
+             in (tabs.tabContent (comp1::DisplayTab::level)),
+             in (tabs.tabContent (comp1::DisplayTab::detectionEq)),
+             in (*meter),
+             in (named (editor, "Sections")),
+             in (named (editor, "Style")),
+             in (*footer) };
+}
+
+} // namespace
+
+TEST_CASE ("At its default size the Expanded View is the header, the display with the Output Meter's rail at its right, the sections and the footer")
+{
+    host::EditorHost host;
+    REQUIRE (host.editor->getWidth() == 1200);
+    REQUIRE (host.editor->getHeight() == 760);
+
+    // 14 px padding and 12 px gaps; a 40 px meter rail and a 150 px section row.
+    const auto areas = areasOf (*host.editor);
+    CHECK (areas.header == juce::Rectangle<int> (14, 14, 1172, 52));
+    CHECK (areas.display == juce::Rectangle<int> (14, 78, 1120, 450));
+    CHECK (areas.outputMeter == juce::Rectangle<int> (1146, 78, 40, 450));
+    CHECK (areas.sections == juce::Rectangle<int> (14, 540, 1172, 150));
+    CHECK (areas.footer == juce::Rectangle<int> (14, 702, 1172, 44));
+    // Each tab's content is the display under its tabs.
+    CHECK (areas.levelTab == areas.detectionEqTab);
+    CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1120, 416));
+}
+
+TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes nothing overlaps, and only the display and the section row's width grow")
+{
+    host::EditorHost host;
+    auto* menu = harness::findChild<plugkit::ui::UiScaleMenu> (*host.editor);
+    REQUIRE (menu != nullptr);
+    const auto& window = comp1::PluginProcessor::window;
+
+    const int percent = GENERATE (75, 100, 125, 150, 200);
+    CAPTURE (percent);
+    menu->pick (percent);
+    const auto scaled = [percent] (int logical) { return juce::roundToInt (logical * percent / 100.0); };
+    host.editor->setSize (scaled (window.minimum.x), scaled (window.minimum.y));
+    const auto smallest = areasOf (*host.editor);
+
+    const auto size = GENERATE_COPY (window.minimum, window.defaultSize, window.maximum);
+    CAPTURE (size.x, size.y);
+    host.editor->setSize (scaled (size.x), scaled (size.y));
+    const auto areas = areasOf (*host.editor);
+
+    const juce::Rectangle<int> inside { 14, 14, size.x - 28, size.y - 28 };
+    const std::vector<juce::Rectangle<int>> rows { areas.header, areas.display, areas.outputMeter, areas.sections, areas.footer };
+    for (size_t i = 0; i < rows.size(); ++i)
+    {
+        CAPTURE (i);
+        CHECK (inside.contains (rows[i]));
+        CHECK_FALSE (rows[i].isEmpty());
+        for (size_t j = i + 1; j < rows.size(); ++j)
+            CHECK_FALSE (rows[i].intersects (rows[j]));
+    }
+    CHECK (areas.display.contains (areas.levelTab));
+    CHECK (areas.sections.contains (areas.style));
+
+    // What the window grows by goes to the display, and its width to the section row; the rest keep their size.
+    const int wider = size.x - window.minimum.x, taller = size.y - window.minimum.y;
+    CHECK (areas.display.getWidth() == smallest.display.getWidth() + wider);
+    CHECK (areas.display.getHeight() == smallest.display.getHeight() + taller);
+    CHECK (areas.sections.getWidth() == smallest.sections.getWidth() + wider);
+    CHECK (areas.sections.getHeight() == smallest.sections.getHeight());
+    CHECK (areas.outputMeter.getWidth() == smallest.outputMeter.getWidth());
+    CHECK (areas.style.getWidth() == smallest.style.getWidth());
+    CHECK (areas.style.getHeight() == smallest.style.getHeight());
+    CHECK (areas.header.getHeight() == smallest.header.getHeight());
+    CHECK (areas.footer.getHeight() == smallest.footer.getHeight());
+}

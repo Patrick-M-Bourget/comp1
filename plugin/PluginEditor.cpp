@@ -6,42 +6,20 @@
 namespace comp1
 {
 
-namespace
-{
-// The footer's buttons, in a row centred down it, 6 px in from its sides.
-constexpr int footerButtonSize = 28, footerInset = 6;
-} // namespace
-
-Footer::Footer (juce::AudioProcessorValueTreeState& parameters, plugkit::ui::Session& session)
-    : globalBypassAttachment (parameters, parameters::globalBypassId, globalBypass), uiScale (session)
-{
-    globalBypass.setClickingTogglesState (true);
-    // Its "on" is bypassed, so on it shows Off.
-    globalBypass.setOffLook (true);
-    globalBypass.setIconSize (14.0f);
-    globalBypass.setTitle (parameters.getParameter (parameters::globalBypassId)->getName (100));
-    globalBypass.setTooltip ("Global Bypass (Cmd/Ctrl+B)");
-    addAndMakeVisible (globalBypass);
-    addAndMakeVisible (uiScale);
-    // Left to right.
-    int order = 0;
-    for (juce::Component* child : std::initializer_list<juce::Component*> { &globalBypass, &uiScale })
-        child->setExplicitFocusOrder (++order);
-}
-
-void Footer::resized()
-{
-    auto row = getLocalBounds().reduced (footerInset, 0);
-    row = row.withSizeKeepingCentre (row.getWidth(), footerButtonSize);
-    globalBypass.setBounds (row.removeFromLeft (footerButtonSize));
-    uiScale.setBounds (row.removeFromRight (footerButtonSize));
-}
+namespace layout = staple::tokens::layout;
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : EditorShell (p, p.session(), { "comp1", parameters::globalBypassId }), outputMeter (p), footer (p.parameterState(), p.session())
 {
-    content().addAndMakeVisible (outputMeter);
-    outputMeter.setExplicitFocusOrder (firstFocusOrder);
+    sections.setName ("Sections");
+    sections.addAndMakeVisible (styleSection);
+    // Tab's order, after the header: the display's tabs, the Output Meter, then the sections in signal order.
+    int order = firstFocusOrder;
+    for (juce::Component* child : std::initializer_list<juce::Component*> { &displaySlot, &outputMeter, &sections })
+    {
+        content().addAndMakeVisible (*child);
+        child->setExplicitFocusOrder (order++);
+    }
     footer.uiScaleMenu().onPicked = [this] (int) { applyUiScale(); };
     // Along the bottom, last in Tab's order.
     open (footer);
@@ -49,7 +27,14 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
 void PluginEditor::layOutBody (juce::Rectangle<int> area)
 {
-    outputMeter.setBounds (area.removeFromRight (staple::tokens::layout::meterWidth));
+    sections.setBounds (area.removeFromBottom (sectionRowHeight));
+    area.removeFromBottom (layout::gap);
+    outputMeter.setBounds (area.removeFromRight (layout::meterWidth));
+    area.removeFromRight (layout::gap);
+    displaySlot.setBounds (area);
+
+    auto row = sections.getLocalBounds();
+    styleSection.setBounds (row.removeFromLeft (styleSectionWidth));
 }
 
 } // namespace comp1

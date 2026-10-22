@@ -82,6 +82,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/ColourParameterTest.cpp
         plugin/CompParameterTest.cpp
         plugin/DryWetParameterTest.cpp
+        plugin/EditorLayoutTest.cpp
         plugin/EditorTest.cpp
         plugin/GateParameterTest.cpp
         plugin/GlobalBypassParameterTest.cpp

@@ -15,6 +15,13 @@
 namespace comp1
 {
 
+// The Expanded View's display tabs: the scrolling level and Gain Reduction graph, and the Detection EQ.
+enum class DisplayTab
+{
+    level,
+    detectionEq,
+};
+
 // The Plugin Shell: the JUCE processor around the Engine. It turns the host parameters into Settings once a
 // block, and saves, restores and edits them through its Session: User Presets, A/B Compare and undo and redo. Not final:
 // a test's processor derives from it only to keep its per-user settings and User Presets in a folder of its own.
