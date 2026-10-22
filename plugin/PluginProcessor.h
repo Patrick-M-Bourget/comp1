@@ -116,6 +116,10 @@ public:
     bool isStereoPlacementAvailable() const { return getMainBusNumOutputChannels() == 2; }
     bool isStereoLinkAvailable() const { return getMainBusNumOutputChannels() == 2; }
 
+    // The sample rate prepareToPlay() was last given, in Hz, or 0 before the first: the rate the Engine plays at, so the
+    // one the editor offers Oversampling at (comp1/Latency.h's maxOversampling). Any thread.
+    double preparedSampleRateHz() const { return preparedSampleRate.load (std::memory_order_relaxed); }
+
     // The Output Meter's source, from the Engine's Output Level, from the message thread: one bar per main channel.
     // A peak above 0 dBFS lights its channel's Clip Light, which stays lit until cleared, whether or not the editor is
     // open. Restoring a session puts them out; they aren't saved.
