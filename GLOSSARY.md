@@ -186,7 +186,7 @@ How far the compressor sees ahead of the audio it processes, in High Quality onl
 _Avoid_: Pre-delay, latency
 
 **Compact View**:
-The editor showing only Style, Gate, Comp, Output Gain and a Gain Reduction meter.
+The editor showing only Style, Gate, Comp and a Gain Reduction meter, with Output Gain in the footer's output popover.
 _Avoid_: Simple view, mini view, basic mode
 
 **Expanded View**:
@@ -204,6 +204,10 @@ _Avoid_: I/O graph, transfer function plot
 **Output Gain**:
 The gain applied to the whole plugin's output, after Dry and Wet are summed and before the Limiter, in dB.
 _Avoid_: Master gain, Gain (unqualified)
+
+**Output readout**:
+The footer's reading of Output Gain plus Auto Gain's estimate while Auto Gain is in effect, in both views; a click opens the output popover, which holds Output Gain, Auto Gain, the Limiter and Ceiling.
+_Avoid_: Output display, gain readout
 
 **Global Bypass**:
 comp1's own click-free switch that passes the input through unprocessed, separate from the host's bypass.

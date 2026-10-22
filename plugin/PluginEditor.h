@@ -42,7 +42,7 @@ public:
     GainReductionMeter& gateGainReductionMeter() { return gateGainReduction; }
     GainReductionMeter& limiterGainReductionMeter() { return limiterGainReduction; }
     LevelRing& detectionLevelRing() { return compressor.detectionLevelRing(); }
-    LevelRing& ceilingRing() { return output.ceilingRing(); }
+    LevelRing& ceilingRing() { return footer.outputPopover().ceilingRing(); }
 
     // The view shown, which follows the processor's View on the tick, as after a restore. The hidden view's
     // components are hidden; the Level and Gain Reduction Graph and the meters keep their subscriptions meanwhile.
@@ -82,7 +82,6 @@ private:
     CompressorSection compressor;
     CharacterSection character;
     DryWetSection dryWet;
-    OutputSection output;
     DetectionSection detection;
     StereoSection stereo;
     LookaheadSection lookahead;

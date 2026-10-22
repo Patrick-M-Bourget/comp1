@@ -98,10 +98,11 @@ TEST_CASE ("While Comp Follow is on, Threshold and Ratio show and read the follo
     CHECK (juce::exactlyEqual (ratio.getValue(), shownRatio));
 }
 
-TEST_CASE ("While Comp Follow is on, Auto Gain shows on and is disabled, its tooltip saying Comp Follow holds it on; off, it shows and sets its own")
+TEST_CASE ("While Comp Follow is on, the output popover's Auto Gain shows on and is disabled, its tooltip saying Comp Follow holds it on; off, it shows and sets its own")
 {
     host::EditorHost host;
     followingOffTheCurve (host);
+    host.openOutputPopover();
     auto& autoGain = host.showing<juce::ToggleButton> ("Auto Gain");
     REQUIRE (host.settleUntil ([&] { return ! autoGain.isEnabled(); }));
     CHECK (autoGain.getToggleState());

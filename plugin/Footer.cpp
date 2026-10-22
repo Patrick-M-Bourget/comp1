@@ -130,7 +130,7 @@ void ChoiceChip::show()
         setEnabled (available);
 }
 
-Footer::Footer (PluginProcessor& p)
+Footer::Footer (PluginProcessor& p, LevelHistory& history)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),
       globalBypassAttachment (p.parameterState(), parameters::globalBypassId, globalBypass),
       processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
@@ -149,7 +149,7 @@ Footer::Footer (PluginProcessor& p)
                               return static_cast<int> (oversamplingInForce (stored, sampleRateOf (p)));
                           },
                       .available = [&p] { return parameters::inHighQuality (p.parameterState()); } }),
-      uiScale (p.session())
+      popover (p, history), uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
     // Its "on" is bypassed, so on it shows Off.
@@ -178,7 +178,29 @@ Footer::Footer (PluginProcessor& p)
         addChildComponent (*button);
     }
     showSwitchFor (p.view());
+
+    output.onClick = [this] {
+        if (popover.isOpen())
+            popover.close();
+        else
+        {
+            popover.openFrom (output);
+            output.setOpen (popover.isOpen());
+        }
+    };
+    // Back in the footer once closed, hidden, so it stays on the editor's tick.
+    popover.onClose = [this] {
+        output.setOpen (false);
+        addChildComponent (popover);
+    };
+    addChildComponent (popover);
     showOutput();
+}
+
+Footer::~Footer()
+{
+    popover.onClose = nullptr;
+    popover.close();
 }
 
 void Footer::showOutput()

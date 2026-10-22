@@ -12,13 +12,12 @@ namespace comp1
 namespace layout = staple::tokens::layout;
 
 CompactView::CompactView (PluginProcessor& p, LevelHistory& history)
-    : style (p), gate ("Gate", p), compressor ("Compressor", p), output ("Output", p), gainReduction (history)
+    : style (p), gate ("Gate", p), compressor ("Compressor", p), gainReduction (history)
 {
     setName ("Compact View");
     gate.addToggle (parameters::gateId, "Gate", true);
     gate.addKnob (parameters::gateThresholdId, knobSize::medium, "Threshold", ControlSection::Place::underStack);
     addCompKnob (compressor, p, compAttachment);
-    output.addKnob (parameters::outputGainId, knobSize::medium, "Output Gain");
 
     int order = 0;
     for (auto* section : sections())

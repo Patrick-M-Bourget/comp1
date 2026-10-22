@@ -37,7 +37,6 @@ GateSection::GateSection (PluginProcessor& p) : ControlSection ("Gate", p)
 CompressorSection::CompressorSection (PluginProcessor& p, LevelHistory& history) : ControlSection ("Compressor", p), processor (p)
 {
     compFollow = &addToggle (parameters::compFollowId, "Comp Follow", true, false);
-    autoGain = &addToggle (parameters::autoGainId, "Auto Gain", false, false);
     comp = &addCompKnob (*this, processor, compAttachment, Place::underStack);
     threshold = &addKnob (parameters::thresholdId, knobSize::large, "Threshold", Place::ownColumn, false);
     ratio = &addKnob (parameters::ratioId, knobSize::medium, "Ratio", Place::ownColumn, false);
@@ -78,28 +77,7 @@ CompressorSection::~CompressorSection()
 
 bool CompressorSection::following() const { return isOn (processor, parameters::compFollowId); }
 
-void CompressorSection::follow()
-{
-    const bool on = following();
-    compFollow->setToggleState (on, juce::dontSendNotification);
-    if (on && autoGainAttachment != nullptr)
-    {
-        autoGainAttachment.reset();
-        autoGain->setTooltip ("Auto Gain: Comp Follow holds it on");
-    }
-    if (on)
-        autoGain->setToggleState (true, juce::dontSendNotification);
-    else if (autoGainAttachment == nullptr)
-    {
-        autoGainAttachment = std::make_unique<juce::ButtonParameterAttachment> (parameter (parameters::autoGainId), *autoGain);
-        autoGain->setTooltip (autoGain->getTitle());
-    }
-}
-
-bool CompressorSection::isControlEnabled (juce::Component& control) const
-{
-    return &control != autoGain || ! following();
-}
+void CompressorSection::follow() { compFollow->setToggleState (following(), juce::dontSendNotification); }
 
 CharacterSection::CharacterSection (PluginProcessor& p) : ControlSection ("Character and Saturation", p)
 {
@@ -115,19 +93,45 @@ DryWetSection::DryWetSection (PluginProcessor& p) : ControlSection ("Dry/Wet", p
     addKnob (parameters::wetId, knobSize::medium, "Wet");
 }
 
-OutputSection::OutputSection (PluginProcessor& p, LevelHistory& history) : ControlSection ("Output", p)
+OutputSection::OutputSection (PluginProcessor& p, LevelHistory& history) : ControlSection ("Output", p), processor (p)
 {
     addKnob (parameters::outputGainId, knobSize::medium, "Output Gain");
-    addToggle (parameters::limiterId, "Limiter", true);
+    autoGain = &addToggle (parameters::autoGainId, "Auto Gain", true, false);
+    addToggle (parameters::limiterId, "Limiter", false);
     ceiling = &addKnob (parameters::ceilingId, knobSize::medium, "Ceiling", Place::underStack);
     ring = std::make_unique<LevelRing> (ceiling->knob, ceiling->parameter, history, LevelRing::limiterGainReduction());
     ceiling->setRing (*ring);
+    follow();
 }
 
 OutputSection::~OutputSection()
 {
     // Before the knob the ring is drawn in goes.
     ceiling->knob.setRing (nullptr);
+}
+
+bool OutputSection::following() const { return isOn (processor, parameters::compFollowId); }
+
+void OutputSection::follow()
+{
+    const bool on = following();
+    if (on && autoGainAttachment != nullptr)
+    {
+        autoGainAttachment.reset();
+        autoGain->setTooltip ("Auto Gain: Comp Follow holds it on");
+    }
+    if (on)
+        autoGain->setToggleState (true, juce::dontSendNotification);
+    else if (autoGainAttachment == nullptr)
+    {
+        autoGainAttachment = std::make_unique<juce::ButtonParameterAttachment> (parameter (parameters::autoGainId), *autoGain);
+        autoGain->setTooltip (autoGain->getTitle());
+    }
+}
+
+bool OutputSection::isControlEnabled (juce::Component& control) const
+{
+    return &control != autoGain || ! following();
 }
 
 DetectionSection::DetectionSection (PluginProcessor& p) : ControlSection ("Detection", p)

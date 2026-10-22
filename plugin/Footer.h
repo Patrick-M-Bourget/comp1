@@ -1,5 +1,7 @@
 #pragma once
 
+#include "LevelHistory.h"
+#include "OutputPopover.h"
 #include "PluginProcessor.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/OutputReadout.h"
@@ -72,7 +74,8 @@ private:
 // The Output readout (plugkit::ui::OutputReadout) reads Output Gain plus Auto Gain's estimate while Auto Gain is in
 // effect, on or held on by Comp Follow (PluginProcessor::appliedAutoGainDb), signed to one decimal; Output Gain's range
 // has no silent bottom, so it always reads as a level. It is drawn in text4, not applied, while Global Bypass is on.
-// It follows the processor on the editor's tick.
+// A click on it, or Space or Return, opens and closes the output popover (OutputPopover), fill2 behind the readout
+// while it is open. It follows the processor on the editor's tick.
 //
 // Oversampling offers only the factors at or under the cap at the sample rate the processor was prepared at (or the
 // assumed one before it is), comp1/Latency.h's maxOversampling, and shows the factor in force, the cap when the
@@ -80,12 +83,14 @@ private:
 class Footer final : public juce::Component, private plugkit::ui::EditorTick::Client
 {
 public:
-    explicit Footer (PluginProcessor& processor);
+    Footer (PluginProcessor& processor, LevelHistory& history);
+    ~Footer() override;
 
     void resized() override;
 
     plugkit::ui::UiScaleMenu& uiScaleMenu() { return uiScale; }
     plugkit::ui::OutputReadout& outputReadout() { return output; }
+    OutputPopover& outputPopover() { return popover; }
 
     // The switch between the views, at the far right after the UI Scale menu, last in Tab's order: Staple icon buttons
     // titled by what they do, the collapse arrow "Switch to the Compact View" in the Expanded View, the expand arrow
@@ -108,6 +113,7 @@ private:
     juce::AudioProcessorValueTreeState::ButtonAttachment globalBypassAttachment;
     ChoiceChip processingMode, oversampling;
     plugkit::ui::OutputReadout output;
+    OutputPopover popover;
     plugkit::ui::UiScaleMenu uiScale;
     staple::IconButton toCompact { "Switch to the Compact View", staple::Icon::collapse },
         toExpanded { "Switch to the Expanded View", staple::Icon::expand };

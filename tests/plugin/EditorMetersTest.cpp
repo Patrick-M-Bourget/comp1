@@ -244,9 +244,10 @@ TEST_CASE ("The Detection Level ring fills Threshold's lane to the Detection Lev
     CHECK (host.ring().ringValue().isEmpty());
 }
 
-TEST_CASE ("The Ceiling ring fills Ceiling's lane down from its top by the Limiter's Gain Reduction, on Ceiling's scale, and falls at 20 dB/s after")
+TEST_CASE ("The Ceiling ring, in the output popover, fills Ceiling's lane down from its top by the Limiter's Gain Reduction, on Ceiling's scale, and falls at 20 dB/s after")
 {
     Playing host;
+    host.openOutputPopover();
     CHECK (host.ceilingRing().shownDb() == 0.0);
     // A steady 0 dB level at 1:1, so the compressor leaves it alone, into the Limiter at -6 dBFS: 6 dB of Gain Reduction.
     host.edit (parameters::ratioId, 1.0f);
@@ -275,6 +276,7 @@ TEST_CASE ("The Ceiling ring fills Ceiling's lane down from its top by the Limit
 TEST_CASE ("With the Limiter off the Ceiling ring stays empty and repaints nothing, on a level that would have it act")
 {
     Playing host;
+    host.openOutputPopover();
     host.edit (parameters::ratioId, 1.0f);
     host.edit (parameters::ceilingId, -6.0f);
     auto& repaints = harness::countRepaintsOf (host.knob ("Ceiling"));
