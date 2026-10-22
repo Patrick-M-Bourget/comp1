@@ -696,9 +696,9 @@ TEST_CASE ("The Factory gate rejects a De-Esser that misses sibilance, or compre
 namespace
 {
 
-// What the plugin plays from a stereo input with the Preset loaded and a stereo key on the Sidechain, at 48 kHz in
-// blocks of 512, as a host plays it.
-Channels playedWithKey (const FactoryPreset& p, const Channels& input, const Channels& key)
+// What the plugin plays from a stereo input with the Preset loaded and stereo sidechainSamples on the Sidechain, at
+// 48 kHz in blocks of 512, as a host plays it.
+Channels playedWithSidechain (const FactoryPreset& p, const Channels& input, const Channels& sidechainSamples)
 {
     constexpr int blockSize = 512;
     host::SessionHost host;
@@ -721,7 +721,7 @@ Channels playedWithKey (const FactoryPreset& p, const Channels& input, const Cha
         for (int ch = 0; ch < 2; ++ch)
         {
             buffer.copyFrom (ch, 0, input[static_cast<std::size_t> (ch)].data() + start, count);
-            buffer.copyFrom (ch + 2, 0, key[static_cast<std::size_t> (ch)].data() + start, count);
+            buffer.copyFrom (ch + 2, 0, sidechainSamples[static_cast<std::size_t> (ch)].data() + start, count);
         }
         processor.processBlock (buffer, midi);
         for (int ch = 0; ch < 2; ++ch)
@@ -732,7 +732,7 @@ Channels playedWithKey (const FactoryPreset& p, const Channels& input, const Cha
 
 } // namespace
 
-TEST_CASE ("Every Sidechain Preset dips the signal by at least 3 dB under a loud key on the Sidechain")
+TEST_CASE ("Every Sidechain Preset dips the signal by at least 3 dB under loud audio on the Sidechain")
 {
     // The Utility Sidechain Presets, each of which must be in the library.
     const auto factory = factoryPresets();
@@ -745,14 +745,14 @@ TEST_CASE ("Every Sidechain Preset dips the signal by at least 3 dB under a loud
     // EQ, a kick's lows as much as a voice's middle. Measured over the second second, once the dip has settled.
     const int numSamples = static_cast<int> (sampleRate) * seconds;
     const auto input = pinkNoise (2, numSamples, -18.0, 29);
-    const auto key = pinkNoise (2, numSamples, -12.0, 31);
+    const auto sidechainSamples = pinkNoise (2, numSamples, -12.0, 31);
     const int settled = static_cast<int> (sampleRate);
     for (const auto& p : factory)
     {
         if (! isSidechainPreset (p))
             continue;
         CAPTURE (p.name);
-        const auto output = playedWithKey (p, input, key);
+        const auto output = playedWithSidechain (p, input, sidechainSamples);
         for (std::size_t ch = 0; ch < 2; ++ch)
             CHECK (rmsDb (input[ch].data() + settled, numSamples - settled) - rmsDb (output[ch].data() + settled, numSamples - settled) >= 3.0);
     }
