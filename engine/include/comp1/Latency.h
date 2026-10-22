@@ -30,7 +30,7 @@ inline constexpr double maxInternalRateHz = 384000.0;
 inline constexpr int factorOf (Oversampling oversampling) { return 1 << static_cast<int> (oversampling); }
 
 // The largest Oversampling allowed at sampleRate: the largest whose internal rate is at or under maxInternalRateHz.
-// For the editor to offer only the allowed choices (#27).
+// For the editor to offer only the allowed choices, once it has an Oversampling control (#76).
 inline Oversampling maxOversampling (double sampleRate)
 {
     auto allowed = Oversampling::x1;
