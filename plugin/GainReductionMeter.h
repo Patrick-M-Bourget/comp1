@@ -2,7 +2,6 @@
 
 #include "LevelHistory.h"
 #include "plugkit/ui/EditorTick.h"
-#include "plugkit/ui/LevelBallistics.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -17,7 +16,7 @@ namespace comp1
 // moves: not on silence. A screen reader finds it as a read-only element titled with its name, read with its value
 // ("6.0 dB"), the true one over scaleDb too; it is no stop for Tab, and takes no mouse input. Named, titled and
 // tooltipped alike, as a test finds it.
-class GainReductionMeter final : public juce::Component, public juce::SettableTooltipClient, private LevelHistory::Subscriber, private plugkit::ui::EditorTick::Client
+class GainReductionMeter final : public juce::Component, public juce::SettableTooltipClient, private plugkit::ui::EditorTick::Client
 {
 public:
     // The stage whose Gain Reduction a meter shows.
@@ -29,7 +28,6 @@ public:
     };
 
     explicit GainReductionMeter (LevelHistory& history, Stage stage = Stage::compressor);
-    ~GainReductionMeter() override;
 
     // The Gain Reduction shown, in dB: 0 and up.
     double shownDb() const { return shown; }
@@ -42,18 +40,13 @@ public:
     static constexpr int labelHeight = 12, barInset = 6;
 
 private:
-    void levelsRead (std::span<const LevelRecord> records) override;
     void tick (double seconds) override;
     bool isActive() const override { return shown > 0.0; }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
     // Where the bar runs, from 0 dB at its top to scaleDb at its bottom.
     juce::Rectangle<float> barArea() const;
 
-    LevelHistory& history;
-    // The stage's Gain Reduction in each record.
-    double LevelRecord::* reading;
-    plugkit::ui::LevelBallistics ballistics;
-    double most = 0.0; // read since the last tick
+    ShownLevel reading; // the stage's Gain Reduction
     double shown = 0.0;
 };
 

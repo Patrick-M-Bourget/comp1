@@ -35,4 +35,25 @@ void LevelHistory::tick (double)
         subscriber->levelsRead (records);
 }
 
+ShownLevel::ShownLevel (LevelHistory& h, double LevelRecord::* r, double low, double high)
+    : history (h), reading (r), floor (low), ceiling (high), loudest (low)
+{
+    history.subscribe (*this);
+}
+
+ShownLevel::~ShownLevel() { history.unsubscribe (*this); }
+
+void ShownLevel::levelsRead (std::span<const LevelRecord> records)
+{
+    for (const auto& record : records)
+        loudest = std::max (loudest, record.*reading);
+}
+
+double ShownLevel::next (double seconds)
+{
+    const double level = std::clamp (ballistics.update (std::min (loudest, ceiling), seconds), floor, ceiling);
+    loudest = floor;
+    return level;
+}
+
 } // namespace comp1

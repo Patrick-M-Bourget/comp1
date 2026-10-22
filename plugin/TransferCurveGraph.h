@@ -6,7 +6,6 @@
 #include "PluginProcessor.h"
 #include "comp1/TransferCurve.h"
 #include "plugkit/ui/EditorTick.h"
-#include "plugkit/ui/LevelBallistics.h"
 #include "plugkit/ui/display/GridLayer.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -39,11 +38,10 @@ namespace comp1
 // Level ("Threshold −18.00 dB, Ratio 4:1, Knee +6.00 dB, Detection Level −20.0 dB"); it is no stop for Tab and takes no
 // mouse input. Named "Transfer Curve", as its tab, which
 // a test finds it by.
-class TransferCurveGraph final : public juce::Component, private LevelHistory::Subscriber, private plugkit::ui::EditorTick::Client
+class TransferCurveGraph final : public juce::Component, private plugkit::ui::EditorTick::Client
 {
 public:
     TransferCurveGraph (PluginProcessor& processor, LevelHistory& history);
-    ~TransferCurveGraph() override;
 
     static constexpr double scaleDb = 60.0, gridStepDb = 10.0;
 
@@ -62,7 +60,6 @@ public:
     void paint (juce::Graphics& g) override;
 
 private:
-    void levelsRead (std::span<const LevelRecord> records) override;
     void tick (double seconds) override;
     bool isActive() const override { return shown > -scaleDb; }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
@@ -70,11 +67,9 @@ private:
     clean::Curve played() const;
 
     PluginProcessor& processor;
-    LevelHistory& history;
     parameters::SettingsReader reader;
     clean::Curve drawn;
-    plugkit::ui::LevelBallistics ballistics;
-    double loudest = -scaleDb; // since the last tick
+    ShownLevel level; // the Detection Level, on the graph's scale
     double shown = -scaleDb;
     plugkit::ui::display::CachedLabels labels;
     DisplayFades fades;

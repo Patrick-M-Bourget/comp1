@@ -19,31 +19,17 @@ float angleAt (double proportion)
 } // namespace
 
 DetectionLevelRing::DetectionLevelRing (staple::Knob& k, const juce::RangedAudioParameter& t, LevelHistory& h)
-    : plugkit::ui::EditorTick::Client (k), knob (k), threshold (t), history (h), bottom (t.getNormalisableRange().start), loudest (bottom),
-      shown (bottom)
+    : plugkit::ui::EditorTick::Client (k), knob (k), threshold (t), bottom (t.getNormalisableRange().start),
+      level (h, &LevelRecord::detectionLevelDb, bottom, t.getNormalisableRange().end), shown (bottom)
 {
-    history.subscribe (*this);
-}
-
-DetectionLevelRing::~DetectionLevelRing()
-{
-    history.unsubscribe (*this);
-}
-
-void DetectionLevelRing::levelsRead (std::span<const LevelRecord> records)
-{
-    for (const auto& record : records)
-        loudest = std::max (loudest, record.detectionLevelDb);
 }
 
 void DetectionLevelRing::tick (double seconds)
 {
-    const double top = threshold.getNormalisableRange().end;
-    const double level = std::clamp (ballistics.update (std::min (loudest, top), seconds), bottom, top);
-    loudest = bottom;
-    if (juce::exactlyEqual (level, shown))
+    const double now = level.next (seconds);
+    if (juce::exactlyEqual (now, shown))
         return;
-    shown = level;
+    shown = now;
     knob.ringChanged();
 }
 

@@ -2,9 +2,11 @@
 
 #include "PluginProcessor.h"
 #include "plugkit/ui/EditorTick.h"
+#include "plugkit/ui/LevelBallistics.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -44,6 +46,29 @@ private:
     std::vector<LevelRecord> buffer;
     std::vector<Subscriber*> subscribers;
     bool arriving = false; // the last tick read records
+};
+
+// One reading of the level history's records (one of LevelRecord's levels) as a meter shows it: subscribed to the
+// history for its whole life, it keeps the loudest read since the last tick; each tick, next() gives the level to show,
+// rising at once and falling at 20 dB/s (LevelBallistics), held within floor and ceiling, and starts again from floor.
+// What the Gain Reduction meters, the knobs' rings and the Transfer Curve Graph's dot show.
+class ShownLevel final : private LevelHistory::Subscriber
+{
+public:
+    ShownLevel (LevelHistory& history, double LevelRecord::* reading, double floor, double ceiling = std::numeric_limits<double>::infinity());
+    ~ShownLevel() override;
+
+    // The level to show, seconds after the last tick.
+    double next (double seconds);
+
+private:
+    void levelsRead (std::span<const LevelRecord> records) override;
+
+    LevelHistory& history;
+    double LevelRecord::* reading;
+    const double floor, ceiling;
+    plugkit::ui::LevelBallistics ballistics;
+    double loudest; // since the last tick
 };
 
 } // namespace comp1
