@@ -427,7 +427,8 @@ double medianGainReductionDb (const FactoryPreset& p, const Channels& signal)
 // their Parallel Presets here.
 const juce::StringArray& crushAndParallel()
 {
-    static const juce::StringArray names { named ("Drums \xe2\x80\x93 All-In Crush"), named ("Drums \xe2\x80\x93 Room Smash") };
+    static const juce::StringArray names { named ("Drums \xe2\x80\x93 All-In Crush"), named ("Drums \xe2\x80\x93 Room Smash"),
+                                           named ("Vocals \xe2\x80\x93 Parallel Thicken") };
     return names;
 }
 
