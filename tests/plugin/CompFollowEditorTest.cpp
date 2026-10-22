@@ -4,6 +4,7 @@
 #include "EditorHost.h"
 #include "Host.h"
 #include "comp1/Style.h"
+#include "plugkit/ui/OutputPopoverFrame.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -103,7 +104,7 @@ TEST_CASE ("While Comp Follow is on, the output popover's Auto Gain shows on and
     host::EditorHost host;
     followingOffTheCurve (host);
     host.openOutputPopover();
-    auto& autoGain = host.showing<juce::ToggleButton> ("Auto Gain");
+    auto& autoGain = host.showing<plugkit::ui::OutputToggle> ("Auto Gain");
     REQUIRE (host.settleUntil ([&] { return ! autoGain.isEnabled(); }));
     CHECK (autoGain.getToggleState());
     CHECK (host.value (parameters::autoGainId) == 0.0f);
@@ -112,7 +113,8 @@ TEST_CASE ("While Comp Follow is on, the output popover's Auto Gain shows on and
     host.edit (parameters::compFollowId, 0.0f);
     REQUIRE (host.settleUntil ([&] { return autoGain.isEnabled(); }));
     CHECK_FALSE (autoGain.getToggleState());
-    CHECK (autoGain.getTooltip() == "Auto Gain");
+    CHECK (autoGain.getTooltip().startsWith ("Auto Gain: "));
+    CHECK (autoGain.getTooltip() != "Auto Gain: Comp Follow holds it on");
     host::EditorHost::click (autoGain);
     CHECK (host.value (parameters::autoGainId) == 1.0f);
 }
