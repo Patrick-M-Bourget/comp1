@@ -339,17 +339,12 @@ TEST_CASE ("A switch writes no host parameter and starts no gesture, and the aud
         for (auto* p : host.processor.getParameters())
             p->addListener (&counter);
         std::vector<float> out;
-        juce::AudioBuffer<float> buffer (host.processor.getTotalNumInputChannels(), 512);
-        juce::MidiBuffer midi;
         for (int b = 0; b < 60; ++b)
         {
-            buffer.clear();
-            for (int ch = 0; ch < 2; ++ch)
-                for (int i = 0; i < 512; ++i)
-                    buffer.setSample (ch, i, static_cast<float> (signal (b * 512 + i)));
-            host.processor.processBlock (buffer, midi);
-            for (int ch = 0; ch < 2; ++ch)
-                out.insert (out.end(), buffer.getReadPointer (ch), buffer.getReadPointer (ch) + 512);
+            host.play (1, 512, [&signal, b] (int i) { return signal (b * 512 + i); }, host::EditorHost::silent, [&out] (const auto& buffer) {
+                for (int ch = 0; ch < 2; ++ch)
+                    out.insert (out.end(), buffer.getReadPointer (ch), buffer.getReadPointer (ch) + buffer.getNumSamples());
+            });
             if (switching && b % 7 == 3)
             {
                 clickSwitch (host);

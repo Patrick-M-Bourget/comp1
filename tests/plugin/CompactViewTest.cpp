@@ -195,22 +195,16 @@ TEST_CASE ("The Compact View's Output Gain drag is one undo step, and with the L
     const double ceiling = std::pow (10.0, -6.0 / 20.0);
 
     const auto tone = host::steady (-12.0);
-    juce::AudioBuffer<float> buffer (host.processor.getTotalNumInputChannels(), host::Playing::blockSize);
-    juce::MidiBuffer midi;
     double most = 0.0;
     int n = 0;
     const auto playBlocks = [&] (int blocks) {
-        for (int b = 0; b < blocks; ++b)
-        {
-            buffer.clear();
-            for (int ch = 0; ch < 2; ++ch)
-                for (int i = 0; i < buffer.getNumSamples(); ++i)
-                    buffer.setSample (ch, i, static_cast<float> (tone (n + i)));
-            n += buffer.getNumSamples();
-            host.processor.processBlock (buffer, midi);
+        const int from = n;
+        auto last = host.play (blocks, host::Playing::blockSize, [&tone, from] (int i) { return tone (from + i); }, host::EditorHost::silent, [&most] (const auto& buffer) {
             for (int ch = 0; ch < 2; ++ch)
                 most = std::max (most, static_cast<double> (buffer.getMagnitude (ch, 0, buffer.getNumSamples())));
-        }
+        });
+        n += blocks * host::Playing::blockSize;
+        return last;
     };
     playBlocks (20);
     // Under the Ceiling so far: -12 dB out.
@@ -220,7 +214,7 @@ TEST_CASE ("The Compact View's Output Gain drag is one undo step, and with the L
     host::EditorHost::drag (compactKnob (host, "Output Gain"), 72.0f);
     CHECK (history.undoSteps() == steps + 1);
     REQUIRE (host.value (parameters::outputGainId) > 20.0f);
-    playBlocks (100);
+    const auto buffer = playBlocks (100);
     CHECK (most <= ceiling * (1.0 + 1.0e-6));
     // Held at the Ceiling, not below it.
     CHECK (buffer.getMagnitude (0, 0, buffer.getNumSamples()) > ceiling * 0.99);

@@ -296,17 +296,17 @@ TEST_CASE ("Unfollowing from the editor doesn't change the output: the Gain Redu
         host.reopen();
         followingOffTheCurve (host);
         std::vector<float> output;
-        juce::AudioBuffer<float> buffer (1, 512);
-        juce::MidiBuffer midi;
-        for (int block = 0, n = 0; block < 60; ++block)
-        {
-            if (grab && block == 30)
-                host::EditorHost::drag (host.knob ("Threshold"), 0.0f);
-            for (int i = 0; i < 512; ++i, ++n)
-                buffer.setSample (0, i, static_cast<float> (0.5 * std::sin (2.0 * juce::MathConstants<double>::pi * 440.0 * n / 48000.0)));
-            host.processor.processBlock (buffer, midi);
-            output.insert (output.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + 512);
-        }
+        const auto heard = [&output] (const juce::AudioBuffer<float>& buffer) {
+            output.insert (output.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + buffer.getNumSamples());
+        };
+        const auto sineFrom = [] (int from) {
+            return [from] (int n) { return 0.5 * std::sin (2.0 * juce::MathConstants<double>::pi * 440.0 * (from + n) / 48000.0); };
+        };
+        // 30 blocks, the grab, then 30 more.
+        host.play (30, 512, sineFrom (0), host::EditorHost::silent, heard);
+        if (grab)
+            host::EditorHost::drag (host.knob ("Threshold"), 0.0f);
+        host.play (30, 512, sineFrom (30 * 512), host::EditorHost::silent, heard);
         if (grab)
             CHECK (host.value (parameters::compFollowId) == 0.0f);
         return output;

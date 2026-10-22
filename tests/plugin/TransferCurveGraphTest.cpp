@@ -125,18 +125,7 @@ TEST_CASE ("The Transfer Curve Graph's curve is what the processor plays on a st
     {
         CAPTURE (input);
         // Long enough for Attack and Release to settle, then the peak of one block.
-        const int channels = host.processor.getTotalNumInputChannels();
-        juce::AudioBuffer<float> buffer (channels, host::Playing::blockSize);
-        juce::MidiBuffer midi;
-        const auto signal = host::steady (input);
-        for (int b = 0; b < 200; ++b)
-        {
-            buffer.clear();
-            for (int ch = 0; ch < host.processor.getMainBusNumInputChannels(); ++ch)
-                for (int i = 0; i < buffer.getNumSamples(); ++i)
-                    buffer.setSample (ch, i, static_cast<float> (signal (i)));
-            host.processor.processBlock (buffer, midi);
-        }
+        const auto buffer = host.play (200, host::Playing::blockSize, host::steady (input));
         const double outputDb = juce::Decibels::gainToDecibels (static_cast<double> (buffer.getMagnitude (0, 0, buffer.getNumSamples())));
         CHECK_THAT (outputDb, WithinAbs (host.graph().outputAt (input), 0.05));
     }
