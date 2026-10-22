@@ -2,6 +2,7 @@
 // "Factory Presets"). Each rule is a function of one Preset, or of the library for unique names, giving what is wrong
 // with it or nothing; the gate runs every rule over the real library, and each rule is shown to reject a bad example.
 
+#include "Measure.h"
 #include "ParametersOnly.h"
 #include "SessionHost.h"
 #include "plugkit/ui/PresetSettings.h"
@@ -194,6 +195,115 @@ juce::String processingModeProblem (const FactoryPreset& p)
     return {};
 }
 
+// --- The audio rules --------------------------------------------------------------------------------------------
+
+using comp1::test::Channels;
+constexpr double sampleRate = 48000.0;
+constexpr int seconds = 2;
+
+// The RMS level of samples in dB.
+double rmsDb (const float* samples, int count)
+{
+    double power = 0.0;
+    for (int i = 0; i < count; ++i)
+        power += static_cast<double> (samples[i]) * samples[i];
+    return 10.0 * std::log10 (power / count);
+}
+
+// Seeded pink-like noise on each channel at an RMS level of rmsLevelDb: white noise (comp1::test::noise) through Paul
+// Kellet's three-pole pink filter, each channel its own, the same on every platform.
+Channels pinkNoise (int numChannels, int numSamples, double rmsLevelDb, std::uint32_t seed = 7)
+{
+    auto audio = comp1::test::noise (numChannels, numSamples, seed);
+    for (auto& channel : audio)
+    {
+        double b0 = 0.0, b1 = 0.0, b2 = 0.0;
+        for (auto& x : channel)
+        {
+            const double w = x;
+            b0 = 0.99765 * b0 + 0.0990460 * w;
+            b1 = 0.96300 * b1 + 0.2965164 * w;
+            b2 = 0.57000 * b2 + 1.0526913 * w;
+            x = static_cast<float> (b0 + b1 + b2 + 0.1848 * w);
+        }
+        const auto gain = static_cast<float> (std::pow (10.0, (rmsLevelDb - rmsDb (channel.data(), numSamples)) / 20.0));
+        for (auto& x : channel)
+            x *= gain;
+    }
+    return audio;
+}
+
+// What the plugin plays from a stereo input with the Preset loaded, at 48 kHz in blocks of 512, as a host plays it:
+// with a Sidechain connected and silent, or with none connected. Its latency comes back too.
+struct Played
+{
+    Channels output;
+    int latency = 0;
+};
+
+Played playedThroughPlugin (const FactoryPreset& p, const Channels& input, bool sidechainConnected)
+{
+    constexpr int blockSize = 512;
+    host::SessionHost host;
+    auto& processor = *host.processor;
+    juce::AudioProcessor::BusesLayout layout;
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.inputBuses.add (sidechainConnected ? juce::AudioChannelSet::stereo() : juce::AudioChannelSet::disabled());
+    layout.outputBuses.add (juce::AudioChannelSet::stereo());
+    REQUIRE (processor.setBusesLayout (layout));
+    processor.prepareToPlay (sampleRate, blockSize);
+    REQUIRE (host.session.loadPreset (p.preset, p.name));
+    const int numSamples = static_cast<int> (input.front().size());
+    Played played { Channels (2, std::vector<float> (static_cast<std::size_t> (numSamples))), processor.getLatencySamples() };
+    juce::AudioBuffer<float> buffer (processor.getTotalNumInputChannels(), blockSize);
+    juce::MidiBuffer midi;
+    for (int start = 0; start < numSamples; start += blockSize)
+    {
+        const int count = std::min (blockSize, numSamples - start);
+        buffer.setSize (buffer.getNumChannels(), count, false, false, true);
+        buffer.clear();
+        for (int ch = 0; ch < 2; ++ch)
+            buffer.copyFrom (ch, 0, input[static_cast<std::size_t> (ch)].data() + start, count);
+        processor.processBlock (buffer, midi);
+        for (int ch = 0; ch < 2; ++ch)
+            std::copy_n (buffer.getReadPointer (ch), count, played.output[static_cast<std::size_t> (ch)].data() + start);
+    }
+    return played;
+}
+
+// Rule: 2 s of stereo pink noise at -18 dBFS RMS comes out finite, its peak no more than 12 dB above the input's.
+juce::String loudnessProblem (const FactoryPreset& p)
+{
+    const auto input = pinkNoise (2, static_cast<int> (sampleRate) * seconds, -18.0);
+    const auto played = playedThroughPlugin (p, input, true);
+    for (const auto& channel : played.output)
+        if (! std::all_of (channel.begin(), channel.end(), [] (float x) { return std::isfinite (x); }))
+            return "output not finite";
+    if (const auto overDb = 20.0 * std::log10 (comp1::test::samplePeak (played.output) / comp1::test::samplePeak (input)); overDb > 12.0)
+        return "peak " + juce::String (overDb, 1) + " dB above the input's";
+    return {};
+}
+
+// Rule: a Sidechain Preset, with no Sidechain connected, plays 2 s of stereo pink noise at -18 dBFS RMS within
+// 0.01 dB of its input, in every 100 ms of it on each channel, its latency allowed for.
+juce::String unroutedSidechainProblem (const FactoryPreset& p)
+{
+    if (! isSidechainPreset (p))
+        return {};
+    const int numSamples = static_cast<int> (sampleRate) * seconds;
+    const auto input = pinkNoise (2, numSamples, -18.0);
+    const auto played = playedThroughPlugin (p, input, false);
+    constexpr int window = static_cast<int> (sampleRate / 10);
+    for (std::size_t ch = 0; ch < 2; ++ch)
+        for (int start = played.latency; start + window <= numSamples; start += window)
+        {
+            const auto differenceDb = rmsDb (played.output[ch].data() + start, window) - rmsDb (input[ch].data() + start - played.latency, window);
+            if (! (std::abs (differenceDb) <= 0.01))
+                return "with no Sidechain, its output is " + juce::String (differenceDb, 3) + " dB from its input";
+        }
+    return {};
+}
+
 } // namespace
 
 TEST_CASE ("Every file in the Factory folder is bundled as a Factory Preset, and nothing else is")
@@ -243,6 +353,8 @@ TEST_CASE ("Every Factory Preset passes the gate")
         CHECK (compFollowProblem (p) == "");
         CHECK (sidechainProblem (p) == "");
         CHECK (processingModeProblem (p) == "");
+        CHECK (loudnessProblem (p) == "");
+        CHECK (unroutedSidechainProblem (p) == "");
     }
 }
 
@@ -316,4 +428,28 @@ TEST_CASE ("The Factory gate rejects High Quality outside the Master Category")
     CHECK (processingModeProblem (preset ("Master \xe2\x80\x93 Loud", { { ids::processingModeId, highQuality } })) == "");
     CHECK (processingModeProblem (preset ("Mix Bus \xe2\x80\x93 Glue")) == "");
     CHECK (processingModeProblem (preset ("Mix Bus \xe2\x80\x93 Glue", { { ids::processingModeId, highQuality } })).isNotEmpty());
+}
+
+TEST_CASE ("The Factory gate rejects a Preset that lifts pink noise's peak by more than 12 dB")
+{
+    CHECK (loudnessProblem (preset ("Master \xe2\x80\x93 Loud", { { ids::outputGainId, 9.0f } })) == "");
+    CHECK (loudnessProblem (preset ("Master \xe2\x80\x93 Loud", { { ids::outputGainId, 15.0f } })).isNotEmpty());
+    CHECK (loudnessProblem (preset ("Master \xe2\x80\x93 Loud", { { ids::dryId, 12.0f }, { ids::wetId, 12.0f } })).isNotEmpty());
+}
+
+TEST_CASE ("The Factory gate rejects a Sidechain Preset that changes the signal with no Sidechain connected")
+{
+    static constexpr float external = 1.0f;
+    const auto sidechained = [] (std::initializer_list<std::pair<const juce::String, float>> more) {
+        auto made = preset ("Bass \xe2\x80\x93 Duck (Sidechain)", { { ids::detectionSourceId, external }, { ids::thresholdId, -40.0f }, { ids::ratioId, 8.0f } });
+        for (const auto& [id, value] : more)
+            made.preset.appendChild (juce::ValueTree ("PARAM").setProperty ("id", id, nullptr).setProperty ("value", value, nullptr), nullptr);
+        return made;
+    };
+    CHECK (unroutedSidechainProblem (sidechained ({})) == "");
+    CHECK (unroutedSidechainProblem (sidechained ({ { ids::gateId, 1.0f } })) == "");
+    CHECK (unroutedSidechainProblem (sidechained ({ { ids::outputGainId, 0.1f } })).isNotEmpty());
+    CHECK (unroutedSidechainProblem (sidechained ({ { ids::limiterId, 1.0f }, { ids::ceilingId, -20.0f } })).isNotEmpty());
+    CHECK (unroutedSidechainProblem (sidechained ({ { ids::saturationId, 1.0f }, { ids::driveId, 24.0f } })).isNotEmpty());
+    CHECK (unroutedSidechainProblem (sidechained ({ { ids::dryId, 0.0f } })).isNotEmpty());
 }
