@@ -43,10 +43,6 @@ public:
     GainReductionMeter& limiterGainReductionMeter() { return limiterGainReduction; }
     DetectionLevelRing& detectionLevelRing() { return compressor.detectionLevelRing(); }
 
-    // The section rows' height, together with the gap between them, and the Style section's width.
-    int sectionRowsHeight();
-    static constexpr int styleSectionWidth = 130, sectionGap = 12;
-
     // The view shown, which follows the processor's View on the tick, as after a restore. The hidden view's
     // components are hidden; the Level and Gain Reduction Graph and the meters keep their subscriptions meanwhile.
     View shownView() const { return shown; }
@@ -54,13 +50,22 @@ public:
     CompactView& compactView() { return compactBody; }
     // The footer's switch between the views, the one showing.
     juce::Button& viewSwitch() { return footer.viewSwitch(); }
+
+private:
     void layOutBody (juce::Rectangle<int> area) override;
     // The sections, row by row, each row left to right in signal order.
     std::vector<std::vector<Section*>> sectionRows();
-    static int widthOf (Section& section);
-    static int heightOf (Section& section);
-    // A row's height: its tallest section's.
-    static int rowHeight (const std::vector<Section*>& row);
+    // The section rows' height, together with the gap between them.
+    int sectionRowsHeight();
+    static constexpr int sectionGap = 12;
+
+    // Shows view, hiding the other's components: leaving the Expanded View lets go of Detection Audition, as leaving
+    // the Detection EQ tab does.
+    void show (View view);
+    // Holds the window to the shown view's limits at the UI Scale, and its size within them: after the shell applies
+    // the Session's (the envelope of both views'), at open, after a UI Scale pick and on the tick.
+    void applyViewWindow();
+    void followView();
 
     // Before every component that subscribes to it, so it outlives them.
     LevelHistory history;
@@ -81,14 +86,6 @@ public:
     StereoSection stereo;
     LookaheadSection lookahead;
     Footer footer;
-
-    // Shows view, hiding the other's components: leaving the Expanded View lets go of Detection Audition, as leaving
-    // the Detection EQ tab does.
-    void show (View view);
-    // Holds the window to the shown view's limits at the UI Scale, and its size within them: after the shell applies
-    // the Session's (the envelope of both views'), at open, after a UI Scale pick and on the tick.
-    void applyViewWindow();
-    void followView();
     CompactView compactBody;
     View shown = View::expanded;
     // Follows the processor's View on the editor's tick.

@@ -96,33 +96,11 @@ std::vector<std::vector<Section*>> PluginEditor::sectionRows()
     return { { &styleSection, &gate, &compressor, &character }, { &dryWet, &output, &detection, &stereo, &lookahead } };
 }
 
-int PluginEditor::widthOf (Section& section)
-{
-    if (auto* controls = dynamic_cast<ControlSection*> (&section))
-        return controls->idealWidth();
-    return styleSectionWidth;
-}
-
-int PluginEditor::heightOf (Section& section)
-{
-    if (auto* controls = dynamic_cast<ControlSection*> (&section))
-        return controls->idealHeight();
-    return 0;
-}
-
-int PluginEditor::rowHeight (const std::vector<Section*>& row)
-{
-    int height = 0;
-    for (auto* section : row)
-        height = std::max (height, heightOf (*section));
-    return height;
-}
-
 int PluginEditor::sectionRowsHeight()
 {
     int height = 0;
     for (auto& row : sectionRows())
-        height += rowHeight (row) + sectionGap;
+        height += tallestOf (row) + sectionGap;
     return height - sectionGap;
 }
 
@@ -144,11 +122,11 @@ void PluginEditor::layOutBody (juce::Rectangle<int> area)
     auto rows = sections.getLocalBounds();
     for (auto& row : sectionRows())
     {
-        auto line = rows.removeFromTop (rowHeight (row));
+        auto line = rows.removeFromTop (tallestOf (row));
         rows.removeFromTop (sectionGap);
         for (auto* section : row)
         {
-            section->setBounds (line.removeFromLeft (widthOf (*section)));
+            section->setBounds (line.removeFromLeft (section->idealWidth()));
             line.removeFromLeft (sectionGap);
         }
     }

@@ -88,9 +88,8 @@ public:
                                            const std::vector<std::optional<staple::Icon>>& contexts,
                                            bool newColumn);
 
-    // Its width and height for its controls: they keep these whatever the window's size.
-    int idealWidth() const;
-    int idealHeight() const;
+    int idealWidth() const override;
+    int idealHeight() const override;
 
     void resized() override;
 

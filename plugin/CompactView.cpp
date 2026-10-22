@@ -1,7 +1,6 @@
 #include "CompactView.h"
 
 #include "Parameters.h"
-#include "PluginEditor.h"
 #include "Sections.h"
 #include "plugkit/ui/staple/Tokens.h"
 
@@ -36,14 +35,13 @@ int CompactView::rowWidth()
 {
     int width = layout::meterWidth;
     for (auto* section : sections())
-        width += PluginEditor::widthOf (*section) + layout::gap;
+        width += section->idealWidth() + layout::gap;
     return width;
 }
 
 int CompactView::sectionsHeight()
 {
-    const auto all = sections();
-    return PluginEditor::rowHeight ({ all.begin(), all.end() });
+    return tallestOf (sections());
 }
 
 void CompactView::resized()
@@ -54,7 +52,7 @@ void CompactView::resized()
     auto line = row.withSizeKeepingCentre (row.getWidth(), sectionsHeight());
     for (auto* section : sections())
     {
-        section->setBounds (line.removeFromLeft (PluginEditor::widthOf (*section)));
+        section->setBounds (line.removeFromLeft (section->idealWidth()));
         line.removeFromLeft (layout::gap);
     }
 }

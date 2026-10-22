@@ -20,9 +20,13 @@ class StyleSection final : public Section, private plugkit::ui::EditorTick::Clie
 public:
     explicit StyleSection (PluginProcessor& processor);
 
+    // A fixed width, wide enough for the longest Style's name; as tall as its picker and its Character.
+    int idealWidth() const override { return width; }
+    int idealHeight() const override { return titleHeight + dividerGap + pickerHeight + rowGap + characterHeight; }
+
     void resized() override;
 
-    static constexpr int pickerHeight = 28, characterHeight = 20, rowGap = 6;
+    static constexpr int width = 130, pickerHeight = 28, characterHeight = 20, rowGap = 6;
 
 private:
     void tick (double seconds) override;
