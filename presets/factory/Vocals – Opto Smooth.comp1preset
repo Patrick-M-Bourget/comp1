@@ -4,4 +4,8 @@
   <PARAM id="style" value="3.0"/>
   <PARAM id="comp_follow" value="1.0"/>
   <PARAM id="knee" value="12.0"/>
+  <PARAM id="comp" value="45.0"/>
+  <PARAM id="colour" value="70.0"/>
+  <PARAM id="detection_high_pass_on" value="1.0"/>
+  <PARAM id="detection_high_pass_frequency" value="100.0"/>
 </comp1>
