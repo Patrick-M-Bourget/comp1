@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<comp1 version="2">
+  <PARAM id="style" value="1.0"/>
+  <PARAM id="comp_follow" value="1.0"/>
+  <PARAM id="knee" value="3.0"/>
+  <PARAM id="attack" value="5.0"/>
+  <PARAM id="release" value="80.0"/>
+  <PARAM id="auto_release" value="1.0"/>
+</comp1>

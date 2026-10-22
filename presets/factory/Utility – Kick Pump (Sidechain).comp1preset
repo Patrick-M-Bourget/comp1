@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<comp1 version="2">
+  <PARAM id="style" value="1.0"/>
+  <PARAM id="detection_source" value="1.0"/>
+  <PARAM id="threshold" value="-30.0"/>
+  <PARAM id="ratio" value="10.0"/>
+  <PARAM id="knee" value="0.0"/>
+  <PARAM id="attack" value="0.1"/>
+  <PARAM id="hold" value="10.0"/>
+  <PARAM id="release" value="180.0"/>
+  <PARAM id="range" value="12.0"/>
+</comp1>

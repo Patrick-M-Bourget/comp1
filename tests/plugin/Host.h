@@ -6,7 +6,10 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <set>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 // Drives a processor as a host does: through its parameters, its buses and its saved state.
 namespace host
@@ -53,6 +56,17 @@ inline void restore (juce::AudioProcessor& processor, const juce::MemoryBlock& b
 {
     processor.setStateInformation (block.getData(), static_cast<int> (block.getSize()));
 }
+
+// Records, for each parameter change the host hears, whether it came inside that parameter's gesture.
+struct GestureRecorder final : juce::AudioProcessorListener
+{
+    std::set<int> open;
+    std::vector<std::pair<int, bool>> changes; // the parameter's index, and whether its gesture was open
+    void audioProcessorParameterChanged (juce::AudioProcessor*, int index, float) override { changes.emplace_back (index, open.contains (index)); }
+    void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails&) override {}
+    void audioProcessorParameterChangeGestureBegin (juce::AudioProcessor*, int index) override { open.insert (index); }
+    void audioProcessorParameterChangeGestureEnd (juce::AudioProcessor*, int index) override { open.erase (index); }
+};
 
 inline void restore (juce::AudioProcessor& processor, const juce::XmlElement& xml)
 {
