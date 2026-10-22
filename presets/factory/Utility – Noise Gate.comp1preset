@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<comp1 version="2">
+  <PARAM id="comp_follow" value="1.0"/>
+  <PARAM id="comp" value="0.0"/>
+  <PARAM id="gate" value="1.0"/>
+  <PARAM id="gate_threshold" value="-50.0"/>
+  <PARAM id="gate_range" value="40.0"/>
+  <PARAM id="gate_attack" value="0.5"/>
+  <PARAM id="gate_release" value="150.0"/>
+  <PARAM id="gate_hold" value="30.0"/>
+</comp1>
