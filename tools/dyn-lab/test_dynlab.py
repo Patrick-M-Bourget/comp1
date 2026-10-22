@@ -1048,12 +1048,19 @@ class Oversampling(unittest.TestCase):
 
 
 class Styles(unittest.TestCase):
-    """The Character Styles' defaults: what choosing each one writes (ADR 0002)."""
+    """Every Style's defaults: what choosing each one writes (ADR 0002)."""
+
+    def test_every_style_has_a_row_in_the_style_order_characters_first(self):
+        # ADR 0003's order.
+        self.assertEqual(list(dynlab.STYLE_DEFAULTS), [*dynlab.CHARACTERS, *SOURCE_STYLES])
 
     def test_each_character_style_plays_its_own_character(self):
-        self.assertEqual(list(dynlab.STYLE_DEFAULTS), list(dynlab.CHARACTERS))
-        for name, style in dynlab.STYLE_DEFAULTS.items():
-            self.assertEqual(style.settings.character, name)
+        for name in dynlab.CHARACTERS:
+            self.assertEqual(dynlab.STYLE_DEFAULTS[name].settings.character, name)
+
+    def test_each_source_style_plays_the_character_its_source_is_for(self):
+        characters = {name: dynlab.STYLE_DEFAULTS[name].settings.character for name in SOURCE_STYLES}
+        self.assertEqual(characters, {"vocal": "clean", "instrument": "opto", "bus": "vca", "drums": "fet"})
 
     def test_cleans_row_is_the_labs_defaults_so_a_new_instance_holds_its_own_styles(self):
         clean = dynlab.STYLE_DEFAULTS["clean"]
@@ -1061,12 +1068,23 @@ class Styles(unittest.TestCase):
         self.assertEqual(clean.gate, dynlab.Gate())
         self.assertEqual((clean.limiter, clean.ceiling), (False, dynlab.CEILING_DEFAULT))
 
-    def test_every_style_writes_the_gate_and_the_limiter_off_at_their_defaults(self):
+    def test_every_style_but_vocal_writes_the_gate_and_the_limiter_off_at_their_defaults(self):
         for name, style in dynlab.STYLE_DEFAULTS.items():
+            if name == "vocal":
+                continue
             with self.subTest(name):
                 self.assertEqual(style.gate, dynlab.Gate())
                 self.assertFalse(style.gate.on)
                 self.assertEqual((style.limiter, style.ceiling), (False, dynlab.CEILING_DEFAULT))
+
+    def test_vocal_writes_the_gate_on_at_its_defaults_and_the_limiter_on_at_full_scale(self):
+        # The Gate, then Clean with Auto Release, then the Limiter.
+        vocal = dynlab.STYLE_DEFAULTS["vocal"]
+        self.assertEqual(vocal.gate, dynlab.Gate(on=True))
+        self.assertEqual((vocal.gate.threshold, vocal.gate.range, vocal.gate.attack, vocal.gate.release, vocal.gate.hold),
+                         (-40, 20, 1, 100, 20))
+        self.assertTrue(vocal.settings.auto_release)
+        self.assertEqual((vocal.limiter, vocal.ceiling), (True, 0))
 
     def test_every_default_is_within_its_range(self):
         for name, style in dynlab.STYLE_DEFAULTS.items():
@@ -1083,11 +1101,24 @@ class Styles(unittest.TestCase):
         self.assertEqual(rows, {"clean": (-18, 4, 6, 10, 100, False, 0, 60, 100),
                                 "vca": (-18, 4, 3, 10, 100, False, 0, 60, 100),
                                 "fet": (-18, 4, 3, 0.5, 50, False, 0, 60, 100),
-                                "opto": (-18, 3, 12, 10, 100, False, 0, 60, 100)})
+                                "opto": (-18, 3, 12, 10, 100, False, 0, 60, 100),
+                                "vocal": (-18, 3, 6, 10, 100, True, 0, 60, 100),
+                                "instrument": (-18, 4, 6, 10, 100, False, 0, 60, 100),
+                                "bus": (-18, 2, 6, 30, 100, True, 0, 60, 100),
+                                "drums": (-18, 4, 3, 5, 50, False, 0, 60, 100)})
+
+    def test_each_source_styles_comp_curve_is_the_one_usage_gives_reasons_for(self):
+        # Each point's Comp, Threshold and Ratio, as USAGE.md's Comp table gives them.
+        curves = {name: [(p.comp, p.threshold, p.ratio) for p in dynlab.STYLE_DEFAULTS[name].comp_curve.points]
+                  for name in SOURCE_STYLES}
+        self.assertEqual(curves, {"vocal": [(0, 0, 1), (50, -18, 3), (100, -36, 6)],
+                                  "instrument": [(0, 0, 1), (50, -18, 4), (100, -36, 8)],
+                                  "bus": [(0, 0, 1), (50, -18, 2), (100, -30, 4)],
+                                  "drums": [(0, 0, 1), (50, -18, 4), (100, -30, 10)]})
 
 
 class Comp(unittest.TestCase):
-    """Each Character Style's Comp Curve, and the Comp Follow glide."""
+    """Each Style's Comp Curve, and the Comp Follow glide."""
 
     COMPS = range(0, 101, 10)
 
@@ -1160,6 +1191,10 @@ class Comp(unittest.TestCase):
         middle = shares[501] - shares[500]
         self.assertLess(shares[1] - shares[0], middle / 100)
         self.assertLess(shares[1000] - shares[999], middle / 100)
+
+
+# The Source Styles, in the Style order (ADR 0003), after the Characters.
+SOURCE_STYLES = ("vocal", "instrument", "bus", "drums")
 
 
 def replace_settings(settings, comp_curve, comp):
@@ -1318,13 +1353,19 @@ class CommandLine(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("character", result.stderr)
 
-    def test_styles_prints_each_character_styles_character_and_defaults(self):
+    def test_styles_prints_every_styles_character_and_defaults(self):
         result = run("styles")
         self.assertEqual(result.returncode, 0, result.stderr)
-        rows = [line.split() for line in result.stdout.splitlines() if line.split()[:1] in (["clean"], ["vca"], ["fet"], ["opto"])]
-        self.assertEqual([row[:2] for row in rows], [["clean", "clean"], ["vca", "vca"], ["fet", "fet"], ["opto", "opto"]])
+        names = [*dynlab.CHARACTERS, *SOURCE_STYLES]
+        rows = [line.split() for line in result.stdout.splitlines() if line.split()[:1] and line.split()[0] in names]
+        self.assertEqual([row[:2] for row in rows], [["clean", "clean"], ["vca", "vca"], ["fet", "fet"], ["opto", "opto"],
+                                                     ["vocal", "clean"], ["instrument", "opto"], ["bus", "vca"],
+                                                     ["drums", "fet"]])
         self.assertEqual(rows[2], ["fet", "fet", "50", "-18", "4", "3", "0.5", "50", "off", "0", "60", "100", "off", "-40",
                                    "20", "1", "100", "20", "off", "0"])
+        self.assertEqual(rows[4], ["vocal", "clean", "50", "-18", "3", "6", "10", "100", "on", "0", "60", "100", "on",
+                                   "-40", "20", "1", "100", "20", "on", "0"])
+        self.assertNotIn("Character Style's", result.stdout)
 
     def test_compcurve_prints_each_tenth_of_comp_and_exits_non_zero_past_the_tolerance(self):
         result = run("compcurve", "--style", "opto")
@@ -1335,6 +1376,13 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(rows[5][1:3], ["-18.00", "3.00"])
         self.assertTrue(all(row[-1] == "within" for row in rows))
         self.assertNotEqual(run("compcurve", "--style", "tube").returncode, 0)
+        # Every Source Style holds the ±1 dB tolerance along its whole curve.
+        for name in SOURCE_STYLES:
+            with self.subTest(name):
+                source = run("compcurve", "--style", name)
+                self.assertEqual(source.returncode, 0, source.stderr)
+                self.assertIn("within ±1 dB", source.stdout)
+                self.assertNotIn("outside", source.stdout)
         # FET's Comp Curve at Clean's ±1 dB tolerance: past it from 50% up.
         strict = run("compcurve", "--style", "fet", "--tolerance", "1")
         self.assertNotEqual(strict.returncode, 0)
@@ -1351,6 +1399,19 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(run("step", "--style", "fet", "--rates", "48000").stdout,
                          run("step", "--character", "fet", "--knee", "3", "--attack", "0.5", "--release", "50",
                              "--rates", "48000").stdout)
+        # A Source Style runs its Character at its defaults, as a Character Style does.
+        self.assertEqual(run("step", "--style", "drums", "--rates", "48000").stdout,
+                         run("step", "--character", "fet", "--knee", "3", "--attack", "5", "--release", "50",
+                             "--rates", "48000").stdout)
+        self.assertEqual(run("step", "--style", "vocal", "--rates", "48000").stdout,
+                         run("step", "--ratio", "3", "--auto-release", "--rates", "48000").stdout)
+        for name in SOURCE_STYLES:
+            for command in ("transfer", "step", "bursts", "autogain", "colour"):
+                extra = (("--lengths", "1", "--rates", "48000") if command == "bursts"
+                         else ("--rates", "48000") if command in ("step", "colour") else ())
+                with self.subTest(f"{command} --style {name}"):
+                    result = run(command, "--style", name, *extra)
+                    self.assertEqual(result.returncode, 0, result.stderr)
         overridden = run("transfer", "--style", "opto", "--ratio", "8")
         self.assertIn("Ratio 8:1, Knee 12 dB", overridden.stdout)
         self.assertNotEqual(run("transfer", "--style", "tube").returncode, 0)

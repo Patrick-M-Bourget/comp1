@@ -2078,7 +2078,8 @@ def character_option(parser):
     """--character, and --style, whose defaults the other options start from."""
     parser.add_argument("--character", choices=CHARACTERS)
     parser.add_argument("--style", choices=STYLE_DEFAULTS,
-                        help="start from a Character Style's defaults (STYLE_DEFAULTS); the other options override them")
+                        help="start from a Style's Character and compressor defaults (STYLE_DEFAULTS); the other "
+                             "options override them")
 
 
 def transfer_command_options(parser):
@@ -2914,7 +2915,7 @@ def follow_share(fraction):
 
 @dataclass
 class StyleDefaults:
-    """What choosing a Character Style writes (ADR 0002): the compressor's Settings, its Character among them, its
+    """What choosing a Style writes (ADR 0002): the compressor's Settings, its Character among them, its
     default Comp in % (and Comp Follow on), the Gate's, and the Limiter on or off with its Ceiling. Beside them, the
     Style's Comp Curve, and how far its Auto Gain may let the reference signal's level move along it, in dB."""
     settings: Settings
@@ -2932,11 +2933,14 @@ class StyleDefaults:
 # for, so it stays, and this is the cost until Auto Gain's estimate knows Attack.
 FET_AUTO_GAIN_TOLERANCE = 2.5
 
-# Each Character Style's defaults, in the Style order (ADR 0003), Characters first; the Source Styles add theirs with
-# their own ticket (#26). Clean's are the lab's defaults, so a new instance, which plays Clean, holds its own Style's.
-# Every Style writes the Gate and the Limiter off, at their defaults: each is a tool for the material, not a part of a
-# Character. Every default Comp is 50%, the middle of the knob, with as much room to compress more as less. USAGE.md
-# ("Styles" and "Comp") gives each row's reasons and its `step --style` and `compcurve` figures.
+# Every Style's defaults, in the Style order (ADR 0003): the Character Styles, then the Source Styles, each of which
+# plays a Character at defaults and a Comp Curve of its own (ADR 0002). Clean's are the lab's defaults, so a new
+# instance, which plays Clean, holds its own Style's. Every Style but Vocal writes the Gate and the Limiter off, at their
+# defaults: each is a tool for the material, not a part of a Character. Vocal is the one Style for a known material, a
+# voice, so it writes both on: the Gate, then Clean with Auto Release, then the Limiter. Every default Comp is 50%, the
+# middle of the knob, with as much room to compress more as less, and every Style but FET keeps Auto Gain within
+# AUTO_GAIN_TOLERANCE along its curve. USAGE.md ("Styles" and "Comp") gives each row's reasons and its `step --style`
+# and `compcurve` figures.
 STYLE_DEFAULTS = {
     "clean": StyleDefaults(Settings(), 50.0,
                            CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 4.0), CompPoint(100.0, -36.0, 8.0)))),
@@ -2947,6 +2951,15 @@ STYLE_DEFAULTS = {
                          auto_gain_tolerance=FET_AUTO_GAIN_TOLERANCE),
     "opto": StyleDefaults(Settings(character="opto", ratio=3.0, knee=12.0), 50.0,
                           CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 3.0), CompPoint(100.0, -42.0, 6.0)))),
+    "vocal": StyleDefaults(Settings(ratio=3.0, auto_release=True), 50.0,
+                           CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 3.0), CompPoint(100.0, -36.0, 6.0))),
+                           gate=Gate(on=True), limiter=True),
+    "instrument": StyleDefaults(Settings(character="opto"), 50.0,
+                                CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 4.0), CompPoint(100.0, -36.0, 8.0)))),
+    "bus": StyleDefaults(Settings(character="vca", ratio=2.0, attack=30.0, auto_release=True), 50.0,
+                         CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 2.0), CompPoint(100.0, -30.0, 4.0)))),
+    "drums": StyleDefaults(Settings(character="fet", knee=3.0, attack=5.0, release=50.0), 50.0,
+                           CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 4.0), CompPoint(100.0, -30.0, 10.0)))),
 }
 
 
@@ -2960,16 +2973,16 @@ def run_styles(args):
 
 
 def report_styles():
-    """Each Character Style's Character and the defaults choosing it writes."""
-    print("Each Character Style's Character and defaults: its default Comp in %, the compressor's (Threshold, Ratio, Knee and Range in dB or :1, "
+    """Every Style's Character and the defaults choosing it writes."""
+    print("Every Style's Character and defaults, the Character Styles, then the Source Styles: its default Comp in %, the compressor's (Threshold, Ratio, Knee and Range in dB or :1, "
           "Attack, Release and Hold in ms, Colour in %), the Gate's (on or off, Gate Threshold, Gate Range, Gate Attack, "
           "Gate Release, Gate Hold) and the Limiter's (on or off, Ceiling in dBFS)")
-    print(f"{'style':<6} {'character':<9} {'comp':>4} {'threshold':>9} {'ratio':>5} {'knee':>5} {'attack':>6} {'release':>7} "
+    print(f"{'style':<10} {'character':<9} {'comp':>4} {'threshold':>9} {'ratio':>5} {'knee':>5} {'attack':>6} {'release':>7} "
           f"{'auto release':>12} {'hold':>5} {'range':>5} {'colour':>6} {'gate':>5} {'threshold':>9} {'range':>5} "
           f"{'attack':>6} {'release':>7} {'hold':>5} {'limiter':>7} {'ceiling':>7}")
     for name, style in STYLE_DEFAULTS.items():
         s, g = style.settings, style.gate
-        print(f"{name:<6} {s.character:<9} {style.comp:4g} {s.threshold:9g} {_shown(s.ratio):>5} {s.knee:5g} {s.attack:6g} "
+        print(f"{name:<10} {s.character:<9} {style.comp:4g} {s.threshold:9g} {_shown(s.ratio):>5} {s.knee:5g} {s.attack:6g} "
               f"{s.release:7g} {_on_off(s.auto_release):>12} {s.hold:5g} {s.range:5g} {s.colour:6g} "
               f"{_on_off(g.on):>5} {g.threshold:9g} {g.range:5g} {g.attack:6g} {g.release:7g} {g.hold:5g} "
               f"{_on_off(style.limiter):>7} {style.ceiling:7g}")
@@ -2992,7 +3005,7 @@ COMP_STEPS = tuple(range(COMP_RANGE[0], COMP_RANGE[1] + 1, 10))
 
 @functools.lru_cache(maxsize=None)
 def comp_curve_rows(name):
-    """The Character Style name's Comp Curve at each of COMP_STEPS, at the Style's other defaults."""
+    """The Style name's Comp Curve at each of COMP_STEPS, at the Style's other defaults."""
     style = STYLE_DEFAULTS[name]
     rows = []
     for comp in COMP_STEPS:
