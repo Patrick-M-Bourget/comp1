@@ -32,8 +32,14 @@ juce_add_plugin(comp1
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
 target_sources(comp1 PRIVATE
+    Display.cpp
+    Footer.cpp
+    LevelHistory.cpp
     Parameters.cpp
-    PluginProcessor.cpp)
+    PluginEditor.cpp
+    PluginProcessor.cpp
+    Section.cpp
+    StyleSection.cpp)
 
 # The Factory Presets, bundled into the plugin: every file in presets/factory, found again at each build
 # (CONFIGURE_DEPENDS), so adding or removing one needs no edit here.

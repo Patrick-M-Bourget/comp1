@@ -3,6 +3,8 @@
 #include "Parameters.h"
 #include "comp1/Engine.h"
 #include "comp1/Style.h"
+#include "plugkit/ui/ClipLights.h"
+#include "plugkit/ui/OutputLevelSource.h"
 #include "plugkit/ui/Session.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -13,9 +15,17 @@
 namespace comp1
 {
 
+// The Expanded View's display tabs: the scrolling level and Gain Reduction graph, and the Detection EQ.
+enum class DisplayTab
+{
+    level,
+    detectionEq,
+};
+
 // The Plugin Shell: the JUCE processor around the Engine. It turns the host parameters into Settings once a
-// block, and saves, restores and edits them through its Session: User Presets, A/B Compare and undo and redo.
-class PluginProcessor final : public juce::AudioProcessor
+// block, and saves, restores and edits them through its Session: User Presets, A/B Compare and undo and redo. Not final:
+// a test's processor derives from it only to keep its per-user settings and User Presets in a folder of its own.
+class PluginProcessor : public juce::AudioProcessor, public plugkit::ui::OutputLevelSource
 {
 public:
     // As it ships: the per-user settings in UserSettings::defaultFile ("comp1"), and User Presets in
@@ -36,11 +46,7 @@ public:
     void processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
     using AudioProcessor::processBlockBypassed;
 
-    // A placeholder: the host parameters, as JUCE's generic editor lays them out. Its Style box sets the Style
-    // parameter alone, as a host would: the Character changes, and the Style's defaults are not written
-    // (chooseStyle() writes them). Its Comp Follow box sets that parameter alone too, which glides as Host Automation
-    // does, without followComp()'s or stopFollowingComp()'s writes; and while Comp Follow is on, its Threshold and
-    // Ratio sliders have no effect.
+    // The Expanded View (PluginEditor.h).
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
@@ -62,18 +68,20 @@ public:
     // adds A/B Compare.
     static constexpr int stateVersion = 2;
 
-    // The editor window's logical size, and its limits: a placeholder until the Expanded View sets its own.
+    // The Expanded View's logical size (as at 100% UI Scale), and its limits.
     static constexpr plugkit::ui::Session::Window window { { 1200, 760 }, { 960, 600 }, { 2560, 1600 } };
 
     void getStateInformation (juce::MemoryBlock& destData) override;
-    // Restoring a state of comp1's lets go of Detection Audition, then restores through the Session and reports the
-    // restored Processing Mode's latency. Anything else changes nothing.
+    // Restoring a state of comp1's lets go of Detection Audition and puts out the Clip Lights, then restores through
+    // the Session and reports the restored Processing Mode's latency. Anything else changes nothing.
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     // The session state the editor edits through: the undo history, A/B Compare and the Preset Library. A Preset
     // load, an A/B switch or Copy, and their undo and redo may change Processing Mode, and the reported latency
     // follows it.
     plugkit::ui::Session& session() { return sessionState; }
+    // The host parameters, which the editor's controls attach to.
+    juce::AudioProcessorValueTreeState& parameterState() { return parameters; }
 
     // The Styles the editor offers: the ones with defaults to write (comp1/Style.h), which is all eight, in the frozen
     // order, the four Character Styles then the four Source Styles.
@@ -108,6 +116,25 @@ public:
     bool isStereoPlacementAvailable() const { return getMainBusNumOutputChannels() == 2; }
     bool isStereoLinkAvailable() const { return getMainBusNumOutputChannels() == 2; }
 
+    // The Output Meter's source, from the Engine's Output Level, from the message thread: one bar per main channel.
+    // A peak above 0 dBFS lights its channel's Clip Light, which stays lit until cleared, whether or not the editor is
+    // open. Restoring a session puts them out; they aren't saved.
+    int outputLevelChannels() const override { return engine.outputLevelChannels(); }
+    plugkit::OutputLevel readOutputLevel (int channel) override { return clipLights.note (channel, engine.readOutputLevel (channel)); }
+    bool isClipLit (int channel) const override { return clipLights.isLit (channel); }
+    void clearClipLights() override { clipLights.clear(); }
+
+    // The Engine's level history, for the editor's one reader (LevelHistory.h), from the message thread: a record per
+    // 16-sample run played since the last read, oldest first (Engine::readLevels, skipLevels, levelHistoryCapacity).
+    int readLevels (LevelRecord* destination, int maxRecords) { return engine.readLevels (destination, maxRecords); }
+    void skipLevels() { engine.skipLevels(); }
+    int levelHistoryCapacity() const { return engine.levelHistoryCapacity(); }
+
+    // The display tab the Expanded View shows: saved with the session, read back on restore (Level for a session saved
+    // without it), and in no Preset; not an undo step, and it makes no side Modified. Any thread.
+    DisplayTab displayTab() const { return chosenDisplayTab.load (std::memory_order_relaxed); }
+    void setDisplayTab (DisplayTab tab) { chosenDisplayTab.store (tab, std::memory_order_relaxed); }
+
     // Detection Audition, while the editor holds it: not a host parameter, and never saved. Any thread.
     void setDetectionAudition (bool held) { heldDetectionAudition.store (held, std::memory_order_relaxed); }
     bool detectionAudition() const { return heldDetectionAudition.load (std::memory_order_relaxed); }
@@ -125,6 +152,8 @@ private:
     Settings publishedSettings;
     bool publishedSincePrepare = false;
     std::atomic<bool> heldDetectionAudition { false };
+    plugkit::ui::ClipLights clipLights;
+    std::atomic<DisplayTab> chosenDisplayTab { DisplayTab::level };
 
     // Reports to the host the latency of the Processing Mode the host parameter holds (comp1/Latency.h), at the
     // sample rate last prepared: at prepareToPlay(), whenever Processing Mode changes (from the editor, or a host that

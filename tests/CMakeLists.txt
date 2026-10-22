@@ -81,12 +81,18 @@ if(COMP1_BUILD_PLUGIN)
         plugin/AutoReleaseParameterTest.cpp
         plugin/ColourParameterTest.cpp
         plugin/CompParameterTest.cpp
+        plugin/DisplayTabTest.cpp
         plugin/DryWetParameterTest.cpp
+        plugin/EditorLayoutTest.cpp
+        plugin/EditorScreensTest.cpp
+        plugin/EditorTest.cpp
         plugin/FactoryPresetsTest.cpp
         plugin/GateParameterTest.cpp
         plugin/GlobalBypassParameterTest.cpp
         plugin/LatencyReportTest.cpp
+        plugin/LevelHistoryTest.cpp
         plugin/LimiterParameterTest.cpp
+        plugin/OutputMeterTest.cpp
         plugin/OversamplingParameterTest.cpp
         plugin/PluginShellTest.cpp
         plugin/SaturationParameterTest.cpp
@@ -94,6 +100,8 @@ if(COMP1_BUILD_PLUGIN)
         plugin/StateTest.cpp
         plugin/StereoParametersTest.cpp
         plugin/StyleParameterTest.cpp
+        plugin/StylePickerTest.cpp
+        plugin/UiScaleTest.cpp
     )
     # tests/engine for Measure.h, the test helpers both targets share. plugkit-ui's headers, not its sources, which
     # compile into the plugin target alone.
@@ -105,7 +113,10 @@ if(COMP1_BUILD_PLUGIN)
     target_compile_definitions(comp1_plugin_tests PRIVATE $<TARGET_PROPERTY:comp1,COMPILE_DEFINITIONS>)
     # The Factory folder, so a test can check every file in it is bundled.
     target_compile_definitions(comp1_plugin_tests PRIVATE COMP1_FACTORY_PRESETS="${PROJECT_SOURCE_DIR}/presets/factory")
-    target_link_libraries(comp1_plugin_tests PRIVATE comp1 comp1::engine Catch2::Catch2WithMain)
+    target_link_libraries(comp1_plugin_tests PRIVATE comp1 comp1::engine plugkit::editor_harness Catch2::Catch2WithMain)
+    # The editor harness reads COMP1_SCREENS, where check.sh screens writes the snapshots (plugkit's README.md,
+    # "Linking plugkit-ui").
+    target_compile_definitions(comp1_plugin_tests PRIVATE PLUGKIT_HARNESS_VAR_PREFIX="COMP1_")
     # The tests compare samples and values exactly, on purpose. Set on the sources, whose options come after the
     # -Wfloat-equal JUCE's recommended warnings bring in through the plugin target.
     get_target_property(comp1_plugin_test_sources comp1_plugin_tests SOURCES)

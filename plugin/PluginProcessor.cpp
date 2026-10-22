@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 
 #include "FactoryPresets.h"
+#include "PluginEditor.h"
+
 #include "comp1/Latency.h"
 #include "plugkit/ui/SetTogether.h"
 
@@ -12,6 +14,10 @@ namespace comp1
 namespace
 {
 const juce::Identifier versionProperty { "version" };
+// The display tab, a view property the session saves and restore takes off. Its name and values are permanent once
+// released: sessions keep them.
+const juce::Identifier displayTabProperty { "display_tab" };
+const juce::String levelTab { "level" }, detectionEqTab { "detection_eq" };
 
 // Brings a saved state, or a Preset, from an older version up to stateVersion, one version at a time.
 void migrate (juce::ValueTree& state)
@@ -246,12 +252,14 @@ bool PluginProcessor::followComp()
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()
 {
-    return new juce::GenericAudioProcessorEditor (*this);
+    return new PluginEditor (*this);
 }
 
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (const auto xml = sessionState.saved().createXml())
+    auto state = sessionState.saved();
+    state.setProperty (displayTabProperty, displayTab() == DisplayTab::detectionEq ? detectionEqTab : levelTab, nullptr);
+    if (const auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
@@ -261,7 +269,11 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (xml == nullptr || ! xml->hasTagName (parameters.state.getType()))
         return;
     setDetectionAudition (false);
-    sessionState.restore (juce::ValueTree::fromXml (*xml));
+    clearClipLights();
+    sessionState.restore (juce::ValueTree::fromXml (*xml), [this] (juce::ValueTree& state) {
+        setDisplayTab (state.getProperty (displayTabProperty).toString() == detectionEqTab ? DisplayTab::detectionEq : DisplayTab::level);
+        state.removeProperty (displayTabProperty, nullptr);
+    });
     reportLatency();
 }
 
