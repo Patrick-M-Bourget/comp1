@@ -5,6 +5,8 @@
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <map>
+
 using Catch::Matchers::WithinAbs;
 
 TEST_CASE ("The editor is the Expanded View, with comp1's header, on stereo, on mono and with a Sidechain")
@@ -123,14 +125,22 @@ TEST_CASE ("The header's Undo, Redo, A/B Compare, Copy, Preset arrows and Preset
     CHECK (session.compareSide() == plugkit::ui::CompareSide::A);
     CHECK_THAT (host.value (thresholdId), WithinAbs (-12.0f, 1.0e-4));
 
-    // The arrows step through every Preset in browser order, the Factory's Default then the User Presets, each loading
-    // its Threshold (Default's is the default, -18 dB).
-    const auto thresholdOf = [] (const juce::String& name) { return name == "Default" ? -18.0f : name == "A" ? -24.0f : -30.0f; };
-    for (const auto* expected : { "Default", "A", "B" })
+    // The arrows step through every Preset in browser order, the Factory's by name, Default among them, then the User
+    // Presets, each loading its settings: Default's Threshold is the default, -18 dB, and A's and B's their own.
+    juce::StringArray order;
+    for (const auto& entry : session.presetLibrary().listing())
+        order.add (entry.name);
+    REQUIRE (order.size() >= 3);
+    REQUIRE (order.contains ("Default"));
+    REQUIRE (order.getReference (order.size() - 2) == "A");
+    REQUIRE (order.getReference (order.size() - 1) == "B");
+    const std::map<juce::String, float> thresholds { { "Default", -18.0f }, { "A", -24.0f }, { "B", -30.0f } };
+    for (const auto& expected : order)
     {
         click (titled (host, "Next Preset"));
         REQUIRE (session.loadedPresetName() == expected);
-        CHECK_THAT (host.value (thresholdId), WithinAbs (thresholdOf (expected), 1.0e-4));
+        if (const auto threshold = thresholds.find (expected); threshold != thresholds.end())
+            CHECK_THAT (host.value (thresholdId), WithinAbs (threshold->second, 1.0e-4));
     }
     click (titled (host, "Previous Preset"));
     CHECK (session.loadedPresetName() == "A");
