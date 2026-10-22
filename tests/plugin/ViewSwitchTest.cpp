@@ -383,7 +383,7 @@ TEST_CASE ("Switching to the Compact View lets go of Detection Audition")
     audition.mouseUp (harness::mouseEvent (audition, centre, {}, centre));
 }
 
-TEST_CASE ("Tab walks the Compact View: the header, then Global Bypass, Processing Mode, Oversampling, UI Scale and the switch, reaching nothing of the Expanded View")
+TEST_CASE ("Tab walks the Compact View: the header, then Style, Gate, Gate Threshold, Comp, Output Gain, Global Bypass, Processing Mode, Oversampling, UI Scale and the switch, reaching nothing of the Expanded View")
 {
     host::EditorHost host;
     // High Quality, so Oversampling is enabled.
@@ -418,10 +418,12 @@ TEST_CASE ("Tab walks the Compact View: the header, then Global Bypass, Processi
     juce::StringArray rest;
     for (auto i = inHeader; i < walked.size(); ++i)
         rest.add (walked[i]->getTitle());
-    CHECK (rest == juce::StringArray { "Global Bypass", "Processing Mode", "Oversampling", "UI Scale", "Switch to the Expanded View" });
+    CHECK (rest
+           == juce::StringArray { "Style",         "Gate",         "Gate Threshold", "Comp", "Output Gain", "Global Bypass", "Processing Mode",
+                                  "Oversampling", "UI Scale", "Switch to the Expanded View" });
 }
 
-TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and maximum sizes, the header, the body and the footer don't overlap and the Preset browser opens inside the window")
+TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and maximum sizes, the header, the body and the footer don't overlap, the body's sections and meter are inside it with each control inside its section, and the Preset browser opens inside the window")
 {
     host::EditorHost host;
     clickSwitch (host);
@@ -464,6 +466,37 @@ TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and max
             placed.push_back (control->getBounds());
         }
     }
+    // The body's sections and its meter inside it, none overlapping another, each section's controls inside it; the
+    // meter as tall as the body.
+    auto& body = editor.compactView();
+    std::vector<juce::Rectangle<int>> placed;
+    for (auto* part : body.getChildren())
+    {
+        CAPTURE (part->getName());
+        REQUIRE (part->isVisible());
+        CHECK (body.getLocalBounds().contains (part->getBounds()));
+        CHECK_FALSE (part->getBounds().isEmpty());
+        for (const auto& other : placed)
+            CHECK_FALSE (other.intersects (part->getBounds()));
+        placed.push_back (part->getBounds());
+        // Each control's own area: a knob's face (its shadow may reach past it), anything else its bounds.
+        for (auto* control : part->getChildren())
+        {
+            if (! control->isVisible())
+                continue;
+            CAPTURE (control->getTitle());
+            auto area = control->getBounds();
+            if (auto* knob = dynamic_cast<staple::Knob*> (control))
+            {
+                const auto face = knob->getFaceCentre().toInt() + knob->getPosition();
+                const int radius = juce::roundToInt (knob->getFaceRadius());
+                area = juce::Rectangle<int> (2 * radius, 2 * radius).withCentre (face);
+            }
+            CHECK (part->getLocalBounds().contains (area));
+        }
+    }
+    CHECK (placed.size() == 5);
+    CHECK (body.gainReductionMeter().getHeight() == body.getHeight());
 
     // The Preset browser opens over everything, its panel whole inside its margin.
     auto& presets = host.showing<juce::Button> ("Presets");
@@ -481,15 +514,4 @@ TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and max
             CHECK (part->getWidth() == plugkit::ui::PresetBrowser::panelWidth);
             CHECK (part->getHeight() == plugkit::ui::PresetBrowser::panelHeight);
         }
-}
-
-TEST_CASE ("Compact View snapshots: the placeholder at its default size at 100% and 200%", "[.screens]")
-{
-    host::EditorHost host;
-    clickSwitch (host);
-    host.settleAnimations();
-    harness::writeSnapshot (*host.editor, "compact-default-100", {}, 1.0f);
-    host.showing<plugkit::ui::UiScaleMenu> ("UI Scale").pick (200);
-    host.settleAnimations();
-    harness::writeSnapshot (*host.editor, "compact-default-200", {}, 1.0f);
 }

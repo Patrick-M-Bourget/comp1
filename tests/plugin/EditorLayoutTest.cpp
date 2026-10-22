@@ -19,10 +19,12 @@ struct Areas
     juce::Rectangle<int> transferCurveTab;
 };
 
+// The showing component named name: the shown view's, as both views have a "Style" section and a "Gain Reduction"
+// meter.
 juce::Component& named (juce::Component& editor, const juce::String& name)
 {
-    auto* found = harness::findChild<juce::Component> (editor, [&name] (juce::Component& c) { return c.getName() == name; });
-    INFO ("No component is named " << name);
+    auto* found = harness::findChild<juce::Component> (editor, [&name] (juce::Component& c) { return c.getName() == name && c.isShowing(); });
+    INFO ("Nothing showing is named " << name);
     REQUIRE (found != nullptr);
     return *found;
 }
