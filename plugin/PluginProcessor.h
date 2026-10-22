@@ -124,6 +124,11 @@ public:
     bool isClipLit (int channel) const override { return clipLights.isLit (channel); }
     void clearClipLights() override { clipLights.clear(); }
 
+    // The display tab the Expanded View shows: saved with the session, read back on restore (Level for a session saved
+    // without it), and in no Preset; not an undo step, and it makes no side Modified. Any thread.
+    DisplayTab displayTab() const { return chosenDisplayTab.load (std::memory_order_relaxed); }
+    void setDisplayTab (DisplayTab tab) { chosenDisplayTab.store (tab, std::memory_order_relaxed); }
+
     // Detection Audition, while the editor holds it: not a host parameter, and never saved. Any thread.
     void setDetectionAudition (bool held) { heldDetectionAudition.store (held, std::memory_order_relaxed); }
     bool detectionAudition() const { return heldDetectionAudition.load (std::memory_order_relaxed); }
@@ -142,6 +147,7 @@ private:
     bool publishedSincePrepare = false;
     std::atomic<bool> heldDetectionAudition { false };
     plugkit::ui::ClipLights clipLights;
+    std::atomic<DisplayTab> chosenDisplayTab { DisplayTab::level };
 
     // Reports to the host the latency of the Processing Mode the host parameter holds (comp1/Latency.h), at the
     // sample rate last prepared: at prepareToPlay(), whenever Processing Mode changes (from the editor, or a host that

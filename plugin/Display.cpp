@@ -3,7 +3,7 @@
 namespace comp1
 {
 
-Display::Display()
+Display::Display (PluginProcessor& p) : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p)
 {
     setName ("Display");
     level.setName ("Level");
@@ -15,15 +15,21 @@ Display::Display()
         chip.setTitle (chip.getButtonText());
         chip.setTooltip ("Show the " + chip.getButtonText() + " display");
         chip.onClick = [this, tab] {
-            if (onTabPicked != nullptr)
-                onTabPicked (tab);
+            processor.setDisplayTab (tab);
+            show (tab);
         };
         // Left to right.
         chip.setExplicitFocusOrder (++order);
         addAndMakeVisible (chip);
         addChildComponent (tabContent (tab));
     }
-    show (DisplayTab::level);
+    show (processor.displayTab());
+}
+
+void Display::tick (double)
+{
+    if (processor.displayTab() != shown)
+        show (processor.displayTab());
 }
 
 void Display::show (DisplayTab tab)

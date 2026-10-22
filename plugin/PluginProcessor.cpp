@@ -13,6 +13,10 @@ namespace comp1
 namespace
 {
 const juce::Identifier versionProperty { "version" };
+// The display tab, a view property the session saves and restore takes off. Its name and values are permanent once
+// released: sessions keep them.
+const juce::Identifier displayTabProperty { "display_tab" };
+const juce::String levelTab { "level" }, detectionEqTab { "detection_eq" };
 
 // Brings a saved state, or a Preset, from an older version up to stateVersion, one version at a time.
 void migrate (juce::ValueTree& state)
@@ -235,7 +239,9 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (const auto xml = sessionState.saved().createXml())
+    auto state = sessionState.saved();
+    state.setProperty (displayTabProperty, displayTab() == DisplayTab::detectionEq ? detectionEqTab : levelTab, nullptr);
+    if (const auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
@@ -246,7 +252,10 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
         return;
     setDetectionAudition (false);
     clearClipLights();
-    sessionState.restore (juce::ValueTree::fromXml (*xml));
+    sessionState.restore (juce::ValueTree::fromXml (*xml), [this] (juce::ValueTree& state) {
+        setDisplayTab (state.getProperty (displayTabProperty).toString() == detectionEqTab ? DisplayTab::detectionEq : DisplayTab::level);
+        state.removeProperty (displayTabProperty, nullptr);
+    });
     reportLatency();
 }
 

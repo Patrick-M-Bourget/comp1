@@ -81,6 +81,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/AutoReleaseParameterTest.cpp
         plugin/ColourParameterTest.cpp
         plugin/CompParameterTest.cpp
+        plugin/DisplayTabTest.cpp
         plugin/DryWetParameterTest.cpp
         plugin/EditorLayoutTest.cpp
         plugin/EditorTest.cpp
