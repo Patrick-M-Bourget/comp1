@@ -21,7 +21,7 @@ namespace comp1
 // Both axes run from scaleDb (-60 dB, the bottom of Threshold's range) to 0 dB: input (the Detection Level) left to
 // right, output bottom to top. The curve is output = input less the Transfer Curve's Gain Reduction there
 // (clean::gainReduction, the Engine's own function), from the Threshold and Ratio the Engine plays (the Comp Curve's at
-// Comp while Comp Follow is on, PluginProcessor::followedThresholdDb and followedRatio, else the stored ones) and the
+// Comp while Comp Follow is on, else the stored ones: PluginProcessor::playedCurve) and the
 // stored Knee and Range. So it ignores Host Automation of the stored Threshold and Ratio while Comp Follow is on, as
 // the knobs do. The dot sits on the curve at the Detection Level (LevelRecord::detectionLevelDb): each tick the
 // loudest read since the last, rising at once and falling at 20 dB/s (LevelBallistics), as the Detection Level ring
@@ -63,11 +63,8 @@ private:
     void tick (double seconds) override;
     bool isActive() const override { return shown > -scaleDb; }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
-    // The Transfer Curve's settings the Engine plays now.
-    clean::Curve played() const;
 
     PluginProcessor& processor;
-    parameters::SettingsReader reader;
     clean::Curve drawn;
     ShownLevel level; // the Detection Level, on the graph's scale
     double shown = -scaleDb;
