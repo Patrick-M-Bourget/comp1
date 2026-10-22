@@ -34,6 +34,7 @@ juce_add_plugin(comp1
 target_sources(comp1 PRIVATE
     Display.cpp
     Footer.cpp
+    LevelHistory.cpp
     Parameters.cpp
     PluginEditor.cpp
     PluginProcessor.cpp

@@ -2,6 +2,7 @@
 
 #include "Display.h"
 #include "Footer.h"
+#include "LevelHistory.h"
 #include "PluginProcessor.h"
 #include "StyleSection.h"
 #include "plugkit/ui/EditorShell.h"
@@ -22,12 +23,16 @@ public:
     explicit PluginEditor (PluginProcessor& processor);
 
     Display& display() { return displaySlot; }
+    // The editor's one reader of the level history, which whatever shows levels over time subscribes to.
+    LevelHistory& levelHistory() { return history; }
 
     static constexpr int sectionRowHeight = 150, styleSectionWidth = 200;
 
 private:
     void layOutBody (juce::Rectangle<int> area) override;
 
+    // Before every component that subscribes to it, so it outlives them.
+    LevelHistory history;
     Display displaySlot;
     plugkit::ui::OutputMeter outputMeter;
     // The sections, left to right in signal order. Named "Sections", as a test finds it.

@@ -9,8 +9,9 @@ namespace comp1
 namespace layout = staple::tokens::layout;
 
 PluginEditor::PluginEditor (PluginProcessor& p)
-    : EditorShell (p, p.session(), { "comp1", parameters::globalBypassId }), displaySlot (p), outputMeter (p), styleSection (p), footer (p.parameterState(), p.session())
+    : EditorShell (p, p.session(), { "comp1", parameters::globalBypassId }), history (*this, p), displaySlot (p), outputMeter (p), styleSection (p), footer (p.parameterState(), p.session())
 {
+    editorTick().add (history);
     sections.setName ("Sections");
     sections.addAndMakeVisible (styleSection);
     // Tab's order, after the header: the display's tabs, the Output Meter, then the sections in signal order.

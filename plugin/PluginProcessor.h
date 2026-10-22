@@ -124,6 +124,12 @@ public:
     bool isClipLit (int channel) const override { return clipLights.isLit (channel); }
     void clearClipLights() override { clipLights.clear(); }
 
+    // The Engine's level history, for the editor's one reader (LevelHistory.h), from the message thread: a record per
+    // 16-sample run played since the last read, oldest first (Engine::readLevels, skipLevels, levelHistoryCapacity).
+    int readLevels (LevelRecord* destination, int maxRecords) { return engine.readLevels (destination, maxRecords); }
+    void skipLevels() { engine.skipLevels(); }
+    int levelHistoryCapacity() const { return engine.levelHistoryCapacity(); }
+
     // The display tab the Expanded View shows: saved with the session, read back on restore (Level for a session saved
     // without it), and in no Preset; not an undo step, and it makes no side Modified. Any thread.
     DisplayTab displayTab() const { return chosenDisplayTab.load (std::memory_order_relaxed); }

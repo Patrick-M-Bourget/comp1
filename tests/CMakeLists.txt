@@ -88,6 +88,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/GateParameterTest.cpp
         plugin/GlobalBypassParameterTest.cpp
         plugin/LatencyReportTest.cpp
+        plugin/LevelHistoryTest.cpp
         plugin/LimiterParameterTest.cpp
         plugin/OutputMeterTest.cpp
         plugin/OversamplingParameterTest.cpp
