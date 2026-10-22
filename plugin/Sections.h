@@ -61,10 +61,10 @@ struct CharacterSection final : ControlSection
     explicit CharacterSection (PluginProcessor& processor);
 };
 
-// Mix: Dry and Wet.
-struct MixSection final : ControlSection
+// Dry/Wet: Dry and Wet.
+struct DryWetSection final : ControlSection
 {
-    explicit MixSection (PluginProcessor& processor);
+    explicit DryWetSection (PluginProcessor& processor);
 };
 
 // Output: Output Gain; the Limiter's on/off over Ceiling.

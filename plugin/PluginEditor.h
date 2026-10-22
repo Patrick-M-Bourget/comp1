@@ -55,7 +55,7 @@ private:
     GateSection gate;
     CompressorSection compressor;
     CharacterSection character;
-    MixSection mix;
+    DryWetSection dryWet;
     OutputSection output;
     DetectionSection detection;
     StereoSection stereo;

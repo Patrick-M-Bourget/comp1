@@ -104,7 +104,7 @@ CharacterSection::CharacterSection (PluginProcessor& p) : ControlSection ("Chara
     addKnob (parameters::driveId, knobSize::medium, "Drive", Place::underStack);
 }
 
-MixSection::MixSection (PluginProcessor& p) : ControlSection ("Mix", p)
+DryWetSection::DryWetSection (PluginProcessor& p) : ControlSection ("Dry/Wet", p)
 {
     addKnob (parameters::dryId, knobSize::medium, "Dry");
     addKnob (parameters::wetId, knobSize::medium, "Wet");

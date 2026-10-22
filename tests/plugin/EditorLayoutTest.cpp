@@ -120,7 +120,7 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
     const auto& window = comp1::PluginProcessor::window;
     host.editor->setSize (window.minimum.x, window.minimum.y);
     auto& sections = named (*host.editor, "Sections");
-    const auto names = { "Style", "Gate", "Compressor", "Character and Saturation", "Mix", "Output", "Detection", "Stereo", "Lookahead" };
+    const auto names = { "Style", "Gate", "Compressor", "Character and Saturation", "Dry/Wet", "Output", "Detection", "Stereo", "Lookahead" };
     REQUIRE (static_cast<size_t> (sections.getNumChildComponents()) == names.size());
     std::vector<juce::Rectangle<int>> placed;
     for (const auto* name : names)

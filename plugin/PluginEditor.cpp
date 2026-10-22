@@ -12,7 +12,7 @@ namespace layout = staple::tokens::layout;
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : EditorShell (p, p.session(), { "comp1", parameters::globalBypassId }), history (*this, p), displaySlot (p), gainReduction (history),
-      outputMeter (p), styleSection (p), gate (p), compressor (p, history), character (p), mix (p), output (p), detection (p), stereo (p),
+      outputMeter (p), styleSection (p), gate (p), compressor (p, history), character (p), dryWet (p), output (p), detection (p), stereo (p),
       lookahead (p), footer (p)
 {
     editorTick().add (history);
@@ -42,7 +42,7 @@ PluginEditor::~PluginEditor() = default;
 
 std::vector<std::vector<Section*>> PluginEditor::sectionRows()
 {
-    return { { &styleSection, &gate, &compressor, &character }, { &mix, &output, &detection, &stereo, &lookahead } };
+    return { { &styleSection, &gate, &compressor, &character }, { &dryWet, &output, &detection, &stereo, &lookahead } };
 }
 
 int PluginEditor::widthOf (Section& section)
