@@ -1,9 +1,9 @@
 #include "DetectionEqDisplay.h"
 
+#include "HandlePainting.h"
 #include "plugkit/ui/Accessibility.h"
 #include "plugkit/ui/AssumedSampleRate.h"
 #include "plugkit/ui/display/AnalyzerLayer.h"
-#include "plugkit/ui/staple/Painting.h"
 #include "plugkit/ui/staple/Tokens.h"
 
 #include <plugkit/ShapeDesign.h>
@@ -19,7 +19,7 @@ namespace
 namespace colour = staple::tokens::colour;
 namespace display = plugkit::ui::display;
 
-constexpr float ringWidth = 1.5f, curveWidth = 1.5f, haloWidth = 6.0f;
+constexpr float curveWidth = 1.5f, haloWidth = 6.0f;
 constexpr int auditionSize = 28, auditionInset = 8;
 // The keys' steps: a semitone of Frequency (a tenth of one with Shift), 0.5 dB of Gain (0.05 dB), and a Slope step.
 constexpr double semitone = 1.0 / 12.0, gainStepDb = 0.5, fineGainStepDb = 0.05, slopeStep = 6.0;
@@ -123,15 +123,10 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        const auto centre = getLocalBounds().toFloat().getCentre();
-        const float r = display::DisplayGeometry::handleRadius;
-        const auto disc = juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (centre);
-        const float alpha = isOn() ? 1.0f : staple::tokens::motion::disabledAlpha;
-        g.setColour (colour::curveMain.withMultipliedAlpha (alpha));
-        g.fillEllipse (disc);
-        const bool selected = hasKeyboardFocus (false) || isDragged();
-        g.setColour ((selected ? colour::handleSelectedRing : colour::handleRing).withMultipliedAlpha (alpha));
-        g.drawEllipse (disc, ringWidth);
+        handles::paint (g, getLocalBounds().toFloat().getCentre(),
+                        { .radius = display::DisplayGeometry::handleRadius,
+                          .selected = hasKeyboardFocus (false) || isDragged(),
+                          .alpha = isOn() ? 1.0f : staple::tokens::motion::disabledAlpha });
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -409,7 +404,7 @@ void DetectionEqDisplay::settingsChanged()
 
 void DetectionEqDisplay::layOutHandles()
 {
-    const float side = 2.0f * (display::DisplayGeometry::handleRadius + ringWidth) + 2.0f;
+    const float side = 2.0f * (display::DisplayGeometry::handleRadius + handles::ringWidth) + 2.0f;
     for (const auto band : { DetectionEqBand::highPass, DetectionEqBand::freeBand, DetectionEqBand::lowPass })
         handle (band).setBounds (juce::Rectangle<float> (side, side).withCentre (handleCentre (band)).getSmallestIntegerContainer());
 }
@@ -496,17 +491,8 @@ void DetectionEqDisplay::paintOverChildren (juce::Graphics& g)
     // The dragged band's readout card, above its handle and inside the display.
     for (auto& h : handles)
         if (h->isDragged())
-        {
-            const auto value = h->settingsText();
-            const float width = staple::readoutCardWidth (h->name(), value);
-            const auto height = static_cast<float> (staple::readoutCard::height);
-            const auto centre = h->getBounds().toFloat().getCentre();
-            auto card = juce::Rectangle<float> (width, height).withCentre (centre.translated (0.0f, -(display::DisplayGeometry::handleRadius + 8.0f + height / 2.0f)));
-            if (card.getY() < 0.0f)
-                card.setY (centre.y + display::DisplayGeometry::handleRadius + 8.0f);
-            card.setX (std::clamp (card.getX(), 0.0f, std::max (0.0f, static_cast<float> (getWidth()) - width)));
-            staple::drawReadoutCard (g, card, h->name(), value);
-        }
+            handles::paintReadout (g, h->getBounds().toFloat().getCentre(), display::DisplayGeometry::handleRadius,
+                                   static_cast<float> (getWidth()), h->name(), h->settingsText());
 }
 
 std::unique_ptr<juce::AccessibilityHandler> DetectionEqDisplay::createAccessibilityHandler()

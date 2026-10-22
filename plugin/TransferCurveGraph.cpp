@@ -60,6 +60,12 @@ std::optional<juce::Point<double>> TransferCurveGraph::dot() const
     return std::nullopt;
 }
 
+juce::Point<float> TransferCurveGraph::pointAt (double inputDb, double outputDb) const
+{
+    return { static_cast<float> ((inputDb + scaleDb) / scaleDb) * static_cast<float> (getWidth()),
+             static_cast<float> (-outputDb / scaleDb) * static_cast<float> (getHeight()) };
+}
+
 void TransferCurveGraph::tick (double seconds)
 {
     const double levelDb = level.next (seconds);
@@ -99,8 +105,8 @@ void TransferCurveGraph::paint (juce::Graphics& g)
     if (width <= 0 || height <= 0)
         return;
     const auto w = static_cast<float> (width), h = static_cast<float> (height);
-    const auto xOf = [w] (double db) { return static_cast<float> ((db + scaleDb) / scaleDb) * w; };
-    const auto yOf = [h] (double db) { return static_cast<float> (-db / scaleDb) * h; };
+    const auto xOf = [this] (double db) { return pointAt (db, 0.0).x; };
+    const auto yOf = [this] (double db) { return pointAt (-scaleDb, db).y; };
     const double step = look == Look::inset ? insetGridStepDb : gridStepDb;
 
     // The grid: a line every step (10 dB, or the inset's 20) on both axes; the 0 dB output line, at the top, the zero
