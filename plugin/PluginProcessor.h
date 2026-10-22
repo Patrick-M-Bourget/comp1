@@ -82,8 +82,9 @@ public:
     // widest row of them (from Style to Character and Saturation) inside the window's padding, and each size is whole
     // pixels at every UI Scale.
     static constexpr plugkit::ui::Session::Window expandedWindow { { 1400, 860 }, { 1356, 720 }, { 2560, 1600 } };
-    // The Compact View's, provisional until its controls (#91): at the minimum the header, the footer and the Preset
-    // browser's full panel inside its margin fit, and each size is whole pixels at every UI Scale.
+    // The Compact View's: at the minimum the header, the body's row of controls, the footer and the Preset browser's
+    // full panel inside its margin fit, the Preset browser setting it (the row needs less), and each size is whole
+    // pixels at every UI Scale.
     static constexpr plugkit::ui::Session::Window compactWindow { { 960, 600 }, { 888, 548 }, { 1600, 1000 } };
     static const plugkit::ui::Session::Window& windowOf (View view) { return view == View::compact ? compactWindow : expandedWindow; }
     // The Session's window, the envelope of both views': the Expanded View's default, the smaller minimum and the

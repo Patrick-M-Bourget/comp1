@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CompactView.h"
 #include "Display.h"
 #include "Footer.h"
 #include "GainReductionMeter.h"
@@ -24,8 +25,8 @@ namespace comp1
 // meters are the Gate's, the compressor's and the Limiter's, left to right in signal order (their placement is
 // provisional, #94).
 //
-// It shows either view, the one the processor holds, the Compact View being its body under the same header and
-// footer. Each view has its own window limits and size (PluginProcessor::windowOf, setView).
+// It shows either view, the one the processor holds, the Compact View being its body (CompactView) under the same
+// header and footer, after the header in Tab's order. Each view has its own window limits and size (PluginProcessor::windowOf, setView).
 class PluginEditor final : public plugkit::ui::EditorShell
 {
 public:
@@ -47,9 +48,8 @@ public:
     // The view shown, which follows the processor's View on the tick, as after a restore. The hidden view's
     // components are hidden; the Level and Gain Reduction Graph and the meters keep their subscriptions meanwhile.
     View shownView() const { return shown; }
-    // The Compact View's body under the shared header and footer, named "Compact View": empty, a placeholder until its
-    // controls (#91).
-    juce::Component& compactView() { return compactBody; }
+    // The Compact View's body under the shared header and footer (CompactView).
+    CompactView& compactView() { return compactBody; }
     // The footer's switch between the views, the one showing.
     juce::Button& viewSwitch() { return footer.viewSwitch(); }
     void layOutBody (juce::Rectangle<int> area) override;
@@ -85,7 +85,7 @@ public:
     // the Session's (the envelope of both views'), at open, after a UI Scale pick and on the tick.
     void applyViewWindow();
     void followView();
-    juce::Component compactBody;
+    CompactView compactBody;
     View shown = View::expanded;
     // Follows the processor's View on the editor's tick.
     struct ViewFollower final : plugkit::ui::EditorTick::Client

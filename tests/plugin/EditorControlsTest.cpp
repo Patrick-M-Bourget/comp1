@@ -1,5 +1,6 @@
 // The Expanded View's controls: one for each host parameter, what a screen reader and the tooltips read, Tab's order and
-// the keys.
+// the keys; and the Compact View's: its five host parameters' controls, the names a screen reader reads and Tab's
+// order.
 
 #include "EditorHost.h"
 #include "Footer.h"
@@ -28,9 +29,10 @@ bool isControl (juce::Component& c)
     return dynamic_cast<juce::Slider*> (&c) != nullptr || dynamic_cast<juce::Button*> (&c) != nullptr || dynamic_cast<juce::ComboBox*> (&c) != nullptr;
 }
 
+// The showing controls titled title: the shown view's, the header's and the footer's.
 std::vector<juce::Component*> controlsTitled (host::EditorHost& host, const juce::String& title)
 {
-    return host.findAll<juce::Component> ([&title] (juce::Component& c) { return isControl (c) && c.getTitle() == title; });
+    return host.findAll<juce::Component> ([&title] (juce::Component& c) { return isControl (c) && c.isShowing() && c.getTitle() == title; });
 }
 
 // Every control can be: Comp Follow off (so Auto Gain is enabled), High Quality (so Lookahead and Oversampling are),
@@ -441,7 +443,7 @@ TEST_CASE ("The arrow keys step every knob within its range, a press or a held k
     host::EditorHost host;
     everythingAvailable (host);
     auto& history = host.processor.session().editHistory();
-    for (auto* knob : host.findAll<staple::Knob>())
+    for (auto* knob : host.findAll<staple::Knob> ([] (staple::Knob& k) { return k.isShowing(); }))
     {
         CAPTURE (knob->getTitle());
         knob->grabKeyboardFocus();
@@ -509,4 +511,173 @@ TEST_CASE ("Space and Return toggle a toggle, and up and down step a choice, one
         CHECK (plainOf (parameter) == 0.0f);
         CHECK (history.undoSteps() == steps + 2);
     }
+}
+
+namespace
+{
+
+// The Compact View shown, by the footer's switch, in High Quality so Oversampling is enabled.
+void showCompactView (host::EditorHost& host)
+{
+    host.edit (parameters::processingModeId, 1.0f);
+    host::EditorHost::click (host.expandedView().viewSwitch());
+    REQUIRE (host.settleUntil ([&] {
+        return host.expandedView().shownView() == comp1::View::compact && host.showing<juce::Component> ("Oversampling").isEnabled();
+    }));
+}
+
+// The host parameters with a control in the Compact View: its own five, then the footer's.
+const std::set<juce::String> compactParameters { "Style",       "Gate",          "Gate Threshold",  "Comp",
+                                                 "Output Gain", "Global Bypass", "Processing Mode", "Oversampling" };
+
+} // namespace
+
+TEST_CASE ("In the Compact View, Style, Gate, Gate Threshold, Comp, Output Gain and the footer's three each have exactly one showing control, titled with its name, that changes it by mouse and by keys; no other host parameter has one")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    std::set<juce::String> found;
+    for (auto* each : host.processor.getParameters())
+    {
+        auto& parameter = dynamic_cast<juce::RangedAudioParameter&> (*each);
+        const auto name = parameter.getName (100);
+        CAPTURE (name);
+        const auto controls = controlsTitled (host, name);
+        if (! compactParameters.contains (name))
+        {
+            CHECK (controls.empty());
+            continue;
+        }
+        found.insert (name);
+        REQUIRE (controls.size() == 1);
+        auto& control = *controls.front();
+        REQUIRE (control.isEnabled());
+
+        const float before = parameter.getValue();
+        changeByMouse (control, parameter);
+        CHECK_FALSE (juce::exactlyEqual (parameter.getValue(), before));
+        host.settle();
+
+        const float byMouse = parameter.getValue();
+        changeByKeys (host, control, parameter);
+        CHECK_FALSE (juce::exactlyEqual (parameter.getValue(), byMouse));
+        // Back where it was for the next, in High Quality.
+        host.edit (parameter.getParameterID(), parameter.convertFrom0to1 (before));
+        host.edit (parameters::processingModeId, 1.0f);
+        REQUIRE (host.settleUntil ([&] { return host.showing<juce::Component> ("Oversampling").isEnabled(); }));
+    }
+    CHECK (found == compactParameters);
+}
+
+TEST_CASE ("Every control in the Compact View has an accessible name, its own title, none a word the glossary avoids, on stereo and on mono")
+{
+    host::EditorHost host;
+    const auto channels = GENERATE (juce::AudioChannelSet::stereo(), juce::AudioChannelSet::mono());
+    CAPTURE (channels.getDescription());
+    host.editor.reset();
+    harness::useLayout (host.processor, channels);
+    host.reopen();
+    showCompactView (host);
+    // The Preset browser's names too, with a User Preset in it.
+    auto& session = host.processor.session();
+    REQUIRE (session.presetLibrary().save ("Lead Vocal", session.presetState()));
+    auto& presets = host.showing<juce::Button> ("Presets");
+    REQUIRE (presets.onClick != nullptr);
+    presets.onClick();
+    host.settleAnimations();
+
+    const auto glossary = readGlossary();
+    std::vector<juce::String> listed;
+    for (const auto& [name, components] : accessibleNames (*host.editor))
+    {
+        CAPTURE (name, components.size());
+        CHECK (name.isNotEmpty());
+        CHECK (avoidedIn (name, glossary).isEmpty());
+        // Titled on purpose, not by JUCE falling back to a button's text.
+        for (auto* c : components)
+            CHECK (c->getTitle() == name);
+        listed.push_back (name);
+    }
+    // Every name, in order; the same on mono, as the Compact View has no Clip Light.
+    const std::vector<juce::String> expected { "A/B Compare",
+                                               "Close Preset browser",
+                                               "Comp",
+                                               "Copy A to B",
+                                               "Factory",
+                                               "Gain Reduction",
+                                               "Gate",
+                                               "Gate Threshold",
+                                               "Global Bypass",
+                                               juce::String (juce::CharPointer_UTF8 ("Load Preset File" "\xe2\x80\xa6")),
+                                               "Next Preset",
+                                               "Output Gain",
+                                               "Oversampling",
+                                               "Presets",
+                                               "Previous Preset",
+                                               "Processing Mode",
+                                               "Redo",
+                                               juce::String (juce::CharPointer_UTF8 ("Save as" "\xe2\x80\xa6")),
+                                               "Search Presets",
+                                               "Show User Presets Folder",
+                                               "Style",
+                                               "Switch to the Expanded View",
+                                               "UI Scale",
+                                               "Undo",
+                                               "User" };
+    CHECK (listed == expected);
+}
+
+TEST_CASE ("Tab walks the Compact View: the header, Style, Gate, Gate Threshold, Comp, Output Gain and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    juce::Component::unfocusAllComponents();
+    std::vector<juce::Component*> walked;
+    for (int i = 0; i < 100; ++i)
+    {
+        REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
+        auto* focused = juce::Component::getCurrentlyFocusedComponent();
+        REQUIRE (focused != nullptr);
+        if (! walked.empty() && focused == walked.front())
+            break;
+        walked.push_back (focused);
+    }
+    juce::StringArray titles;
+    for (auto* c : walked)
+    {
+        CAPTURE (c->getTitle());
+        CHECK (c->isShowing());
+        CHECK (c->hasFocusOutline());
+        titles.add (c->getTitle());
+    }
+    CAPTURE (titles.joinIntoString (", "));
+    // Each enabled control once; the Gain Reduction meter is no stop.
+    for (auto* control : host.findAll<juce::Component> ([] (juce::Component& c) { return isControl (c) && c.isShowing() && c.isEnabled() && c.getWantsKeyboardFocus(); }))
+    {
+        CAPTURE (control->getTitle());
+        CHECK (std::count (walked.begin(), walked.end(), control) == 1);
+    }
+    CHECK_FALSE (titles.contains ("Gain Reduction"));
+    // In order: the header's first, then these, the body's five one after another.
+    const juce::StringArray order { "Presets",       "Style",           "Gate",         "Gate Threshold", "Comp", "Output Gain",
+                                    "Global Bypass", "Processing Mode", "Oversampling", "UI Scale",       "Switch to the Expanded View" };
+    int last = -1;
+    for (const auto& title : order)
+    {
+        CAPTURE (title);
+        const int at = titles.indexOf (title, false, last + 1);
+        CHECK (at > last);
+        last = std::max (last, at);
+    }
+    const int style = titles.indexOf ("Style");
+    CHECK (titles.indexOf ("Global Bypass") == style + 5);
+
+    // Shift+Tab, backwards.
+    std::vector<juce::Component*> back;
+    for (size_t i = 0; i < walked.size(); ++i)
+    {
+        REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey, juce::ModifierKeys::shiftModifier, 0)));
+        back.push_back (juce::Component::getCurrentlyFocusedComponent());
+    }
+    CHECK (back == std::vector<juce::Component*> (walked.rbegin(), walked.rend()));
 }

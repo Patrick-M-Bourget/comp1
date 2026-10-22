@@ -167,3 +167,44 @@ TEST_CASE ("Expanded View snapshot: the Gate's, the compressor's and the Limiter
     CHECK (host.limiterMeter().shownDb() > 3.0);
     harness::writeSnapshot (*host.editor, "expanded-gain-reduction-meters", {}, 1.0f);
 }
+
+TEST_CASE ("Compact View snapshots: default at 100% and 200%, with Comp Follow on and off, and with the Preset browser open", "[.screens]")
+{
+    host::EditorHost host;
+    openOn (host, juce::AudioChannelSet::stereo());
+    host::EditorHost::click (host.expandedView().viewSwitch());
+    REQUIRE (host.expandedView().shownView() == comp1::View::compact);
+    snapshot (host, "compact-default-100");
+
+    host.showing<plugkit::ui::UiScaleMenu> ("UI Scale").pick (200);
+    snapshot (host, "compact-default-200");
+    host.showing<plugkit::ui::UiScaleMenu> ("UI Scale").pick (100);
+
+    // Comp Follow on (Opto, Comp at 80%), then off as grabbing Threshold in the Expanded View turns it off: Comp stays.
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    host.edit (comp1::parameters::compId, 80.0f);
+    snapshot (host, "compact-comp-follow-on");
+    REQUIRE (host.processor.stopFollowingComp());
+    snapshot (host, "compact-comp-follow-off");
+    for (int i = 0; i < 3; ++i)
+        host.processor.session().editHistory().undo();
+
+    auto& presets = host.showing<juce::Button> ("Presets");
+    REQUIRE (presets.onClick != nullptr);
+    presets.onClick();
+    snapshot (host, "compact-preset-browser");
+}
+
+TEST_CASE ("Compact View snapshot: with signal playing, so the Gain Reduction meter reads", "[.screens]")
+{
+    host::Playing host;
+    // -6 dB steady, 24 dB over a -30 dB Threshold at 4:1 with a hard knee: 18 dB of Gain Reduction.
+    host.edit (comp1::parameters::thresholdId, -30.0f);
+    host.edit (comp1::parameters::ratioId, 4.0f);
+    host.edit (comp1::parameters::kneeId, 0.0f);
+    host::EditorHost::click (host.expandedView().viewSwitch());
+    auto& meter = host.expandedView().compactView().gainReductionMeter();
+    host.playFor (0.5, host::steady (-6.0));
+    REQUIRE (host.keepPlayingUntil (host::steady (-6.0), [&] { return meter.shownDb() > 17.0; }));
+    harness::writeSnapshot (*host.editor, "compact-playing", {}, 1.0f);
+}
