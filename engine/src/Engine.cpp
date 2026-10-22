@@ -40,15 +40,6 @@ namespace comp1
 namespace
 {
 
-// The Clean Character's gain computer settings, from Settings.
-clean::Curve curveOf (const Settings& settings)
-{
-    return { .thresholdDb = settings.thresholdDb,
-             .inverseRatio = 1.0 / settings.ratio,
-             .kneeDb = settings.kneeDb,
-             .rangeDb = settings.rangeDb };
-}
-
 // comp1's Stereo Placement as plugkit routes it.
 plugkit::StereoPlacement routed (StereoPlacement placement)
 {
@@ -121,7 +112,7 @@ public:
     // With snap, the settings take effect at once instead of gliding.
     void setSettings (const Settings& settings, bool snap)
     {
-        stored = curveOf (settings);
+        stored = clean::curveOf (settings);
         storedAutoGain = settings.autoGain;
         estimatedTiming = { .attackMs = settings.attackMs,
                             .releaseMs = settings.releaseMs,
