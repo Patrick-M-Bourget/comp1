@@ -10,6 +10,8 @@
 #include "plugkit/ui/display/GridLayer.h"
 #include "plugkit/ui/staple/controls/IconButton.h"
 
+#include <plugkit/ShapeDesign.h>
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
@@ -103,6 +105,7 @@ private:
     plugkit::ui::AnalyzerSpectrum detectionSpectrum;
     plugkit::ui::AnalyzerSettings analyzer;
     bool samplesArriving = false;
+    std::vector<plugkit::Cascade> onCascades; // the bands that are on, designed as the Engine designs them
     juce::Path curve;
     plugkit::ui::display::CachedLabels gridLabelImages;
     struct EdgeFadeFor

@@ -334,7 +334,8 @@ DetectionEqDisplay::DetectionEqDisplay (PluginProcessor& p)
     addAndMakeVisible (audition);
     // What piled up while no editor read the tap.
     processor.skipDetectionSourceSamples();
-    readSettings();
+    if (readSettings())
+        settingsChanged();
 }
 
 DetectionEqDisplay::~DetectionEqDisplay()
@@ -354,9 +355,8 @@ display::DisplayGeometry DetectionEqDisplay::geometry() const
 double DetectionEqDisplay::responseDbAt (double frequency) const
 {
     double magnitude = 1.0;
-    for (const auto band : { DetectionEqBand::highPass, DetectionEqBand::freeBand, DetectionEqBand::lowPass })
-        if (const auto& settings = bandOf (eq, band); settings.on)
-            magnitude *= std::abs (plugkit::responseAt (plugkit::designBand (settings.filter, sampleRate), frequency, sampleRate));
+    for (const auto& cascade : onCascades)
+        magnitude *= std::abs (plugkit::responseAt (cascade, frequency, sampleRate));
     return 20.0 * std::log10 (std::max (magnitude, 1.0e-12));
 }
 
@@ -393,6 +393,10 @@ void DetectionEqDisplay::refresh()
 
 void DetectionEqDisplay::settingsChanged()
 {
+    onCascades.clear();
+    for (const auto band : { DetectionEqBand::highPass, DetectionEqBand::freeBand, DetectionEqBand::lowPass })
+        if (const auto& settings = bandOf (eq, band); settings.on)
+            onCascades.push_back (plugkit::designBand (settings.filter, sampleRate));
     const auto shape = geometry();
     curve.clear();
     const auto range = static_cast<double> (displayRangeDb) * 2.0;
