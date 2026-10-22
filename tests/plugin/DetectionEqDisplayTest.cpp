@@ -1,7 +1,7 @@
 // The Expanded View's Detection EQ tab: its spectrum, curve, handles and Detection Audition.
 
 #include "DetectionEqDisplay.h"
-#include "EditorHost.h"
+#include "Playing.h"
 #include "Measure.h"
 
 #include <plugkit/ShapeDesign.h>
@@ -23,22 +23,20 @@ using Catch::Matchers::WithinRel;
 namespace
 {
 
-constexpr double sampleRate = 48000.0;
+constexpr double testRate = 48000.0;
 
 // A sine at frequency, at amplitude, at 48 kHz: sample n.
 double sine (double frequency, double amplitude, int n)
 {
-    return amplitude * std::sin (2.0 * juce::MathConstants<double>::pi * frequency * n / sampleRate);
+    return amplitude * std::sin (2.0 * juce::MathConstants<double>::pi * frequency * n / testRate);
 }
 
-// The editor open on a stereo track with the Sidechain given, showing the Detection EQ tab.
-struct DetectionEqHost : host::EditorHost
+// The editor playing (Playing.h) on a stereo track with the Sidechain given, showing the Detection EQ tab.
+struct DetectionEqHost : host::Playing
 {
     explicit DetectionEqHost (const juce::AudioChannelSet& sidechain = juce::AudioChannelSet::stereo())
+        : host::Playing (testRate, sidechain)
     {
-        editor.reset();
-        harness::useLayout (processor, juce::AudioChannelSet::stereo(), sidechain);
-        reopen();
         showTab (comp1::DisplayTab::detectionEq);
     }
 
@@ -187,7 +185,7 @@ double expectedDb (host::EditorHost& host, double frequency)
     double magnitude = 1.0;
     for (const auto* band : { &settings.highPass, &settings.freeBand, &settings.lowPass })
         if (band->on)
-            magnitude *= std::abs (plugkit::responseAt (plugkit::designBand (band->filter, sampleRate), frequency, sampleRate));
+            magnitude *= std::abs (plugkit::responseAt (plugkit::designBand (band->filter, testRate), frequency, testRate));
     return 20.0 * std::log10 (magnitude);
 }
 
@@ -347,6 +345,7 @@ TEST_CASE ("Dragging a handle moves its band, Shift finely, as one undo step ins
     DetectionEqHost host;
     auto& eq = host.eqDisplay();
     auto& history = host.processor.session().editHistory();
+    const int start = history.undoSteps();
     HostView view (host.processor);
 
     // The high-pass, Off: dragged right, it is on and higher.
@@ -358,7 +357,7 @@ TEST_CASE ("Dragging a handle moves its band, Shift finely, as one undo step ins
     // 100 px to the right of where it sat.
     const auto shape = eq.geometry();
     CHECK_THAT (dragged, WithinRel (static_cast<float> (shape.frequencyAt (shape.xOf (highPassBefore) + 100.0f)), 1.0e-3f));
-    CHECK (history.undoSteps() == 1);
+    CHECK (history.undoSteps() == start + 1);
     CHECK (view.changes > 0);
     CHECK (view.outsideGestures == 0);
     CHECK (view.open.empty());
@@ -368,7 +367,7 @@ TEST_CASE ("Dragging a handle moves its band, Shift finely, as one undo step ins
     dragHandle (eq.handle (Band::highPass), { 100.0f, 0.0f }, juce::ModifierKeys::shiftModifier);
     CHECK_THAT (host.value (parameters::detectionHighPassFrequencyId),
                 WithinRel (static_cast<float> (shape.frequencyAt (shape.xOf (dragged) + 25.0f)), 1.0e-3f));
-    CHECK (history.undoSteps() == 2);
+    CHECK (history.undoSteps() == start + 2);
 
     // The free band, dragged up: its Gain rises, by the dB the pixels span.
     const float gainBefore = host.value (parameters::detectionBandGainId);
@@ -376,7 +375,7 @@ TEST_CASE ("Dragging a handle moves its band, Shift finely, as one undo step ins
     CHECK (host.value (parameters::detectionBandOnId) > 0.5f);
     CHECK_THAT (host.value (parameters::detectionBandGainId), WithinAbs (static_cast<float> (shape.dbAt (shape.yOf (gainBefore) - 40.0f)), 1.0e-3f));
     CHECK (host.value (parameters::detectionBandGainId) > gainBefore + 1.0f);
-    CHECK (history.undoSteps() == 3);
+    CHECK (history.undoSteps() == start + 3);
     CHECK (view.outsideGestures == 0);
 
     // Undo puts everything back, the bands Off again.
@@ -393,16 +392,17 @@ TEST_CASE ("The wheel over a handle steps the free band's Q, and a cut's Slope b
     DetectionEqHost host;
     auto& eq = host.eqDisplay();
     auto& history = host.processor.session().editHistory();
+    const int start = history.undoSteps();
     HostView view (host.processor);
 
     const float qBefore = host.value (parameters::detectionBandQId);
     wheel (eq.handle (Band::freeBand), 1);
     const float qUp = host.value (parameters::detectionBandQId);
     CHECK (qUp > qBefore);
-    CHECK (history.undoSteps() == 1);
+    CHECK (history.undoSteps() == start + 1);
     wheel (eq.handle (Band::freeBand), -1);
     CHECK (host.value (parameters::detectionBandQId) < qUp);
-    CHECK (history.undoSteps() == 2);
+    CHECK (history.undoSteps() == start + 2);
 
     const float slope = host.value (parameters::detectionLowPassSlopeId);
     wheel (eq.handle (Band::lowPass), 1);
@@ -410,7 +410,7 @@ TEST_CASE ("The wheel over a handle steps the free band's Q, and a cut's Slope b
     wheel (eq.handle (Band::lowPass), -1);
     wheel (eq.handle (Band::lowPass), -1);
     CHECK_THAT (host.value (parameters::detectionLowPassSlopeId), WithinAbs (slope - 6.0f, 1.0e-4));
-    CHECK (history.undoSteps() == 5);
+    CHECK (history.undoSteps() == start + 5);
     CHECK (view.outsideGestures == 0);
     CHECK (view.open.empty());
 }
@@ -420,6 +420,7 @@ TEST_CASE ("Arrows move a focused handle: Frequency by a semitone, Gain by 0.5 d
     DetectionEqHost host;
     auto& eq = host.eqDisplay();
     auto& history = host.processor.session().editHistory();
+    const int start = history.undoSteps();
     HostView view (host.processor);
     const auto right = juce::KeyPress (juce::KeyPress::rightKey), up = juce::KeyPress (juce::KeyPress::upKey);
 
@@ -431,7 +432,7 @@ TEST_CASE ("Arrows move a focused handle: Frequency by a semitone, Gain by 0.5 d
     CHECK (host.press (right));
     CHECK (host.value (parameters::detectionBandOnId) > 0.5f);
     CHECK_THAT (host.value (parameters::detectionBandFrequencyId), WithinRel (frequency * std::pow (2.0f, 1.0f / 12.0f), 1.0e-4f));
-    CHECK (history.undoSteps() == 1);
+    CHECK (history.undoSteps() == start + 1);
     CHECK (host.press (harness::withShift (right)));
     CHECK_THAT (host.value (parameters::detectionBandFrequencyId), WithinRel (frequency * std::pow (2.0f, 1.1f / 12.0f), 1.0e-4f));
     const float gain = host.value (parameters::detectionBandGainId);
@@ -439,7 +440,7 @@ TEST_CASE ("Arrows move a focused handle: Frequency by a semitone, Gain by 0.5 d
     CHECK_THAT (host.value (parameters::detectionBandGainId), WithinAbs (gain + 0.5f, 1.0e-4));
     CHECK (host.press (harness::withShift (up)));
     CHECK_THAT (host.value (parameters::detectionBandGainId), WithinAbs (gain + 0.55f, 1.0e-4));
-    CHECK (history.undoSteps() == 4);
+    CHECK (history.undoSteps() == start + 4);
 
     // A held key: its repeats, then the release, one step.
     REQUIRE (host.hold (up));
@@ -447,7 +448,7 @@ TEST_CASE ("Arrows move a focused handle: Frequency by a semitone, Gain by 0.5 d
     REQUIRE (host.hold (up));
     host.release();
     CHECK_THAT (host.value (parameters::detectionBandGainId), WithinAbs (gain + 2.05f, 1.0e-4));
-    CHECK (history.undoSteps() == 5);
+    CHECK (history.undoSteps() == start + 5);
 
     // A cut's Slope.
     auto& high = eq.handle (Band::highPass);
@@ -624,7 +625,7 @@ TEST_CASE ("Expanded View snapshots on the Detection EQ tab: signal playing with
         host.settleAnimations();
     };
     // A second of the tests' seeded noise, the same on every platform.
-    const auto seeded = comp1::test::noise (1, static_cast<int> (sampleRate)).front();
+    const auto seeded = comp1::test::noise (1, static_cast<int> (testRate)).front();
     const auto noise = [&seeded] (int n) { return static_cast<double> (seeded[static_cast<std::size_t> (n) % seeded.size()]); };
     const auto silence = [] (int) { return 0.0; };
     {

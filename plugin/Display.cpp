@@ -3,7 +3,8 @@
 namespace comp1
 {
 
-Display::Display (PluginProcessor& p) : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p)
+Display::Display (PluginProcessor& p, LevelHistory& history)
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), level (history, p)
 {
     setName ("Display");
     level.setName ("Level");

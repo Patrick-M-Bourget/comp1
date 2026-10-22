@@ -104,7 +104,8 @@ std::map<juce::String, std::vector<juce::Component*>> accessibleNames (juce::Com
             {
                 const auto role = handler->getRole();
                 if (role == Role::button || role == Role::toggleButton || role == Role::radioButton || role == Role::comboBox
-                    || role == Role::slider || role == Role::editableText || role == Role::progressBar)
+                    || role == Role::slider || role == Role::editableText || role == Role::progressBar
+                    || role == Role::image)
                     names[handler->getTitle()].push_back (child);
             }
             visit (*child);
@@ -203,9 +204,6 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     host.editor.reset();
     harness::useLayout (host.processor, channels);
     host.reopen();
-    // On the Detection EQ tab, so its handles and Detection Audition show.
-    host.processor.setDisplayTab (comp1::DisplayTab::detectionEq);
-    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::detectionEq; }));
     // The Preset browser's names too, with a User Preset in it.
     auto& session = host.processor.session();
     REQUIRE (session.presetLibrary().save ("Lead Vocal", session.presetState()));
@@ -214,7 +212,12 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     presets.onClick();
     host.settleAnimations();
 
-    const auto names = accessibleNames (*host.editor);
+    auto names = accessibleNames (*host.editor);
+    // The Detection EQ tab's too: its handles and Detection Audition.
+    host.processor.setDisplayTab (comp1::DisplayTab::detectionEq);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::detectionEq; }));
+    for (const auto& [name, components] : accessibleNames (*host.editor))
+        names[name] = components;
     const auto glossary = readGlossary();
     REQUIRE_FALSE (glossary.avoided.empty());
     std::vector<juce::String> listed;
@@ -277,6 +280,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Hold");
     expected.push_back ("Knee");
     expected.push_back ("Level");
+    expected.push_back ("Level and Gain Reduction Graph");
     expected.push_back ("Limiter");
     expected.push_back (juce::String (juce::CharPointer_UTF8 ("Load Preset File" "\xe2\x80\xa6")));
     expected.push_back ("Lookahead");

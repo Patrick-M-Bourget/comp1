@@ -187,8 +187,12 @@ The editor showing only Style, Gate, Comp, Output Gain and a Gain Reduction mete
 _Avoid_: Simple view, mini view, basic mode
 
 **Expanded View**:
-The editor showing every control, the scrolling level and Gain Reduction graph, and the Detection EQ.
+The editor showing every control, the Level and Gain Reduction Graph, and the Detection EQ.
 _Avoid_: Advanced view, full view, pro mode
+
+**Level and Gain Reduction Graph**:
+The Expanded View's scrolling graph of the last 5 seconds of Input Level, Output Level and the compressor's Gain Reduction, on one dB scale, the newest at its right edge.
+_Avoid_: Scope, waveform, history view
 
 **Output Gain**:
 The gain applied to the whole plugin's output, after Dry and Wet are summed and before the Limiter, in dB.
