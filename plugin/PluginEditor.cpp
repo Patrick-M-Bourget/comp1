@@ -12,7 +12,7 @@ namespace layout = staple::tokens::layout;
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : EditorShell (p, p.session(), { "comp1", parameters::globalBypassId }), history (*this, p), displaySlot (p, history), gainReduction (history),
-      outputMeter (p), styleSection (p), gate (p), compressor (p, history), character (p), dryWet (p), output (p), detection (p), stereo (p),
+      outputMeter (p), styleSection (p), gate (p), compressor (p, history), character (p), dryWet (p), output (p, history), detection (p), stereo (p),
       lookahead (p), footer (p), compactBody (p, history)
 {
     editorTick().add (history);

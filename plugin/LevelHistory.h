@@ -14,7 +14,7 @@ namespace comp1
 {
 
 // The editor's one reader of the level history (PluginProcessor::readLevels), which the Engine allows one reader of:
-// whatever in the editor shows levels over time (the Gain Reduction meter, the Detection Level ring, the Level
+// whatever in the editor shows levels over time (the Gain Reduction meters, the knobs' rings, the Level
 // and Gain Reduction Graph) subscribes here rather than reading it. Opening, it drops what piled up while
 // no editor read it (skipLevels), so it shows only runs completed after the editor opened. Each tick of the editor's
 // it reads the history once, into a buffer of levelHistoryCapacity() records, and hands every record read to every

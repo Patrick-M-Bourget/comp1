@@ -41,7 +41,8 @@ public:
     GainReductionMeter& gainReductionMeter() { return gainReduction; }
     GainReductionMeter& gateGainReductionMeter() { return gateGainReduction; }
     GainReductionMeter& limiterGainReductionMeter() { return limiterGainReduction; }
-    DetectionLevelRing& detectionLevelRing() { return compressor.detectionLevelRing(); }
+    LevelRing& detectionLevelRing() { return compressor.detectionLevelRing(); }
+    LevelRing& ceilingRing() { return output.ceilingRing(); }
 
     // The view shown, which follows the processor's View on the tick, as after a restore. The hidden view's
     // components are hidden; the Level and Gain Reduction Graph and the meters keep their subscriptions meanwhile.

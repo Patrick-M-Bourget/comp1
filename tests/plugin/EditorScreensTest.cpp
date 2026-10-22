@@ -168,6 +168,19 @@ TEST_CASE ("Expanded View snapshot: the Gate's, the compressor's and the Limiter
     harness::writeSnapshot (*host.editor, "expanded-gain-reduction-meters", {}, 1.0f);
 }
 
+TEST_CASE ("Expanded View snapshot: the Ceiling ring filled with the Limiter's Gain Reduction", "[.screens]")
+{
+    host::Playing host;
+    // A steady 0 dB level at 1:1 into the Limiter at -12 dBFS: 12 dB of Gain Reduction, the top two fifths of
+    // Ceiling's lane.
+    host.edit (comp1::parameters::ratioId, 1.0f);
+    host.edit (comp1::parameters::limiterId, 1.0f);
+    host.edit (comp1::parameters::ceilingId, -12.0f);
+    host.playFor (0.5, host::steady (0.0));
+    REQUIRE (host.keepPlayingUntil (host::steady (0.0), [&] { return std::abs (host.ceilingRing().shownDb() - 12.0) <= 0.5; }));
+    harness::writeSnapshot (*host.editor, "expanded-ceiling-ring", {}, 1.0f);
+}
+
 TEST_CASE ("Compact View snapshots: default at 100% and 200%, with Comp Follow on and off, and with the Preset browser open", "[.screens]")
 {
     host::EditorHost host;
