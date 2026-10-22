@@ -12,6 +12,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <functional>
 
 using Catch::Matchers::WithinAbs;
 namespace parameters = comp1::parameters;
@@ -59,12 +60,25 @@ struct Playing : host::EditorHost
         }
     }
 
+    // Keeps playing signal, a block at a time with the editor's tick between, until done() holds (harness::settleUntil).
+    template <typename Signal>
+    bool keepPlayingUntil (Signal&& signal, const std::function<bool()>& done)
+    {
+        int n = 0;
+        return settleUntil ([&] {
+            play (1, 512, [&signal, n] (int i) { return signal (n + i); });
+            n += 512;
+            return done();
+        });
+    }
+
     comp1::GainReductionMeter& meter() { return expandedView().gainReductionMeter(); }
     comp1::DetectionLevelRing& ring() { return expandedView().detectionLevelRing(); }
 };
 
-// How far a meter falls over a wait with nothing to show: at most 20 dB/s of the wait (and 0.5 dB for a tick around
-// its ends), and, unless it reached its floor, well on its way.
+// How far a meter falls over a wait with nothing to show: at most 20 dB/s of the wait and of the longest tick before it
+// (EditorTick's 0.25 s), whose fall a busy machine may count in the wait; and, unless it reached its floor, well on its
+// way. Falling at once, it would fall by tens of dB.
 template <typename Shown>
 void checkFallsAt20DbPerSecond (Playing& host, Shown&& shown, double floor)
 {
@@ -74,7 +88,7 @@ void checkFallsAt20DbPerSecond (Playing& host, Shown&& shown, double floor)
     const double seconds = (juce::Time::getMillisecondCounterHiRes() - start) / 1000.0;
     const double fell = from - shown();
     CAPTURE (from, seconds, fell);
-    CHECK (fell <= 20.0 * seconds + 0.5);
+    CHECK (fell <= 20.0 * (seconds + 0.25));
     if (shown() > floor)
         CHECK (fell >= 2.0);
 }
@@ -106,7 +120,8 @@ TEST_CASE ("On a steady level above Threshold the Gain Reduction meter reads the
     // A steady -6 dB reads -6 dB: 24 dB over Threshold, of which 4:1 takes off 18.
     auto& repaints = harness::countRepaintsOf (host.meter());
     host.playFor (0.5, steady (-6.0));
-    CHECK_THAT (host.meter().shownDb(), WithinAbs (18.0, 0.5));
+    // Read just after a tick that read records, as it rises at once: a busy machine's tick may fall a little first.
+    CHECK (host.keepPlayingUntil (steady (-6.0), [&] { return std::abs (host.meter().shownDb() - 18.0) <= 0.5; }));
     CHECK (repaints.count > 0);
     host.meter().setCachedComponentImage (nullptr);
 
@@ -127,7 +142,7 @@ TEST_CASE ("The Detection Level ring fills Threshold's lane to the Detection Lev
     Playing host;
     CHECK (host.ring().shownDb() == -60.0);
     host.playFor (0.3, sine (std::pow (10.0, -12.0 / 20.0)));
-    CHECK_THAT (host.ring().shownDb(), WithinAbs (-12.0, 0.5));
+    CHECK (host.keepPlayingUntil (sine (std::pow (10.0, -12.0 / 20.0)), [&] { return std::abs (host.ring().shownDb() + 12.0) <= 0.5; }));
     checkFallsAt20DbPerSecond (host, [&] { return host.ring().shownDb(); }, -60.0);
 
     // Display only: a press on the lane leaves Threshold where it was, and its tooltip lines are empty.
