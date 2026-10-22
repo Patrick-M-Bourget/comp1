@@ -3,6 +3,8 @@
 #include "Parameters.h"
 #include "comp1/Engine.h"
 #include "comp1/Style.h"
+#include "plugkit/ui/ClipLights.h"
+#include "plugkit/ui/OutputLevelSource.h"
 #include "plugkit/ui/Session.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -16,7 +18,7 @@ namespace comp1
 // The Plugin Shell: the JUCE processor around the Engine. It turns the host parameters into Settings once a
 // block, and saves, restores and edits them through its Session: User Presets, A/B Compare and undo and redo. Not final:
 // a test's processor derives from it only to keep its per-user settings and User Presets in a folder of its own.
-class PluginProcessor : public juce::AudioProcessor
+class PluginProcessor : public juce::AudioProcessor, public plugkit::ui::OutputLevelSource
 {
 public:
     // As it ships: the per-user settings in UserSettings::defaultFile ("comp1"), and User Presets in
@@ -63,8 +65,8 @@ public:
     static constexpr plugkit::ui::Session::Window window { { 1200, 760 }, { 960, 600 }, { 2560, 1600 } };
 
     void getStateInformation (juce::MemoryBlock& destData) override;
-    // Restoring a state of comp1's lets go of Detection Audition, then restores through the Session and reports the
-    // restored Processing Mode's latency. Anything else changes nothing.
+    // Restoring a state of comp1's lets go of Detection Audition and puts out the Clip Lights, then restores through
+    // the Session and reports the restored Processing Mode's latency. Anything else changes nothing.
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     // The session state the editor edits through: the undo history, A/B Compare and the Preset Library. A Preset
@@ -107,6 +109,14 @@ public:
     bool isStereoPlacementAvailable() const { return getMainBusNumOutputChannels() == 2; }
     bool isStereoLinkAvailable() const { return getMainBusNumOutputChannels() == 2; }
 
+    // The Output Meter's source, from the Engine's Output Level, from the message thread: one bar per main channel.
+    // A peak above 0 dBFS lights its channel's Clip Light, which stays lit until cleared, whether or not the editor is
+    // open. Restoring a session puts them out; they aren't saved.
+    int outputLevelChannels() const override { return engine.outputLevelChannels(); }
+    plugkit::OutputLevel readOutputLevel (int channel) override { return clipLights.note (channel, engine.readOutputLevel (channel)); }
+    bool isClipLit (int channel) const override { return clipLights.isLit (channel); }
+    void clearClipLights() override { clipLights.clear(); }
+
     // Detection Audition, while the editor holds it: not a host parameter, and never saved. Any thread.
     void setDetectionAudition (bool held) { heldDetectionAudition.store (held, std::memory_order_relaxed); }
     bool detectionAudition() const { return heldDetectionAudition.load (std::memory_order_relaxed); }
@@ -124,6 +134,7 @@ private:
     Settings publishedSettings;
     bool publishedSincePrepare = false;
     std::atomic<bool> heldDetectionAudition { false };
+    plugkit::ui::ClipLights clipLights;
 
     // Reports to the host the latency of the Processing Mode the host parameter holds (comp1/Latency.h), at the
     // sample rate last prepared: at prepareToPlay(), whenever Processing Mode changes (from the editor, or a host that

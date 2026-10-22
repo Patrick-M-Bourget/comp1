@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 
 #include "Parameters.h"
+#include "plugkit/ui/staple/Tokens.h"
 
 namespace comp1
 {
@@ -37,13 +38,18 @@ void Footer::resized()
 }
 
 PluginEditor::PluginEditor (PluginProcessor& p)
-    : EditorShell (p, p.session(), { "comp1", parameters::globalBypassId }), footer (p.parameterState(), p.session())
+    : EditorShell (p, p.session(), { "comp1", parameters::globalBypassId }), outputMeter (p), footer (p.parameterState(), p.session())
 {
+    content().addAndMakeVisible (outputMeter);
+    outputMeter.setExplicitFocusOrder (firstFocusOrder);
     footer.uiScaleMenu().onPicked = [this] (int) { applyUiScale(); };
     // Along the bottom, last in Tab's order.
     open (footer);
 }
 
-void PluginEditor::layOutBody (juce::Rectangle<int>) {}
+void PluginEditor::layOutBody (juce::Rectangle<int> area)
+{
+    outputMeter.setBounds (area.removeFromRight (staple::tokens::layout::meterWidth));
+}
 
 } // namespace comp1

@@ -2,6 +2,7 @@
 
 #include "PluginProcessor.h"
 #include "plugkit/ui/EditorShell.h"
+#include "plugkit/ui/OutputMeter.h"
 #include "plugkit/ui/UiScaleMenu.h"
 #include "plugkit/ui/staple/controls/IconButton.h"
 
@@ -39,6 +40,7 @@ public:
 private:
     void layOutBody (juce::Rectangle<int> area) override;
 
+    plugkit::ui::OutputMeter outputMeter;
     Footer footer;
 };
 

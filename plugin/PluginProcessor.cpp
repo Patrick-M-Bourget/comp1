@@ -245,6 +245,7 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (xml == nullptr || ! xml->hasTagName (parameters.state.getType()))
         return;
     setDetectionAudition (false);
+    clearClipLights();
     sessionState.restore (juce::ValueTree::fromXml (*xml));
     reportLatency();
 }
