@@ -51,10 +51,11 @@ struct LevelRecord
 // Latency: in High Quality the output is delayed by comp1/Latency.h's latencySamples() for the sample rate, the same
 // whatever the other settings; what is said of the output below holds of it delayed so. Zero Latency has none.
 //
-// The level taps: the Output Level is read with readOutputLevel(), and the level history with readLevels() and
-// skipLevels(), each from one reader thread while process() runs on the audio thread. Reading never allocates, locks or does I/O, and stays safe through any prepare(), at any sample rate or
-// channel count: nothing a reader touches is freed or moved while the Engine lives. Silence, anything quieter than
-// plugkit::levelFloorDb, and NaN read the floor.
+// The level taps: the Output Level is read with readOutputLevel(), the level history with readLevels() and
+// skipLevels(), and the detection source tap with readDetectionSourceSamples() and skipDetectionSourceSamples(), each
+// from one reader thread while process() runs on the audio thread. Reading never allocates, locks or does I/O, and
+// stays safe through any prepare(), at any sample rate or channel count: nothing a reader touches is freed or moved
+// while the Engine lives. In the levels, silence, anything quieter than plugkit::levelFloorDb, and NaN read the floor.
 class Engine
 {
 public:
@@ -114,6 +115,25 @@ public:
     // How many records the level history holds between reads, at least 150 ms of runs: the reader's buffer is this
     // big. Safe to call from any thread.
     int levelHistoryCapacity() const;
+
+    // The detection source tap, for a spectrum of what the detector listens to: the Detection Source before the
+    // Detection EQ, as one mono signal, the mean of its channels, a sample per input sample at the prepared rate. With
+    // Internal, the compressor's input as the detection stage takes it; with External, the Sidechain as the detection
+    // stage takes it (in High Quality both delayed by the Oversampling section ahead of the detection stage); with
+    // External and no Sidechain connected, silence. It is the same sample for sample however the host cuts the audio
+    // into blocks, and a Processing Mode switch's fade adds none, as only one path plays at a time.
+    //
+    // Copies up to maxSamples, oldest first, and returns how many were copied. When the reader falls behind, the tap
+    // holds detectionSourceSampleCapacity() samples and drops new ones.
+    int readDetectionSourceSamples (float* destination, int maxSamples);
+
+    // Drops what the tap holds, so the next readDetectionSourceSamples() copies only samples played after this. From
+    // its reader thread.
+    void skipDetectionSourceSamples();
+
+    // How many samples the tap holds between reads, at least 150 ms of them: the reader's buffer is this big. Safe to
+    // call from any thread.
+    int detectionSourceSampleCapacity() const;
 
 private:
     struct Impl;

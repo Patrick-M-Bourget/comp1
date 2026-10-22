@@ -7,6 +7,7 @@ Comp sets Threshold and Ratio along the current Style's Comp Curve. Whether it d
 - **While Comp Follow is on**, the Engine derives Threshold and Ratio from Comp, and Auto Gain is on. The stored Threshold, Ratio and Auto Gain parameters are ignored, Host Automation of them has no effect, and the editor shows the derived values.
 - **Turning it off from the editor** (by editing Threshold or Ratio) writes the derived Threshold and Ratio, and Auto Gain on, into their parameters in the same gesture, so the sound doesn't change.
 - **Turning it on** (by grabbing Comp) puts Comp at the position nearest the current Threshold. The Engine then glides Threshold and Ratio onto the Comp Curve over a fixed time (about 300 ms, set in the lab). When Host Automation turns it on or off, the Engine glides the same way.
+- **The editor's Comp Follow toggle** turns it on and off the same two ways: on as grabbing Comp does, off as editing Threshold or Ratio does, never by writing Comp Follow alone. So turning it off from the toggle never changes the sound, and turning it on starts from the Comp nearest the stored Threshold.
 
 ## Considered Options
 

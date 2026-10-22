@@ -68,3 +68,14 @@ TEST_CASE ("Oversampling reaches the Engine, and never moves the reported latenc
     };
     CHECK (play (0.0f) != play (x8));
 }
+
+TEST_CASE ("The Plugin Shell gives the sample rate it was last prepared at, 0 before the first prepareToPlay(), for the editor's Oversampling cap")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    comp1::PluginProcessor processor;
+    CHECK (processor.preparedSampleRateHz() == 0.0);
+    const double sampleRate = GENERATE (from_range (comp1::test::sampleRates()));
+    CAPTURE (sampleRate);
+    processor.prepareToPlay (sampleRate, 512);
+    CHECK (processor.preparedSampleRateHz() == sampleRate);
+}

@@ -91,17 +91,6 @@ void moveEverything (const host::SessionHost& host)
     REQUIRE (host.value ("style") == styleValue (Style::Bus));
 }
 
-// Records, for each parameter change the host hears, whether it came inside that parameter's gesture.
-struct GestureRecorder final : juce::AudioProcessorListener
-{
-    std::set<int> open;
-    std::vector<std::pair<int, bool>> changes; // the parameter's index, and whether its gesture was open
-    void audioProcessorParameterChanged (juce::AudioProcessor*, int index, float) override { changes.emplace_back (index, open.contains (index)); }
-    void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails&) override {}
-    void audioProcessorParameterChangeGestureBegin (juce::AudioProcessor*, int index) override { open.insert (index); }
-    void audioProcessorParameterChangeGestureEnd (juce::AudioProcessor*, int index) override { open.erase (index); }
-};
-
 // The Gain Reduction in dB on each sample of seeded noise through processor, as it is set, in mono.
 std::vector<double> gainReductionThrough (comp1::PluginProcessor& processor)
 {
@@ -209,7 +198,7 @@ TEST_CASE ("Choosing a Style sets Style and exactly its defaults, as one undo st
     const auto before = values (*host.processor);
     const int steps = host.history.undoSteps();
 
-    GestureRecorder recorder;
+    host::GestureRecorder recorder;
     host.processor->addListener (&recorder);
     REQUIRE (host.processor->chooseStyle (style));
     host.processor->removeListener (&recorder);

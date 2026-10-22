@@ -17,6 +17,8 @@ public:
 
     // Where its controls go, under the title and the divider, in its own pixels.
     juce::Rectangle<int> controlArea() const;
+    // The width its title takes, uppercase and letter-spaced: the least the section is.
+    int titleWidth() const;
 
     static constexpr int titleHeight = 16, dividerGap = 8;
 };

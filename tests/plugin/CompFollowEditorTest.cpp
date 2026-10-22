@@ -1,0 +1,289 @@
+// Comp Follow from the Expanded View (ADR 0004): what Threshold, Ratio and Auto Gain show while following, and how
+// grabbing Threshold, Ratio or Comp, or the Comp Follow toggle, switches it as one undo step.
+
+#include "EditorHost.h"
+#include "Host.h"
+#include "comp1/Style.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+
+#include <cmath>
+#include <map>
+#include <vector>
+
+using Catch::Matchers::WithinAbs;
+namespace parameters = comp1::parameters;
+
+namespace
+{
+
+// Every host parameter's plain value, by ID.
+std::map<juce::String, float> allValues (host::EditorHost& host)
+{
+    std::map<juce::String, float> values;
+    for (auto* p : host.processor.getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
+            values[ranged->getParameterID()] = host.value (ranged->getParameterID());
+    return values;
+}
+
+// What a screen reader reads as the knob's value.
+juce::String spoken (staple::Knob& knob) { return knob.getAccessibilityHandler()->getValueInterface()->getCurrentValueAsString(); }
+
+// Opto chosen (Comp Follow on, Comp 50%), Comp moved to 80% (the Comp Curve's -32.4 dB and 4.29:1), and the stored
+// Threshold, Ratio and Auto Gain moved well off the curve by Host Automation, which following ignores.
+void followingOffTheCurve (host::EditorHost& host)
+{
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    host.edit (parameters::compId, 80.0f);
+    host.set (parameters::thresholdId, -6.0f);
+    host.set (parameters::ratioId, 1.5f);
+    host.set (parameters::autoGainId, 0.0f);
+    host.settle();
+}
+
+// What a host parameter holds after the trip through its normalised range.
+float asStored (host::EditorHost& host, const juce::String& id, double plain)
+{
+    auto& p = host.parameter (id);
+    return p.convertFrom0to1 (p.convertTo0to1 (static_cast<float> (plain)));
+}
+
+// The knobs show the followed values, to the float a knob's range holds them in.
+bool showsFollowed (host::EditorHost& host)
+{
+    const auto near = [] (double shown, double followed) { return std::abs (shown - followed) <= 1.0e-5 * std::abs (followed); };
+    return near (host.knob ("Threshold").getValue(), host.processor.followedThresholdDb())
+           && near (host.knob ("Ratio").getValue(), host.processor.followedRatio());
+}
+
+const juce::String minus { juce::CharPointer_UTF8 ("\xe2\x88\x92") };
+
+} // namespace
+
+TEST_CASE ("While Comp Follow is on, Threshold and Ratio show and read the followed values, moving with Comp by drag and by Host Automation, and not with the stored ones")
+{
+    host::EditorHost host;
+    followingOffTheCurve (host);
+    auto& threshold = host.knob ("Threshold");
+    auto& ratio = host.knob ("Ratio");
+    REQUIRE (host.settleUntil ([&] { return showsFollowed (host); }));
+    CHECK_THAT (threshold.getValue(), WithinAbs (-32.4, 1.0e-4));
+    CHECK_THAT (ratio.getValue(), WithinAbs (4.29, 0.005));
+    CHECK (spoken (threshold) == minus + "32.40 dB");
+    CHECK (threshold.tooltipValue() == spoken (threshold));
+    CHECK (spoken (ratio) == "4.29:1");
+    CHECK (ratio.tooltipValue() == spoken (ratio));
+
+    // Comp dragged: they follow it.
+    host::EditorHost::drag (host.knob ("Comp"), -40.0f);
+    CHECK (host.value (parameters::compId) < 80.0f);
+    CHECK (host.value (parameters::compFollowId) == 1.0f);
+    REQUIRE (host.settleUntil ([&] { return showsFollowed (host); }));
+    CHECK (threshold.getValue() > -32.4);
+
+    // Comp's Host Automation: they follow it.
+    host.set (parameters::compId, 95.0f);
+    REQUIRE (host.settleUntil ([&] { return showsFollowed (host); }));
+    CHECK (threshold.getValue() < -32.4);
+    const double shownThreshold = threshold.getValue(), shownRatio = ratio.getValue();
+
+    // The stored Threshold's and Ratio's Host Automation: they stay where they are.
+    host.set (parameters::thresholdId, -50.0f);
+    host.set (parameters::ratioId, 2.0f);
+    host.settle (200);
+    CHECK (juce::exactlyEqual (threshold.getValue(), shownThreshold));
+    CHECK (juce::exactlyEqual (ratio.getValue(), shownRatio));
+}
+
+TEST_CASE ("While Comp Follow is on, Auto Gain shows on and is disabled, its tooltip saying Comp Follow holds it on; off, it shows and sets its own")
+{
+    host::EditorHost host;
+    followingOffTheCurve (host);
+    auto& autoGain = host.showing<juce::ToggleButton> ("Auto Gain");
+    REQUIRE (host.settleUntil ([&] { return ! autoGain.isEnabled(); }));
+    CHECK (autoGain.getToggleState());
+    CHECK (host.value (parameters::autoGainId) == 0.0f);
+    CHECK (autoGain.getTooltip() == "Auto Gain: Comp Follow holds it on");
+
+    host.edit (parameters::compFollowId, 0.0f);
+    REQUIRE (host.settleUntil ([&] { return autoGain.isEnabled(); }));
+    CHECK_FALSE (autoGain.getToggleState());
+    CHECK (autoGain.getTooltip() == "Auto Gain");
+    host::EditorHost::click (autoGain);
+    CHECK (host.value (parameters::autoGainId) == 1.0f);
+}
+
+TEST_CASE ("Grabbing Threshold or Ratio while following turns Comp Follow off: the followed values and Auto Gain on, then the edit, as one undo step inside gestures, and undo follows again")
+{
+    host::EditorHost host;
+    followingOffTheCurve (host);
+    REQUIRE (host.settleUntil ([&] { return showsFollowed (host); }));
+    const auto before = allValues (host);
+    const double followedThreshold = host.processor.followedThresholdDb(), followedRatio = host.processor.followedRatio();
+    auto& history = host.processor.session().editHistory();
+    const int steps = history.undoSteps();
+
+    const juce::String how = GENERATE (as<juce::String> {}, "Threshold drag", "Ratio drag", "Threshold typed", "Ratio key");
+    CAPTURE (how);
+    host::GestureRecorder recorder;
+    host.processor.addListener (&recorder);
+    if (how == "Threshold drag")
+        host::EditorHost::drag (host.knob ("Threshold"), 20.0f);
+    else if (how == "Ratio drag")
+        host::EditorHost::drag (host.knob ("Ratio"), 20.0f);
+    else if (how == "Threshold typed")
+        REQUIRE (host.knob ("Threshold").commitTypedText ("-20 dB"));
+    else
+    {
+        host.knob ("Ratio").grabKeyboardFocus();
+        CHECK (host.press (juce::KeyPress (juce::KeyPress::upKey)));
+    }
+    host.processor.removeListener (&recorder);
+
+    CHECK (host.value (parameters::compFollowId) == 0.0f);
+    CHECK (host.value (parameters::autoGainId) == 1.0f);
+    // The edit carried on from the followed value: the other of the two is the followed one, the edited one moved from
+    // it the way the edit went.
+    const bool thresholdEdited = how.startsWith ("Threshold");
+    if (thresholdEdited)
+    {
+        CHECK (host.value (parameters::ratioId) == asStored (host, parameters::ratioId, followedRatio));
+        CHECK (host.value (parameters::thresholdId) > followedThreshold);
+        if (how == "Threshold typed")
+            CHECK_THAT (host.value (parameters::thresholdId), WithinAbs (-20.0f, 1.0e-4));
+    }
+    else
+    {
+        CHECK (host.value (parameters::thresholdId) == asStored (host, parameters::thresholdId, followedThreshold));
+        CHECK (host.value (parameters::ratioId) > followedRatio);
+        // A key steps 1% of the travel.
+        if (how == "Ratio key")
+            CHECK (host.value (parameters::ratioId) < followedRatio + 0.5);
+    }
+    CHECK (history.undoSteps() == steps + 1);
+    REQUIRE_FALSE (recorder.changes.empty());
+    for (const auto& [index, inGesture] : recorder.changes)
+    {
+        CAPTURE (index);
+        CHECK (inGesture);
+    }
+
+    history.undo();
+    CHECK (allValues (host) == before);
+    REQUIRE (host.settleUntil ([&] { return showsFollowed (host); }));
+}
+
+TEST_CASE ("Grabbing Comp while Comp Follow is off follows: Comp nearest the stored Threshold, then the drag, as one undo step")
+{
+    host::EditorHost host;
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    host.edit (parameters::compFollowId, 0.0f);
+    host.edit (parameters::thresholdId, -32.4f);
+    const auto before = allValues (host);
+    auto& history = host.processor.session().editHistory();
+    const int steps = history.undoSteps();
+
+    // A press without a drag: Comp at the Comp Curve's -32.4 dB, Opto's 80% (CompParameterTest's).
+    host::GestureRecorder recorder;
+    host.processor.addListener (&recorder);
+    host::EditorHost::drag (host.knob ("Comp"), 0.0f);
+    host.processor.removeListener (&recorder);
+    CHECK (host.value (parameters::compFollowId) == 1.0f);
+    CHECK_THAT (host.value (parameters::compId), WithinAbs (80.0f, 0.05));
+    CHECK (history.undoSteps() == steps + 1);
+    for (const auto& [index, inGesture] : recorder.changes)
+        CHECK (inGesture);
+    history.undo();
+    CHECK (allValues (host) == before);
+
+    // And a drag: from there, as one step.
+    host::EditorHost::drag (host.knob ("Comp"), 20.0f);
+    CHECK (host.value (parameters::compFollowId) == 1.0f);
+    // 20 px of the knob's 200 px for 0 to 100%.
+    CHECK_THAT (host.value (parameters::compId), WithinAbs (90.0f, 0.1));
+    CHECK (history.undoSteps() == steps + 1);
+    history.undo();
+    CHECK (allValues (host) == before);
+}
+
+TEST_CASE ("The Comp Follow toggle turns it on through followComp() and off through stopFollowingComp(), one undo step each")
+{
+    host::EditorHost host;
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    host.edit (parameters::compFollowId, 0.0f);
+    host.edit (parameters::thresholdId, -32.4f);
+    host.edit (parameters::autoGainId, 0.0f);
+    auto& toggle = host.showing<juce::ToggleButton> ("Comp Follow");
+    REQUIRE (host.settleUntil ([&] { return ! toggle.getToggleState(); }));
+    auto& history = host.processor.session().editHistory();
+    const int steps = history.undoSteps();
+
+    const bool byKeys = GENERATE (false, true);
+    CAPTURE (byKeys);
+    const auto press = [&] {
+        if (byKeys)
+        {
+            toggle.grabKeyboardFocus();
+            CHECK (host.press (juce::KeyPress (juce::KeyPress::spaceKey)));
+        }
+        else
+            host::EditorHost::click (toggle);
+    };
+
+    // On: Comp moved to the stored Threshold's place on the Comp Curve.
+    press();
+    CHECK (host.value (parameters::compFollowId) == 1.0f);
+    CHECK_THAT (host.value (parameters::compId), WithinAbs (80.0f, 0.05));
+    CHECK (history.undoSteps() == steps + 1);
+    REQUIRE (host.settleUntil ([&] { return toggle.getToggleState(); }));
+
+    // Off: the followed values written, and Auto Gain on, so the sound doesn't change.
+    host.edit (parameters::compId, 60.0f);
+    const double followedThreshold = host.processor.followedThresholdDb();
+    const int stepsOn = history.undoSteps();
+    press();
+    CHECK (host.value (parameters::compFollowId) == 0.0f);
+    CHECK (host.value (parameters::thresholdId) == asStored (host, parameters::thresholdId, followedThreshold));
+    CHECK (host.value (parameters::autoGainId) == 1.0f);
+    CHECK (history.undoSteps() == stepsOn + 1);
+    REQUIRE (host.settleUntil ([&] { return ! toggle.getToggleState(); }));
+}
+
+TEST_CASE ("Unfollowing from the editor doesn't change the output: the Gain Reduction across the grab is following's")
+{
+    // A steady sine 20 dB over Opto's Comp Curve Threshold at 80%, following throughout, against grabbing Threshold
+    // (a press without a drag) part-way through.
+    const auto play = [] (bool grab) {
+        host::EditorHost host;
+        host.editor.reset();
+        harness::useLayout (host.processor, juce::AudioChannelSet::mono());
+        host.reopen();
+        followingOffTheCurve (host);
+        std::vector<float> output;
+        juce::AudioBuffer<float> buffer (1, 512);
+        juce::MidiBuffer midi;
+        for (int block = 0, n = 0; block < 60; ++block)
+        {
+            if (grab && block == 30)
+                host::EditorHost::drag (host.knob ("Threshold"), 0.0f);
+            for (int i = 0; i < 512; ++i, ++n)
+                buffer.setSample (0, i, static_cast<float> (0.5 * std::sin (2.0 * juce::MathConstants<double>::pi * 440.0 * n / 48000.0)));
+            host.processor.processBlock (buffer, midi);
+            output.insert (output.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + 512);
+        }
+        if (grab)
+            CHECK (host.value (parameters::compFollowId) == 0.0f);
+        return output;
+    };
+    const auto following = play (false), grabbed = play (true);
+    REQUIRE (following.size() == grabbed.size());
+    double most = 0.0;
+    for (size_t i = 0; i < following.size(); ++i)
+        most = std::max (most, std::abs (static_cast<double> (following[i]) - grabbed[i]));
+    // CompParameterTest's tolerance: the stored Threshold and Ratio, as floats, move the Gain Reduction by far less
+    // than 0.001 dB.
+    CHECK (most < 1.0e-4);
+}
