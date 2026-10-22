@@ -332,6 +332,23 @@ const std::vector<Jump>& jumps()
         { "Hold", [] (Settings& s, bool b) { s.holdMs = b ? 500.0 : 0.0; } },
         { "Range", [] (Settings& s, bool b) { s.rangeDb = b ? 60.0 : 0.0; } },
         { "Auto Gain", [] (Settings& s, bool b) { s.autoGain = b; } },
+        // With Auto Gain on, its estimate moves with the timing, across the Auto Gain grid's span, and glides there.
+        { "Attack, with Auto Gain", [] (Settings& s, bool b) {
+             s.autoGain = true;
+             s.attackMs = b ? 30.0 : 0.5;
+         } },
+        { "Release, with Auto Gain", [] (Settings& s, bool b) {
+             s.autoGain = true;
+             s.releaseMs = b ? 400.0 : 20.0;
+         } },
+        { "Auto Release, with Auto Gain", [] (Settings& s, bool b) {
+             s.autoGain = true;
+             s.autoRelease = b;
+         } },
+        { "Hold, with Auto Gain", [] (Settings& s, bool b) {
+             s.autoGain = true;
+             s.holdMs = b ? 100.0 : 0.0;
+         } },
         // Comp Follow on and off, the stored settings compressing nothing and the Comp Curve at its deepest: every switch
         // after the first lands mid-glide and turns it round. Comp jumping end to end while following.
         { "Comp Follow", [] (Settings& s, bool b) {
@@ -474,6 +491,19 @@ const std::vector<Jump>& jumps()
         { "Character, Clean and Opto",
           [] (Settings& s, bool b) { s.character = b ? Character::Opto : Character::Clean; },
           { onOpto, [] (Settings&) {} },
+          1,
+          colourful },
+        // With Auto Gain on: the estimate moves to FET's at once and glides there while the voices crossfade.
+        { "Character, Clean and FET, with Auto Gain",
+          [] (Settings& s, bool b) {
+              s.autoGain = true;
+              s.character = b ? Character::FET : Character::Clean;
+          },
+          { [] (Settings& s) {
+               s.autoGain = true;
+               onFet (s);
+           },
+            [] (Settings& s) { s.autoGain = true; } },
           1,
           colourful },
         // And FET's loop and Colour and Opto's: Opto's parts start from FET's Gain Reduction.

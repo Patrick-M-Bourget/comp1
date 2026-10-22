@@ -217,8 +217,9 @@ struct Settings
     // Colour, in % (0 to 100): how much of its Character's own distortion, which grows with the Gain Reduction, the
     // compressor adds (dyn-lab's USAGE.md, "Colour"). Clean has none, at any Colour.
     double colour = 100.0;
-    // Auto Gain, on the Wet path after the compressor: estimated from Threshold, Ratio, Knee and Range, the derived
-    // ones while Comp Follow is on, which turns it on.
+    // Auto Gain, on the Wet path after the compressor: estimated from the settings, never measured (ADR 0010): from
+    // Threshold, Ratio, Knee and Range, the derived ones while Comp Follow is on, which turns it on; Attack, Release,
+    // Auto Release and Hold; and the Character.
     bool autoGain = false;
     // Saturation, on the Wet path: one soft-clip shape, Drive dB into it, level-compensated, so below the shape's knee
     // (full scale at Drive 0 dB) it passes the signal through bit for bit (dyn-lab's USAGE.md, "Saturation").
