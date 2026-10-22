@@ -487,17 +487,17 @@ TEST_CASE ("Arrows on the focused Transfer Curve inset step Threshold and Ratio 
     CHECK_THAT (host.value (parameters::thresholdId), WithinAbs (-29.4f, 1.0e-4));
     CHECK (host.press (harness::withShift (left)));
     CHECK_THAT (travel (parameters::thresholdId), WithinAbs (threshold + 0.008f, 1.0e-6));
-    // Down raises Ratio, up lowers it, as a drag does.
-    CHECK (host.press (down));
+    // Up raises Ratio, down lowers it, as the Ratio knob's arrows do.
+    CHECK (host.press (up));
     CHECK_THAT (travel (parameters::ratioId), WithinAbs (ratio + 0.01f, 1.0e-6));
-    CHECK (host.press (harness::withShift (up)));
+    CHECK (host.press (harness::withShift (down)));
     CHECK_THAT (travel (parameters::ratioId), WithinAbs (ratio + 0.008f, 1.0e-6));
     CHECK (history.undoSteps() == start + 4);
 
     // A held key: its repeats, then the release, one step.
-    REQUIRE (host.hold (down));
-    REQUIRE (host.hold (down));
-    REQUIRE (host.hold (down));
+    REQUIRE (host.hold (up));
+    REQUIRE (host.hold (up));
+    REQUIRE (host.hold (up));
     host.release();
     CHECK_THAT (travel (parameters::ratioId), WithinAbs (ratio + 0.038f, 1.0e-6));
     CHECK (history.undoSteps() == start + 5);

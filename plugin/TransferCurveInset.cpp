@@ -238,8 +238,8 @@ bool TransferCurveInset::keyPressed (const juce::KeyPress& key)
     if (! horizontal && ! vertical)
         return false;
     const double step = key.getModifiers().isShiftDown() ? fineKeyStep : keyStep;
-    // Right and down raise, as a drag of the handle that way does.
-    const int direction = code == juce::KeyPress::rightKey || code == juce::KeyPress::downKey ? 1 : -1;
+    // Right raises Threshold and up raises Ratio, as the knobs' arrows do.
+    const int direction = code == juce::KeyPress::rightKey || code == juce::KeyPress::upKey ? 1 : -1;
     // A press and its repeats are one edit, ended by the key's release or by losing focus.
     if (! heldKey)
     {
