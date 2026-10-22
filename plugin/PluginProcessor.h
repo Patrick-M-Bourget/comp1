@@ -75,8 +75,8 @@ public:
     // follows it.
     plugkit::ui::Session& session() { return sessionState; }
 
-    // The Styles the editor offers: the four Character Styles, the ones with defaults to write (comp1/Style.h). The
-    // Source Styles join them with their defaults (#26).
+    // The Styles the editor offers: the ones with defaults to write (comp1/Style.h), which is all eight, in the frozen
+    // order, the four Character Styles then the four Source Styles.
     static const std::vector<Style>& offeredStyles();
     // Chooses an offered Style, from the message thread, as the editor's Style picker does: writes the Style parameter
     // and exactly that Style's defaults (ADR 0002), its default Comp and Comp Follow on among them, never Auto Gain,

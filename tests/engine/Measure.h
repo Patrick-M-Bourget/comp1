@@ -1,6 +1,7 @@
 #pragma once
 
 #include "comp1/Engine.h"
+#include "comp1/Style.h"
 
 #include <algorithm>
 #include <cmath>
@@ -797,6 +798,38 @@ inline double referenceLevelDifferenceDb (const Settings& settings)
         sumDb += 10.0 * std::log10 (powerOut / powerIn);
     }
     return sumDb / static_cast<double> (segments.size());
+}
+
+// Every Style, in the frozen order, as the tests know it from dyn-lab's STYLE_DEFAULTS: how far Auto Gain may let the
+// reference signal's level move along its Comp Curve, in dB, its auto_gain_tolerance. Every Style holds dyn-lab's
+// AUTO_GAIN_TOLERANCE, 1 dB, but FET, whose 0.5 ms Attack catches the crests an estimate from the Transfer Curve can't
+// see (tools/dyn-lab/USAGE.md, "Comp"); Drums plays FET at a 5 ms Attack, and holds 1 dB. Written here apart from the
+// Style table.
+struct StyleUnderTest
+{
+    Style style;
+    double autoGainToleranceDb;
+};
+
+inline const std::vector<StyleUnderTest>& stylesUnderTest()
+{
+    static const std::vector<StyleUnderTest> all {
+        { Style::Clean, 1.0 }, { Style::VCA, 1.0 }, { Style::FET, 2.5 }, { Style::Opto, 1.0 },
+        { Style::Vocal, 1.0 }, { Style::Instrument, 1.0 }, { Style::Bus, 1.0 }, { Style::Drums, 1.0 },
+    };
+    return all;
+}
+
+// Every Style, in the frozen order (stylesUnderTest()).
+inline const std::vector<Style>& everyStyle()
+{
+    static const auto all = [] {
+        std::vector<Style> styles;
+        for (const auto& s : stylesUnderTest())
+            styles.push_back (s.style);
+        return styles;
+    }();
+    return all;
 }
 
 // The worst case: every stage on, at its most costly. FET with its full Colour, High Quality at 8x Oversampling (the

@@ -22,16 +22,17 @@ using namespace comp1;
 namespace
 {
 
-const std::vector<Style> characterStyles { Style::Clean, Style::VCA, Style::FET, Style::Opto };
-
-// A Character Style's settings following its Comp Curve at comp, with Colour 0%, so the output's gain is the compressor's
-// and Auto Gain's alone, and the stored Threshold, Ratio and Auto Gain moved well off the Comp Curve, so a test that reads
-// the Comp Curve's values can't be reading theirs.
+// A Style's settings following its Comp Curve at comp, through the compressor alone: Colour 0% and the Gate and the
+// Limiter off (Vocal's are on), so the output's gain is the compressor's and Auto Gain's alone, as dyn-lab's compcurve
+// measures it. The stored Threshold, Ratio and Auto Gain are moved well off the Comp Curve, so a test that reads the
+// Comp Curve's values can't be reading theirs.
 Settings following (Style style, double comp)
 {
     auto settings = styled (style);
     settings.comp = comp;
     settings.colour = 0.0;
+    settings.gate.on = false;
+    settings.limiter = false;
     settings.thresholdDb = -50.0;
     settings.ratio = 1.5;
     settings.autoGain = false;
@@ -68,6 +69,14 @@ const std::vector<CurvePoint>& curvePoints()
         { "transfer --style fet --threshold -28 --ratio 20", Style::FET, 100.0, 9.5170, { { -40.0, -40.00 }, { -20.0, -27.60 }, { 0.0, -26.60 } } },
         { "transfer --style opto", Style::Opto, 50.0, 2.9577, { { -40.0, -40.00 }, { -20.0, -20.44 }, { 0.0, -12.00 } } },
         { "transfer --style opto --threshold -37.2 --ratio 5", Style::Opto, 90.0, 14.0063, { { -40.0, -40.34 }, { -20.0, -33.76 }, { 0.0, -29.76 } } },
+        { "transfer --style vocal", Style::Vocal, 50.0, 2.8862, { { -40.0, -40.00 }, { -20.0, -20.06 }, { 0.0, -12.00 } } },
+        { "transfer --style vocal --threshold -36 --ratio 6", Style::Vocal, 100.0, 13.6078, { { -40.0, -40.00 }, { -20.0, -33.33 }, { 0.0, -30.00 } } },
+        { "transfer --style instrument", Style::Instrument, 50.0, 3.2470, { { -40.0, -40.00 }, { -20.0, -20.06 }, { 0.0, -13.50 } } },
+        { "transfer --style instrument --threshold -36 --ratio 8", Style::Instrument, 100.0, 14.2882, { { -40.0, -40.00 }, { -20.0, -34.00 }, { 0.0, -31.50 } } },
+        { "transfer --style bus", Style::Bus, 50.0, 2.1647, { { -40.0, -40.00 }, { -20.0, -20.04 }, { 0.0, -9.00 } } },
+        { "transfer --style bus --threshold -30 --ratio 4", Style::Bus, 100.0, 8.6042, { { -40.0, -40.00 }, { -20.0, -27.50 }, { 0.0, -22.50 } } },
+        { "transfer --style drums", Style::Drums, 50.0, 3.2277, { { -40.0, -40.00 }, { -20.0, -20.00 }, { 0.0, -13.50 } } },
+        { "transfer --style drums --threshold -30 --ratio 10", Style::Drums, 100.0, 10.3018, { { -40.0, -40.00 }, { -20.0, -29.00 }, { 0.0, -27.00 } } },
     };
     return all;
 }
@@ -120,7 +129,7 @@ constexpr double settleSeconds = 0.1;
 
 } // namespace
 
-TEST_CASE ("Following, each Character Style's steady Transfer Curve is dyn-lab's at the Comp Curve's Threshold and Ratio, with Auto Gain on", "[sweep]")
+TEST_CASE ("Following, each Style's steady Transfer Curve is dyn-lab's at the Comp Curve's Threshold and Ratio, with Auto Gain on", "[sweep]")
 {
     const auto& point = GENERATE (from_range (curvePoints()));
     CAPTURE (point.command);
@@ -137,7 +146,7 @@ TEST_CASE ("Following, each Character Style's steady Transfer Curve is dyn-lab's
 
 TEST_CASE ("Following, moving the stored Threshold, Ratio and Auto Gain leaves the output bit for bit as it was")
 {
-    const auto style = GENERATE (from_range (characterStyles));
+    const auto style = GENERATE (from_range (test::everyStyle()));
     CAPTURE (static_cast<int> (style));
     const auto input = test::noise (2, 24000);
     const auto settings = following (style, 70.0);
@@ -151,15 +160,14 @@ TEST_CASE ("Following, moving the stored Threshold, Ratio and Auto Gain leaves t
     CHECK (test::played (settings, 48000.0, input, { 512 }, nullptr, test::SettingsChange { .at = 9000, .settings = moved }) == played);
 }
 
-TEST_CASE ("Following each Character Style's Comp Curve, Auto Gain keeps the reference signal's level within the Style's tolerance", "[sweep]")
+TEST_CASE ("Following each Style's Comp Curve, Auto Gain keeps the reference signal's level within the Style's tolerance", "[sweep]")
 {
-    const auto style = GENERATE (from_range (characterStyles));
-    // dyn-lab's tolerances (tools/dyn-lab/USAGE.md, "Comp"): FET's own, for its fast Attack, and AUTO_GAIN_TOLERANCE.
-    const double toleranceDb = style == Style::FET ? 2.5 : 1.0;
+    const auto& style = GENERATE (from_range (test::stylesUnderTest()));
+    const double toleranceDb = style.autoGainToleranceDb;
     for (int comp = 0; comp <= 100; comp += 10)
     {
-        CAPTURE (static_cast<int> (style), comp);
-        const double differenceDb = test::referenceLevelDifferenceDb (following (style, comp));
+        CAPTURE (static_cast<int> (style.style), comp);
+        const double differenceDb = test::referenceLevelDifferenceDb (following (style.style, comp));
         CAPTURE (differenceDb);
         CHECK (std::abs (differenceDb) <= toleranceDb);
     }

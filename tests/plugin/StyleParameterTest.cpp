@@ -26,9 +26,6 @@ using plugkit::ui::CompareSide;
 namespace
 {
 
-const std::vector<Style> characterStyles { Style::Clean, Style::VCA, Style::FET, Style::Opto };
-const std::vector<Style> sourceStyles { Style::Vocal, Style::Instrument, Style::Bus, Style::Drums };
-
 float styleValue (Style style) { return static_cast<float> (style); }
 
 // What a host's set of plain leaves in the parameter: its value after the trip through the normalised range.
@@ -105,15 +102,10 @@ struct GestureRecorder final : juce::AudioProcessorListener
     void audioProcessorParameterChangeGestureEnd (juce::AudioProcessor*, int index) override { open.erase (index); }
 };
 
-// The Gain Reduction in dB on each sample of seeded noise through processor at Style style, Colour 0% so the output's
-// gain is the compressor's alone.
-std::vector<double> gainReduction (Style style)
+// The Gain Reduction in dB on each sample of seeded noise through processor, as it is set, in mono.
+std::vector<double> gainReductionThrough (comp1::PluginProcessor& processor)
 {
-    juce::ScopedJuceInitialiser_GUI juce;
-    comp1::PluginProcessor processor;
     REQUIRE (processor.setBusesLayout (host::layout (juce::AudioChannelSet::mono(), juce::AudioChannelSet::disabled())));
-    host::set (processor, "style", styleValue (style));
-    host::set (processor, "colour", 0.0f);
     constexpr int blockSize = 512, blocks = 24;
     processor.prepareToPlay (48000.0, blockSize);
     const auto noise = comp1::test::noise (1, blocks * blockSize, 3);
@@ -127,6 +119,26 @@ std::vector<double> gainReduction (Style style)
         output.insert (output.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + blockSize);
     }
     return comp1::test::gainReductionDb (noise[0], output);
+}
+
+// The Gain Reduction in dB on each sample of seeded noise through a processor at Style style, Colour 0% so the output's
+// gain is the compressor's alone, every other parameter at its default.
+std::vector<double> gainReduction (Style style)
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    comp1::PluginProcessor processor;
+    host::set (processor, "style", styleValue (style));
+    host::set (processor, "colour", 0.0f);
+    return gainReductionThrough (processor);
+}
+
+// The most two Gain Reductions differ by, sample for sample, in dB.
+double mostApart (const std::vector<double>& a, const std::vector<double>& b)
+{
+    double most = 0.0;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        most = std::max (most, std::abs (a[i] - b[i]));
+    return most;
 }
 
 } // namespace
@@ -145,7 +157,7 @@ TEST_CASE ("Style is a host parameter, listed first, with the eight Styles in th
     CHECK (style.getParameterIndex() == 0);
 }
 
-TEST_CASE ("Style alone decides the Settings' Character, and a Source Style plays Clean")
+TEST_CASE ("Style alone decides the Settings' Character and Comp Curve, each Source Style its own Character's")
 {
     juce::ScopedJuceInitialiser_GUI juce;
     host::ParametersOnly processor;
@@ -157,43 +169,40 @@ TEST_CASE ("Style alone decides the Settings' Character, and a Source Style play
              { Style::Opto, Character::Opto },
              { Style::Clean, Character::Clean },
              { Style::Vocal, Character::Clean },
-             { Style::Instrument, Character::Clean },
-             { Style::Bus, Character::Clean },
-             { Style::Drums, Character::Clean },
+             { Style::Instrument, Character::Opto },
+             { Style::Bus, Character::VCA },
+             { Style::Drums, Character::FET },
          })
     {
         CAPTURE (static_cast<int> (style));
         host::set (processor, "style", styleValue (style));
         CHECK (reader.read().character == character);
+        CHECK (reader.read().compCurve == comp1::compCurveOf (style));
     }
 }
 
-TEST_CASE ("Style set by the host reaches the Engine as its Character: VCA, FET and Opto compress unlike Clean, and a Source Style as Clean")
+TEST_CASE ("Style set by the host reaches the Engine as its Character: every Style but Vocal compresses unlike Clean, and Vocal as Clean")
 {
+    // Every other parameter at its default, Comp Follow off among them, so each Style plays the same stored settings
+    // and only its Character can differ: Vocal's is Clean.
     const auto clean = gainReduction (Style::Clean);
-    const auto mostApart = [&clean] (const std::vector<double>& other) {
-        double most = 0.0;
-        for (std::size_t i = 0; i < clean.size(); ++i)
-            most = std::max (most, std::abs (other[i] - clean[i]));
-        return most;
-    };
     REQUIRE (*std::max_element (clean.begin(), clean.end()) > 3.0);
-    for (const auto style : { Style::VCA, Style::FET, Style::Opto })
+    for (const auto style : { Style::VCA, Style::FET, Style::Opto, Style::Instrument, Style::Bus, Style::Drums })
     {
         CAPTURE (static_cast<int> (style));
-        CHECK (mostApart (gainReduction (style)) > 1.0);
+        CHECK (mostApart (gainReduction (style), clean) > 1.0);
     }
-    CHECK (gainReduction (Style::Bus) == clean);
+    CHECK (gainReduction (Style::Vocal) == clean);
 }
 
-TEST_CASE ("The Styles offered are the four Characters")
+TEST_CASE ("The Styles offered are all eight, in the frozen order")
 {
-    CHECK (comp1::PluginProcessor::offeredStyles() == characterStyles);
+    CHECK (comp1::PluginProcessor::offeredStyles() == comp1::test::everyStyle());
 }
 
-TEST_CASE ("Choosing a Character Style sets Style and exactly its defaults, as one undo step inside gestures, and undo and redo put it all back")
+TEST_CASE ("Choosing a Style sets Style and exactly its defaults, as one undo step inside gestures, and undo and redo put it all back")
 {
-    const auto style = GENERATE (from_range (characterStyles));
+    const auto style = GENERATE (from_range (comp1::test::everyStyle()));
     CAPTURE (static_cast<int> (style));
     host::SessionHost host;
     moveEverything (host);
@@ -240,17 +249,24 @@ TEST_CASE ("Choosing the Style already chosen writes its defaults again")
     CHECK_THAT (host.value ("knee"), WithinRel (3.0f, 1.0e-6f));
 }
 
-TEST_CASE ("Choosing a Source Style returns false and changes nothing")
+TEST_CASE ("Choosing Vocal writes the Gate on with its five settings, Auto Release on, and the Limiter on with its Ceiling")
 {
-    const auto style = GENERATE (from_range (sourceStyles));
-    CAPTURE (static_cast<int> (style));
     host::SessionHost host;
-    host.edit ("threshold", -30.0f);
-    const auto before = values (*host.processor);
-    const int steps = host.history.undoSteps();
-    CHECK_FALSE (host.processor->chooseStyle (style));
-    CHECK (values (*host.processor) == before);
-    CHECK (host.history.undoSteps() == steps);
+    moveEverything (host);
+    host.edit ("gate", 0.0f);
+    host.edit ("auto_release", 0.0f);
+    host.edit ("limiter", 0.0f);
+    REQUIRE (host.processor->chooseStyle (Style::Vocal));
+    const auto vocal = comp1::styled (Style::Vocal);
+    CHECK (host.value ("gate") == 1.0f);
+    CHECK_THAT (host.value ("gate_threshold"), WithinRel (asStored (*host.processor, "gate_threshold", vocal.gate.thresholdDb), 1.0e-6f));
+    CHECK_THAT (host.value ("gate_range"), WithinRel (asStored (*host.processor, "gate_range", vocal.gate.rangeDb), 1.0e-6f));
+    CHECK_THAT (host.value ("gate_attack"), WithinRel (asStored (*host.processor, "gate_attack", vocal.gate.attackMs), 1.0e-6f));
+    CHECK_THAT (host.value ("gate_release"), WithinRel (asStored (*host.processor, "gate_release", vocal.gate.releaseMs), 1.0e-6f));
+    CHECK_THAT (host.value ("gate_hold"), WithinRel (asStored (*host.processor, "gate_hold", vocal.gate.holdMs), 1.0e-6f));
+    CHECK (host.value ("auto_release") == 1.0f);
+    CHECK (host.value ("limiter") == 1.0f);
+    CHECK (host.value ("ceiling") == asStored (*host.processor, "ceiling", vocal.ceilingDb));
 }
 
 TEST_CASE ("The Style box alone sets Style, not its defaults, and undo and redo put back the Style it held")
@@ -322,20 +338,41 @@ TEST_CASE ("Restoring a session, loading a Preset and switching A/B put back a s
 
 TEST_CASE ("Style survives save and load, in sessions and Presets, and save, load and save again gives the same bytes")
 {
-    const auto style = GENERATE (Style::VCA, Style::Opto, Style::Drums);
+    const auto style = GENERATE (Style::VCA, Style::Opto, Style::Vocal, Style::Instrument, Style::Bus, Style::Drums);
     CAPTURE (static_cast<int> (style));
     host::SessionHost maker;
+    maker.edit ("knee", 20.0f); // off every Style's Knee, so a restore that wrote the Style's defaults would show
+    maker.edit ("colour", 0.0f);
     maker.edit ("style", styleValue (style));
     const auto first = host::saved (*maker.processor);
+    const auto saved = values (*maker.processor);
 
     host::SessionHost restored;
     host::restore (*restored.processor, first);
-    CHECK (restored.value ("style") == styleValue (style));
+    CHECK (values (*restored.processor) == saved);
     CHECK (host::saved (*restored.processor) == first);
+    // It plays the saved Style's Character on the saved settings, as a fresh instance set to them does.
+    host::SessionHost fresh;
+    for (const auto& [id, value] : saved)
+        host::set (*fresh.processor, id, value);
+    CHECK (gainReductionThrough (*restored.processor) == gainReductionThrough (*fresh.processor));
 
     host::SessionHost loaded;
     REQUIRE (loaded.session.loadPreset (maker.session.presetState(), "Styled"));
     CHECK (loaded.value ("style") == styleValue (style));
+    CHECK (loaded.value ("knee") == 20.0f);
+}
+
+TEST_CASE ("A session holding a Source Style plays that Style's Character, not Clean")
+{
+    const auto style = GENERATE (Style::Instrument, Style::Bus, Style::Drums);
+    CAPTURE (static_cast<int> (style));
+    host::SessionHost maker;
+    maker.edit ("colour", 0.0f);
+    maker.edit ("style", styleValue (style));
+    host::SessionHost restored;
+    host::restore (*restored.processor, host::saved (*maker.processor));
+    CHECK (mostApart (gainReductionThrough (*restored.processor), gainReduction (Style::Clean)) > 1.0);
 }
 
 TEST_CASE ("A session or a Preset from before Style restores Clean, with every other setting as saved and no defaults written")

@@ -130,27 +130,31 @@ TEST_CASE ("Render scenes play every Character, each at a Colour off its default
     CHECK (someScenePlays ([] (const Settings& s) { return (s.character == Character::VCA || s.character == Character::FET) && s.colour > 0.0 && s.thresholdDb <= -40.0; }));
 }
 
-TEST_CASE ("Render scenes play VCA's, FET's and Opto's Style defaults, and a change from Clean's Style to FET's", "[render]")
+TEST_CASE ("Render scenes play every Style's defaults but Clean's, which are a default Settings', a change from Clean's Style to FET's, and one to Vocal's", "[render]")
 {
     const auto scenes = test::renderScenes();
     const auto some = [&scenes] (const std::function<bool (const test::RenderScene&)>& wanted) {
         return std::any_of (scenes.begin(), scenes.end(), wanted);
     };
-    for (const auto style : { Style::VCA, Style::FET, Style::Opto })
+    for (const auto style : test::everyStyle())
     {
+        if (style == Style::Clean)
+            continue;
         CAPTURE (static_cast<int> (style));
         CHECK (some ([style] (const test::RenderScene& s) { return ! s.change && s.settings == styled (style); }));
     }
     CHECK (some ([] (const test::RenderScene& s) { return s.settings == styled (Style::Clean) && s.change == styled (Style::FET); }));
+    // Vocal's switches on the Gate, Auto Release and the Limiter mid-signal.
+    CHECK (some ([] (const test::RenderScene& s) { return s.settings == styled (Style::Clean) && s.change == styled (Style::Vocal); }));
 }
 
-TEST_CASE ("Render scenes play each Character Style following its Comp Curve off its default Comp, Comp Follow switched on and off far from the Comp Curve, and Comp moving while following", "[render]")
+TEST_CASE ("Render scenes play each Style following its Comp Curve off its default Comp, Comp Follow switched on and off far from the Comp Curve, and Comp moving while following", "[render]")
 {
     const auto scenes = test::renderScenes();
     const auto some = [&scenes] (const std::function<bool (const test::RenderScene&)>& wanted) {
         return std::any_of (scenes.begin(), scenes.end(), wanted);
     };
-    for (const auto style : { Style::Clean, Style::VCA, Style::FET, Style::Opto })
+    for (const auto style : test::everyStyle())
     {
         CAPTURE (static_cast<int> (style));
         CHECK (some ([style] (const test::RenderScene& s) {

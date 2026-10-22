@@ -90,13 +90,24 @@ inline std::vector<RenderScene> renderScenes()
         { .name = "fet-style", .settings = styled (Style::FET) },
         { .name = "opto-style", .settings = styled (Style::Opto) },
         { .name = "clean-to-fet-style", .settings = styled (Style::Clean), .change = styled (Style::FET) },
-        // Comp: each Character Style following its Comp Curve at a Comp off its default; Comp Follow switched on, and
+        // The Source Styles' defaults, and a Style change from Clean's to Vocal's, which switches on the Gate, Auto
+        // Release and the Limiter mid-signal.
+        { .name = "vocal-style", .settings = styled (Style::Vocal) },
+        { .name = "instrument-style", .settings = styled (Style::Instrument) },
+        { .name = "bus-style", .settings = styled (Style::Bus) },
+        { .name = "drums-style", .settings = styled (Style::Drums) },
+        { .name = "clean-to-vocal-style", .settings = styled (Style::Clean), .change = styled (Style::Vocal) },
+        // Comp: each Style following its Comp Curve at a Comp off its default; Comp Follow switched on, and
         // off, with the stored Threshold and Ratio far from Clean's Comp Curve at 100% (-36 dB, 8:1); and Comp moving while
         // following.
         { .name = "clean-comp-80", .settings = with ([] (Settings& s) { s = styled (Style::Clean); s.comp = 80.0; }) },
         { .name = "vca-comp-20", .settings = with ([] (Settings& s) { s = styled (Style::VCA); s.comp = 20.0; }) },
         { .name = "fet-comp-90", .settings = with ([] (Settings& s) { s = styled (Style::FET); s.comp = 90.0; }) },
         { .name = "opto-comp-70", .settings = with ([] (Settings& s) { s = styled (Style::Opto); s.comp = 70.0; }) },
+        { .name = "vocal-comp-80", .settings = with ([] (Settings& s) { s = styled (Style::Vocal); s.comp = 80.0; }) },
+        { .name = "instrument-comp-30", .settings = with ([] (Settings& s) { s = styled (Style::Instrument); s.comp = 30.0; }) },
+        { .name = "bus-comp-90", .settings = with ([] (Settings& s) { s = styled (Style::Bus); s.comp = 90.0; }) },
+        { .name = "drums-comp-70", .settings = with ([] (Settings& s) { s = styled (Style::Drums); s.comp = 70.0; }) },
         { .name = "comp-follow-on", .settings = compFollowFar (false), .change = compFollowFar (true) },
         { .name = "comp-follow-off", .settings = compFollowFar (true), .change = compFollowFar (false) },
         { .name = "comp-move", .settings = with ([] (Settings& s) { s.compFollow = true; s.comp = 20.0; }), .change = with ([] (Settings& s) { s.compFollow = true; s.comp = 90.0; }) },
