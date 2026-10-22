@@ -81,7 +81,8 @@ struct Playing : EditorHost
     comp1::GainReductionMeter& meter() { return expandedView().gainReductionMeter(); }
     comp1::GainReductionMeter& gateMeter() { return expandedView().gateGainReductionMeter(); }
     comp1::GainReductionMeter& limiterMeter() { return expandedView().limiterGainReductionMeter(); }
-    comp1::DetectionLevelRing& ring() { return expandedView().detectionLevelRing(); }
+    comp1::LevelRing& ring() { return expandedView().detectionLevelRing(); }
+    comp1::LevelRing& ceilingRing() { return expandedView().ceilingRing(); }
 
     static constexpr int blockSize = 512;
 };

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "PluginProcessor.h"
 #include "Section.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/staple/Icons.h"
@@ -36,7 +37,7 @@ void showRangeOf (juce::Slider& knob, const juce::RangedAudioParameter& paramete
 void describe (staple::Knob& knob, const juce::RangedAudioParameter& parameter);
 } // namespace controls
 
-// One of the Expanded View's sections of controls (Section): its controls in columns, left to right in the order
+// A section of controls (Section), in either view: its controls in columns, left to right in the order
 // they are added, which is Tab's order too. A column holds a knob with its label under its face, or a stack of small
 // controls (toggles, choices, Edge selectors), or a stack with a knob under it. The knobs of a section sit on one
 // line, under the tallest stack over a knob. Each control is titled with its host parameter's name, and attached to
@@ -62,7 +63,7 @@ public:
         void setRing (staple::Knob::RingHandler& handler);
     };
 
-    ControlSection (const juce::String& title, juce::AudioProcessor& processor);
+    ControlSection (const juce::String& title, PluginProcessor& processor);
     ~ControlSection() override;
 
     // Whether the controls are enabled, read on the tick; always, unless set.
@@ -87,9 +88,8 @@ public:
                                            const std::vector<std::optional<staple::Icon>>& contexts,
                                            bool newColumn);
 
-    // Its width and height for its controls: they keep these whatever the window's size.
-    int idealWidth() const;
-    int idealHeight() const;
+    int idealWidth() const override;
+    int idealHeight() const override;
 
     void resized() override;
 
@@ -128,7 +128,7 @@ private:
     int knobTop() const;
     static int knobExtent (const KnobControl& control);
 
-    juce::AudioProcessor& processor;
+    PluginProcessor& processor;
     std::function<bool()> availability;
     std::vector<std::unique_ptr<KnobControl>> knobs;
     std::vector<std::unique_ptr<juce::Component>> others;

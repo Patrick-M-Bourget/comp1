@@ -458,7 +458,9 @@ private:
     bool stereoTrack = false;
     plugkit::StereoPlacement placement = plugkit::StereoPlacement::Stereo; // the Placement asked for
     Character character = Character::Clean;                                // the Character asked for
-    DetectionSource source = DetectionSource::Internal;                    // whether a fed-back Character's detection is
+    // The Detection Source asked for, which each detector reads: a fed-back Character (FET, Opto) detects from its own
+    // gain on Internal, and is feedforward from the Sidechain on External (Character.h's CharacterDetector::process).
+    DetectionSource source = DetectionSource::Internal;
     std::array<Voice, 2> voices;
     std::size_t playing = 0; // the voice heard, or fading in
     plugkit::Smoother fade;  // the share of the voice playing, while the other fades out

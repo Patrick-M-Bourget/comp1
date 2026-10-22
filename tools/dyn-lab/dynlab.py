@@ -1437,8 +1437,8 @@ COLOUR_MAPPINGS = {"vca": (VCA_COLOUR_WEIGHT, VCA_COLOUR_WEIGHT_DB, VCA_COLOUR_D
 
 # Colour's shape is driven relative to Threshold: the compressed signal is shaped at the drive plus this less
 # Threshold, in dB, so a steady Gain Reduction at a Ratio gives the same Colour at every Threshold. It is the default
-# Threshold, so at the defaults the drive alone sets it. USAGE.md gives the reasons.
-COLOUR_THRESHOLD_REFERENCE_DB = -18.0
+# Threshold, read from Settings, so at the defaults the drive alone sets it. USAGE.md gives the reasons.
+COLOUR_THRESHOLD_REFERENCE_DB = Settings().threshold
 
 
 def colour_at(settings, reduction_db):

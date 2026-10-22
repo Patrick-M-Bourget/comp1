@@ -10,6 +10,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <functional>
+#include <utility>
+
 namespace host
 {
 
@@ -93,23 +96,51 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
         FAIL (box.getTitle() << " doesn't offer " << item);
     }
 
-    // Plays blocks of samples of signal through the processor as the host's audio thread does, on every main
-    // channel: signal (n) is the nth sample played by this call.
-    template <typename Signal>
-    void play (int blocks, int samples, Signal&& signal)
+    // What a block played sounds like: the processor's buffer as it leaves it, the main bus's output in its first
+    // channels.
+    using Heard = std::function<void (const juce::AudioBuffer<float>&)>;
+
+    // Plays blocks of samples through the processor as the host's audio thread does: main (n) on every main channel and,
+    // while a Sidechain is connected, sidechain (n) on every Sidechain channel, n the nth sample played by this call.
+    // heard, when given, hears each block. Returns the main bus's last block.
+    template <typename Main, typename Sidechain>
+    juce::AudioBuffer<float> play (int blocks, int samples, Main&& main, Sidechain&& sidechain, const Heard& heard = {})
     {
-        const int channels = processor.getTotalNumInputChannels();
-        juce::AudioBuffer<float> buffer (channels, samples);
+        juce::AudioBuffer<float> buffer (processor.getTotalNumInputChannels(), samples);
         juce::MidiBuffer midi;
         for (int b = 0, n = 0; b < blocks; ++b, n += samples)
         {
             buffer.clear();
-            for (int ch = 0; ch < processor.getMainBusNumInputChannels(); ++ch)
+            auto mainBus = processor.getBusBuffer (buffer, true, 0);
+            for (int ch = 0; ch < mainBus.getNumChannels(); ++ch)
                 for (int i = 0; i < samples; ++i)
-                    buffer.setSample (ch, i, static_cast<float> (signal (n + i)));
+                    mainBus.setSample (ch, i, static_cast<float> (main (n + i)));
+            if (processor.getBusCount (true) > 1 && processor.getBus (true, 1)->isEnabled())
+            {
+                auto sidechainBus = processor.getBusBuffer (buffer, true, 1);
+                for (int ch = 0; ch < sidechainBus.getNumChannels(); ++ch)
+                    for (int i = 0; i < samples; ++i)
+                        sidechainBus.setSample (ch, i, static_cast<float> (sidechain (n + i)));
+            }
             processor.processBlock (buffer, midi);
+            if (heard != nullptr)
+                heard (buffer);
         }
+        juce::AudioBuffer<float> out (processor.getMainBusNumOutputChannels(), samples);
+        for (int ch = 0; ch < out.getNumChannels(); ++ch)
+            out.copyFrom (ch, 0, buffer, ch, 0, samples);
+        return out;
     }
+
+    // The same with the Sidechain silent.
+    template <typename Main>
+    juce::AudioBuffer<float> play (int blocks, int samples, Main&& main)
+    {
+        return play (blocks, samples, std::forward<Main> (main), silent);
+    }
+
+    // A silent signal, for the Sidechain or the main input.
+    static double silent (int) { return 0.0; }
 };
 
 } // namespace host

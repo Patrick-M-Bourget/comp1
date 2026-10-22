@@ -37,19 +37,13 @@ bool operator== (const clean::Curve& a, const clean::Curve& b)
 } // namespace
 
 TransferCurveGraph::TransferCurveGraph (PluginProcessor& p, LevelHistory& h)
-    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), history (h), reader (p.parameterState()),
-      drawn (played())
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), reader (p.parameterState()), drawn (played()),
+      level (h, &LevelRecord::detectionLevelDb, -scaleDb, 0.0)
 {
     setName ("Transfer Curve");
     setTitle ("Transfer Curve Graph");
     setWantsKeyboardFocus (false);
     setInterceptsMouseClicks (false, false);
-    history.subscribe (*this);
-}
-
-TransferCurveGraph::~TransferCurveGraph()
-{
-    history.unsubscribe (*this);
 }
 
 clean::Curve TransferCurveGraph::played() const
@@ -73,25 +67,18 @@ std::optional<double> TransferCurveGraph::dotDb() const
 
 std::optional<juce::Point<double>> TransferCurveGraph::dot() const
 {
-    if (const auto level = dotDb())
-        return juce::Point<double> { *level, outputAt (*level) };
+    if (const auto inputDb = dotDb())
+        return juce::Point<double> { *inputDb, outputAt (*inputDb) };
     return std::nullopt;
-}
-
-void TransferCurveGraph::levelsRead (std::span<const LevelRecord> records)
-{
-    for (const auto& record : records)
-        loudest = std::max (loudest, record.detectionLevelDb);
 }
 
 void TransferCurveGraph::tick (double seconds)
 {
-    const double level = std::clamp (ballistics.update (std::min (loudest, 0.0), seconds), -scaleDb, 0.0);
-    loudest = -scaleDb;
+    const double levelDb = level.next (seconds);
     const auto now = played();
-    if (juce::exactlyEqual (level, shown) && now == drawn)
+    if (juce::exactlyEqual (levelDb, shown) && now == drawn)
         return;
-    shown = level;
+    shown = levelDb;
     drawn = now;
     repaint();
 }
@@ -105,7 +92,7 @@ juce::String TransferCurveGraph::valueText() const
     const double level = shown <= -scaleDb ? -std::numeric_limits<double>::infinity() : shown;
     return "Threshold " + spoken (parameters::thresholdId, drawn.thresholdDb) + ", Ratio "
            + spoken (parameters::ratioId, drawn.inverseRatio <= 0.0 ? std::numeric_limits<double>::infinity() : 1.0 / drawn.inverseRatio)
-           + ", Knee " + spoken (parameters::kneeId, drawn.kneeDb) + ", Detection Level "
+           + ", Knee " + juce::String (drawn.kneeDb, 1) + " dB, Detection Level "
            + plugkit::ui::valueText::signedDb (level, { .decimals = 1, .unit = false }) + " dB";
 }
 

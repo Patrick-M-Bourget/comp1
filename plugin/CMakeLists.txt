@@ -36,13 +36,13 @@ target_sources(comp1 PRIVATE
     CompFollowAttachment.cpp
     Controls.cpp
     DetectionEqDisplay.cpp
-    DetectionLevelRing.cpp
     Display.cpp
     DisplayFades.cpp
     Footer.cpp
     GainReductionMeter.cpp
     LevelGraph.cpp
     LevelHistory.cpp
+    LevelRing.cpp
     Parameters.cpp
     PluginEditor.cpp
     PluginProcessor.cpp

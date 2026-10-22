@@ -15,7 +15,6 @@ bool isOn (PluginProcessor& processor, const juce::String& id)
     return processor.parameterState().getRawParameterValue (id)->load (std::memory_order_relaxed) >= 0.5f;
 }
 
-bool inHighQuality (PluginProcessor& processor) { return isOn (processor, parameters::processingModeId); }
 } // namespace
 
 ControlSection::KnobControl& addCompKnob (ControlSection& section, PluginProcessor& processor, std::optional<CompFollowAttachment>& attachment, Place place)
@@ -49,7 +48,7 @@ CompressorSection::CompressorSection (PluginProcessor& p, LevelHistory& history)
     addKnob (parameters::holdId, knobSize::small, "Hold", Place::underStack);
     addKnob (parameters::rangeId, knobSize::small, "Range");
 
-    ring = std::make_unique<DetectionLevelRing> (threshold->knob, threshold->parameter, history);
+    ring = std::make_unique<LevelRing> (threshold->knob, threshold->parameter, history, LevelRing::detectionLevel());
     threshold->setRing (*ring);
 
     auto& edits = processor.session().editHistory();
@@ -116,11 +115,19 @@ DryWetSection::DryWetSection (PluginProcessor& p) : ControlSection ("Dry/Wet", p
     addKnob (parameters::wetId, knobSize::medium, "Wet");
 }
 
-OutputSection::OutputSection (PluginProcessor& p) : ControlSection ("Output", p)
+OutputSection::OutputSection (PluginProcessor& p, LevelHistory& history) : ControlSection ("Output", p)
 {
     addKnob (parameters::outputGainId, knobSize::medium, "Output Gain");
     addToggle (parameters::limiterId, "Limiter", true);
-    addKnob (parameters::ceilingId, knobSize::medium, "Ceiling", Place::underStack);
+    ceiling = &addKnob (parameters::ceilingId, knobSize::medium, "Ceiling", Place::underStack);
+    ring = std::make_unique<LevelRing> (ceiling->knob, ceiling->parameter, history, LevelRing::limiterGainReduction());
+    ceiling->setRing (*ring);
+}
+
+OutputSection::~OutputSection()
+{
+    // Before the knob the ring is drawn in goes.
+    ceiling->knob.setRing (nullptr);
 }
 
 DetectionSection::DetectionSection (PluginProcessor& p) : ControlSection ("Detection", p)
@@ -155,7 +162,7 @@ StereoSection::StereoSection (PluginProcessor& p) : ControlSection ("Stereo", p)
 LookaheadSection::LookaheadSection (PluginProcessor& p) : ControlSection ("Lookahead", p)
 {
     addKnob (parameters::lookaheadId, knobSize::medium, "Lookahead");
-    setAvailability ([&p] { return inHighQuality (p); });
+    setAvailability ([&p] { return parameters::inHighQuality (p.parameterState()); });
 }
 
 } // namespace comp1

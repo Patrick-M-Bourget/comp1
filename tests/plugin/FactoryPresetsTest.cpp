@@ -172,8 +172,8 @@ juce::String compFollowProblem (const FactoryPreset& p)
 
 bool isSidechainPreset (const FactoryPreset& p) { return p.name.endsWith (sidechainSuffix); }
 
-// Rule: Detection Source External exactly when the name ends " (Sidechain)"; and such a Preset holds Comp Follow and
-// Auto Gain off, so with nothing routed nothing lifts or lowers the signal.
+// Rule: Detection Source External exactly when the name ends " (Sidechain)"; and such a Preset holds Comp Follow,
+// Auto Gain, the Limiter and Saturation off, so with nothing routed nothing lifts or lowers the signal.
 juce::String sidechainProblem (const FactoryPreset& p)
 {
     const auto settings = settingsOf (p);
@@ -186,64 +186,122 @@ juce::String sidechainProblem (const FactoryPreset& p)
         return "a Sidechain Preset with Comp Follow on";
     if (isSidechainPreset (p) && settings.autoGain)
         return "a Sidechain Preset with Auto Gain on";
+    if (isSidechainPreset (p) && (settings.limiter || settings.saturation))
+        return "a Sidechain Preset with the Limiter or Saturation on";
     return {};
 }
 
-// Rule: High Quality only in the Master Category.
+// Rule: High Quality only in the Master Category, and there only where the Preset limits or saturates.
 juce::String processingModeProblem (const FactoryPreset& p)
 {
-    if (settingsOf (p).processingMode == comp1::ProcessingMode::HighQuality && categoryOf (p) != "Master")
+    const auto settings = settingsOf (p);
+    if (settings.processingMode != comp1::ProcessingMode::HighQuality)
+        return {};
+    if (categoryOf (p) != "Master")
         return "High Quality outside Master";
+    if (! settings.limiter && ! settings.saturation)
+        return "High Quality on a Master Preset that neither limits nor saturates";
+    return {};
+}
+
+// The Presets the content rules name, by name.
+bool isNamed (const FactoryPreset& p, std::initializer_list<const char*> namesUtf8)
+{
+    return std::any_of (namesUtf8.begin(), namesUtf8.end(), [&p] (const char* name) { return p.name == named (name); });
+}
+
+// Whether it sets the Vocal Style: a Preset that holds no Style plays Clean, the Style parameter's default.
+bool isVocalStyle (const FactoryPreset& p)
+{
+    const auto style = heldSetting (p, ids::styleId);
+    return style.isValid() && juce::roundToInt (fileValue (style)) == static_cast<int> (comp1::Style::Vocal);
+}
+
+// The delivery Presets, which limit to -1 dBFS: Spoken Word, the Master Presets and the Safety Limiter.
+bool isDelivery (const FactoryPreset& p)
+{
+    return categoryOf (p) == "Master" || isNamed (p, { "Vocals \xe2\x80\x93 Spoken Word", "Utility \xe2\x80\x93 Safety Limiter" });
+}
+
+// Rule: the Gate on only in the Vocal Style's Presets (its default), the close-miked drums (Snare Snap, Toms Gate) and
+// Utility – Noise Gate, and never on a Mix Bus or a Master; and Gate Range 24 dB or less but on the Noise Gate.
+juce::String gateProblem (const FactoryPreset& p)
+{
+    const auto settings = settingsOf (p);
+    const bool noiseGate = isNamed (p, { "Utility \xe2\x80\x93 Noise Gate" });
+    if (settings.gate.on && (categoryOf (p) == "Mix Bus" || categoryOf (p) == "Master"))
+        return "the Gate on a " + categoryOf (p);
+    if (settings.gate.on && ! isVocalStyle (p) && ! noiseGate && ! isNamed (p, { "Drums \xe2\x80\x93 Snare Snap", "Drums \xe2\x80\x93 Toms Gate" }))
+        return "the Gate on, outside the Vocal Style, the close-miked drums and the Noise Gate";
+    if (settings.gate.rangeDb > 24.0 && ! noiseGate)
+        return "Gate Range " + juce::String (settings.gate.rangeDb, 1) + " dB, over 24 dB";
+    return {};
+}
+
+// Rule: the Limiter on only in the Vocal Style's Presets (its default), Utility – Safety Limiter and the Master
+// Presets; Ceiling 0 dBFS, or -1 dBFS on a delivery Preset (isDelivery), where the Limiter, when on, is at -1 dBFS.
+juce::String limiterProblem (const FactoryPreset& p)
+{
+    const auto settings = settingsOf (p);
+    if (settings.limiter && ! isVocalStyle (p) && ! isDelivery (p))
+        return "the Limiter on, outside the Vocal Style, the Safety Limiter and Master";
+    const bool atZero = std::abs (settings.ceilingDb) < 1.0e-4, atMinusOne = std::abs (settings.ceilingDb + 1.0) < 1.0e-4;
+    if (! atZero && ! (atMinusOne && isDelivery (p)))
+        return "Ceiling " + juce::String (settings.ceilingDb, 2) + " dBFS";
+    if (settings.limiter && isDelivery (p) && ! atMinusOne)
+        return "a delivery Preset limiting to " + juce::String (settings.ceilingDb, 2) + " dBFS, not -1 dBFS";
+    return {};
+}
+
+// Rule: Output Gain 0 dB but on Master – Loud Limit, which pushes into the Limiter.
+juce::String outputGainProblem (const FactoryPreset& p)
+{
+    if (const auto gainDb = settingsOf (p).outputGainDb; ! juce::exactlyEqual (gainDb, 0.0) && ! isNamed (p, { "Master \xe2\x80\x93 Loud Limit" }))
+        return "Output Gain " + juce::String (gainDb, 2) + " dB";
+    return {};
+}
+
+// Rule: Lookahead 0 to 2 ms; and Oversampling at its default but where Saturation, or a Character's Colour, is on.
+juce::String lookaheadAndOversamplingProblem (const FactoryPreset& p)
+{
+    const auto settings = settingsOf (p);
+    if (settings.lookaheadMs > 2.0)
+        return "Lookahead " + juce::String (settings.lookaheadMs, 2) + " ms, over 2 ms";
+    const bool coloured = settings.character != comp1::Character::Clean && settings.colour > 0.0;
+    if (settings.oversampling != comp1::Settings {}.oversampling && ! settings.saturation && ! coloured)
+        return "Oversampling off its default, with no Saturation or Colour";
+    return {};
+}
+
+// Rule: Comp Follow on, but where an exact Threshold is the purpose: the De-Esser, Transient Tame and the Sidechain
+// Presets. Default, a new instance's state, has it off.
+juce::String compFollowOffProblem (const FactoryPreset& p)
+{
+    const bool exactThreshold = p.name == "Default" || p.name.endsWith (sidechainSuffix)
+                                || isNamed (p, { "Vocals \xe2\x80\x93 De-Esser", "Drums \xe2\x80\x93 Transient Tame" });
+    if (const bool following = settingsOf (p).compFollow; following == exactThreshold)
+        return following ? "Comp Follow on, where an exact Threshold is the purpose" : "Comp Follow off";
     return {};
 }
 
 // --- The audio rules --------------------------------------------------------------------------------------------
 
 using comp1::test::Channels;
+using comp1::test::pinkNoise;
+using comp1::test::rmsDb;
 constexpr double sampleRate = 48000.0;
 constexpr int seconds = 2;
 
-// The RMS level of samples in dB.
-double rmsDb (const float* samples, int count)
-{
-    double power = 0.0;
-    for (int i = 0; i < count; ++i)
-        power += static_cast<double> (samples[i]) * samples[i];
-    return 10.0 * std::log10 (power / count);
-}
-
-// Seeded pink-like noise on each channel at an RMS level of rmsLevelDb: white noise (comp1::test::noise) through Paul
-// Kellet's three-pole pink filter, each channel its own, the same on every platform.
-Channels pinkNoise (int numChannels, int numSamples, double rmsLevelDb, std::uint32_t seed = 7)
-{
-    auto audio = comp1::test::noise (numChannels, numSamples, seed);
-    for (auto& channel : audio)
-    {
-        double b0 = 0.0, b1 = 0.0, b2 = 0.0;
-        for (auto& x : channel)
-        {
-            const double w = x;
-            b0 = 0.99765 * b0 + 0.0990460 * w;
-            b1 = 0.96300 * b1 + 0.2965164 * w;
-            b2 = 0.57000 * b2 + 1.0526913 * w;
-            x = static_cast<float> (b0 + b1 + b2 + 0.1848 * w);
-        }
-        const auto gain = static_cast<float> (std::pow (10.0, (rmsLevelDb - rmsDb (channel.data(), numSamples)) / 20.0));
-        for (auto& x : channel)
-            x *= gain;
-    }
-    return audio;
-}
-
 // What the plugin plays from a stereo input with the Preset loaded, at 48 kHz in blocks of 512, as a host plays it:
-// with a Sidechain connected and silent, or with none connected. Its latency comes back too.
+// with a stereo Sidechain connected, playing sidechainSamples (as long as input) when given and silent otherwise, or
+// with none connected. Its latency comes back too.
 struct Played
 {
     Channels output;
     int latency = 0;
 };
 
-Played playedThroughPlugin (const FactoryPreset& p, const Channels& input, bool sidechainConnected)
+Played playedThroughPlugin (const FactoryPreset& p, const Channels& input, bool sidechainConnected, const Channels* sidechainSamples = nullptr)
 {
     constexpr int blockSize = 512;
     host::SessionHost host;
@@ -259,13 +317,18 @@ Played playedThroughPlugin (const FactoryPreset& p, const Channels& input, bool 
     Played played { Channels (2, std::vector<float> (static_cast<std::size_t> (numSamples))), processor.getLatencySamples() };
     juce::AudioBuffer<float> buffer (processor.getTotalNumInputChannels(), blockSize);
     juce::MidiBuffer midi;
+    REQUIRE ((sidechainSamples == nullptr || sidechainConnected));
     for (int start = 0; start < numSamples; start += blockSize)
     {
         const int count = std::min (blockSize, numSamples - start);
         buffer.setSize (buffer.getNumChannels(), count, false, false, true);
         buffer.clear();
         for (int ch = 0; ch < 2; ++ch)
+        {
             buffer.copyFrom (ch, 0, input[static_cast<std::size_t> (ch)].data() + start, count);
+            if (sidechainSamples != nullptr)
+                buffer.copyFrom (ch + 2, 0, (*sidechainSamples)[static_cast<std::size_t> (ch)].data() + start, count);
+        }
         processor.processBlock (buffer, midi);
         for (int ch = 0; ch < 2; ++ch)
             std::copy_n (buffer.getReadPointer (ch), count, played.output[static_cast<std::size_t> (ch)].data() + start);
@@ -276,7 +339,7 @@ Played playedThroughPlugin (const FactoryPreset& p, const Channels& input, bool 
 // Rule: 2 s of stereo pink noise at -18 dBFS RMS comes out finite, its peak no more than 12 dB above the input's.
 juce::String loudnessProblem (const FactoryPreset& p)
 {
-    const auto input = pinkNoise (2, static_cast<int> (sampleRate) * seconds, -18.0);
+    const auto input = pinkNoise (2, static_cast<int> (sampleRate) * seconds, -18.0, 7);
     const auto played = playedThroughPlugin (p, input, true);
     for (const auto& channel : played.output)
         if (! std::all_of (channel.begin(), channel.end(), [] (float x) { return std::isfinite (x); }))
@@ -293,7 +356,7 @@ juce::String unroutedSidechainProblem (const FactoryPreset& p)
     if (! isSidechainPreset (p))
         return {};
     const int numSamples = static_cast<int> (sampleRate) * seconds;
-    const auto input = pinkNoise (2, numSamples, -18.0);
+    const auto input = pinkNoise (2, numSamples, -18.0, 7);
     const auto played = playedThroughPlugin (p, input, false);
     constexpr int window = static_cast<int> (sampleRate / 10);
     for (std::size_t ch = 0; ch < 2; ++ch)
@@ -538,6 +601,11 @@ TEST_CASE ("Every Factory Preset passes the gate")
         CHECK (compFollowProblem (p) == "");
         CHECK (sidechainProblem (p) == "");
         CHECK (processingModeProblem (p) == "");
+        CHECK (gateProblem (p) == "");
+        CHECK (limiterProblem (p) == "");
+        CHECK (outputGainProblem (p) == "");
+        CHECK (lookaheadAndOversamplingProblem (p) == "");
+        CHECK (compFollowOffProblem (p) == "");
         CHECK (loudnessProblem (p) == "");
         CHECK (unroutedSidechainProblem (p) == "");
         CHECK (gainReductionProblem (p) == "");
@@ -607,14 +675,79 @@ TEST_CASE ("The Factory gate rejects Detection Source External without (Sidechai
     CHECK (sidechainProblem (preset ("Bass \xe2\x80\x93 Duck (Sidechain)")).isNotEmpty());
     CHECK (sidechainProblem (preset ("Bass \xe2\x80\x93 Duck (Sidechain)", { { ids::detectionSourceId, external }, { ids::compFollowId, 1.0f } })).isNotEmpty());
     CHECK (sidechainProblem (preset ("Bass \xe2\x80\x93 Duck (Sidechain)", { { ids::detectionSourceId, external }, { ids::autoGainId, 1.0f } })).isNotEmpty());
+    CHECK (sidechainProblem (preset ("Bass \xe2\x80\x93 Duck (Sidechain)", { { ids::detectionSourceId, external }, { ids::limiterId, 1.0f } })).isNotEmpty());
+    CHECK (sidechainProblem (preset ("Bass \xe2\x80\x93 Duck (Sidechain)", { { ids::detectionSourceId, external }, { ids::saturationId, 1.0f } })).isNotEmpty());
 }
 
-TEST_CASE ("The Factory gate rejects High Quality outside the Master Category")
+TEST_CASE ("The Factory gate rejects High Quality outside the Master Category, or on a Master that neither limits nor saturates")
 {
-    constexpr float highQuality = 1.0f;
-    CHECK (processingModeProblem (preset ("Master \xe2\x80\x93 Loud", { { ids::processingModeId, highQuality } })) == "");
+    constexpr float highQuality = 1.0f, on = 1.0f;
+    CHECK (processingModeProblem (preset ("Master \xe2\x80\x93 Loud", { { ids::processingModeId, highQuality }, { ids::limiterId, on } })) == "");
+    CHECK (processingModeProblem (preset ("Master \xe2\x80\x93 Warm", { { ids::processingModeId, highQuality }, { ids::saturationId, on } })) == "");
+    CHECK (processingModeProblem (preset ("Master \xe2\x80\x93 Glue", { { ids::processingModeId, highQuality } })).isNotEmpty());
     CHECK (processingModeProblem (preset ("Mix Bus \xe2\x80\x93 Glue")) == "");
-    CHECK (processingModeProblem (preset ("Mix Bus \xe2\x80\x93 Glue", { { ids::processingModeId, highQuality } })).isNotEmpty());
+    CHECK (processingModeProblem (preset ("Mix Bus \xe2\x80\x93 Glue", { { ids::processingModeId, highQuality }, { ids::limiterId, on } })).isNotEmpty());
+}
+
+TEST_CASE ("The Factory gate rejects the Gate on outside the Vocal Style, the close-miked drums and the Noise Gate, and a wide Gate Range")
+{
+    constexpr float on = 1.0f, vocal = 4.0f, drums = 7.0f;
+    CHECK (gateProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::styleId, vocal }, { ids::gateId, on } })) == "");
+    CHECK (gateProblem (preset ("Drums \xe2\x80\x93 Snare Snap", { { ids::gateId, on } })) == "");
+    CHECK (gateProblem (preset ("Drums \xe2\x80\x93 Toms Gate", { { ids::gateId, on }, { ids::gateRangeId, 24.0f } })) == "");
+    CHECK (gateProblem (preset ("Utility \xe2\x80\x93 Noise Gate", { { ids::gateId, on }, { ids::gateRangeId, 30.0f } })) == "");
+    CHECK (gateProblem (preset ("Drums \xe2\x80\x93 Kick", { { ids::styleId, drums }, { ids::gateId, on } })).isNotEmpty());
+    CHECK (gateProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::gateId, on } })).isNotEmpty());
+    // Never on a bus or a master, whatever its Style.
+    CHECK (gateProblem (preset ("Mix Bus \xe2\x80\x93 Glue", { { ids::styleId, vocal }, { ids::gateId, on } })).isNotEmpty());
+    CHECK (gateProblem (preset ("Master \xe2\x80\x93 Polish", { { ids::styleId, vocal }, { ids::gateId, on } })).isNotEmpty());
+    CHECK (gateProblem (preset ("Drums \xe2\x80\x93 Toms Gate", { { ids::gateId, on }, { ids::gateRangeId, 30.0f } })).isNotEmpty());
+}
+
+TEST_CASE ("The Factory gate rejects the Limiter on outside the Vocal Style, the Safety Limiter and Master, and a Ceiling off 0 or -1 dBFS")
+{
+    constexpr float on = 1.0f, vocal = 4.0f;
+    CHECK (limiterProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::styleId, vocal }, { ids::limiterId, on } })) == "");
+    CHECK (limiterProblem (preset ("Utility \xe2\x80\x93 Safety Limiter", { { ids::limiterId, on }, { ids::ceilingId, -1.0f } })) == "");
+    CHECK (limiterProblem (preset ("Master \xe2\x80\x93 Loud", { { ids::limiterId, on }, { ids::ceilingId, -1.0f } })) == "");
+    CHECK (limiterProblem (preset ("Vocals \xe2\x80\x93 Spoken Word", { { ids::styleId, vocal }, { ids::limiterId, on }, { ids::ceilingId, -1.0f } })) == "");
+    // A Master that doesn't limit leaves Ceiling at 0 dBFS.
+    CHECK (limiterProblem (preset ("Master \xe2\x80\x93 Glue")) == "");
+    CHECK (limiterProblem (preset ("Mix Bus \xe2\x80\x93 Glue", { { ids::limiterId, on } })).isNotEmpty());
+    CHECK (limiterProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::limiterId, on } })).isNotEmpty());
+    CHECK (limiterProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::styleId, vocal }, { ids::limiterId, on }, { ids::ceilingId, -1.0f } })).isNotEmpty());
+    CHECK (limiterProblem (preset ("Master \xe2\x80\x93 Loud", { { ids::limiterId, on } })).isNotEmpty());
+    CHECK (limiterProblem (preset ("Master \xe2\x80\x93 Loud", { { ids::limiterId, on }, { ids::ceilingId, -3.0f } })).isNotEmpty());
+}
+
+TEST_CASE ("The Factory gate rejects Output Gain off 0 dB but on Master - Loud Limit")
+{
+    CHECK (outputGainProblem (preset ("Master \xe2\x80\x93 Loud Limit", { { ids::outputGainId, 4.0f } })) == "");
+    CHECK (outputGainProblem (preset ("Master \xe2\x80\x93 Glue")) == "");
+    CHECK (outputGainProblem (preset ("Master \xe2\x80\x93 Glue", { { ids::outputGainId, 1.0f } })).isNotEmpty());
+    CHECK (outputGainProblem (preset ("Mix Bus \xe2\x80\x93 Parallel", { { ids::outputGainId, -2.0f } })).isNotEmpty());
+}
+
+TEST_CASE ("The Factory gate rejects Lookahead over 2 ms, and Oversampling off its default with no Saturation or Colour")
+{
+    constexpr float on = 1.0f, fet = 2.0f, x4 = 2.0f;
+    CHECK (lookaheadAndOversamplingProblem (preset ("Master \xe2\x80\x93 Loud", { { ids::lookaheadId, 2.0f } })) == "");
+    CHECK (lookaheadAndOversamplingProblem (preset ("Master \xe2\x80\x93 Loud", { { ids::lookaheadId, 3.0f } })).isNotEmpty());
+    CHECK (lookaheadAndOversamplingProblem (preset ("Master \xe2\x80\x93 Warm", { { ids::saturationId, on }, { ids::oversamplingId, x4 } })) == "");
+    CHECK (lookaheadAndOversamplingProblem (preset ("Master \xe2\x80\x93 Warm", { { ids::styleId, fet }, { ids::oversamplingId, x4 } })) == "");
+    CHECK (lookaheadAndOversamplingProblem (preset ("Master \xe2\x80\x93 Warm", { { ids::oversamplingId, x4 } })).isNotEmpty());
+}
+
+TEST_CASE ("The Factory gate rejects Comp Follow off but where an exact Threshold is the purpose, and on where it is")
+{
+    constexpr float on = 1.0f, external = 1.0f;
+    CHECK (compFollowOffProblem (preset ("Default")) == "");
+    CHECK (compFollowOffProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::compFollowId, on } })) == "");
+    CHECK (compFollowOffProblem (preset ("Vocals \xe2\x80\x93 De-Esser", { { ids::thresholdId, -30.0f } })) == "");
+    CHECK (compFollowOffProblem (preset ("Drums \xe2\x80\x93 Transient Tame", { { ids::thresholdId, -17.0f } })) == "");
+    CHECK (compFollowOffProblem (preset ("Bass \xe2\x80\x93 Duck (Sidechain)", { { ids::detectionSourceId, external } })) == "");
+    CHECK (compFollowOffProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::thresholdId, -30.0f } })).isNotEmpty());
+    CHECK (compFollowOffProblem (preset ("Vocals \xe2\x80\x93 De-Esser", { { ids::compFollowId, on } })).isNotEmpty());
 }
 
 TEST_CASE ("The Factory gate rejects a Preset that lifts pink noise's peak by more than 12 dB")
@@ -693,46 +826,7 @@ TEST_CASE ("The Factory gate rejects a De-Esser that misses sibilance, or compre
     CHECK (gainReductionProblem (deEsserWith ({ { ids::thresholdId, -2.0f } })) == "");
 }
 
-namespace
-{
-
-// What the plugin plays from a stereo input with the Preset loaded and a stereo key on the Sidechain, at 48 kHz in
-// blocks of 512, as a host plays it.
-Channels playedWithKey (const FactoryPreset& p, const Channels& input, const Channels& key)
-{
-    constexpr int blockSize = 512;
-    host::SessionHost host;
-    auto& processor = *host.processor;
-    juce::AudioProcessor::BusesLayout layout;
-    layout.inputBuses.add (juce::AudioChannelSet::stereo());
-    layout.inputBuses.add (juce::AudioChannelSet::stereo());
-    layout.outputBuses.add (juce::AudioChannelSet::stereo());
-    REQUIRE (processor.setBusesLayout (layout));
-    processor.prepareToPlay (sampleRate, blockSize);
-    REQUIRE (host.session.loadPreset (p.preset, p.name));
-    const int numSamples = static_cast<int> (input.front().size());
-    Channels output (2, std::vector<float> (static_cast<std::size_t> (numSamples)));
-    juce::AudioBuffer<float> buffer (4, blockSize);
-    juce::MidiBuffer midi;
-    for (int start = 0; start < numSamples; start += blockSize)
-    {
-        const int count = std::min (blockSize, numSamples - start);
-        buffer.setSize (4, count, false, false, true);
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            buffer.copyFrom (ch, 0, input[static_cast<std::size_t> (ch)].data() + start, count);
-            buffer.copyFrom (ch + 2, 0, key[static_cast<std::size_t> (ch)].data() + start, count);
-        }
-        processor.processBlock (buffer, midi);
-        for (int ch = 0; ch < 2; ++ch)
-            std::copy_n (buffer.getReadPointer (ch), count, output[static_cast<std::size_t> (ch)].data() + start);
-    }
-    return output;
-}
-
-} // namespace
-
-TEST_CASE ("Every Sidechain Preset dips the signal by at least 3 dB under a loud key on the Sidechain")
+TEST_CASE ("Every Sidechain Preset dips the signal by at least 3 dB under loud audio on the Sidechain")
 {
     // The Utility Sidechain Presets, each of which must be in the library.
     const auto factory = factoryPresets();
@@ -745,14 +839,14 @@ TEST_CASE ("Every Sidechain Preset dips the signal by at least 3 dB under a loud
     // EQ, a kick's lows as much as a voice's middle. Measured over the second second, once the dip has settled.
     const int numSamples = static_cast<int> (sampleRate) * seconds;
     const auto input = pinkNoise (2, numSamples, -18.0, 29);
-    const auto key = pinkNoise (2, numSamples, -12.0, 31);
+    const auto sidechainSamples = pinkNoise (2, numSamples, -12.0, 31);
     const int settled = static_cast<int> (sampleRate);
     for (const auto& p : factory)
     {
         if (! isSidechainPreset (p))
             continue;
         CAPTURE (p.name);
-        const auto output = playedWithKey (p, input, key);
+        const auto output = playedThroughPlugin (p, input, true, &sidechainSamples).output;
         for (std::size_t ch = 0; ch < 2; ++ch)
             CHECK (rmsDb (input[ch].data() + settled, numSamples - settled) - rmsDb (output[ch].data() + settled, numSamples - settled) >= 3.0);
     }
@@ -800,7 +894,7 @@ TEST_CASE ("A parallel Factory Preset's Dry path is heard: with Wet Off, its out
         if (! std::isinf (settingsOf (p).dryDb))
             parallel.push_back (p);
     REQUIRE (std::any_of (parallel.begin(), parallel.end(), [] (const auto& p) { return p.name == named ("Drums \xe2\x80\x93 All-In Crush"); }));
-    const auto input = pinkNoise (2, static_cast<int> (sampleRate) * seconds, -18.0);
+    const auto input = pinkNoise (2, static_cast<int> (sampleRate) * seconds, -18.0, 7);
     for (const auto& p : parallel)
     {
         CAPTURE (p.name);

@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <stdexcept>
 
 namespace comp1
 {
@@ -96,21 +95,14 @@ ControlSection::KnobControl::KnobControl (juce::RangedAudioParameter& p, float d
     label.setAccessible (false);
 }
 
-ControlSection::ControlSection (const juce::String& title, juce::AudioProcessor& p)
+ControlSection::ControlSection (const juce::String& title, PluginProcessor& p)
     : Section (title), plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p)
 {
 }
 
 ControlSection::~ControlSection() = default;
 
-juce::RangedAudioParameter& ControlSection::parameter (const juce::String& id)
-{
-    for (auto* each : processor.getParameters())
-        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (each); ranged != nullptr && ranged->getParameterID() == id)
-            return *ranged;
-    jassertfalse;
-    throw std::invalid_argument ("No host parameter has the ID " + id.toStdString());
-}
+juce::RangedAudioParameter& ControlSection::parameter (const juce::String& id) { return parameters::parameterOf (processor.parameterState(), id); }
 
 void ControlSection::setAvailability (std::function<bool()> available)
 {

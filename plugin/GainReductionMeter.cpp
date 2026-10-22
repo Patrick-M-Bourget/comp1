@@ -38,7 +38,7 @@ juce::String nameOf (GainReductionMeter::Stage stage)
 } // namespace
 
 GainReductionMeter::GainReductionMeter (LevelHistory& h, Stage stage)
-    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), history (h), reading (readingOf (stage))
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), reading (h, readingOf (stage), 0.0)
 {
     const auto name = nameOf (stage);
     setName (name);
@@ -46,26 +46,13 @@ GainReductionMeter::GainReductionMeter (LevelHistory& h, Stage stage)
     setTooltip (name);
     setWantsKeyboardFocus (false);
     setInterceptsMouseClicks (false, false);
-    history.subscribe (*this);
-}
-
-GainReductionMeter::~GainReductionMeter()
-{
-    history.unsubscribe (*this);
 }
 
 double GainReductionMeter::position (double db) { return std::clamp (db / scaleDb, 0.0, 1.0); }
 
-void GainReductionMeter::levelsRead (std::span<const LevelRecord> records)
-{
-    for (const auto& record : records)
-        most = std::max (most, record.*reading);
-}
-
 void GainReductionMeter::tick (double seconds)
 {
-    const double level = std::max (0.0, ballistics.update (most, seconds));
-    most = 0.0;
+    const double level = reading.next (seconds);
     if (juce::exactlyEqual (level, shown))
         return;
     // Repainted only where the bar was or is now.

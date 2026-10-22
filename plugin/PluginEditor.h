@@ -18,15 +18,17 @@
 namespace comp1
 {
 
-// comp1's Expanded View, on plugkit's editor shell (EditorShell), which gives it its header, keys, UI Scale and
-// window. Under the header: the display, its two tabs over its full width, with three Gain Reduction meters and the
-// Output Meter's rail at its right edge; under that the sections in signal order, in two rows; and the footer. The
-// display takes whatever the window grows by, and the section rows its width; each section keeps its own size. The
-// meters are the Gate's, the compressor's and the Limiter's, left to right in signal order (their placement is
-// provisional, #94).
+// comp1's editor, on plugkit's editor shell (EditorShell), which gives it its header, keys, UI Scale and window. It
+// shows either view, the one the processor holds, each between the same header and footer (Footer), and each with its
+// own window limits and size (PluginProcessor::windowOf, setView).
 //
-// It shows either view, the one the processor holds, the Compact View being its body (CompactView) under the same
-// header and footer, after the header in Tab's order. Each view has its own window limits and size (PluginProcessor::windowOf, setView).
+// The Expanded View's body, under the header: the display, its three tabs over its full width (Display), with three
+// Gain Reduction meters and the Output Meter's rail at its right edge; under that the sections in signal order, in two
+// rows. The display takes whatever the window grows by, and the section rows its width; each section keeps its own
+// size. The meters are the Gate's, the compressor's and the Limiter's, left to right in signal order (their placement
+// is provisional, #94).
+//
+// The Compact View's body is CompactView, after the header in Tab's order.
 class PluginEditor final : public plugkit::ui::EditorShell
 {
 public:
@@ -39,11 +41,8 @@ public:
     GainReductionMeter& gainReductionMeter() { return gainReduction; }
     GainReductionMeter& gateGainReductionMeter() { return gateGainReduction; }
     GainReductionMeter& limiterGainReductionMeter() { return limiterGainReduction; }
-    DetectionLevelRing& detectionLevelRing() { return compressor.detectionLevelRing(); }
-
-    // The section rows' height, together with the gap between them, and the Style section's width.
-    int sectionRowsHeight();
-    static constexpr int styleSectionWidth = 130, sectionGap = 12;
+    LevelRing& detectionLevelRing() { return compressor.detectionLevelRing(); }
+    LevelRing& ceilingRing() { return output.ceilingRing(); }
 
     // The view shown, which follows the processor's View on the tick, as after a restore. The hidden view's
     // components are hidden; the Level and Gain Reduction Graph and the meters keep their subscriptions meanwhile.
@@ -52,11 +51,22 @@ public:
     CompactView& compactView() { return compactBody; }
     // The footer's switch between the views, the one showing.
     juce::Button& viewSwitch() { return footer.viewSwitch(); }
+
+private:
     void layOutBody (juce::Rectangle<int> area) override;
     // The sections, row by row, each row left to right in signal order.
     std::vector<std::vector<Section*>> sectionRows();
-    static int widthOf (Section& section);
-    static int heightOf (Section& section);
+    // The section rows' height, together with the gap between them.
+    int sectionRowsHeight();
+    static constexpr int sectionGap = 12;
+
+    // Shows view, hiding the other's components: leaving the Expanded View lets go of Detection Audition, as leaving
+    // the Detection EQ tab does.
+    void show (View view);
+    // Holds the window to the shown view's limits at the UI Scale, and its size within them: after the shell applies
+    // the Session's (the envelope of both views'), at open, after a UI Scale pick and on the tick.
+    void applyViewWindow();
+    void followView();
 
     // Before every component that subscribes to it, so it outlives them.
     LevelHistory history;
@@ -77,14 +87,6 @@ public:
     StereoSection stereo;
     LookaheadSection lookahead;
     Footer footer;
-
-    // Shows view, hiding the other's components: leaving the Expanded View lets go of Detection Audition, as leaving
-    // the Detection EQ tab does.
-    void show (View view);
-    // Holds the window to the shown view's limits at the UI Scale, and its size within them: after the shell applies
-    // the Session's (the envelope of both views'), at open, after a UI Scale pick and on the tick.
-    void applyViewWindow();
-    void followView();
     CompactView compactBody;
     View shown = View::expanded;
     // Follows the processor's View on the editor's tick.

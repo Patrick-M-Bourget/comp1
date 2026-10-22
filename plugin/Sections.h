@@ -2,8 +2,8 @@
 
 #include "CompFollowAttachment.h"
 #include "Controls.h"
-#include "DetectionLevelRing.h"
 #include "LevelHistory.h"
+#include "LevelRing.h"
 #include "PluginProcessor.h"
 
 #include <memory>
@@ -48,7 +48,7 @@ public:
     CompressorSection (PluginProcessor& processor, LevelHistory& history);
     ~CompressorSection() override;
 
-    DetectionLevelRing& detectionLevelRing() { return *ring; }
+    LevelRing& detectionLevelRing() { return *ring; }
 
 private:
     void follow() override;
@@ -58,7 +58,7 @@ private:
     PluginProcessor& processor;
     KnobControl *comp = nullptr, *threshold = nullptr, *ratio = nullptr;
     juce::ToggleButton *compFollow = nullptr, *autoGain = nullptr;
-    std::unique_ptr<DetectionLevelRing> ring;
+    std::unique_ptr<LevelRing> ring;
     std::optional<CompFollowAttachment> compAttachment, thresholdAttachment, ratioAttachment;
     std::unique_ptr<juce::ButtonParameterAttachment> autoGainAttachment;
 };
@@ -75,10 +75,18 @@ struct DryWetSection final : ControlSection
     explicit DryWetSection (PluginProcessor& processor);
 };
 
-// Output: Output Gain; the Limiter's on/off over Ceiling.
-struct OutputSection final : ControlSection
+// Output: Output Gain; the Limiter's on/off over Ceiling, with the Ceiling ring (LevelRing::limiterGainReduction).
+class OutputSection final : public ControlSection
 {
-    explicit OutputSection (PluginProcessor& processor);
+public:
+    OutputSection (PluginProcessor& processor, LevelHistory& history);
+    ~OutputSection() override;
+
+    LevelRing& ceilingRing() { return *ring; }
+
+private:
+    KnobControl* ceiling = nullptr;
+    std::unique_ptr<LevelRing> ring;
 };
 
 // Detection: Detection Source and the High-pass's on/off over its Frequency, then its Slope; the Low-pass's on/off over

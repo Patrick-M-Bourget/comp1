@@ -3,6 +3,7 @@
 #include "plugkit/ui/staple/Fonts.h"
 #include "plugkit/ui/staple/Tokens.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace comp1
@@ -34,6 +35,14 @@ void Section::paint (juce::Graphics& g)
 }
 
 juce::Rectangle<int> Section::controlArea() const { return getLocalBounds().withTrimmedTop (titleHeight + dividerGap); }
+
+int tallestOf (std::span<Section* const> row)
+{
+    int height = 0;
+    for (const auto* section : row)
+        height = std::max (height, section->idealHeight());
+    return height;
+}
 
 int Section::titleWidth() const
 {

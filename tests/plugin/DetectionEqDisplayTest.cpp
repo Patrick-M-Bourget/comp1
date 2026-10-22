@@ -48,35 +48,6 @@ struct DetectionEqHost : host::Playing
 
     comp1::DetectionEqDisplay& eqDisplay() { return expandedView().display().detectionEqDisplay(); }
 
-    // Plays blocks of samples, main (n) on every main channel and sidechain (n) on every Sidechain channel, n the nth
-    // sample played by this call, and returns the main bus's last block.
-    template <typename Main, typename Sidechain>
-    juce::AudioBuffer<float> playWith (int blocks, int samples, Main&& main, Sidechain&& sidechain)
-    {
-        juce::AudioBuffer<float> buffer (processor.getTotalNumInputChannels(), samples);
-        juce::MidiBuffer midi;
-        for (int b = 0, n = 0; b < blocks; ++b, n += samples)
-        {
-            buffer.clear();
-            auto mainBus = processor.getBusBuffer (buffer, true, 0);
-            for (int ch = 0; ch < mainBus.getNumChannels(); ++ch)
-                for (int i = 0; i < samples; ++i)
-                    mainBus.setSample (ch, i, static_cast<float> (main (n + i)));
-            if (processor.getBusCount (true) > 1 && processor.getBus (true, 1)->isEnabled())
-            {
-                auto sidechainBus = processor.getBusBuffer (buffer, true, 1);
-                for (int ch = 0; ch < sidechainBus.getNumChannels(); ++ch)
-                    for (int i = 0; i < samples; ++i)
-                        sidechainBus.setSample (ch, i, static_cast<float> (sidechain (n + i)));
-            }
-            processor.processBlock (buffer, midi);
-        }
-        juce::AudioBuffer<float> out (processor.getMainBusNumOutputChannels(), samples);
-        for (int ch = 0; ch < out.getNumChannels(); ++ch)
-            out.copyFrom (ch, 0, buffer, ch, 0, samples);
-        return out;
-    }
-
     // Plays a second of main and sidechain, a tick's worth of samples between ticks, as a host plays while the editor
     // shows it.
     template <typename Main, typename Sidechain>
@@ -84,7 +55,7 @@ struct DetectionEqHost : host::Playing
     {
         for (int i = 0; i < 60; ++i)
         {
-            playWith (1, 800, [&, i] (int n) { return main (i * 800 + n); }, [&, i] (int n) { return sidechain (i * 800 + n); });
+            play (1, 800, [&, i] (int n) { return main (i * 800 + n); }, [&, i] (int n) { return sidechain (i * 800 + n); });
             settle (16);
         }
     }
@@ -155,7 +126,7 @@ TEST_CASE ("The tap is skipped as the editor opens, and drained on every tick on
     DetectionEqHost host;
     // More than the tap holds, played with the editor closed: none of it reaches the spectrum.
     host.editor.reset();
-    host.playWith (40, 512, main1kHz, silence);
+    host.play (40, 512, main1kHz, silence);
     host.reopen();
     host.settle (200);
     CHECK (host.eqDisplay().spectrum().levelDb (1000.0, 0.0) < -100.0);
@@ -165,7 +136,7 @@ TEST_CASE ("The tap is skipped as the editor opens, and drained on every tick on
     host.showTab (comp1::DisplayTab::level);
     for (int i = 0; i < 10; ++i)
     {
-        host.playWith (2, 512, main1kHz, silence);
+        host.play (2, 512, main1kHz, silence);
         const int ticks = host.editorTick().count();
         REQUIRE (host.settleUntil ([&] { return host.editorTick().count() > ticks; }));
         std::vector<float> left (static_cast<std::size_t> (host.processor.detectionSourceSampleCapacity()));
@@ -574,13 +545,13 @@ TEST_CASE ("Detection Audition, held by the mouse or Space, plays the detection 
     const int steps = session.editHistory().undoSteps();
     const auto silence = [] (int) { return 0.0; };
     const auto tone = [] (int n) { return sine (100.0, 0.5, n); };
-    CHECK (peakOf (host.playWith (20, 512, silence, tone)) < 1.0e-4f);
+    CHECK (peakOf (host.play (20, 512, silence, tone)) < 1.0e-4f);
 
     auto& audition = host.eqDisplay().detectionAudition();
     press (audition);
     CHECK (host.processor.detectionAudition());
     CHECK (audition.isLit());
-    CHECK (peakOf (host.playWith (20, 512, silence, tone)) > 0.4f);
+    CHECK (peakOf (host.play (20, 512, silence, tone)) > 0.4f);
     release (audition);
     CHECK_FALSE (host.processor.detectionAudition());
     CHECK_FALSE (audition.isLit());
@@ -652,4 +623,30 @@ TEST_CASE ("Expanded View snapshots on the Detection EQ tab: signal playing with
         playFor (host, noise, silence);
         harness::writeSnapshot (*host.editor, "expanded-detection-eq-audition", {}, 1.0f);
     }
+}
+
+TEST_CASE ("With no audio the Detection EQ tab asks for no repaint; samples arriving, or a setting changing, repaint it")
+{
+    DetectionEqHost host;
+    const auto tone = [] (int n) { return sine (1000.0, 0.5, n); };
+    const auto none = [] (int) { return 0.0; };
+    host.playForASecond (tone, none);
+    // The last samples read, then ticks with nothing played.
+    host.settle (16);
+    auto& repaints = harness::countRepaintsOf (host.eqDisplay());
+    host.settle (300);
+    CHECK (repaints.count == 0);
+
+    // A setting changed by Host Automation repaints it, on the tick.
+    host.edit (parameters::detectionHighPassOnId, 1.0f);
+    REQUIRE (host.settleUntil ([&] { return repaints.count > 0; }));
+    host.settle (16);
+    repaints.count = 0;
+    host.settle (300);
+    CHECK (repaints.count == 0);
+
+    // Playing again repaints it.
+    host.playForASecond (tone, none);
+    CHECK (repaints.count > 0);
+    host.eqDisplay().setCachedComponentImage (nullptr);
 }

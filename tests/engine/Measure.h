@@ -32,6 +32,48 @@ inline Channels noise (int numChannels, int numSamples, std::uint32_t seed = 1)
     return channels;
 }
 
+// Paul Kellet's three-pole pink filter, which turns white noise into pink-like noise: one per channel, its state carried
+// from each sample to the next.
+struct PinkFilter
+{
+    double b0 = 0.0, b1 = 0.0, b2 = 0.0;
+
+    // The next pink-like sample, from the next white one, w.
+    double operator() (double w)
+    {
+        b0 = 0.99765 * b0 + 0.0990460 * w;
+        b1 = 0.96300 * b1 + 0.2965164 * w;
+        b2 = 0.57000 * b2 + 1.0526913 * w;
+        return b0 + b1 + b2 + 0.1848 * w;
+    }
+};
+
+// The RMS level of count samples in dB.
+inline double rmsDb (const float* samples, int count)
+{
+    double power = 0.0;
+    for (int i = 0; i < count; ++i)
+        power += static_cast<double> (samples[i]) * samples[i];
+    return 10.0 * std::log10 (power / count);
+}
+
+// Seeded pink-like noise on each channel at an RMS level of rmsLevelDb: white noise (noise()) through a PinkFilter,
+// each channel its own, the same for the same seed on every platform.
+inline Channels pinkNoise (int numChannels, int numSamples, double rmsLevelDb, std::uint32_t seed)
+{
+    auto audio = noise (numChannels, numSamples, seed);
+    for (auto& channel : audio)
+    {
+        PinkFilter pink;
+        for (auto& x : channel)
+            x = static_cast<float> (pink (x));
+        const auto gain = static_cast<float> (std::pow (10.0, (rmsLevelDb - rmsDb (channel.data(), numSamples)) / 20.0));
+        for (auto& x : channel)
+            x *= gain;
+    }
+    return audio;
+}
+
 // Runs audio through engine in place, cut into blocks of the sizes given, in turn and repeating, with the samples of
 // sidechainSamples, as long as audio, on the Sidechain when it isn't null.
 inline void processInBlocks (Engine& engine, Channels& audio, const std::vector<int>& blockSizes, const Channels* sidechainSamples = nullptr)
@@ -743,15 +785,15 @@ inline Channels bursts (int numChannels, int numSamples, double sampleRate, std:
 // --- Auto Gain's reference signal ----------------------------------------------------------------------------
 
 // dyn-lab's reference signal (tools/dyn-lab/USAGE.md, "autogain"), written again from its description: pink-like noise
-// from a 32-bit linear congruential generator (seed 1) through Paul Kellet's three-pole filter, 0.5 s at 48 kHz at
-// each Detection Level from -40 to 0 dB in 2 dB steps, lowest first, each segment at the power of a sine whose peak
-// reads its level.
+// from a 32-bit linear congruential generator (seed 1) through Paul Kellet's three-pole filter (PinkFilter), 0.5 s at
+// 48 kHz at each Detection Level from -40 to 0 dB in 2 dB steps, lowest first, each segment at the power of a sine whose
+// peak reads its level.
 inline constexpr double referenceRate = 48000.0;
 
 inline std::vector<std::vector<float>> referenceSegments()
 {
     std::uint32_t state = 1;
-    double b0 = 0.0, b1 = 0.0, b2 = 0.0;
+    PinkFilter pink;
     std::vector<std::vector<float>> segments;
     for (int levelDb = -40; levelDb <= 0; levelDb += 2)
     {
@@ -760,11 +802,7 @@ inline std::vector<std::vector<float>> referenceSegments()
         for (auto& x : noise)
         {
             state = 1664525u * state + 1013904223u;
-            const double w = state / 2147483648.0 - 1.0;
-            b0 = 0.99765 * b0 + 0.0990460 * w;
-            b1 = 0.96300 * b1 + 0.2965164 * w;
-            b2 = 0.57000 * b2 + 1.0526913 * w;
-            x = b0 + b1 + b2 + 0.1848 * w;
+            x = pink (state / 2147483648.0 - 1.0);
             power += x * x;
         }
         const double scale = std::sqrt (std::pow (10.0, levelDb / 10.0) / 2.0 / (power / static_cast<double> (noise.size())));

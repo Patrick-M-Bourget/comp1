@@ -78,7 +78,7 @@ TEST_CASE ("With Comp Follow off, grabbing the Compact View's Comp turns it on, 
     auto& history = host.processor.session().editHistory();
     const int steps = history.undoSteps();
 
-    const juce::String how = GENERATE (as<juce::String> {}, "press", "drag", "typed", "key");
+    const juce::String how = GENERATE (as<juce::String> {}, "press", "drag", "typed", "key", "screen reader");
     CAPTURE (how);
     host::GestureRecorder recorder;
     host.processor.addListener (&recorder);
@@ -88,6 +88,13 @@ TEST_CASE ("With Comp Follow off, grabbing the Compact View's Comp turns it on, 
         host::EditorHost::drag (comp, 20.0f);
     else if (how == "typed")
         REQUIRE (comp.commitTypedText ("60 %"));
+    else if (how == "screen reader")
+    {
+        auto* handler = comp.getAccessibilityHandler();
+        REQUIRE (handler != nullptr);
+        REQUIRE (handler->getValueInterface() != nullptr);
+        handler->getValueInterface()->setValueAsString ("60 %");
+    }
     else
     {
         comp.grabKeyboardFocus();
@@ -102,7 +109,7 @@ TEST_CASE ("With Comp Follow off, grabbing the Compact View's Comp turns it on, 
     else if (how == "drag")
         // 20 px of the knob's 200 px for 0 to 100%, from 80%.
         CHECK_THAT (host.value (parameters::compId), WithinAbs (90.0f, 0.1));
-    else if (how == "typed")
+    else if (how == "typed" || how == "screen reader")
         CHECK_THAT (host.value (parameters::compId), WithinAbs (60.0f, 1.0e-4));
     else
     {
@@ -195,22 +202,16 @@ TEST_CASE ("The Compact View's Output Gain drag is one undo step, and with the L
     const double ceiling = std::pow (10.0, -6.0 / 20.0);
 
     const auto tone = host::steady (-12.0);
-    juce::AudioBuffer<float> buffer (host.processor.getTotalNumInputChannels(), host::Playing::blockSize);
-    juce::MidiBuffer midi;
     double most = 0.0;
     int n = 0;
     const auto playBlocks = [&] (int blocks) {
-        for (int b = 0; b < blocks; ++b)
-        {
-            buffer.clear();
-            for (int ch = 0; ch < 2; ++ch)
-                for (int i = 0; i < buffer.getNumSamples(); ++i)
-                    buffer.setSample (ch, i, static_cast<float> (tone (n + i)));
-            n += buffer.getNumSamples();
-            host.processor.processBlock (buffer, midi);
+        const int from = n;
+        auto last = host.play (blocks, host::Playing::blockSize, [&tone, from] (int i) { return tone (from + i); }, host::EditorHost::silent, [&most] (const auto& buffer) {
             for (int ch = 0; ch < 2; ++ch)
                 most = std::max (most, static_cast<double> (buffer.getMagnitude (ch, 0, buffer.getNumSamples())));
-        }
+        });
+        n += blocks * host::Playing::blockSize;
+        return last;
     };
     playBlocks (20);
     // Under the Ceiling so far: -12 dB out.
@@ -220,7 +221,7 @@ TEST_CASE ("The Compact View's Output Gain drag is one undo step, and with the L
     host::EditorHost::drag (compactKnob (host, "Output Gain"), 72.0f);
     CHECK (history.undoSteps() == steps + 1);
     REQUIRE (host.value (parameters::outputGainId) > 20.0f);
-    playBlocks (100);
+    const auto buffer = playBlocks (100);
     CHECK (most <= ceiling * (1.0 + 1.0e-6));
     // Held at the Ceiling, not below it.
     CHECK (buffer.getMagnitude (0, 0, buffer.getNumSamples()) > ceiling * 0.99);

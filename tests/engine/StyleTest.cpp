@@ -8,7 +8,10 @@
 #include <catch2/generators/catch_generators_range.hpp>
 
 #include <cmath>
+#include <fstream>
 #include <limits>
+#include <map>
+#include <regex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -292,4 +295,41 @@ TEST_CASE ("Every Source Style has defaults, and applying one writes its own Cha
     CHECK (applyStyle (style, settings));
     CHECK (settings.character == characterOf (style));
     CHECK (settings.compCurve == compCurveOf (style));
+}
+
+TEST_CASE ("dyn-lab's compressor defaults are the Engine's, so its Colour's Threshold reference is the Engine's too")
+{
+    // dyn-lab's Settings, each field and its default as the script writes it ("    threshold: float = -18.0"). Its
+    // COLOUR_THRESHOLD_REFERENCE_DB is its default Threshold, as the Engine's is a default Settings' (engine/src/Colour.h).
+    std::ifstream script (COMP1_DYN_LAB);
+    REQUIRE (script.is_open());
+    std::map<std::string, std::string> lab;
+    bool inSettings = false;
+    const std::regex fieldLine (R"(    (\w+): \w+ = (.+))");
+    for (std::string line; std::getline (script, line);)
+    {
+        std::smatch field;
+        if (line == "class Settings:")
+            inSettings = true;
+        else if (inSettings && ! line.empty() && line.front() != ' ')
+            break;
+        else if (inSettings && std::regex_match (line, field, fieldLine))
+            lab[field[1]] = field[2];
+    }
+    const Settings defaults;
+    const std::vector<std::pair<std::string, double>> engine {
+        { "threshold", defaults.thresholdDb }, { "ratio", defaults.ratio },     { "knee", defaults.kneeDb },
+        { "attack", defaults.attackMs },       { "release", defaults.releaseMs }, { "hold", defaults.holdMs },
+        { "range", defaults.rangeDb },         { "colour", defaults.colour },
+    };
+    for (const auto& [name, value] : engine)
+    {
+        CAPTURE (name);
+        REQUIRE (lab.contains (name));
+        CHECK (std::stod (lab[name]) == value);
+    }
+    CHECK (lab["auto_release"] == (defaults.autoRelease ? "True" : "False"));
+    CHECK (lab["character"] == "\"clean\"");
+    CHECK (defaults.character == Character::Clean);
+    CHECK (defaults.compCurve == compCurveOf (Style::Clean));
 }

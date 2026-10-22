@@ -65,7 +65,6 @@ struct StyleDescription
 // the Gate on at its defaults and the Limiter on at Ceiling 0 dBFS.
 inline constexpr Settings::Gate gateOff {};
 inline constexpr Settings::Gate gateOn { .on = true };
-inline constexpr CompCurve cleanCompCurve { { CompPoint { 0.0, 0.0, 1.0 }, CompPoint { 50.0, -18.0, 4.0 }, CompPoint { 100.0, -36.0, 8.0 } } };
 inline constexpr std::array<StyleDescription, styleCount> styles {
     StyleDescription { Character::Clean, cleanCompCurve, StyleDefaults { 50.0, 100.0, -18.0, 4.0, 6.0, 10.0, 100.0, false, 0.0, 60.0, gateOff, false, 0.0 } },
     StyleDescription { Character::VCA,

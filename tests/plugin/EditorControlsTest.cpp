@@ -513,6 +513,38 @@ TEST_CASE ("Space and Return toggle a toggle, and up and down step a choice, one
     }
 }
 
+TEST_CASE ("Up and down held on a footer chip step its choice, one undo step with their repeats, as on a choice; left and right don't step it")
+{
+    host::EditorHost host;
+    everythingAvailable (host);
+    auto& history = host.processor.session().editHistory();
+    auto& parameter = host.parameter (parameters::oversamplingId);
+    auto& chip = host.showing<comp1::ChoiceChip> ("Oversampling");
+    host.edit (parameters::oversamplingId, 0.0f);
+    host.settle();
+    chip.grabKeyboardFocus();
+    REQUIRE (chip.hasKeyboardFocus (false));
+
+    // Down, held with a repeat: two steps, one undo step.
+    int steps = history.undoSteps();
+    CHECK (host.hold (juce::KeyPress (juce::KeyPress::downKey)));
+    CHECK (host.hold (juce::KeyPress (juce::KeyPress::downKey)));
+    host.release();
+    CHECK (plainOf (parameter) == 2.0f);
+    CHECK (history.undoSteps() == steps + 1);
+    // Then up, pressed and released: a step of its own.
+    CHECK (host.press (juce::KeyPress (juce::KeyPress::upKey)));
+    CHECK (plainOf (parameter) == 1.0f);
+    CHECK (history.undoSteps() == steps + 2);
+
+    // Left and right leave it.
+    steps = history.undoSteps();
+    host.press (juce::KeyPress (juce::KeyPress::rightKey));
+    host.press (juce::KeyPress (juce::KeyPress::leftKey));
+    CHECK (plainOf (parameter) == 1.0f);
+    CHECK (history.undoSteps() == steps);
+}
+
 namespace
 {
 

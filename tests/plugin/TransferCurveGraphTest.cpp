@@ -125,18 +125,7 @@ TEST_CASE ("The Transfer Curve Graph's curve is what the processor plays on a st
     {
         CAPTURE (input);
         // Long enough for Attack and Release to settle, then the peak of one block.
-        const int channels = host.processor.getTotalNumInputChannels();
-        juce::AudioBuffer<float> buffer (channels, host::Playing::blockSize);
-        juce::MidiBuffer midi;
-        const auto signal = host::steady (input);
-        for (int b = 0; b < 200; ++b)
-        {
-            buffer.clear();
-            for (int ch = 0; ch < host.processor.getMainBusNumInputChannels(); ++ch)
-                for (int i = 0; i < buffer.getNumSamples(); ++i)
-                    buffer.setSample (ch, i, static_cast<float> (signal (i)));
-            host.processor.processBlock (buffer, midi);
-        }
+        const auto buffer = host.play (200, host::Playing::blockSize, host::steady (input));
         const double outputDb = juce::Decibels::gainToDecibels (static_cast<double> (buffer.getMagnitude (0, 0, buffer.getNumSamples())));
         CHECK_THAT (outputDb, WithinAbs (host.graph().outputAt (input), 0.05));
     }
@@ -293,7 +282,7 @@ TEST_CASE ("The Transfer Curve Graph is a read-only image titled Transfer Curve 
     CHECK_FALSE (clicks);
 
     // The settings as their knobs read them (controls::spokenValue); no Detection Level yet: under the scale.
-    CHECK (spoken (graph) == "Threshold " + minus + "18.00 dB, Ratio 4:1, Knee +6.00 dB, Detection Level " + minus + "inf dB");
+    CHECK (spoken (graph) == "Threshold " + minus + "18.00 dB, Ratio 4:1, Knee 6.0 dB, Detection Level " + minus + "inf dB");
     CHECK (host.keepPlayingUntil (host::steady (-20.0), [&] { return graph.dotDb() && std::abs (*graph.dotDb() + 20.0) < 0.05; }));
-    CHECK (spoken (graph) == "Threshold " + minus + "18.00 dB, Ratio 4:1, Knee +6.00 dB, Detection Level " + minus + "20.0 dB");
+    CHECK (spoken (graph) == "Threshold " + minus + "18.00 dB, Ratio 4:1, Knee 6.0 dB, Detection Level " + minus + "20.0 dB");
 }

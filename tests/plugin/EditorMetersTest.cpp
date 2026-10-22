@@ -1,6 +1,6 @@
-// The Expanded View's Gain Reduction meters (the Gate's, the compressor's and the Limiter's) and the Detection Level
-// ring on Threshold, which read the editor's level history; and which controls are available on mono, in Zero Latency,
-// and at each sample rate's Oversampling cap.
+// The Expanded View's Gain Reduction meters (the Gate's, the compressor's and the Limiter's), the Detection Level ring on
+// Threshold and the Ceiling ring, which read the editor's level history; and which controls are available on mono, in
+// Zero Latency, and at each sample rate's Oversampling cap.
 
 #include "Footer.h"
 #include "Measure.h"
@@ -242,6 +242,46 @@ TEST_CASE ("The Detection Level ring fills Threshold's lane to the Detection Lev
     CHECK (host.value (parameters::thresholdId) == threshold);
     CHECK (host.ring().ringTitle().isEmpty());
     CHECK (host.ring().ringValue().isEmpty());
+}
+
+TEST_CASE ("The Ceiling ring fills Ceiling's lane down from its top by the Limiter's Gain Reduction, on Ceiling's scale, and falls at 20 dB/s after")
+{
+    Playing host;
+    CHECK (host.ceilingRing().shownDb() == 0.0);
+    // A steady 0 dB level at 1:1, so the compressor leaves it alone, into the Limiter at -6 dBFS: 6 dB of Gain Reduction.
+    host.edit (parameters::ratioId, 1.0f);
+    host.edit (parameters::limiterId, 1.0f);
+    host.edit (parameters::ceilingId, -6.0f);
+    host.playFor (0.3, steady (0.0));
+    CHECK (host.keepPlayingUntil (steady (0.0), [&] { return std::abs (host.ceilingRing().shownDb() - 6.0) <= 0.5; }));
+    // Filled from Ceiling's top, 0 dBFS, down to -6 dBFS: the top fifth of its -30 to 0 dBFS sweep.
+    CHECK_THAT (host.ceilingRing().filledFrom(), WithinAbs (0.8, 0.02));
+    checkFallsAt20DbPerSecond (host, [&] { return host.ceilingRing().shownDb(); }, 0.0);
+
+    // Display only: a press on the lane leaves Ceiling where it was, and its tooltip lines are empty.
+    auto& knob = host.knob ("Ceiling");
+    const float ceiling = host.value (parameters::ceilingId);
+    const auto onLane = knob.getFaceCentre().translated (0.0f, -(knob.getFaceRadius() + staple::tokens::knob::ringOffset));
+    REQUIRE (knob.isOnRing (onLane));
+    const auto mods = juce::ModifierKeys::leftButtonModifier;
+    knob.mouseDown (harness::mouseEvent (knob, onLane, mods));
+    knob.mouseDrag (harness::mouseEvent (knob, onLane.translated (0.0f, -40.0f), mods, onLane));
+    knob.mouseUp (harness::mouseEvent (knob, onLane.translated (0.0f, -40.0f), {}, onLane));
+    CHECK (host.value (parameters::ceilingId) == ceiling);
+    CHECK (host.ceilingRing().ringTitle().isEmpty());
+    CHECK (host.ceilingRing().ringValue().isEmpty());
+}
+
+TEST_CASE ("With the Limiter off the Ceiling ring stays empty and repaints nothing, on a level that would have it act")
+{
+    Playing host;
+    host.edit (parameters::ratioId, 1.0f);
+    host.edit (parameters::ceilingId, -6.0f);
+    auto& repaints = harness::countRepaintsOf (host.knob ("Ceiling"));
+    host.playFor (0.5, steady (0.0));
+    CHECK (host.ceilingRing().shownDb() == 0.0);
+    CHECK (repaints.count == 0);
+    host.knob ("Ceiling").setCachedComponentImage (nullptr);
 }
 
 TEST_CASE ("With Detection Source External and no Sidechain, the Detection Level ring stays at the floor")

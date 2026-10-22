@@ -1,12 +1,12 @@
 #pragma once
 
+#include "DisplayFades.h"
 #include "Parameters.h"
 #include "PluginProcessor.h"
 #include "plugkit/ui/AnalyzerSettings.h"
 #include "plugkit/ui/AnalyzerSpectrum.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/display/DisplayGeometry.h"
-#include "plugkit/ui/display/EdgeFadeLayer.h"
 #include "plugkit/ui/display/GridLayer.h"
 #include "plugkit/ui/staple/controls/IconButton.h"
 
@@ -32,12 +32,13 @@ enum class DetectionEqBand
 
 // The Expanded View's Detection EQ tab: the Detection EQ drawn over a spectrum of what the detector listens to, with a
 // handle for each band and a held Detection Audition button. It paints no background of its own, and its edges fade into
-// the window's. A screen reader finds it as a group titled "Detection EQ".
+// the window's over the design system's display fades (DisplayFades). A screen reader finds it as a group titled "Detection EQ".
 //
 // - **Spectrum:** the Engine's detection source tap (PluginProcessor::readDetectionSourceSamples), the Detection Source
 //   before the Detection EQ, as one line in the Detection EQ's colour (the Analyzer's Sidechain line). The tap is
 //   skipped as the display opens, and drained every tick even while the Level tab is shown, so the reader never falls
-//   behind; it is analysed and repainted only while this tab is shown.
+//   behind; it is analysed and repainted only while this tab is shown and samples arrive, so with no audio the tab
+//   holds still and asks for no repaint.
 // - **Curve:** the Detection EQ's combined magnitude response, worked out from the Settings the Engine gets
 //   (parameters::SettingsReader) with plugkit's designBand and responseAt at the sample rate the Engine plays at, so the
 //   two agree; an Off band contributes nothing. Redrawn only when the settings or the size change.
@@ -94,7 +95,6 @@ private:
     void readTap();
     void layOutHandles();
     double responseDbAt (double frequency) const;
-    const plugkit::ui::display::EdgeFadeOverlay& edgeFadeAt (float scale);
     void auditionStateChanged();
 
     PluginProcessor& processor;
@@ -108,16 +108,7 @@ private:
     std::vector<plugkit::Cascade> onCascades; // the bands that are on, designed as the Engine designs them
     juce::Path curve;
     plugkit::ui::display::CachedLabels gridLabelImages;
-    struct EdgeFadeFor
-    {
-        juce::Rectangle<int> bounds, window;
-        float scale = 0.0f;
-        JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wfloat-equal") // exactly equal: the same scale needs no new overlay
-        bool operator== (const EdgeFadeFor&) const = default;
-        JUCE_END_IGNORE_WARNINGS_GCC_LIKE
-    };
-    std::optional<EdgeFadeFor> edgeFadeFor;
-    plugkit::ui::display::EdgeFadeOverlay edgeFade;
+    DisplayFades fades;
     std::array<std::unique_ptr<Handle>, 3> handles;
     staple::IconButton audition { "Detection Audition", staple::Icon::headphones };
     bool holdingAudition = false;

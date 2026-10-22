@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 
 namespace comp1::parameters
 {
@@ -144,6 +145,20 @@ int freeBandShapeIndex (plugkit::Shape shape)
 }
 
 } // namespace
+
+juce::RangedAudioParameter& parameterOf (juce::AudioProcessorValueTreeState& parameters, const juce::String& id)
+{
+    if (auto* parameter = parameters.getParameter (id))
+        return *parameter;
+    jassertfalse;
+    throw std::invalid_argument ("No host parameter has the ID " + id.toStdString());
+}
+
+bool inHighQuality (juce::AudioProcessorValueTreeState& parameters)
+{
+    return juce::roundToInt (parameters.getRawParameterValue (processingModeId)->load (std::memory_order_relaxed))
+           == static_cast<int> (ProcessingMode::HighQuality);
+}
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 {
