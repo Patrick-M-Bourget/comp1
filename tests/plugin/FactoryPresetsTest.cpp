@@ -13,6 +13,8 @@
 #include <cmath>
 #include <initializer_list>
 #include <limits>
+#include <numbers>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
@@ -304,6 +306,188 @@ juce::String unroutedSidechainProblem (const FactoryPreset& p)
     return {};
 }
 
+// --- The Gain Reduction check -------------------------------------------------------------------------------
+
+// The reference signals, synthetic and seeded, stereo at 48 kHz. Material is taken as gain-staged (spec #1, "Factory
+// Presets"): tracks around -18 dBFS RMS, peaks around -6 dBFS.
+constexpr int referenceSamples = static_cast<int> (sampleRate) * 8;
+
+// A track's: pink noise in phrases, 1.5 s sung and 0.5 s silent, each phrase in syllables at 4 Hz that swing 12 dB,
+// at -18 dBFS RMS over the phrases.
+Channels phrasedPinkNoise()
+{
+    auto audio = pinkNoise (2, referenceSamples, 0.0, 11);
+    double power = 0.0;
+    int sung = 0;
+    for (int n = 0; n < referenceSamples; ++n)
+    {
+        const double t = n / sampleRate;
+        const bool inPhrase = std::fmod (t, 2.0) < 1.5;
+        const double syllable = std::pow (10.0, -12.0 / 20.0 * std::pow (std::sin (std::numbers::pi * 4.0 * t), 2.0));
+        for (auto& channel : audio)
+        {
+            auto& x = channel[static_cast<std::size_t> (n)];
+            x = inPhrase ? static_cast<float> (x * syllable) : 0.0f;
+            power += static_cast<double> (x) * x;
+        }
+        sung += inPhrase ? 2 : 0;
+    }
+    const auto gain = static_cast<float> (std::pow (10.0, -18.0 / 20.0) / std::sqrt (power / sung));
+    for (auto& channel : audio)
+        for (auto& x : channel)
+            x *= gain;
+    return audio;
+}
+
+// Drums': a train of decaying pink-noise bursts at 120 bpm, each falling 1/e every 40 ms, peaking at -6 dBFS.
+Channels decayingBursts()
+{
+    auto audio = pinkNoise (2, referenceSamples, 0.0, 13);
+    for (auto& channel : audio)
+        for (int n = 0; n < referenceSamples; ++n)
+            channel[static_cast<std::size_t> (n)] *= static_cast<float> (std::exp (-std::fmod (n / sampleRate, 0.5) / 0.040));
+    const auto gain = static_cast<float> (std::pow (10.0, -6.0 / 20.0) / comp1::test::samplePeak (audio));
+    for (auto& channel : audio)
+        for (auto& x : channel)
+            x *= gain;
+    return audio;
+}
+
+// A Mix Bus's and a Master's: steady pink noise at -14 dBFS RMS.
+Channels steadyPinkNoise() { return pinkNoise (2, referenceSamples, -14.0, 17); }
+
+// A sum of 32 sines spread evenly in log frequency from lowHz to highHz, seeded phases, each channel its own, so it
+// holds nothing outside that band; at rmsLevelDb while sounding (of the time in seconds) is true, silent otherwise.
+template <typename Sounding>
+Channels toneBand (double lowHz, double highHz, double rmsLevelDb, Sounding sounding, std::uint32_t seed)
+{
+    constexpr int tones = 32;
+    std::uint32_t state = seed;
+    Channels audio (2, std::vector<float> (static_cast<std::size_t> (referenceSamples)));
+    double power = 0.0;
+    int on = 0;
+    for (auto& channel : audio)
+    {
+        std::vector<double> frequencies, phases;
+        for (int k = 0; k < tones; ++k)
+        {
+            state = 1664525u * state + 1013904223u;
+            frequencies.push_back (lowHz * std::pow (highHz / lowHz, static_cast<double> (k) / (tones - 1)));
+            phases.push_back (std::numbers::pi * (state / 2147483648.0 - 1.0));
+        }
+        for (int n = 0; n < referenceSamples; ++n)
+        {
+            if (! sounding (n / sampleRate))
+                continue;
+            double sum = 0.0;
+            for (std::size_t k = 0; k < frequencies.size(); ++k)
+                sum += std::sin (2.0 * std::numbers::pi * frequencies[k] * n / sampleRate + phases[k]);
+            channel[static_cast<std::size_t> (n)] = static_cast<float> (sum);
+            power += sum * sum;
+            ++on;
+        }
+    }
+    const auto gain = static_cast<float> (std::pow (10.0, rmsLevelDb / 20.0) / std::sqrt (power / on));
+    for (auto& channel : audio)
+        for (auto& x : channel)
+            x *= gain;
+    return audio;
+}
+
+// The De-Esser's: sibilance, 5 to 10 kHz in 100 ms bursts four times a second at -20 dBFS RMS; and what it must leave
+// alone, steady noise of 50 Hz to 2.8 kHz, all below 3 kHz, at -18 dBFS RMS.
+Channels sibilantBursts()
+{
+    return toneBand (5000.0, 10000.0, -20.0, [] (double t) { return std::fmod (t, 0.25) < 0.1; }, 19);
+}
+Channels noiseBelow3kHz()
+{
+    return toneBand (50.0, 2800.0, -18.0, [] (double) { return true; }, 23);
+}
+
+// The compressor's median Gain Reduction in dB over the runs where the signal is present, the Preset's settings
+// through a fresh Engine at 48 kHz. Present is an Input Level within 20 dB of the loudest run's: a phrase, or the
+// body of a drum hit, not the gaps or a hit's fading tail.
+double medianGainReductionDb (const FactoryPreset& p, const Channels& signal)
+{
+    constexpr double presentWithinDb = 20.0;
+    const auto records = comp1::test::levelHistory (settingsOf (p), sampleRate, signal);
+    const auto loudest = std::max_element (records.begin(), records.end(), [] (const auto& a, const auto& b) { return a.inputDb < b.inputDb; });
+    REQUIRE (loudest != records.end());
+    std::vector<double> reductions;
+    for (const auto& record : records)
+        if (record.inputDb > loudest->inputDb - presentWithinDb)
+            reductions.push_back (record.gainReductionDb);
+    REQUIRE_FALSE (reductions.empty());
+    std::nth_element (reductions.begin(), reductions.begin() + static_cast<std::ptrdiff_t> (reductions.size() / 2), reductions.end());
+    return reductions[reductions.size() / 2];
+}
+
+// The Presets whose purpose is to crush, or to compress hard under a Dry path: they may reach 30 dB. The batches add
+// their Parallel Presets here (#77 to #79).
+const juce::StringArray& crushAndParallel()
+{
+    static const juce::StringArray names { named ("Drums \xe2\x80\x93 All-In Crush"), named ("Drums \xe2\x80\x93 Room Smash") };
+    return names;
+}
+
+const juce::String deEsser = named ("Vocals \xe2\x80\x93 De-Esser");
+
+// The Gain Reduction a Preset's Category gives on that Category's reference signal, in dB: a sanity range, not a
+// tuning target. One row per Category, then the exceptions.
+struct Band
+{
+    double lowDb, highDb;
+    Channels (*signal)();
+};
+
+std::optional<Band> bandOf (const FactoryPreset& p)
+{
+    static const std::vector<std::pair<juce::String, Band>> categories {
+        { "Vocals", { 1.0, 10.0, phrasedPinkNoise } }, { "Bass", { 1.0, 10.0, phrasedPinkNoise } },
+        { "Guitar", { 1.0, 10.0, phrasedPinkNoise } }, { "Keys", { 1.0, 10.0, phrasedPinkNoise } },
+        { "Drums", { 2.0, 15.0, decayingBursts } },    { "Mix Bus", { 0.5, 5.0, steadyPinkNoise } },
+        { "Master", { 0.5, 5.0, steadyPinkNoise } },
+    };
+    // Default and Utility have none: Default compresses as a new instance does, and a Utility Preset's job (a Gate,
+    // a Limiter) isn't the compressor's. The De-Esser has its own check (deEsserProblem()).
+    const auto category = std::find_if (categories.begin(), categories.end(), [&p] (const auto& row) { return row.first == categoryOf (p); });
+    if (category == categories.end() || p.name == deEsser)
+        return std::nullopt;
+    auto band = category->second;
+    const auto settings = settingsOf (p);
+    // With nothing routed, a Sidechain Preset's detector hears silence; Comp at 0% compresses nothing.
+    if (isSidechainPreset (p) || (settings.compFollow && juce::exactlyEqual (settings.comp, 0.0)))
+        band.lowDb = band.highDb = 0.0;
+    else if (crushAndParallel().contains (p.name))
+        band.highDb = 30.0;
+    return band;
+}
+
+// Rule: the compressor's median Gain Reduction on the Category's reference signal is within its band.
+juce::String gainReductionProblem (const FactoryPreset& p)
+{
+    const auto band = bandOf (p);
+    if (! band)
+        return {};
+    if (const auto reductionDb = medianGainReductionDb (p, band->signal()); reductionDb < band->lowDb || reductionDb > band->highDb)
+        return "Gain Reduction " + juce::String (reductionDb, 2) + " dB, outside " + juce::String (band->lowDb, 1) + " to "
+               + juce::String (band->highDb, 1) + " dB";
+    return {};
+}
+
+// Rule: the De-Esser takes at least 3 dB off sibilant bursts, and under 1 dB off noise below 3 kHz.
+juce::String deEsserProblem (const FactoryPreset& p)
+{
+    if (p.name != deEsser)
+        return {};
+    if (const auto onSibilance = medianGainReductionDb (p, sibilantBursts()); onSibilance < 3.0)
+        return "only " + juce::String (onSibilance, 2) + " dB off sibilance";
+    if (const auto belowSibilance = medianGainReductionDb (p, noiseBelow3kHz()); belowSibilance >= 1.0)
+        return juce::String (belowSibilance, 2) + " dB off noise below 3 kHz";
+    return {};
+}
+
 } // namespace
 
 TEST_CASE ("Every file in the Factory folder is bundled as a Factory Preset, and nothing else is")
@@ -355,6 +539,8 @@ TEST_CASE ("Every Factory Preset passes the gate")
         CHECK (processingModeProblem (p) == "");
         CHECK (loudnessProblem (p) == "");
         CHECK (unroutedSidechainProblem (p) == "");
+        CHECK (gainReductionProblem (p) == "");
+        CHECK (deEsserProblem (p) == "");
     }
 }
 
@@ -452,4 +638,56 @@ TEST_CASE ("The Factory gate rejects a Sidechain Preset that changes the signal 
     CHECK (unroutedSidechainProblem (sidechained ({ { ids::limiterId, 1.0f }, { ids::ceilingId, -20.0f } })).isNotEmpty());
     CHECK (unroutedSidechainProblem (sidechained ({ { ids::saturationId, 1.0f }, { ids::driveId, 24.0f } })).isNotEmpty());
     CHECK (unroutedSidechainProblem (sidechained ({ { ids::dryId, 0.0f } })).isNotEmpty());
+}
+
+TEST_CASE ("The Factory gate rejects a compressor Gain Reduction outside its Category's band")
+{
+    constexpr float on = 1.0f, vocal = 4.0f, bus = 6.0f, drums = 7.0f;
+    // One knob at the middle of each Category's Style lands inside the band; the ends of Comp, or a Threshold above
+    // the material, don't.
+    CHECK (gainReductionProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::styleId, vocal }, { ids::compFollowId, on } })) == "");
+    CHECK (gainReductionProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::styleId, vocal }, { ids::compFollowId, on }, { ids::compId, 100.0f } })).isNotEmpty());
+    CHECK (gainReductionProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::thresholdId, -2.0f } })).isNotEmpty());
+    CHECK (gainReductionProblem (preset ("Drums \xe2\x80\x93 Snare", { { ids::styleId, drums }, { ids::compFollowId, on } })) == "");
+    CHECK (gainReductionProblem (preset ("Drums \xe2\x80\x93 Snare", { { ids::thresholdId, -2.0f } })).isNotEmpty());
+    CHECK (gainReductionProblem (preset ("Mix Bus \xe2\x80\x93 Glue", { { ids::styleId, bus }, { ids::compFollowId, on } })) == "");
+    CHECK (gainReductionProblem (preset ("Mix Bus \xe2\x80\x93 Glue", { { ids::styleId, bus }, { ids::compFollowId, on }, { ids::compId, 100.0f } })).isNotEmpty());
+    CHECK (gainReductionProblem (preset ("Master \xe2\x80\x93 Polish", { { ids::thresholdId, -2.0f } })).isNotEmpty());
+
+    // Crushing is allowed only to the named Presets.
+    const std::initializer_list<std::pair<const juce::String, float>> crush { { ids::styleId, drums }, { ids::thresholdId, -40.0f }, { ids::ratioId, 20.0f } };
+    CHECK (gainReductionProblem (preset ("Drums \xe2\x80\x93 All-In Crush", crush)) == "");
+    CHECK (gainReductionProblem (preset ("Drums \xe2\x80\x93 Snare", crush)).isNotEmpty());
+
+    // Comp at 0% and an unrouted Sidechain Preset compress nothing, and a Preset that does under those names fails.
+    CHECK (gainReductionProblem (preset ("Vocals \xe2\x80\x93 Open", { { ids::compFollowId, on }, { ids::compId, 0.0f } })) == "");
+    CHECK (gainReductionProblem (preset ("Bass \xe2\x80\x93 Duck (Sidechain)", { { ids::detectionSourceId, 1.0f }, { ids::thresholdId, -40.0f } })) == "");
+    CHECK (gainReductionProblem (preset ("Bass \xe2\x80\x93 Duck (Sidechain)", { { ids::thresholdId, -40.0f } })).isNotEmpty());
+
+    // Default and Utility have no band.
+    CHECK (gainReductionProblem (preset ("Default")) == "");
+    CHECK (gainReductionProblem (preset ("Utility \xe2\x80\x93 Safety Limiter", { { ids::thresholdId, -60.0f }, { ids::ratioId, 20.0f } })) == "");
+}
+
+TEST_CASE ("The Factory gate rejects a De-Esser that misses sibilance, or compresses what's below it")
+{
+    const auto deEsserWith = [] (std::initializer_list<std::pair<const juce::String, float>> settings) {
+        return preset ("Vocals \xe2\x80\x93 De-Esser", settings);
+    };
+    CHECK (deEsserProblem (deEsserWith ({ { ids::detectionHighPassOnId, 1.0f },
+                                          { ids::detectionHighPassFrequencyId, 5000.0f },
+                                          { ids::detectionHighPassSlopeId, 48.0f },
+                                          { ids::thresholdId, -40.0f },
+                                          { ids::attackId, 1.0f },
+                                          { ids::releaseId, 50.0f } }))
+           == "");
+    CHECK (deEsserProblem (deEsserWith ({ { ids::detectionHighPassOnId, 1.0f },
+                                          { ids::detectionHighPassFrequencyId, 5000.0f },
+                                          { ids::detectionHighPassSlopeId, 48.0f },
+                                          { ids::thresholdId, -40.0f },
+                                          { ids::ratioId, 1.0f } }))
+               .isNotEmpty());
+    CHECK (deEsserProblem (deEsserWith ({ { ids::thresholdId, -40.0f } })).isNotEmpty());
+    // Its own check, not the Vocals band.
+    CHECK (gainReductionProblem (deEsserWith ({ { ids::thresholdId, -2.0f } })) == "");
 }
