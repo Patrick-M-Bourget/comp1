@@ -86,6 +86,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/DryWetParameterTest.cpp
         plugin/EditorControlsTest.cpp
         plugin/EditorLayoutTest.cpp
+        plugin/EditorMetersTest.cpp
         plugin/EditorScreensTest.cpp
         plugin/EditorTest.cpp
         plugin/GateParameterTest.cpp
