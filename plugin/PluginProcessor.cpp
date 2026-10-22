@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 
+#include "FactoryPresets.h"
 #include "PluginEditor.h"
 
 #include "comp1/Latency.h"
@@ -80,6 +81,22 @@ void setAsOneEdit (juce::AudioProcessorValueTreeState& parameters,
     history.endTransaction();
 }
 
+// The Factory Presets the plugin bundles (presets/factory), each named by its file's name without the extension. The
+// names are UTF-8, as they hold an en dash ("Vocals \u2013 One-Knob Lead").
+std::vector<plugkit::ui::PresetLibrary::FactoryPresetData> factoryPresets (const juce::String& fileExtension)
+{
+    std::vector<plugkit::ui::PresetLibrary::FactoryPresetData> presets;
+    for (int i = 0; i < FactoryPresets::namedResourceListSize; ++i)
+    {
+        int size = 0;
+        const auto* data = FactoryPresets::getNamedResource (FactoryPresets::namedResourceList[i], size);
+        presets.push_back ({ juce::String::fromUTF8 (FactoryPresets::originalFilenames[i]).upToLastOccurrenceOf (fileExtension, false, false),
+                             data,
+                             size });
+    }
+    return presets;
+}
+
 plugkit::ui::Session::Config sessionConfig (juce::File userSettingsFile, juce::File presetFolder)
 {
     plugkit::ui::Session::Config config;
@@ -87,6 +104,7 @@ plugkit::ui::Session::Config sessionConfig (juce::File userSettingsFile, juce::F
     // The root type is the saved state's, comp1. The extension and the type are permanent once released: a
     // Preset file keeps both.
     config.presetFileExtension = ".comp1preset";
+    config.factoryPresets = factoryPresets (config.presetFileExtension);
     config.stateVersion = PluginProcessor::stateVersion;
     config.migrate = migrate;
     config.window = PluginProcessor::window;

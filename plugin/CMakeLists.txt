@@ -41,6 +41,14 @@ target_sources(comp1 PRIVATE
     Section.cpp
     StyleSection.cpp)
 
+# The Factory Presets, bundled into the plugin: every file in presets/factory, found again at each build
+# (CONFIGURE_DEPENDS), so adding or removing one needs no edit here.
+file(GLOB comp1_factory_preset_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/presets/factory/*.comp1preset")
+juce_add_binary_data(comp1_factory_presets
+    NAMESPACE FactoryPresets
+    HEADER_NAME FactoryPresets.h
+    SOURCES ${comp1_factory_preset_files})
+
 # comp1 reads and writes no audio or image file, and opens no web page: every codec and browser JUCE would
 # otherwise compile in is off.
 target_compile_definitions(comp1 PUBLIC
@@ -57,6 +65,7 @@ target_compile_definitions(comp1 PUBLIC
 target_link_libraries(comp1
     PRIVATE
         comp1::engine
+        comp1_factory_presets
         juce::juce_audio_utils
         # From the plugin target only, which compiles its sources (plugkit's README.md, "Linking plugkit-ui").
         plugkit::ui
