@@ -124,6 +124,12 @@ void ControlSection::addControl (juce::Component& control, int width, int height
     addAndMakeVisible (control);
 }
 
+void ControlSection::addSelfPlaced (juce::Component& control)
+{
+    control.setExplicitFocusOrder (++focusOrder);
+    addAndMakeVisible (control);
+}
+
 ControlSection::KnobControl& ControlSection::addKnob (const juce::String& parameterId, float diameter, const juce::String& labelText, Place place, bool attached)
 {
     auto& control = *knobs.emplace_back (std::make_unique<KnobControl> (parameter (parameterId), diameter, labelText));

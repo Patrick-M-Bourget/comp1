@@ -101,6 +101,8 @@ public:
 
 protected:
     juce::RangedAudioParameter& parameter (const juce::String& id);
+    // A control the section places itself, outside the columns: added, enabled with the others, and next in Tab's order.
+    void addSelfPlaced (juce::Component& control);
     // Called on the editor's tick, before the availability is shown: what a section that shows more follows.
     virtual void follow() {}
     // Whether control is enabled while the section is available; by default, always.

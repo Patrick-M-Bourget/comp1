@@ -4,6 +4,7 @@
 
 #include "EditorHost.h"
 #include "Footer.h"
+#include "plugkit/ui/OutputPopoverFrame.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -43,7 +44,7 @@ void everythingAvailable (host::EditorHost& host)
     host.openOutputPopover();
     host.edit (parameters::processingModeId, 1.0f);
     host.edit (parameters::compFollowId, 0.0f);
-    REQUIRE (host.settleUntil ([&] { return host.showing<juce::ToggleButton> ("Auto Gain").isEnabled() && host.knob ("Lookahead").isEnabled(); }));
+    REQUIRE (host.settleUntil ([&] { return host.showing<plugkit::ui::OutputToggle> ("Auto Gain").isEnabled() && host.knob ("Lookahead").isEnabled(); }));
 }
 
 float plainOf (juce::RangedAudioParameter& parameter) { return parameter.convertFrom0to1 (parameter.getValue()); }
@@ -502,9 +503,9 @@ TEST_CASE ("Space and Return toggle a toggle, and up and down step a choice, one
     everythingAvailable (host);
     auto& history = host.processor.session().editHistory();
 
-    const juce::String toggle = GENERATE (as<juce::String> {}, "Gate", "Auto Release", "Saturation", "Limiter", "Detection High-Pass", "Detection Free Band");
+    const juce::String toggle = GENERATE (as<juce::String> {}, "Gate", "Auto Release", "Saturation", "Auto Gain", "Limiter", "Detection High-Pass", "Detection Free Band");
     CAPTURE (toggle);
-    auto& button = host.showing<juce::ToggleButton> (toggle);
+    auto& button = host.showing<juce::Button> (toggle);
     const bool was = button.getToggleState();
     int steps = history.undoSteps();
     pressIn (host, button, juce::KeyPress (juce::KeyPress::spaceKey));
@@ -626,7 +627,7 @@ TEST_CASE ("In the Compact View, Gate, Gate Threshold, Comp, the footer's four a
         host.edit (parameters::processingModeId, 1.0f);
         host.edit (parameters::compFollowId, 0.0f);
         REQUIRE (host.settleUntil ([&] {
-            return host.showing<juce::Component> ("Oversampling").isEnabled() && host.showing<juce::ToggleButton> ("Auto Gain").isEnabled();
+            return host.showing<juce::Component> ("Oversampling").isEnabled() && host.showing<plugkit::ui::OutputToggle> ("Auto Gain").isEnabled();
         }));
     }
     CHECK (found == compactParameters);
