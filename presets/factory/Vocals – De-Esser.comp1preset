@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<comp1 version="2">
+  <PARAM id="threshold" value="-32.0"/>
+  <PARAM id="ratio" value="6.0"/>
+  <PARAM id="attack" value="1.0"/>
+  <PARAM id="release" value="60.0"/>
+  <PARAM id="range" value="6.0"/>
+  <PARAM id="detection_high_pass_on" value="1.0"/>
+  <PARAM id="detection_high_pass_frequency" value="4500.0"/>
+  <PARAM id="detection_high_pass_slope" value="24.0"/>
+  <PARAM id="detection_band_on" value="1.0"/>
+  <PARAM id="detection_band_frequency" value="6500.0"/>
+  <PARAM id="detection_band_gain" value="6.0"/>
+</comp1>
