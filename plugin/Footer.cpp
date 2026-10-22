@@ -2,6 +2,7 @@
 
 #include "Parameters.h"
 #include "comp1/Latency.h"
+#include "comp1/Style.h"
 #include "plugkit/ui/Accessibility.h"
 #include "plugkit/ui/AssumedSampleRate.h"
 #include "plugkit/ui/ShowMenu.h"
@@ -16,6 +17,27 @@ namespace comp1
 namespace
 {
 int choiceOf (const juce::RangedAudioParameter& parameter) { return juce::roundToInt (parameter.convertFrom0to1 (parameter.getValue())); }
+
+// The Style chip's: the offered Styles' choices, its text and its menu items (Footer).
+ChoiceChip::Config styleChip (PluginProcessor& processor, const juce::StringArray& names)
+{
+    // The Characters are Style's first four, in its order (comp1/Settings.h), so each is named as its Style is.
+    const auto item = [names] (int choice) {
+        const int character = static_cast<int> (characterOf (static_cast<Style> (choice)));
+        return character == choice ? names[choice] : names[choice] + " (" + names[character] + ")";
+    };
+    return { .offered =
+                 [] {
+                     std::vector<int> offered;
+                     for (const auto style : PluginProcessor::offeredStyles())
+                         offered.push_back (static_cast<int> (style));
+                     return offered;
+                 },
+             .text = [names] (int choice) { return "Style: " + names[choice]; },
+             .item = item,
+             .choose = [&processor] (int choice) { processor.chooseStyle (static_cast<Style> (choice)); },
+             .steps = false };
+}
 
 double sampleRateOf (const PluginProcessor& processor)
 {
@@ -148,6 +170,9 @@ void ChoiceChip::show()
 Footer::Footer (PluginProcessor& p, LevelHistory& history)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),
       globalBypassAttachment (p.parameterState(), parameters::globalBypassId, globalBypass),
+      style (parameters::parameterOf (p.parameterState(), parameters::styleId),
+             p.session().editHistory(),
+             styleChip (p, parameters::parameterOf (p.parameterState(), parameters::styleId).getAllValueStrings())),
       processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
       oversampling (parameters::parameterOf (p.parameterState(), parameters::oversamplingId),
                     p.session().editHistory(),
@@ -174,7 +199,7 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
     globalBypass.setTooltip ("Global Bypass (Cmd/Ctrl+B)");
     // Left to right.
     int order = 0;
-    for (juce::Component* child : std::initializer_list<juce::Component*> { &globalBypass, &processingMode, &oversampling, &output, &uiScale })
+    for (juce::Component* child : std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &oversampling, &output, &uiScale })
     {
         addAndMakeVisible (*child);
         child->setExplicitFocusOrder (++order);
@@ -257,7 +282,7 @@ void Footer::resized()
     uiScale.setBounds (row.removeFromRight (buttonSize));
     row.removeFromRight (chipGap);
     output.setBounds (row.removeFromRight (std::max (outputWidth, output.getIdealWidth())));
-    for (auto* chip : { &processingMode, &oversampling })
+    for (auto* chip : { &style, &processingMode, &oversampling })
     {
         row.removeFromLeft (chipGap);
         chip->setBounds (row.removeFromLeft (chip->widestIdealWidth()));

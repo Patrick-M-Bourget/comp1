@@ -79,9 +79,16 @@ private:
     bool stepping = false; // a held key's undo step is open
 };
 
-// The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Processing
-// Mode and Oversampling, as chips that open menus; at the right the Output readout, the UI Scale menu and the switch
-// between the views, in that order, which is Tab's order too.
+// The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Style,
+// Processing Mode and Oversampling, as chips that open menus; at the right the Output readout, the UI Scale menu and the
+// switch between the views, in that order, which is Tab's order too.
+//
+// The Style chip reads "Style: " and the Style. Its menu lists the offered Styles (PluginProcessor::offeredStyles) in
+// Style's order, each with the Character it plays in brackets, "Drums (FET)", or alone where the Style is that
+// Character, "FET"; a screen reader reads that item as its value. A pick chooses the Style
+// (PluginProcessor::chooseStyle), so its defaults are written as one undo step; the chip never writes the Style
+// parameter itself. Up and down don't step it, as each step would write a Style's defaults. It shows the Style
+// parameter, so it follows an undo, a loaded Preset, a restored session and an A/B switch.
 //
 // The Output readout (plugkit::ui::OutputReadout) reads Output Gain plus Auto Gain's estimate while Auto Gain is in
 // effect, on or held on by Comp Follow (PluginProcessor::appliedAutoGainDb), signed to one decimal; Output Gain's range
@@ -123,7 +130,7 @@ private:
     PluginProcessor& processor;
     staple::IconButton globalBypass { "Global Bypass", staple::Icon::power };
     juce::AudioProcessorValueTreeState::ButtonAttachment globalBypassAttachment;
-    ChoiceChip processingMode, oversampling;
+    ChoiceChip style, processingMode, oversampling;
     plugkit::ui::OutputReadout output;
     OutputPopover popover;
     plugkit::ui::UiScaleMenu uiScale;
