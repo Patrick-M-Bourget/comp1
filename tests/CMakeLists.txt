@@ -89,6 +89,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/EditorMetersTest.cpp
         plugin/EditorScreensTest.cpp
         plugin/EditorTest.cpp
+        plugin/FactoryPresetsTest.cpp
         plugin/GateParameterTest.cpp
         plugin/GlobalBypassParameterTest.cpp
         plugin/LatencyReportTest.cpp
@@ -113,6 +114,8 @@ if(COMP1_BUILD_PLUGIN)
         $<TARGET_PROPERTY:comp1,INCLUDE_DIRECTORIES>
         $<TARGET_PROPERTY:plugkit-ui,INTERFACE_INCLUDE_DIRECTORIES>)
     target_compile_definitions(comp1_plugin_tests PRIVATE $<TARGET_PROPERTY:comp1,COMPILE_DEFINITIONS>)
+    # The Factory folder, so a test can check every file in it is bundled.
+    target_compile_definitions(comp1_plugin_tests PRIVATE COMP1_FACTORY_PRESETS="${PROJECT_SOURCE_DIR}/presets/factory")
     target_link_libraries(comp1_plugin_tests PRIVATE comp1 comp1::engine plugkit::editor_harness Catch2::Catch2WithMain)
     # The editor harness reads COMP1_SCREENS, where check.sh screens writes the snapshots (plugkit's README.md,
     # "Linking plugkit-ui").

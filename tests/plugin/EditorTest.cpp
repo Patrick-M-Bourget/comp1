@@ -123,19 +123,17 @@ TEST_CASE ("The header's Undo, Redo, A/B Compare, Copy, Preset arrows and Preset
     CHECK (session.compareSide() == plugkit::ui::CompareSide::A);
     CHECK_THAT (host.value (thresholdId), WithinAbs (-12.0f, 1.0e-4));
 
-    // The arrows step through the User Presets, each loading its Threshold.
-    const auto thresholdOf = [] (const juce::String& name) { return name == "A" ? -24.0f : -30.0f; };
-    click (titled (host, "Next Preset"));
-    const auto first = session.loadedPresetName();
-    REQUIRE ((first == "A" || first == "B"));
-    CHECK_THAT (host.value (thresholdId), WithinAbs (thresholdOf (first), 1.0e-4));
-    click (titled (host, "Next Preset"));
-    const auto second = session.loadedPresetName();
-    REQUIRE ((second == "A" || second == "B"));
-    CHECK (second != first);
-    CHECK_THAT (host.value (thresholdId), WithinAbs (thresholdOf (second), 1.0e-4));
+    // The arrows step through every Preset in browser order, the Factory's Default then the User Presets, each loading
+    // its Threshold (Default's is the default, -18 dB).
+    const auto thresholdOf = [] (const juce::String& name) { return name == "Default" ? -18.0f : name == "A" ? -24.0f : -30.0f; };
+    for (const auto* expected : { "Default", "A", "B" })
+    {
+        click (titled (host, "Next Preset"));
+        REQUIRE (session.loadedPresetName() == expected);
+        CHECK_THAT (host.value (thresholdId), WithinAbs (thresholdOf (expected), 1.0e-4));
+    }
     click (titled (host, "Previous Preset"));
-    CHECK (session.loadedPresetName() == first);
+    CHECK (session.loadedPresetName() == "A");
     CHECK (focused->hasKeyboardFocus (false));
 
     // The Presets button opens the browser over the whole editor, listing both.
