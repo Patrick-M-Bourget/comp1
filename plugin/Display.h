@@ -4,6 +4,7 @@
 #include "LevelGraph.h"
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
+#include "TransferCurveGraph.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/staple/controls/TextChip.h"
 
@@ -12,10 +13,11 @@
 namespace comp1
 {
 
-// The Expanded View's display: its two tabs, Level and Detection EQ, as text chips along its top, and under them the
-// chosen tab's content: on Level, the Level and Gain Reduction Graph (LevelGraph), fed from the editor's level history;
-// on Detection EQ, the Detection EQ display (DetectionEqDisplay). Named "Display", and each content by its tab, as a
-// test finds them.
+// The Expanded View's display: its three tabs, Level, Detection EQ and Transfer Curve, as text chips along its top, and
+// under them the chosen tab's content: on Level, the Level and Gain Reduction Graph (LevelGraph), fed from the editor's
+// level history; on Detection EQ, the Detection EQ display (DetectionEqDisplay); on Transfer Curve, the Transfer Curve
+// Graph (TransferCurveGraph), fed from the level history too. The Transfer Curve tab's place is provisional (#94).
+// Named "Display", and each content by its tab, as a test finds them.
 //
 // The chosen tab is the processor's (PluginProcessor::displayTab): a tab clicked, or pressed with Space or Return,
 // chooses it, and the display follows the processor's on the editor's tick, so it shows a restored session's.
@@ -27,11 +29,13 @@ public:
     void resized() override;
 
     // What a tab shows, laid out under the tabs, visible while its tab is chosen.
-    juce::Component& tabContent (DisplayTab tab) { return tab == DisplayTab::level ? level : detectionEq; }
+    juce::Component& tabContent (DisplayTab tab);
     DisplayTab shownTab() const { return shown; }
     LevelGraph& levelGraph() { return level; }
     // What fills the Detection EQ tab's content.
     DetectionEqDisplay& detectionEqDisplay() { return eqDisplay; }
+    // What fills the Transfer Curve tab's content.
+    TransferCurveGraph& transferCurveGraph() { return transferCurve; }
 
     static constexpr int tabHeight = 28, tabGap = 4, contentGap = 6;
 
@@ -39,14 +43,19 @@ private:
     void tick (double seconds) override;
     // Shows tab as the chosen one, with its content.
     void show (DisplayTab tab);
-    staple::TextChip& chipOf (DisplayTab tab) { return tab == DisplayTab::level ? levelChip : detectionEqChip; }
+    staple::TextChip& chipOf (DisplayTab tab);
+
+    // The tabs, left to right.
+    static constexpr DisplayTab allTabs[] { DisplayTab::level, DisplayTab::detectionEq, DisplayTab::transferCurve };
 
     staple::TextChip levelChip { "Level", staple::TextChip::Look::plain }, detectionEqChip { "Detection EQ", staple::TextChip::Look::plain };
+    staple::TextChip transferCurveChip { "Transfer Curve", staple::TextChip::Look::plain };
     PluginProcessor& processor;
     LevelGraph level;
     juce::Component detectionEq;
     DisplayTab shown = DisplayTab::level;
     DetectionEqDisplay eqDisplay { processor };
+    TransferCurveGraph transferCurve;
 };
 
 } // namespace comp1

@@ -1,5 +1,7 @@
 #include "EditorHost.h"
 
+#include "plugkit/ui/staple/controls/IconButton.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 namespace
@@ -16,8 +18,10 @@ void checkShows (host::EditorHost& host, DisplayTab tab)
     CHECK (display.shownTab() == tab);
     CHECK (tabChip (host, "Level").getToggleState() == (tab == DisplayTab::level));
     CHECK (tabChip (host, "Detection EQ").getToggleState() == (tab == DisplayTab::detectionEq));
+    CHECK (tabChip (host, "Transfer Curve").getToggleState() == (tab == DisplayTab::transferCurve));
     CHECK (display.tabContent (DisplayTab::level).isShowing() == (tab == DisplayTab::level));
     CHECK (display.tabContent (DisplayTab::detectionEq).isShowing() == (tab == DisplayTab::detectionEq));
+    CHECK (display.tabContent (DisplayTab::transferCurve).isShowing() == (tab == DisplayTab::transferCurve));
 }
 
 // A click on the tab titled title, which shows tab: its onClick at once, as a click runs it.
@@ -108,4 +112,61 @@ TEST_CASE ("The chosen tab isn't in a Preset, isn't an undo step and makes no si
     host.settle();
     CHECK (host.processor.displayTab() == DisplayTab::detectionEq);
     checkShows (host, DisplayTab::detectionEq);
+}
+
+TEST_CASE ("The Transfer Curve tab: a click or Space shows it, saved as transfer_curve and restored, in no Preset or undo step, and leaving Detection EQ for it lets go of Detection Audition")
+{
+    host::EditorHost host;
+    auto& session = host.processor.session();
+    auto& history = session.editHistory();
+    const auto preset = session.presetState();
+    REQUIRE (session.loadPreset (preset, "Start"));
+    const int steps = history.undoSteps();
+
+    // Its chip, after Detection EQ's, titled and tooltipped as theirs.
+    auto& chip = tabChip (host, "Transfer Curve");
+    CHECK (chip.getTooltip() == "Show the Transfer Curve display");
+    CHECK (chip.getX() > tabChip (host, "Detection EQ").getRight());
+    CHECK (host.expandedView().display().tabContent (DisplayTab::transferCurve).getTitle() == "Transfer Curve Graph");
+
+    click (host, "Transfer Curve", DisplayTab::transferCurve);
+    checkShows (host, DisplayTab::transferCurve);
+    CHECK (harness::savedNamesContaining (session.presetState(), "display").isEmpty());
+    CHECK (history.undoSteps() == steps);
+    CHECK_FALSE (session.isLoadedPresetModified());
+
+    // Space on the focused tab.
+    click (host, "Level", DisplayTab::level);
+    chip.grabKeyboardFocus();
+    CHECK (host.press (juce::KeyPress (juce::KeyPress::spaceKey)));
+    CHECK (host.processor.displayTab() == DisplayTab::transferCurve);
+    checkShows (host, DisplayTab::transferCurve);
+
+    // Saved as transfer_curve, into a new instance and into an open editor.
+    const auto saved = host::saved (host.processor);
+    CHECK (harness::savedState (saved).getProperty ("display_tab") == "transfer_curve");
+    host::EditorHost other;
+    host::restore (other.processor, saved);
+    CHECK (other.processor.displayTab() == DisplayTab::transferCurve);
+    other.reopen();
+    checkShows (other, DisplayTab::transferCurve);
+    click (host, "Level", DisplayTab::level);
+    host::restore (host.processor, saved);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == DisplayTab::transferCurve; }));
+    checkShows (host, DisplayTab::transferCurve);
+
+    // An unknown value opens on Level.
+    auto xml = harness::savedXml (saved);
+    REQUIRE (xml != nullptr);
+    xml->setAttribute ("display_tab", "spectrum");
+    host::restore (host.processor, *xml);
+    CHECK (host.processor.displayTab() == DisplayTab::level);
+
+    // Detection Audition, held on its tab, is let go as the Transfer Curve tab shows.
+    click (host, "Detection EQ", DisplayTab::detectionEq);
+    auto& audition = host.expandedView().display().detectionEqDisplay().detectionAudition();
+    audition.mouseDown (harness::mouseEvent (audition, audition.getLocalBounds().toFloat().getCentre(), juce::ModifierKeys::leftButtonModifier));
+    REQUIRE (host.processor.detectionAudition());
+    click (host, "Transfer Curve", DisplayTab::transferCurve);
+    CHECK_FALSE (host.processor.detectionAudition());
 }

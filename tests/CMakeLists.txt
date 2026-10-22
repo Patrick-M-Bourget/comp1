@@ -107,6 +107,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/StereoParametersTest.cpp
         plugin/StyleParameterTest.cpp
         plugin/StylePickerTest.cpp
+        plugin/TransferCurveGraphTest.cpp
         plugin/UiScaleTest.cpp
         plugin/ViewSwitchTest.cpp
     )

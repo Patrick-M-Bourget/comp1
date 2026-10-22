@@ -4,13 +4,13 @@ namespace comp1
 {
 
 Display::Display (PluginProcessor& p, LevelHistory& history)
-    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), level (history, p)
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), level (history, p), transferCurve (p, history)
 {
     setName ("Display");
     level.setName ("Level");
     detectionEq.setName ("Detection EQ");
     int order = 0;
-    for (const auto tab : { DisplayTab::level, DisplayTab::detectionEq })
+    for (const auto tab : allTabs)
     {
         auto& chip = chipOf (tab);
         chip.setTitle (chip.getButtonText());
@@ -28,6 +28,28 @@ Display::Display (PluginProcessor& p, LevelHistory& history)
     show (processor.displayTab());
 }
 
+juce::Component& Display::tabContent (DisplayTab tab)
+{
+    switch (tab)
+    {
+        case DisplayTab::level: return level;
+        case DisplayTab::detectionEq: return detectionEq;
+        case DisplayTab::transferCurve: return transferCurve;
+    }
+    return level;
+}
+
+staple::TextChip& Display::chipOf (DisplayTab tab)
+{
+    switch (tab)
+    {
+        case DisplayTab::level: return levelChip;
+        case DisplayTab::detectionEq: return detectionEqChip;
+        case DisplayTab::transferCurve: return transferCurveChip;
+    }
+    return levelChip;
+}
+
 void Display::tick (double)
 {
     if (processor.displayTab() != shown)
@@ -37,7 +59,7 @@ void Display::tick (double)
 void Display::show (DisplayTab tab)
 {
     shown = tab;
-    for (const auto each : { DisplayTab::level, DisplayTab::detectionEq })
+    for (const auto each : allTabs)
     {
         chipOf (each).setToggleState (each == tab, juce::dontSendNotification);
         tabContent (each).setVisible (each == tab);
@@ -52,7 +74,7 @@ void Display::resized()
     auto area = getLocalBounds();
     auto tabs = area.removeFromTop (tabHeight);
     area.removeFromTop (contentGap);
-    for (const auto tab : { DisplayTab::level, DisplayTab::detectionEq })
+    for (const auto tab : allTabs)
     {
         auto& chip = chipOf (tab);
         chip.setBounds (tabs.removeFromLeft (chip.getIdealWidth()));

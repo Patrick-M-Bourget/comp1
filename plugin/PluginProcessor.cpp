@@ -18,6 +18,29 @@ const juce::Identifier versionProperty { "version" };
 // released: sessions keep them.
 const juce::Identifier displayTabProperty { "display_tab" };
 const juce::String levelTab { "level" }, detectionEqTab { "detection_eq" };
+const juce::String transferCurveTab { "transfer_curve" }; // permanent once released, as the others
+
+// A display tab as the session saves it, and back: anything else, a session saved without one included, is Level.
+const juce::String& savedTab (DisplayTab tab)
+{
+    switch (tab)
+    {
+        case DisplayTab::level: return levelTab;
+        case DisplayTab::detectionEq: return detectionEqTab;
+        case DisplayTab::transferCurve: return transferCurveTab;
+    }
+    return levelTab;
+}
+
+DisplayTab tabSaved (const juce::String& saved)
+{
+    if (saved == detectionEqTab)
+        return DisplayTab::detectionEq;
+    if (saved == transferCurveTab)
+        return DisplayTab::transferCurve;
+    return DisplayTab::level;
+}
+
 // The view, and the hidden view's size in logical pixels: view properties the session saves and restore takes off.
 // Their names and values are permanent once released: sessions keep them.
 const juce::Identifier viewProperty { "view" }, hiddenViewWidthProperty { "hidden_view_width" }, hiddenViewHeightProperty { "hidden_view_height" };
@@ -299,7 +322,7 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = sessionState.saved();
-    state.setProperty (displayTabProperty, displayTab() == DisplayTab::detectionEq ? detectionEqTab : levelTab, nullptr);
+    state.setProperty (displayTabProperty, savedTab (displayTab()), nullptr);
     state.setProperty (viewProperty, view() == View::compact ? compactView : expandedView, nullptr);
     const auto hidden = hiddenViewSize();
     state.setProperty (hiddenViewWidthProperty, hidden.x, nullptr);
@@ -316,7 +339,7 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     setDetectionAudition (false);
     clearClipLights();
     sessionState.restore (juce::ValueTree::fromXml (*xml), [this] (juce::ValueTree& state) {
-        setDisplayTab (state.getProperty (displayTabProperty).toString() == detectionEqTab ? DisplayTab::detectionEq : DisplayTab::level);
+        setDisplayTab (tabSaved (state.getProperty (displayTabProperty).toString()));
         state.removeProperty (displayTabProperty, nullptr);
         // The Session holds the restored size to the envelope of both views; the shown view's holds it to its own.
         const auto shown = state.getProperty (viewProperty).toString() == compactView ? View::compact : View::expanded;
