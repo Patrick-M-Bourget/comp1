@@ -145,6 +145,33 @@ Footer::Footer (PluginProcessor& p)
         addAndMakeVisible (*child);
         child->setExplicitFocusOrder (++order);
     }
+    // Last, one of the two showing at a time, in the same place in Tab's order.
+    ++order;
+    for (auto* button : { &toCompact, &toExpanded })
+    {
+        button->setTitle (button->getName());
+        button->setTooltip (button->getName());
+        button->setExplicitFocusOrder (order);
+        button->onClick = [this] {
+            if (onSwitchView != nullptr)
+                onSwitchView();
+        };
+        addChildComponent (*button);
+    }
+    showSwitchFor (p.view());
+}
+
+void Footer::showSwitchFor (View shown)
+{
+    auto& showing = shown == View::compact ? toExpanded : toCompact;
+    auto& hiding = &showing == &toCompact ? toExpanded : toCompact;
+    if (showing.isVisible() && ! hiding.isVisible())
+        return;
+    const bool focused = hiding.hasKeyboardFocus (false);
+    showing.setVisible (true);
+    hiding.setVisible (false);
+    if (focused)
+        showing.grabKeyboardFocus();
 }
 
 void Footer::resized()
@@ -153,6 +180,10 @@ void Footer::resized()
     auto row = getLocalBounds().reduced (inset, 0);
     row = row.withSizeKeepingCentre (row.getWidth(), buttonSize);
     globalBypass.setBounds (row.removeFromLeft (buttonSize));
+    const auto switchArea = row.removeFromRight (buttonSize);
+    toCompact.setBounds (switchArea);
+    toExpanded.setBounds (switchArea);
+    row.removeFromRight (chipGap);
     uiScale.setBounds (row.removeFromRight (buttonSize));
     for (auto* chip : { &processingMode, &oversampling })
     {

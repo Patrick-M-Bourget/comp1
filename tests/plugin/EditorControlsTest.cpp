@@ -310,6 +310,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Stereo Link");
     expected.push_back ("Stereo Placement");
     expected.push_back ("Style");
+    expected.push_back ("Switch to the Compact View");
     expected.push_back ("Threshold");
     expected.push_back ("Transfer Curve");
     expected.push_back ("Transfer Curve Graph");
@@ -395,7 +396,7 @@ TEST_CASE ("Tab walks the header, the display's tabs, the Output Meter, the sect
                                     "Detection Audition", "Output Meter", "Style", "Gate", "Gate Hold", "Comp Follow", "Comp",
                                     "Threshold", "Range", "Colour", "Saturation Position", "Dry", "Wet", "Output Gain", "Ceiling",
                                     "Detection Source", "Detection Free Band Q", "Stereo Placement", "Stereo Link", "Lookahead",
-                                    "Global Bypass", "Processing Mode", "Oversampling", "UI Scale" };
+                                    "Global Bypass", "Processing Mode", "Oversampling", "UI Scale", "Switch to the Compact View" };
     int last = -1;
     for (const auto& title : order)
     {

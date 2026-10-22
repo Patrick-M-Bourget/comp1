@@ -35,9 +35,58 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         content().addAndMakeVisible (*child);
         child->setExplicitFocusOrder (order++);
     }
-    footer.uiScaleMenu().onPicked = [this] (int) { applyUiScale(); };
+    footer.uiScaleMenu().onPicked = [this] (int) {
+        applyUiScale();
+        applyViewWindow();
+    };
+    compactBody.setName ("Compact View");
+    content().addChildComponent (compactBody);
+    footer.onSwitchView = [this, &p] {
+        p.setView (shown == View::expanded ? View::compact : View::expanded);
+        followView();
+    };
     // Along the bottom, last in Tab's order.
     open (footer);
+    followView();
+}
+
+void PluginEditor::followView()
+{
+    const auto view = static_cast<PluginProcessor&> (processor).view();
+    if (view != shown || compactBody.isVisible() != (view == View::compact))
+        show (view);
+    applyViewWindow();
+}
+
+void PluginEditor::show (View view)
+{
+    shown = view;
+    const bool expanded = view == View::expanded;
+    for (juce::Component* part :
+         std::initializer_list<juce::Component*> { &displaySlot, &gateGainReduction, &gainReduction, &limiterGainReduction, &outputMeter, &sections })
+        part->setVisible (expanded);
+    compactBody.setVisible (! expanded);
+    footer.showSwitchFor (view);
+    if (! expanded)
+        displaySlot.detectionEqDisplay().letGoOfDetectionAudition();
+}
+
+void PluginEditor::applyViewWindow()
+{
+    const auto& [defaultSize, minimum, maximum] = PluginProcessor::windowOf (shown);
+    auto& session = static_cast<PluginProcessor&> (processor).session();
+    const float scale = static_cast<float> (session.uiScalePercent()) / 100.0f;
+    const auto scaled = [scale] (int logical) { return juce::roundToInt (static_cast<float> (logical) * scale); };
+    if (const auto* limits = getConstrainer();
+        limits != nullptr && limits->getMinimumWidth() == scaled (minimum.x) && limits->getMinimumHeight() == scaled (minimum.y)
+        && limits->getMaximumWidth() == scaled (maximum.x) && limits->getMaximumHeight() == scaled (maximum.y))
+        return;
+    // Taken before the new limits can resize the window on the way to its size.
+    const auto stored = session.editorSize();
+    const juce::Point<int> size { juce::jlimit (minimum.x, maximum.x, stored.x), juce::jlimit (minimum.y, maximum.y, stored.y) };
+    setResizeLimits (scaled (minimum.x), scaled (minimum.y), scaled (maximum.x), scaled (maximum.y));
+    // The resize writes the Session's size (EditorShell::resized), over whatever the new limits wrote on the way.
+    setSize (scaled (size.x), scaled (size.y));
 }
 
 PluginEditor::~PluginEditor() = default;
@@ -76,6 +125,7 @@ int PluginEditor::sectionRowsHeight()
 
 void PluginEditor::layOutBody (juce::Rectangle<int> area)
 {
+    compactBody.setBounds (area);
     sections.setBounds (area.removeFromBottom (sectionRowsHeight()));
     area.removeFromBottom (layout::gap);
     outputMeter.setBounds (area.removeFromRight (layout::meterWidth));

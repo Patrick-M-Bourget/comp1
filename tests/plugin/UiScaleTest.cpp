@@ -32,7 +32,7 @@ void pickUiScale (host::EditorHost& host, int percent)
     menu.pick (percent);
 }
 
-const auto& window = comp1::PluginProcessor::window;
+const auto& window = comp1::PluginProcessor::expandedWindow;
 
 } // namespace
 

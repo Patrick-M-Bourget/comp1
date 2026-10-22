@@ -190,7 +190,7 @@ TEST_CASE ("The Level and Gain Reduction Graph shows the newest record at its ri
 TEST_CASE ("A one-run transient in quiet audio shows in its pixel column at the graph's minimum and maximum widths")
 {
     Graphing host;
-    const auto& window = comp1::PluginProcessor::window;
+    const auto& window = comp1::PluginProcessor::expandedWindow;
     const auto size = GENERATE_COPY (window.minimum, window.maximum);
     CAPTURE (size.x, size.y);
     host.editor->setSize (size.x, size.y);
@@ -254,7 +254,7 @@ TEST_CASE ("Resizing the window and changing the UI Scale keep the Level and Gai
     Graphing host;
     playMarker (host, 3.0);
     const auto taken = host.graph().recordsTaken();
-    const auto& window = comp1::PluginProcessor::window;
+    const auto& window = comp1::PluginProcessor::expandedWindow;
     auto& scale = host.showing<plugkit::ui::UiScaleMenu> ("UI Scale");
     for (const int percent : { 100, 200, 75 })
         for (const auto size : { window.minimum, window.maximum, window.defaultSize })

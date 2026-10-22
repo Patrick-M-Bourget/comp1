@@ -9,6 +9,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <algorithm>
 #include <atomic>
 #include <vector>
 
@@ -22,6 +23,13 @@ enum class DisplayTab
     level,
     detectionEq,
     transferCurve,
+};
+
+// The editor's views: the Compact View, and the Expanded View with the display and every section.
+enum class View
+{
+    expanded,
+    compact,
 };
 
 // The Plugin Shell: the JUCE processor around the Engine. It turns the host parameters into Settings once a
@@ -48,7 +56,7 @@ public:
     void processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
     using AudioProcessor::processBlockBypassed;
 
-    // The Expanded View (PluginEditor.h).
+    // The editor, in the view the processor holds (PluginEditor.h).
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
@@ -73,7 +81,18 @@ public:
     // The Expanded View's logical size (as at 100% UI Scale), and its limits: at the minimum every section fits, the
     // widest row of them (from Style to Character and Saturation) inside the window's padding, and each size is whole
     // pixels at every UI Scale.
-    static constexpr plugkit::ui::Session::Window window { { 1400, 860 }, { 1356, 720 }, { 2560, 1600 } };
+    static constexpr plugkit::ui::Session::Window expandedWindow { { 1400, 860 }, { 1356, 720 }, { 2560, 1600 } };
+    // The Compact View's, provisional until its controls (#91): at the minimum the header, the footer and the Preset
+    // browser's full panel inside its margin fit, and each size is whole pixels at every UI Scale.
+    static constexpr plugkit::ui::Session::Window compactWindow { { 960, 600 }, { 888, 548 }, { 1600, 1000 } };
+    static const plugkit::ui::Session::Window& windowOf (View view) { return view == View::compact ? compactWindow : expandedWindow; }
+    // The Session's window, the envelope of both views': the Expanded View's default, the smaller minimum and the
+    // larger maximum on each axis. The editor holds the window to the shown view's own limits.
+    static constexpr plugkit::ui::Session::Window sessionWindow {
+        expandedWindow.defaultSize,
+        { std::min (expandedWindow.minimum.x, compactWindow.minimum.x), std::min (expandedWindow.minimum.y, compactWindow.minimum.y) },
+        { std::max (expandedWindow.maximum.x, compactWindow.maximum.x), std::max (expandedWindow.maximum.y, compactWindow.maximum.y) }
+    };
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     // Restoring a state of comp1's lets go of Detection Audition and puts out the Clip Lights, then restores through
@@ -150,6 +169,16 @@ public:
     DisplayTab displayTab() const { return chosenDisplayTab.load (std::memory_order_relaxed); }
     void setDisplayTab (DisplayTab tab) { chosenDisplayTab.store (tab, std::memory_order_relaxed); }
 
+    // The view the editor shows: Expanded for a new instance; saved with the session, read back on restore (Expanded
+    // for a session saved without it), and in no Preset; not an undo step, and it makes no side Modified. Each view
+    // keeps its own window size: the shown view's is the Session's (Session::editorSize), the hidden view's is
+    // hiddenViewSize(). Showing the other view swaps them, so it opens at its last size, or its default the first
+    // time; showing the view shown changes nothing. Any thread.
+    View view() const { return chosenView.load (std::memory_order_relaxed); }
+    void setView (View view);
+    // The hidden view's logical size (as at 100% UI Scale), within its limits: its default until it has been shown.
+    juce::Point<int> hiddenViewSize() const;
+
     // Detection Audition, while the editor holds it: not a host parameter, and never saved. Any thread.
     void setDetectionAudition (bool held) { heldDetectionAudition.store (held, std::memory_order_relaxed); }
     bool detectionAudition() const { return heldDetectionAudition.load (std::memory_order_relaxed); }
@@ -169,6 +198,9 @@ private:
     std::atomic<bool> heldDetectionAudition { false };
     plugkit::ui::ClipLights clipLights;
     std::atomic<DisplayTab> chosenDisplayTab { DisplayTab::level };
+    std::atomic<View> chosenView { View::expanded };
+    // The hidden view's size in logical pixels, 0 by 0 until it has one.
+    std::atomic<int> hiddenWidth { 0 }, hiddenHeight { 0 };
 
     // Reports to the host the latency of the Processing Mode the host parameter holds (comp1/Latency.h), at the
     // sample rate last prepared: at prepareToPlay(), whenever Processing Mode changes (from the editor, or a host that
