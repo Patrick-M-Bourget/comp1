@@ -141,6 +141,12 @@ foreach(format VST3 AU AAX Standalone CLAP)
                 COMMAND_EXPAND_LISTS
                 VERBATIM)
         endif()
+        # The linker signs only the binary, and JUCE then writes the VST3's moduleinfo.json into the bundle, so the
+        # bundle's seal no longer matches and hosts such as Live refuse to load it. Signing the whole bundle ad hoc,
+        # after every other step, seals it as it ships; the release signature replaces this one.
+        add_custom_command(TARGET ${binary} POST_BUILD
+            COMMAND codesign --force --sign - "$<TARGET_BUNDLE_DIR:${binary}>"
+            VERBATIM)
     elseif(MSVC)
         # /OPT:REF and /OPT:ICF are the linker's defaults until /DEBUG turns them off, so they are spelled out.
         target_link_options(${binary} PRIVATE $<${comp1_dead_strip}:/OPT:REF;/OPT:ICF>)
