@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<comp1 version="2">
+  <PARAM id="style" value="4.0"/>
+  <PARAM id="comp_follow" value="1.0"/>
+  <PARAM id="auto_release" value="1.0"/>
+  <PARAM id="gate" value="1.0"/>
+  <PARAM id="limiter" value="1.0"/>
+  <PARAM id="comp" value="55.0"/>
+  <PARAM id="ceiling" value="-1.0"/>
+  <PARAM id="detection_high_pass_on" value="1.0"/>
+  <PARAM id="detection_high_pass_frequency" value="80.0"/>
+</comp1>
