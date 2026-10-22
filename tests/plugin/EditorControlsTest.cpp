@@ -300,7 +300,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     CHECK (listed == expected);
 }
 
-TEST_CASE ("Each knob reads its value with its unit as its tooltip shows it: Ratio as 4:1 and ∞:1, Ceiling in dBFS, Dry and Wet Off at the bottom")
+TEST_CASE ("Each knob reads its value with its unit as its tooltip shows it: Ratio as 4:1 and infinity:1, Ceiling in dBFS, Dry and Wet Off at the bottom")
 {
     host::EditorHost host;
     everythingAvailable (host);
