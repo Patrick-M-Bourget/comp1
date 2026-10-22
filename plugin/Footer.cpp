@@ -7,6 +7,7 @@
 #include "plugkit/ui/staple/LookAndFeel.h"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace comp1
@@ -205,11 +206,14 @@ Footer::~Footer()
 
 void Footer::showOutput()
 {
-    const double db = processor.parameterState().getRawParameterValue (parameters::outputGainId)->load (std::memory_order_relaxed)
-                      + processor.appliedAutoGainDb();
-    if (const auto text = plugkit::ui::outputReadoutText (db); text != output.getButtonText())
+    auto& state = processor.parameterState();
+    const double db = state.getRawParameterValue (parameters::outputGainId)->load (std::memory_order_relaxed) + processor.appliedAutoGainDb();
+    const bool parallel = ! std::isinf (state.getRawParameterValue (parameters::dryId)->load (std::memory_order_relaxed));
+    static const juce::String mark = juce::String::charToString (0x2225) + " ";
+    if (const auto text = (parallel ? mark : juce::String()) + plugkit::ui::outputReadoutText (db); text != output.getButtonText())
     {
         output.setButtonText (text);
+        output.setDescription (parallel ? "Parallel compression on: Dry is mixed in" : "");
         resized();
     }
     if (const bool bypassed = globalBypass.getToggleState(); bypassed != output.isNotApplied())

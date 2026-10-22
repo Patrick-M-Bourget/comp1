@@ -306,6 +306,7 @@ namespace
 {
 
 constexpr float off = -std::numeric_limits<float>::infinity();
+const juce::String parallelMark = juce::String::charToString (0x2225);
 
 // A press on slider's track at x, a drag by dx and the release; clicks 2 for a double-click's second press.
 void press (plugkit::ui::PopoverSlider& slider, float x, float dx = 0.0f, int clicks = 1)
@@ -459,4 +460,37 @@ TEST_CASE ("While open, the Dry and Wet sliders follow Host Automation, undo, A/
     CHECK (shows ("Off", "0.0 dB"));
     REQUIRE (session.loadPreset (preset, "Parallel"));
     CHECK (shows (minus + "24.0 dB", "Off"));
+}
+
+TEST_CASE ("The Output readout shows the parallel mark exactly while Dry is not Off, and says parallel to a screen reader, in both views")
+{
+    host::EditorHost host;
+    const bool compact = GENERATE (false, true);
+    CAPTURE (compact);
+    if (compact)
+        host::EditorHost::click (host.expandedView().viewSwitch());
+    auto& readout = host.outputReadout();
+    host.edit (parameters::compFollowId, 0.0f);
+    host.edit (parameters::autoGainId, 0.0f);
+    host.edit (parameters::outputGainId, -1.8f);
+    host.edit (parameters::dryId, off);
+    REQUIRE (host.settleUntil ([&] { return readout.getButtonText() == minus + "1.8 dB"; }));
+    CHECK (readout.getDescription().isEmpty());
+
+    // Dry at its lowest level above Off, and up.
+    for (const float dry : { -51.9f, 0.0f, 12.0f })
+    {
+        CAPTURE (dry);
+        host.edit (parameters::dryId, dry);
+        CHECK (host.settleUntil ([&] { return readout.getButtonText() == parallelMark + " " + minus + "1.8 dB"; }));
+        CHECK (readout.getDescription() == "Parallel compression on: Dry is mixed in");
+        auto* handler = readout.getAccessibilityHandler();
+        REQUIRE (handler != nullptr);
+        CHECK (handler->getDescription().contains ("Parallel"));
+        // Wide enough for the mark.
+        CHECK (readout.getWidth() >= readout.getIdealWidth());
+    }
+    host.edit (parameters::dryId, off);
+    CHECK (host.settleUntil ([&] { return readout.getButtonText() == minus + "1.8 dB"; }));
+    CHECK (readout.getDescription().isEmpty());
 }
