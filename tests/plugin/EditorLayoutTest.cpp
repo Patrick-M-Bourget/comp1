@@ -14,7 +14,7 @@ namespace
 // The editor's areas, in the content's logical pixels (as at 100%).
 struct Areas
 {
-    juce::Rectangle<int> header, display, levelTab, detectionEqTab, outputMeter, sections, style, footer;
+    juce::Rectangle<int> header, display, levelTab, detectionEqTab, gainReduction, outputMeter, sections, style, footer;
 };
 
 juce::Component& named (juce::Component& editor, const juce::String& name)
@@ -40,6 +40,7 @@ Areas areasOf (juce::AudioProcessorEditor& editor)
              in (named (editor, "Display")),
              in (tabs.tabContent (comp1::DisplayTab::level)),
              in (tabs.tabContent (comp1::DisplayTab::detectionEq)),
+             in (named (editor, "Gain Reduction")),
              in (*meter),
              in (named (editor, "Sections")),
              in (named (editor, "Style")),
@@ -48,22 +49,23 @@ Areas areasOf (juce::AudioProcessorEditor& editor)
 
 } // namespace
 
-TEST_CASE ("At its default size the Expanded View is the header, the display with the Output Meter's rail at its right, the sections and the footer")
+TEST_CASE ("At its default size the Expanded View is the header, the display with the Gain Reduction meter and the Output Meter's rail at its right, the sections and the footer")
 {
     host::EditorHost host;
-    REQUIRE (host.editor->getWidth() == 1200);
-    REQUIRE (host.editor->getHeight() == 760);
+    REQUIRE (host.editor->getWidth() == 1320);
+    REQUIRE (host.editor->getHeight() == 860);
 
-    // 14 px padding and 12 px gaps; a 40 px meter rail and a 150 px section row.
+    // 14 px padding and 12 px gaps; two 40 px meter rails and the two rows of sections, 190 and 144 px tall.
     const auto areas = areasOf (*host.editor);
-    CHECK (areas.header == juce::Rectangle<int> (14, 14, 1172, 52));
-    CHECK (areas.display == juce::Rectangle<int> (14, 78, 1120, 450));
-    CHECK (areas.outputMeter == juce::Rectangle<int> (1146, 78, 40, 450));
-    CHECK (areas.sections == juce::Rectangle<int> (14, 540, 1172, 150));
-    CHECK (areas.footer == juce::Rectangle<int> (14, 702, 1172, 44));
+    CHECK (areas.header == juce::Rectangle<int> (14, 14, 1292, 52));
+    CHECK (areas.display == juce::Rectangle<int> (14, 78, 1188, 354));
+    CHECK (areas.gainReduction == juce::Rectangle<int> (1214, 78, 40, 354));
+    CHECK (areas.outputMeter == juce::Rectangle<int> (1266, 78, 40, 354));
+    CHECK (areas.sections == juce::Rectangle<int> (14, 444, 1292, 346));
+    CHECK (areas.footer == juce::Rectangle<int> (14, 802, 1292, 44));
     // Each tab's content is the display under its tabs.
     CHECK (areas.levelTab == areas.detectionEqTab);
-    CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1120, 416));
+    CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1188, 320));
 }
 
 TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes nothing overlaps, and only the display and the section row's width grow")
@@ -86,7 +88,7 @@ TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes noth
     const auto areas = areasOf (*host.editor);
 
     const juce::Rectangle<int> inside { 14, 14, size.x - 28, size.y - 28 };
-    const std::vector<juce::Rectangle<int>> rows { areas.header, areas.display, areas.outputMeter, areas.sections, areas.footer };
+    const std::vector<juce::Rectangle<int>> rows { areas.header, areas.display, areas.gainReduction, areas.outputMeter, areas.sections, areas.footer };
     for (size_t i = 0; i < rows.size(); ++i)
     {
         CAPTURE (i);
@@ -105,8 +107,43 @@ TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes noth
     CHECK (areas.sections.getWidth() == smallest.sections.getWidth() + wider);
     CHECK (areas.sections.getHeight() == smallest.sections.getHeight());
     CHECK (areas.outputMeter.getWidth() == smallest.outputMeter.getWidth());
+    CHECK (areas.gainReduction.getWidth() == smallest.gainReduction.getWidth());
     CHECK (areas.style.getWidth() == smallest.style.getWidth());
     CHECK (areas.style.getHeight() == smallest.style.getHeight());
     CHECK (areas.header.getHeight() == smallest.header.getHeight());
     CHECK (areas.footer.getHeight() == smallest.footer.getHeight());
+}
+
+TEST_CASE ("At the minimum size every section fits in the section rows, none overlapping another, each with its controls inside it")
+{
+    host::EditorHost host;
+    const auto& window = comp1::PluginProcessor::window;
+    host.editor->setSize (window.minimum.x, window.minimum.y);
+    auto& sections = named (*host.editor, "Sections");
+    const auto names = { "Style", "Gate", "Compressor", "Character and Saturation", "Mix", "Output", "Detection", "Stereo", "Lookahead" };
+    REQUIRE (static_cast<size_t> (sections.getNumChildComponents()) == names.size());
+    std::vector<juce::Rectangle<int>> placed;
+    for (const auto* name : names)
+    {
+        CAPTURE (name);
+        auto& section = named (sections, name);
+        REQUIRE (section.getParentComponent() == &sections);
+        CHECK (sections.getLocalBounds().contains (section.getBounds()));
+        for (const auto& other : placed)
+            CHECK_FALSE (other.intersects (section.getBounds()));
+        placed.push_back (section.getBounds());
+        // Each control's own area: a knob's face (its shadow may reach past it), anything else its bounds.
+        for (auto* control : section.getChildren())
+        {
+            CAPTURE (control->getTitle(), control->getName());
+            auto area = control->getBounds();
+            if (auto* knob = dynamic_cast<staple::Knob*> (control))
+            {
+                const auto face = knob->getFaceCentre().toInt() + knob->getPosition();
+                const int radius = juce::roundToInt (knob->getFaceRadius());
+                area = juce::Rectangle<int> (2 * radius, 2 * radius).withCentre (face);
+            }
+            CHECK (section.getLocalBounds().contains (area));
+        }
+    }
 }

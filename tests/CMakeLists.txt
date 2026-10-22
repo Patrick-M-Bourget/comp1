@@ -83,6 +83,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/CompParameterTest.cpp
         plugin/DisplayTabTest.cpp
         plugin/DryWetParameterTest.cpp
+        plugin/EditorControlsTest.cpp
         plugin/EditorLayoutTest.cpp
         plugin/EditorScreensTest.cpp
         plugin/EditorTest.cpp
@@ -114,6 +115,8 @@ if(COMP1_BUILD_PLUGIN)
     # The editor harness reads COMP1_SCREENS, where check.sh screens writes the snapshots (plugkit's README.md,
     # "Linking plugkit-ui").
     target_compile_definitions(comp1_plugin_tests PRIVATE PLUGKIT_HARNESS_VAR_PREFIX="COMP1_")
+    # The editor's accessible names are checked against the glossary's words.
+    target_compile_definitions(comp1_plugin_tests PRIVATE COMP1_GLOSSARY="${PROJECT_SOURCE_DIR}/GLOSSARY.md")
     # The tests compare samples and values exactly, on purpose. Set on the sources, whose options come after the
     # -Wfloat-equal JUCE's recommended warnings bring in through the plugin target.
     get_target_property(comp1_plugin_test_sources comp1_plugin_tests SOURCES)

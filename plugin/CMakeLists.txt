@@ -32,13 +32,18 @@ juce_add_plugin(comp1
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
 target_sources(comp1 PRIVATE
+    CompFollowAttachment.cpp
+    Controls.cpp
+    DetectionLevelRing.cpp
     Display.cpp
     Footer.cpp
+    GainReductionMeter.cpp
     LevelHistory.cpp
     Parameters.cpp
     PluginEditor.cpp
     PluginProcessor.cpp
     Section.cpp
+    Sections.cpp
     StyleSection.cpp)
 
 # comp1 reads and writes no audio or image file, and opens no web page: every codec and browser JUCE would
