@@ -1,5 +1,6 @@
 #include "comp1/Engine.h"
 
+#include "AutoGain.h"
 #include "Character.h"
 #include "Clean.h"
 #include "Colour.h"
@@ -76,8 +77,8 @@ plugkit::StereoPlacement routed (StereoPlacement placement)
 //
 // Comp Follow (ADR 0004): the gain computer, Colour's Threshold tracking and Auto Gain's estimate take Threshold and
 // 1/Ratio from the Comp Curve at Comp while it is on, with the stored Knee and Range, and the stored Threshold, Ratio
-// and Auto Gain change nothing. Turning it on or off moves a share of the Comp Curve's values over theirs, 0 to 1, along a
-// smoothstep over compFollowGlideMs (dyn-lab's follow_share), stepping a run at a time on the run grid: each run's start
+// and Auto Gain change nothing; Auto Gain's estimate reads the stored timing either way. Turning it on or off moves a
+// share of the Comp Curve's values over theirs, 0 to 1, along a smoothstep over compFollowGlideMs (dyn-lab's follow_share), stepping a run at a time on the run grid: each run's start
 // mixes the two by the share, (1 - share) times the stored plus share times the Comp Curve's, and the settings glide to the
 // mix as any change does. Moving targets, Comp or the stored values, move the mix with them, and a switch back
 // mid-glide turns the share round from where it is.
@@ -122,6 +123,11 @@ public:
     {
         stored = curveOf (settings);
         storedAutoGain = settings.autoGain;
+        estimatedTiming = { .attackMs = settings.attackMs,
+                            .releaseMs = settings.releaseMs,
+                            .holdMs = settings.holdMs,
+                            .autoRelease = settings.autoRelease,
+                            .character = settings.character };
         followed = stored;
         followed.thresholdDb = compThresholdDb (settings.compCurve, settings.comp);
         followed.inverseRatio = compInverseRatio (settings.compCurve, settings.comp);
@@ -150,13 +156,15 @@ public:
         autoRelease = settings.autoRelease;
     }
 
-    // Auto Gain's estimate for the settings as they stand, in dB: the mixed settings' while Comp Follow's share is above
-    // 0 (all of it while following), and the stored settings' alone at 0, 0 dB with the stored Auto Gain off. Off, its
-    // share of the estimate is Comp Follow's, so it glides in and out with the Comp Curve.
+    // Auto Gain's estimate for the settings as they stand, in dB (AutoGain.h): from the mixed settings' Transfer Curve
+    // while Comp Follow's share is above 0 (all of it while following), and the stored settings' alone at 0, 0 dB with
+    // the stored Auto Gain off; and from the timing and the Character asked for, not the ones mid-glide, so a change of
+    // Character moves it at once while the voices crossfade. Off, its share of the estimate is Comp Follow's, so it
+    // glides in and out with the Comp Curve.
     double autoGainDb() const
     {
         const double share = followShare();
-        const double estimate = clean::autoGainDb (mixed());
+        const double estimate = autogain::estimateDb (mixed(), estimatedTiming);
         return storedAutoGain ? estimate : share * estimate;
     }
 
@@ -450,6 +458,7 @@ private:
     // Range), whether it is on, its phase, 0 to 1, and how far a run moves it.
     clean::Curve stored, followed;
     bool storedAutoGain = false;
+    autogain::Timing estimatedTiming; // the timing and Character Auto Gain's estimate reads: the stored ones
     bool following = false;
     double followPhase = 0.0;
     double followStep = 1.0;

@@ -299,8 +299,8 @@ TEST_CASE ("The Gain Reduction leaves out Auto Gain and Output Gain, which move 
         Settings settings;
         double gainDb;
     };
-    // Auto Gain at the defaults is `python3 tools/dyn-lab/dynlab.py autogain`'s +3.2470 dB.
-    const auto gain = GENERATE (values<Gain> ({ { { .autoGain = true }, 3.2470 }, { { .outputGainDb = 6.0 }, 6.0 }, { { .outputGainDb = -9.0 }, -9.0 } }));
+    // Auto Gain at the defaults is `python3 tools/dyn-lab/dynlab.py autogain`'s +2.8308 dB.
+    const auto gain = GENERATE (values<Gain> ({ { { .autoGain = true }, 2.8308 }, { { .outputGainDb = 6.0 }, 6.0 }, { { .outputGainDb = -9.0 }, -9.0 } }));
     CAPTURE (gain.gainDb);
     const auto plain = steadyRecords ({}, { -6.0 });
     const auto moved = steadyRecords (gain.settings, { -6.0 });
