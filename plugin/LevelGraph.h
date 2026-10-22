@@ -1,7 +1,7 @@
 #pragma once
 
+#include "DisplayFades.h"
 #include "LevelHistory.h"
-#include "plugkit/ui/display/EdgeFadeLayer.h"
 #include "plugkit/ui/display/GridLayer.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -79,7 +79,6 @@ private:
     // Column (0 at the right edge) of a width-column graph, from the records it covers.
     Drawn column (int index, int columns) const;
     const Levels& levelsAgo (int runsAgo) const;
-    void paintEdgeFades (juce::Graphics& g);
 
     LevelHistory& history;
     const juce::AudioProcessor& processor;
@@ -87,9 +86,7 @@ private:
     int newest = -1, held = 0;
     std::uint64_t taken = 0;
     plugkit::ui::display::CachedLabels labels;
-    // The edges' fades, made again when the graph's size, its place in the window or the scale it is drawn at changes.
-    plugkit::ui::display::EdgeFadeOverlay fades;
-    juce::Rectangle<float> fadesMadeFor;
+    DisplayFades fades;
 };
 
 } // namespace comp1

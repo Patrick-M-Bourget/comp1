@@ -115,6 +115,36 @@ TEST_CASE ("Expanded View snapshot: the Level tab's Level and Gain Reduction Gra
     harness::writeSnapshot (*host.editor, "expanded-level-graph", {}, 1.0f);
 }
 
+TEST_CASE ("Expanded View snapshots: the Transfer Curve tab with a hard and a wide Knee, and with signal playing so the Detection Level's dot shows", "[.screens]")
+{
+    host::EditorHost host;
+    openOn (host, juce::AudioChannelSet::stereo());
+    // Clean at -30 dB and 4:1, its Comp Follow off, so the stored settings draw.
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Clean));
+    host.edit (comp1::parameters::compFollowId, 0.0f);
+    host.edit (comp1::parameters::thresholdId, -30.0f);
+    host.edit (comp1::parameters::ratioId, 4.0f);
+    host.processor.setDisplayTab (comp1::DisplayTab::transferCurve);
+    auto& graph = host.expandedView().display().transferCurveGraph();
+    REQUIRE (host.settleUntil ([&] { return graph.isShowing(); }));
+
+    host.edit (comp1::parameters::kneeId, 0.0f);
+    REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (graph.curve().kneeDb, 0.0); }));
+    snapshot (host, "expanded-transfer-curve-hard-knee");
+
+    host.edit (comp1::parameters::kneeId, 24.0f);
+    REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (graph.curve().kneeDb, 24.0); }));
+    snapshot (host, "expanded-transfer-curve-wide-knee");
+
+    // A -12 dB sine, the editor's tick reading between blocks, until the dot is up.
+    const auto tone = sine (std::pow (10.0, -12.0 / 20.0));
+    REQUIRE (host.settleUntil ([&] {
+        host.play (4, 512, tone);
+        return graph.dotDb().has_value() && *graph.dotDb() > -14.0;
+    }));
+    harness::writeSnapshot (*host.editor, "expanded-transfer-curve-playing", {}, 1.0f);
+}
+
 TEST_CASE ("Expanded View snapshot: the Gate's, the compressor's and the Limiter's Gain Reduction meters all reading", "[.screens]")
 {
     host::Playing host;

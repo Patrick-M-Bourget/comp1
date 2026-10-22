@@ -218,6 +218,11 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::detectionEq; }));
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
+    // And the Transfer Curve tab's: its graph.
+    host.processor.setDisplayTab (comp1::DisplayTab::transferCurve);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::transferCurve; }));
+    for (const auto& [name, components] : accessibleNames (*host.editor))
+        names[name] = components;
     const auto glossary = readGlossary();
     REQUIRE_FALSE (glossary.avoided.empty());
     std::vector<juce::String> listed;
@@ -306,6 +311,8 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Stereo Placement");
     expected.push_back ("Style");
     expected.push_back ("Threshold");
+    expected.push_back ("Transfer Curve");
+    expected.push_back ("Transfer Curve Graph");
     expected.push_back ("UI Scale");
     expected.push_back ("Undo");
     expected.push_back ("User");
@@ -384,7 +391,7 @@ TEST_CASE ("Tab walks the header, the display's tabs, the Output Meter, the sect
         CHECK (std::count (walked.begin(), walked.end(), control) == 1);
     }
     // In order: the header's first, then these.
-    const juce::StringArray order { "Presets", "Level", "Detection EQ", "High-pass handle", "Free band handle", "Low-pass handle",
+    const juce::StringArray order { "Presets", "Level", "Detection EQ", "Transfer Curve", "High-pass handle", "Free band handle", "Low-pass handle",
                                     "Detection Audition", "Output Meter", "Style", "Gate", "Gate Hold", "Comp Follow", "Comp",
                                     "Threshold", "Range", "Colour", "Saturation Position", "Dry", "Wet", "Output Gain", "Ceiling",
                                     "Detection Source", "Detection Free Band Q", "Stereo Placement", "Stereo Link", "Lookahead",
