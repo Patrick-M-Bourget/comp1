@@ -47,8 +47,8 @@ struct StyleDefaults
     double ceilingDb;
 };
 
-// A Style, as one row: the Character it plays, its Comp Curve, and its defaults. A Source Style has no defaults yet,
-// and plays Clean on Clean's Comp Curve, until the Source Styles ticket fills its row (#26).
+// A Style, as one row: the Character it plays, its Comp Curve, and its defaults. Every Style has defaults; the row
+// leaves room for one without, which applyStyle() and the Plugin Shell's offeredStyles() pass over.
 struct StyleDescription
 {
     Character character;
@@ -56,12 +56,15 @@ struct StyleDescription
     std::optional<StyleDefaults> defaults;
 };
 
-// Every Style's row, in Style's order. The Character Styles' defaults and Comp Curves are dyn-lab's (python3
-// tools/dyn-lab/dynlab.py styles, and compcurve --style <name>; its USAGE.md, "Styles" and "Comp", gives the reasons).
-// Clean's are a default Settings', so a new instance holds its own Style's defaults, except Comp Follow, which a
-// default Settings holds off so an instance plays its stored settings, while choosing any Style turns it on. Every
-// Style writes the Gate and the Limiter off, at their defaults, and its default Comp, 50%, the middle of its Comp Curve.
+// Every Style's row, in Style's order. Each Style's Character, defaults and Comp Curve are dyn-lab's (python3
+// tools/dyn-lab/dynlab.py styles, and compcurve --style <name>; its USAGE.md, "Styles", "Source Styles" and "Comp",
+// gives the reasons). Clean's are a default Settings', so a new instance holds its own Style's defaults, except Comp
+// Follow, which a default Settings holds off so an instance plays its stored settings, while choosing any Style turns it
+// on. Every Style writes its default Comp, 50%, the middle of its Comp Curve, and every Style but Vocal writes the Gate
+// and the Limiter off, at their defaults. Vocal is the Gate, then Clean with Auto Release, then the Limiter: it writes
+// the Gate on at its defaults and the Limiter on at Ceiling 0 dBFS.
 inline constexpr Settings::Gate gateOff {};
+inline constexpr Settings::Gate gateOn { .on = true };
 inline constexpr CompCurve cleanCompCurve { { CompPoint { 0.0, 0.0, 1.0 }, CompPoint { 50.0, -18.0, 4.0 }, CompPoint { 100.0, -36.0, 8.0 } } };
 inline constexpr std::array<StyleDescription, styleCount> styles {
     StyleDescription { Character::Clean, cleanCompCurve, StyleDefaults { 50.0, 100.0, -18.0, 4.0, 6.0, 10.0, 100.0, false, 0.0, 60.0, gateOff, false, 0.0 } },
@@ -74,10 +77,18 @@ inline constexpr std::array<StyleDescription, styleCount> styles {
     StyleDescription { Character::Opto,
                        CompCurve { { CompPoint { 0.0, 0.0, 1.0 }, CompPoint { 50.0, -18.0, 3.0 }, CompPoint { 100.0, -42.0, 6.0 } } },
                        StyleDefaults { 50.0, 100.0, -18.0, 3.0, 12.0, 10.0, 100.0, false, 0.0, 60.0, gateOff, false, 0.0 } },
-    StyleDescription { Character::Clean, cleanCompCurve, std::nullopt }, // Vocal
-    StyleDescription { Character::Clean, cleanCompCurve, std::nullopt }, // Instrument
-    StyleDescription { Character::Clean, cleanCompCurve, std::nullopt }, // Bus
-    StyleDescription { Character::Clean, cleanCompCurve, std::nullopt }, // Drums
+    StyleDescription { Character::Clean, // Vocal
+                       CompCurve { { CompPoint { 0.0, 0.0, 1.0 }, CompPoint { 50.0, -18.0, 3.0 }, CompPoint { 100.0, -36.0, 6.0 } } },
+                       StyleDefaults { 50.0, 100.0, -18.0, 3.0, 6.0, 10.0, 100.0, true, 0.0, 60.0, gateOn, true, 0.0 } },
+    StyleDescription { Character::Opto, // Instrument
+                       CompCurve { { CompPoint { 0.0, 0.0, 1.0 }, CompPoint { 50.0, -18.0, 4.0 }, CompPoint { 100.0, -36.0, 8.0 } } },
+                       StyleDefaults { 50.0, 100.0, -18.0, 4.0, 6.0, 10.0, 100.0, false, 0.0, 60.0, gateOff, false, 0.0 } },
+    StyleDescription { Character::VCA, // Bus
+                       CompCurve { { CompPoint { 0.0, 0.0, 1.0 }, CompPoint { 50.0, -18.0, 2.0 }, CompPoint { 100.0, -30.0, 4.0 } } },
+                       StyleDefaults { 50.0, 100.0, -18.0, 2.0, 6.0, 30.0, 100.0, true, 0.0, 60.0, gateOff, false, 0.0 } },
+    StyleDescription { Character::FET, // Drums
+                       CompCurve { { CompPoint { 0.0, 0.0, 1.0 }, CompPoint { 50.0, -18.0, 4.0 }, CompPoint { 100.0, -30.0, 10.0 } } },
+                       StyleDefaults { 50.0, 100.0, -18.0, 4.0, 3.0, 5.0, 50.0, false, 0.0, 60.0, gateOff, false, 0.0 } },
 };
 
 inline constexpr const StyleDescription& describe (Style style) { return styles[static_cast<std::size_t> (style)]; }
@@ -88,7 +99,7 @@ inline constexpr Character characterOf (Style style) { return describe (style).c
 // The Comp Curve a Style's Comp follows: the Plugin Shell hands it to the Engine, which never reads Style.
 inline constexpr const CompCurve& compCurveOf (Style style) { return describe (style).compCurve; }
 
-// Whether a Style has defaults to write: the Character Styles, so far.
+// Whether a Style has defaults to write: every Style.
 inline constexpr bool hasDefaults (Style style) { return describe (style).defaults.has_value(); }
 
 // Writes a Style's Character, Comp Curve and defaults, Comp Follow on among them, into settings, touching nothing

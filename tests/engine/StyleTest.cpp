@@ -1,5 +1,4 @@
-// The Style table (comp1/Style.h): each Style's Character and Comp Curve, and the defaults choosing a Character Style
-// writes.
+// The Style table (comp1/Style.h): each Style's Character and Comp Curve, and the defaults choosing it writes.
 
 #include "Measure.h"
 #include "comp1/Style.h"
@@ -42,6 +41,10 @@ const std::vector<LabRow> labRows {
     { Style::VCA, Character::VCA, 50, -18, 4, 3, 10, 100, false, 0, 60, 100, false, -40, 20, 1, 100, 20, false, 0 },
     { Style::FET, Character::FET, 50, -18, 4, 3, 0.5, 50, false, 0, 60, 100, false, -40, 20, 1, 100, 20, false, 0 },
     { Style::Opto, Character::Opto, 50, -18, 3, 12, 10, 100, false, 0, 60, 100, false, -40, 20, 1, 100, 20, false, 0 },
+    { Style::Vocal, Character::Clean, 50, -18, 3, 6, 10, 100, true, 0, 60, 100, true, -40, 20, 1, 100, 20, true, 0 },
+    { Style::Instrument, Character::Opto, 50, -18, 4, 6, 10, 100, false, 0, 60, 100, false, -40, 20, 1, 100, 20, false, 0 },
+    { Style::Bus, Character::VCA, 50, -18, 2, 6, 30, 100, true, 0, 60, 100, false, -40, 20, 1, 100, 20, false, 0 },
+    { Style::Drums, Character::FET, 50, -18, 4, 3, 5, 50, false, 0, 60, 100, false, -40, 20, 1, 100, 20, false, 0 },
 };
 
 // A Style's Comp Curve as `python3 tools/dyn-lab/dynlab.py compcurve --style <name>` prints it, at Comp 0, 10, ...
@@ -65,9 +68,20 @@ const std::vector<LabCurve> labCurves {
     { Style::Opto,
       { { 0.00, 1.00 }, { -3.60, 1.15 }, { -7.20, 1.36 }, { -10.80, 1.67 }, { -14.40, 2.14 }, { -18.00, 3.00 },
         { -22.80, 3.33 }, { -27.60, 3.75 }, { -32.40, 4.29 }, { -37.20, 5.00 }, { -42.00, 6.00 } } },
+    { Style::Vocal,
+      { { 0.00, 1.00 }, { -3.60, 1.15 }, { -7.20, 1.36 }, { -10.80, 1.67 }, { -14.40, 2.14 }, { -18.00, 3.00 },
+        { -21.60, 3.33 }, { -25.20, 3.75 }, { -28.80, 4.29 }, { -32.40, 5.00 }, { -36.00, 6.00 } } },
+    { Style::Instrument,
+      { { 0.00, 1.00 }, { -3.60, 1.18 }, { -7.20, 1.43 }, { -10.80, 1.82 }, { -14.40, 2.50 }, { -18.00, 4.00 },
+        { -21.60, 4.44 }, { -25.20, 5.00 }, { -28.80, 5.71 }, { -32.40, 6.67 }, { -36.00, 8.00 } } },
+    { Style::Bus,
+      { { 0.00, 1.00 }, { -3.60, 1.11 }, { -7.20, 1.25 }, { -10.80, 1.43 }, { -14.40, 1.67 }, { -18.00, 2.00 },
+        { -20.40, 2.22 }, { -22.80, 2.50 }, { -25.20, 2.86 }, { -27.60, 3.33 }, { -30.00, 4.00 } } },
+    { Style::Drums,
+      { { 0.00, 1.00 }, { -3.60, 1.18 }, { -7.20, 1.43 }, { -10.80, 1.82 }, { -14.40, 2.50 }, { -18.00, 4.00 },
+        { -20.40, 4.55 }, { -22.80, 5.26 }, { -25.20, 6.25 }, { -27.60, 7.69 }, { -30.00, 10.00 } } },
 };
 
-const std::vector<Style> characterStyles { Style::Clean, Style::VCA, Style::FET, Style::Opto };
 const std::vector<Style> sourceStyles { Style::Vocal, Style::Instrument, Style::Bus, Style::Drums };
 
 // Every setting moved off its default, the ones a Style writes and the ones it never touches.
@@ -129,6 +143,7 @@ TEST_CASE ("The Styles are Clean, VCA, FET, Opto, Vocal, Instrument, Bus and Dru
 
 TEST_CASE ("The Style table is dyn-lab's, row for row")
 {
+    REQUIRE (labRows.size() == styleCount);
     for (const auto& lab : labRows)
     {
         CAPTURE (static_cast<int> (lab.style));
@@ -159,8 +174,9 @@ TEST_CASE ("The Style table is dyn-lab's, row for row")
     }
 }
 
-TEST_CASE ("Each Character Style's Comp Curve is dyn-lab's, point for point")
+TEST_CASE ("Each Style's Comp Curve is dyn-lab's, point for point")
 {
+    REQUIRE (labCurves.size() == styleCount);
     for (const auto& lab : labCurves)
     {
         CAPTURE (static_cast<int> (lab.style));
@@ -175,9 +191,9 @@ TEST_CASE ("Each Character Style's Comp Curve is dyn-lab's, point for point")
     }
 }
 
-TEST_CASE ("On each Character Style's Comp Curve, 0% compresses nothing, Threshold falls and Ratio rises, and the default Comp is the default Threshold and Ratio exactly")
+TEST_CASE ("On each Style's Comp Curve, 0% compresses nothing, Threshold falls and Ratio rises, and the default Comp is the default Threshold and Ratio exactly")
 {
-    const auto style = GENERATE (from_range (characterStyles));
+    const auto style = GENERATE (from_range (test::everyStyle()));
     CAPTURE (static_cast<int> (style));
     const auto& compCurve = compCurveOf (style);
     CHECK (compRatio (compCurve, 0.0) == 1.0);
@@ -202,7 +218,7 @@ TEST_CASE ("On each Character Style's Comp Curve, 0% compresses nothing, Thresho
 
 TEST_CASE ("The Comp nearest a Threshold is the one that sets it, clamped to the Comp Curve's span")
 {
-    const auto style = GENERATE (from_range (characterStyles));
+    const auto style = GENERATE (from_range (test::everyStyle()));
     CAPTURE (static_cast<int> (style));
     const auto& compCurve = compCurveOf (style);
     for (int comp = 0; comp <= 100; comp += 5)
@@ -224,9 +240,9 @@ TEST_CASE ("Clean's row is a default Settings in every field it writes, but for 
     CHECK (clean == Settings {});
 }
 
-TEST_CASE ("A Character Style writes only the settings ADR 0002 lists, and its Character")
+TEST_CASE ("Every Style writes only the settings ADR 0002 lists, and its Character")
 {
-    const auto style = GENERATE (from_range (characterStyles));
+    const auto style = GENERATE (from_range (test::everyStyle()));
     CAPTURE (static_cast<int> (style));
     const auto moved = everythingMoved();
     auto expected = styled (style);
@@ -251,14 +267,29 @@ TEST_CASE ("A Character Style writes only the settings ADR 0002 lists, and its C
     CHECK (settings == expected);
 }
 
-TEST_CASE ("A Source Style plays Clean on Clean's Comp Curve and has no defaults yet, so applying it changes nothing")
+TEST_CASE ("Vocal is the Gate, then Clean with Auto Release, then the Limiter; the other Source Styles leave the Gate and the Limiter off")
+{
+    const auto vocal = styled (Style::Vocal);
+    CHECK (vocal.character == Character::Clean);
+    CHECK (vocal.autoRelease);
+    CHECK (vocal.gate.on);
+    CHECK (vocal.limiter);
+    for (const auto style : { Style::Instrument, Style::Bus, Style::Drums })
+    {
+        CAPTURE (static_cast<int> (style));
+        const auto s = styled (style, everythingMoved());
+        CHECK_FALSE (s.gate.on);
+        CHECK_FALSE (s.limiter);
+    }
+}
+
+TEST_CASE ("Every Source Style has defaults, and applying one writes its own Character and Comp Curve")
 {
     const auto style = GENERATE (from_range (sourceStyles));
     CAPTURE (static_cast<int> (style));
-    CHECK (characterOf (style) == Character::Clean);
-    CHECK (compCurveOf (style) == compCurveOf (Style::Clean));
-    CHECK_FALSE (hasDefaults (style));
+    CHECK (hasDefaults (style));
     auto settings = everythingMoved();
-    CHECK_FALSE (applyStyle (style, settings));
-    CHECK (settings == everythingMoved());
+    CHECK (applyStyle (style, settings));
+    CHECK (settings.character == characterOf (style));
+    CHECK (settings.compCurve == compCurveOf (style));
 }
