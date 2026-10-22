@@ -33,14 +33,14 @@ inline auto steady (double levelDb)
     return [magnitude] (int n) { return n % 2 == 0 ? magnitude : -magnitude; };
 }
 
-// The editor open on a stereo track at sampleRate (48 kHz unless given), compressing nothing until told: Comp Follow
-// off.
+// The editor open on a stereo track at sampleRate (48 kHz unless given), with the Sidechain given (none unless given),
+// compressing nothing until told: Comp Follow off.
 struct Playing : EditorHost
 {
-    explicit Playing (double sampleRate = 48000.0)
+    explicit Playing (double sampleRate = 48000.0, const juce::AudioChannelSet& sidechain = juce::AudioChannelSet::disabled())
     {
         editor.reset();
-        harness::useLayout (processor, juce::AudioChannelSet::stereo());
+        harness::useLayout (processor, juce::AudioChannelSet::stereo(), sidechain);
         // As a host does: the rate the processor reports (getSampleRate), then the prepare.
         processor.setRateAndBufferSizeDetails (sampleRate, blockSize);
         processor.prepareToPlay (sampleRate, blockSize);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DetectionEqDisplay.h"
 #include "LevelGraph.h"
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
@@ -13,7 +14,7 @@ namespace comp1
 
 // The Expanded View's display: its two tabs, Level and Detection EQ, as text chips along its top, and under them the
 // chosen tab's content: on Level, the Level and Gain Reduction Graph (LevelGraph), fed from the editor's level history;
-// on Detection EQ, an empty component its drawing goes in (#29). Named "Display", and each content by its tab, as a
+// on Detection EQ, the Detection EQ display (DetectionEqDisplay). Named "Display", and each content by its tab, as a
 // test finds them.
 //
 // The chosen tab is the processor's (PluginProcessor::displayTab): a tab clicked, or pressed with Space or Return,
@@ -29,6 +30,8 @@ public:
     juce::Component& tabContent (DisplayTab tab) { return tab == DisplayTab::level ? level : detectionEq; }
     DisplayTab shownTab() const { return shown; }
     LevelGraph& levelGraph() { return level; }
+    // What fills the Detection EQ tab's content.
+    DetectionEqDisplay& detectionEqDisplay() { return eqDisplay; }
 
     static constexpr int tabHeight = 28, tabGap = 4, contentGap = 6;
 
@@ -43,6 +46,7 @@ private:
     LevelGraph level;
     juce::Component detectionEq;
     DisplayTab shown = DisplayTab::level;
+    DetectionEqDisplay eqDisplay { processor };
 };
 
 } // namespace comp1

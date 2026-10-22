@@ -34,6 +34,7 @@ juce_add_plugin(comp1
 target_sources(comp1 PRIVATE
     CompFollowAttachment.cpp
     Controls.cpp
+    DetectionEqDisplay.cpp
     DetectionLevelRing.cpp
     Display.cpp
     Footer.cpp

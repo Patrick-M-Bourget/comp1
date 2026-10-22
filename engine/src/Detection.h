@@ -38,6 +38,7 @@ struct DetectionSignal
     const float* mid = nullptr;             // what Stereo Placement Mid follows
     const float* side = nullptr;            // and Side
     int runPosition = 0;                    // where the first sample fell in the run grid, 0 to a run less one
+    const float* sourceMean = nullptr;      // the detection source's channels averaged, before the Detection EQ
 
     const float* channelFollowedBy (int mainChannel) const { return followed[mainChannel]; }
 
@@ -76,6 +77,7 @@ public:
         for (std::size_t ch = 0; ch < channels; ++ch)
             pointers[ch] = writable[ch] = storage[ch].data();
         louder.assign (samples, 0.0f);
+        sourceMean.assign (samples, 0.0f);
         for (auto& part : parts)
             part.assign (samples, 0.0f);
         followed.assign (mainChannels, nullptr);
@@ -118,14 +120,31 @@ public:
 private:
     static constexpr std::size_t maxSidechainChannels = 2;
 
-    // The first numChannels of storage through the Detection EQ, then routed by signal().
+    // The first numChannels of storage through the Detection EQ, then routed by signal(). Their mean is taken first,
+    // for the detection source tap, which shows the source the Detection EQ is shaping.
     DetectionSignal filtered (int numChannels, ConstAudioBlock internal)
     {
+        averageSource (numChannels, internal.numSamples);
         const int runPosition = eq.runPosition();
         eq.process (writable.data(), numChannels, internal.numSamples);
         auto routed = signal (numChannels, internal);
         routed.runPosition = runPosition;
+        routed.sourceMean = sourceMean.data();
         return routed;
+    }
+
+    // The mean of the first numChannels of storage into sourceMean, silence with none.
+    void averageSource (int numChannels, int numSamples)
+    {
+        const float scale = numChannels > 0 ? 1.0f / static_cast<float> (numChannels) : 0.0f;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const auto s = static_cast<std::size_t> (i);
+            float sum = 0.0f;
+            for (int ch = 0; ch < numChannels; ++ch)
+                sum += storage[static_cast<std::size_t> (ch)][s];
+            sourceMean[s] = sum * scale;
+        }
     }
 
     // The detection signal of the first numChannels of storage, for the main channels of internal.
@@ -177,6 +196,7 @@ private:
     std::vector<const float*> pointers;      // per detection channel, into storage
     std::vector<float*> writable;            // the same, for the Detection EQ to filter in place
     std::vector<float> louder;               // a mono main's, under a stereo detection signal
+    std::vector<float> sourceMean;           // the detection source's channels averaged, before the Detection EQ
     std::vector<const float*> followed;      // per main channel, into storage or louder
     std::array<std::vector<float>, 2> parts; // a stereo detection signal's Mid and Side
 };

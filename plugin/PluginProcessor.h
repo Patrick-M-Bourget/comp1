@@ -136,6 +136,13 @@ public:
     void skipLevels() { engine.skipLevels(); }
     int levelHistoryCapacity() const { return engine.levelHistoryCapacity(); }
 
+    // The Engine's detection source tap, for the Detection EQ display, its one reader, from the message thread: the
+    // Detection Source before the Detection EQ, a mono sample per sample played since the last read, oldest first
+    // (Engine::readDetectionSourceSamples, skipDetectionSourceSamples, detectionSourceSampleCapacity).
+    int readDetectionSourceSamples (float* destination, int maxSamples) { return engine.readDetectionSourceSamples (destination, maxSamples); }
+    void skipDetectionSourceSamples() { engine.skipDetectionSourceSamples(); }
+    int detectionSourceSampleCapacity() const { return engine.detectionSourceSampleCapacity(); }
+
     // The display tab the Expanded View shows: saved with the session, read back on restore (Level for a session saved
     // without it), and in no Preset; not an undo step, and it makes no side Modified. Any thread.
     DisplayTab displayTab() const { return chosenDisplayTab.load (std::memory_order_relaxed); }
