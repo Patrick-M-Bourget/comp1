@@ -18,6 +18,13 @@ bool isOn (PluginProcessor& processor, const juce::String& id)
 bool inHighQuality (PluginProcessor& processor) { return isOn (processor, parameters::processingModeId); }
 } // namespace
 
+ControlSection::KnobControl& addCompKnob (ControlSection& section, PluginProcessor& processor, std::optional<CompFollowAttachment>& attachment, Place place)
+{
+    auto& comp = section.addKnob (parameters::compId, knobSize::large, "Comp", place, false);
+    attachment.emplace (comp.knob, comp.parameter, processor.session().editHistory(), [&processor] { processor.followComp(); });
+    return comp;
+}
+
 GateSection::GateSection (PluginProcessor& p) : ControlSection ("Gate", p)
 {
     addToggle (parameters::gateId, "Gate", true);
@@ -32,7 +39,7 @@ CompressorSection::CompressorSection (PluginProcessor& p, LevelHistory& history)
 {
     compFollow = &addToggle (parameters::compFollowId, "Comp Follow", true, false);
     autoGain = &addToggle (parameters::autoGainId, "Auto Gain", false, false);
-    comp = &addKnob (parameters::compId, knobSize::large, "Comp", Place::underStack, false);
+    comp = &addCompKnob (*this, processor, compAttachment, Place::underStack);
     threshold = &addKnob (parameters::thresholdId, knobSize::large, "Threshold", Place::ownColumn, false);
     ratio = &addKnob (parameters::ratioId, knobSize::medium, "Ratio", Place::ownColumn, false);
     addKnob (parameters::kneeId, knobSize::small, "Knee");
@@ -46,7 +53,6 @@ CompressorSection::CompressorSection (PluginProcessor& p, LevelHistory& history)
     threshold->setRing (*ring);
 
     auto& edits = processor.session().editHistory();
-    compAttachment.emplace (comp->knob, comp->parameter, edits, [this] { processor.followComp(); });
     thresholdAttachment.emplace (threshold->knob, threshold->parameter, edits, [this] { processor.stopFollowingComp(); }, [this]() -> std::optional<double> {
         return following() ? std::optional (processor.followedThresholdDb()) : std::nullopt;
     });
