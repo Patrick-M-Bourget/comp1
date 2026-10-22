@@ -6,4 +6,6 @@
   <PARAM id="attack" value="30.0"/>
   <PARAM id="auto_release" value="1.0"/>
   <PARAM id="comp" value="60.0"/>
+  <PARAM id="detection_high_pass_on" value="1.0"/>
+  <PARAM id="detection_high_pass_frequency" value="150.0"/>
 </comp1>

@@ -6,9 +6,9 @@
   <PARAM id="auto_release" value="1.0"/>
   <PARAM id="gate" value="1.0"/>
   <PARAM id="limiter" value="1.0"/>
-  <PARAM id="comp" value="65.0"/>
-  <PARAM id="attack" value="5.0"/>
-  <PARAM id="release" value="60.0"/>
-  <PARAM id="detection_high_pass_on" value="1.0"/>
-  <PARAM id="detection_high_pass_frequency" value="100.0"/>
+  <PARAM id="comp" value="60.0"/>
+  <PARAM id="attack" value="3.0"/>
+  <PARAM id="gate_threshold" value="-36.0"/>
+  <PARAM id="saturation" value="1.0"/>
+  <PARAM id="drive" value="3.0"/>
 </comp1>
