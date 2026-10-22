@@ -25,8 +25,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
             section->setExplicitFocusOrder (++sectionOrder);
         }
     content().addAndMakeVisible (gainReduction);
+    content().addAndMakeVisible (gateGainReduction);
+    content().addAndMakeVisible (limiterGainReduction);
     // Tab's order, after the header: the display's tabs, the Output Meter, then the sections in signal order. The Gain
-    // Reduction meter is read, not operated: it is no stop.
+    // Reduction meters are read, not operated: they are no stops.
     int order = firstFocusOrder;
     for (juce::Component* child : std::initializer_list<juce::Component*> { &displaySlot, &outputMeter, &sections })
     {
@@ -78,7 +80,11 @@ void PluginEditor::layOutBody (juce::Rectangle<int> area)
     area.removeFromBottom (layout::gap);
     outputMeter.setBounds (area.removeFromRight (layout::meterWidth));
     area.removeFromRight (layout::gap);
+    limiterGainReduction.setBounds (area.removeFromRight (layout::meterWidth));
+    area.removeFromRight (layout::gap);
     gainReduction.setBounds (area.removeFromRight (layout::meterWidth));
+    area.removeFromRight (layout::gap);
+    gateGainReduction.setBounds (area.removeFromRight (layout::meterWidth));
     area.removeFromRight (layout::gap);
     displaySlot.setBounds (area);
 
