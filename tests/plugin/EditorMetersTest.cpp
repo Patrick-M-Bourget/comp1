@@ -1,9 +1,9 @@
 // The Expanded View's Gain Reduction meter and the Detection Level ring on Threshold, which read the editor's level
 // history; and which controls are available on mono, in Zero Latency, and at each sample rate's Oversampling cap.
 
-#include "EditorHost.h"
 #include "Footer.h"
 #include "Measure.h"
+#include "Playing.h"
 #include "comp1/Latency.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -12,7 +12,6 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
-#include <functional>
 
 using Catch::Matchers::WithinAbs;
 namespace parameters = comp1::parameters;
@@ -20,61 +19,10 @@ namespace parameters = comp1::parameters;
 namespace
 {
 
-// A 1 kHz sine at 48 kHz, at amplitude.
-auto sine (double amplitude)
-{
-    return [amplitude] (int n) { return amplitude * std::sin (2.0 * juce::MathConstants<double>::pi * 1000.0 * n / 48000.0); };
-}
-
-auto silence() { return [] (int) { return 0.0; }; }
-
-// A steady level of levelDb, as the Engine's tests play one (Measure.h's steadyLevels): every sample at its magnitude,
-// alternating in sign, which Clean's peak detection reads as levelDb without the ripple a sine's would have.
-auto steady (double levelDb)
-{
-    const double magnitude = std::pow (10.0, levelDb / 20.0);
-    return [magnitude] (int n) { return n % 2 == 0 ? magnitude : -magnitude; };
-}
-
-// The editor open on a stereo track at 48 kHz, compressing nothing until told: Comp Follow off.
-struct Playing : host::EditorHost
-{
-    Playing()
-    {
-        editor.reset();
-        harness::useLayout (processor, juce::AudioChannelSet::stereo());
-        reopen();
-        edit (parameters::compFollowId, 0.0f);
-    }
-
-    // Plays signal for seconds of blocks of 512, letting the editor's tick read between blocks, as a host's audio
-    // thread and the message thread take turns.
-    template <typename Signal>
-    void playFor (double seconds, Signal&& signal)
-    {
-        const int blocks = static_cast<int> (std::ceil (seconds * 48000.0 / 512.0));
-        for (int b = 0, n = 0; b < blocks; b += 4, n += 4 * 512)
-        {
-            play (4, 512, [&signal, n] (int i) { return signal (n + i); });
-            settle (16);
-        }
-    }
-
-    // Keeps playing signal, a block at a time with the editor's tick between, until done() holds (harness::settleUntil).
-    template <typename Signal>
-    bool keepPlayingUntil (Signal&& signal, const std::function<bool()>& done)
-    {
-        int n = 0;
-        return settleUntil ([&] {
-            play (1, 512, [&signal, n] (int i) { return signal (n + i); });
-            n += 512;
-            return done();
-        });
-    }
-
-    comp1::GainReductionMeter& meter() { return expandedView().gainReductionMeter(); }
-    comp1::DetectionLevelRing& ring() { return expandedView().detectionLevelRing(); }
-};
+using host::Playing;
+using host::silence;
+using host::sine;
+using host::steady;
 
 // How far a meter falls over a wait with nothing to show: at most 20 dB/s of the wait and of the longest tick before it
 // (EditorTick's 0.25 s), whose fall a busy machine may count in the wait; and, unless it reached its floor, well on its
