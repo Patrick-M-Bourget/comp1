@@ -832,3 +832,55 @@ TEST_CASE ("The limiting Master Presets hold a hot master's true peak to their -
         CHECK (comp1::test::truePeak (played.output, played.latency) <= comp1::test::gainOf (-1.0));
     }
 }
+
+TEST_CASE ("The Factory library uses every Style and every feature at least once")
+{
+    // Default isn't counted: it holds a new instance's state, Comp Follow off among it.
+    std::vector<FactoryPreset> factory;
+    for (const auto& p : factoryPresets())
+        if (p.name != "Default")
+            factory.push_back (p);
+    std::vector<comp1::Settings> library;
+    for (const auto& p : factory)
+        library.push_back (settingsOf (p));
+
+    // Every Style: the one each file holds, or Clean, the Style parameter's default, when it holds none.
+    static const juce::StringArray styleNames { "Clean", "VCA", "FET", "Opto", "Vocal", "Instrument", "Bus", "Drums" };
+    std::set<int> styles;
+    for (const auto& p : factory)
+        styles.insert (heldSetting (p, ids::styleId).isValid() ? juce::roundToInt (fileValue (heldSetting (p, ids::styleId))) : 0);
+    for (int style = 0; style < styleNames.size(); ++style)
+    {
+        CAPTURE (styleNames[style]);
+        CHECK (styles.contains (style));
+    }
+
+    // Every feature, as the Engine gets it; each a gap until some Preset uses it.
+    using comp1::Settings;
+    const std::initializer_list<std::pair<const char*, bool (*) (const Settings&)>> features {
+        { "the Gate", [] (const Settings& s) { return s.gate.on; } },
+        { "the Limiter", [] (const Settings& s) { return s.limiter; } },
+        { "Saturation Before", [] (const Settings& s) { return s.saturation && s.saturationPosition == comp1::SaturationPosition::Before; } },
+        { "Saturation After", [] (const Settings& s) { return s.saturation && s.saturationPosition == comp1::SaturationPosition::After; } },
+        { "Dry/Wet with both paths heard", [] (const Settings& s) { return ! std::isinf (s.dryDb) && ! std::isinf (s.wetDb); } },
+        { "the Detection EQ's High-pass", [] (const Settings& s) { return s.detectionEq.highPass.on; } },
+        { "the Detection EQ's Low-pass", [] (const Settings& s) { return s.detectionEq.lowPass.on; } },
+        { "the Detection EQ's free band", [] (const Settings& s) { return s.detectionEq.freeBand.on; } },
+        { "Detection Source External", [] (const Settings& s) { return s.detectionSource == comp1::DetectionSource::External; } },
+        { "Stereo Placement Mid", [] (const Settings& s) { return s.stereoPlacement == comp1::StereoPlacement::Mid; } },
+        { "Stereo Placement Side", [] (const Settings& s) { return s.stereoPlacement == comp1::StereoPlacement::Side; } },
+        { "Stereo Link under 100%", [] (const Settings& s) { return s.stereoPlacement == comp1::StereoPlacement::Stereo && s.stereoLink < 100.0; } },
+        { "Hold above 0 ms", [] (const Settings& s) { return s.holdMs > 0.0; } },
+        { "Range under 60 dB", [] (const Settings& s) { return s.rangeDb < 60.0; } },
+        { "Ratio inf:1", [] (const Settings& s) { return ! s.compFollow && std::isinf (s.ratio); } },
+        { "Auto Release", [] (const Settings& s) { return s.autoRelease; } },
+        { "Comp Follow off", [] (const Settings& s) { return ! s.compFollow; } },
+        { "High Quality with Lookahead", [] (const Settings& s) { return s.processingMode == comp1::ProcessingMode::HighQuality && s.lookaheadMs > 0.0; } },
+        { "Colour under 100%", [] (const Settings& s) { return s.colour < 100.0; } },
+    };
+    for (const auto& [feature, uses] : features)
+    {
+        CAPTURE (feature);
+        CHECK (std::any_of (library.begin(), library.end(), uses));
+    }
+}
