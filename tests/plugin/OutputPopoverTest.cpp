@@ -306,7 +306,7 @@ namespace
 {
 
 constexpr float off = -std::numeric_limits<float>::infinity();
-const juce::String parallelMark = juce::String::charToString (0x2225);
+const juce::String parallelMark = "||";
 
 // A press on slider's track at x, a drag by dx and the release; clicks 2 for a double-click's second press.
 void press (plugkit::ui::PopoverSlider& slider, float x, float dx = 0.0f, int clicks = 1)

@@ -249,7 +249,8 @@ void Footer::showOutput()
     auto& state = processor.parameterState();
     const double db = state.getRawParameterValue (parameters::outputGainId)->load (std::memory_order_relaxed) + processor.appliedAutoGainDb();
     const bool parallel = ! std::isinf (state.getRawParameterValue (parameters::dryId)->load (std::memory_order_relaxed));
-    static const juce::String mark = juce::String::charToString (0x2225) + " ";
+    // Two bars, as Manrope, the readout's font, has no U+2225 (parallel to).
+    static const juce::String mark = "|| ";
     if (const auto text = (parallel ? mark : juce::String()) + plugkit::ui::outputReadoutText (db); text != output.getButtonText())
     {
         output.setButtonText (text);
