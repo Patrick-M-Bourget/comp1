@@ -36,7 +36,7 @@ void showRangeOf (juce::Slider& knob, const juce::RangedAudioParameter& paramete
 void describe (staple::Knob& knob, const juce::RangedAudioParameter& parameter);
 } // namespace controls
 
-// One of the Expanded View's sections of controls (Section): its controls in columns, left to right in the order
+// A section of controls (Section), in either view: its controls in columns, left to right in the order
 // they are added, which is Tab's order too. A column holds a knob with its label under its face, or a stack of small
 // controls (toggles, choices, Edge selectors), or a stack with a knob under it. The knobs of a section sit on one
 // line, under the tallest stack over a knob. Each control is titled with its host parameter's name, and attached to

@@ -5,9 +5,9 @@
 namespace comp1
 {
 
-// One of the Expanded View's sections: its title in uppercase, letter-spaced, over a 1 px line1 divider, and under
-// them its controls, which the section's owner adds and places in controlArea(). Named by its title, as a test finds
-// it.
+// One of the editor's sections, in either view: its title in uppercase, letter-spaced, over a 1 px line1 divider, and
+// under them its controls, which the section's owner adds and places in controlArea(). Named by its title, as a test
+// finds it.
 class Section : public juce::Component
 {
 public:

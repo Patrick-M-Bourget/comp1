@@ -18,15 +18,17 @@
 namespace comp1
 {
 
-// comp1's Expanded View, on plugkit's editor shell (EditorShell), which gives it its header, keys, UI Scale and
-// window. Under the header: the display, its two tabs over its full width, with three Gain Reduction meters and the
-// Output Meter's rail at its right edge; under that the sections in signal order, in two rows; and the footer. The
-// display takes whatever the window grows by, and the section rows its width; each section keeps its own size. The
-// meters are the Gate's, the compressor's and the Limiter's, left to right in signal order (their placement is
-// provisional, #94).
+// comp1's editor, on plugkit's editor shell (EditorShell), which gives it its header, keys, UI Scale and window. It
+// shows either view, the one the processor holds, each between the same header and footer (Footer), and each with its
+// own window limits and size (PluginProcessor::windowOf, setView).
 //
-// It shows either view, the one the processor holds, the Compact View being its body (CompactView) under the same
-// header and footer, after the header in Tab's order. Each view has its own window limits and size (PluginProcessor::windowOf, setView).
+// The Expanded View's body, under the header: the display, its three tabs over its full width (Display), with three
+// Gain Reduction meters and the Output Meter's rail at its right edge; under that the sections in signal order, in two
+// rows. The display takes whatever the window grows by, and the section rows its width; each section keeps its own
+// size. The meters are the Gate's, the compressor's and the Limiter's, left to right in signal order (their placement
+// is provisional, #94).
+//
+// The Compact View's body is CompactView, after the header in Tab's order.
 class PluginEditor final : public plugkit::ui::EditorShell
 {
 public:
