@@ -282,7 +282,7 @@ TEST_CASE ("The Transfer Curve Graph is a read-only image titled Transfer Curve 
     CHECK_FALSE (clicks);
 
     // The settings as their knobs read them (controls::spokenValue); no Detection Level yet: under the scale.
-    CHECK (spoken (graph) == "Threshold " + minus + "18.00 dB, Ratio 4:1, Knee +6.00 dB, Detection Level " + minus + "inf dB");
+    CHECK (spoken (graph) == "Threshold " + minus + "18.00 dB, Ratio 4:1, Knee 6.0 dB, Detection Level " + minus + "inf dB");
     CHECK (host.keepPlayingUntil (host::steady (-20.0), [&] { return graph.dotDb() && std::abs (*graph.dotDb() + 20.0) < 0.05; }));
-    CHECK (spoken (graph) == "Threshold " + minus + "18.00 dB, Ratio 4:1, Knee +6.00 dB, Detection Level " + minus + "20.0 dB");
+    CHECK (spoken (graph) == "Threshold " + minus + "18.00 dB, Ratio 4:1, Knee 6.0 dB, Detection Level " + minus + "20.0 dB");
 }

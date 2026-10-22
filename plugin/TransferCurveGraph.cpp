@@ -92,7 +92,7 @@ juce::String TransferCurveGraph::valueText() const
     const double level = shown <= -scaleDb ? -std::numeric_limits<double>::infinity() : shown;
     return "Threshold " + spoken (parameters::thresholdId, drawn.thresholdDb) + ", Ratio "
            + spoken (parameters::ratioId, drawn.inverseRatio <= 0.0 ? std::numeric_limits<double>::infinity() : 1.0 / drawn.inverseRatio)
-           + ", Knee " + spoken (parameters::kneeId, drawn.kneeDb) + ", Detection Level "
+           + ", Knee " + juce::String (drawn.kneeDb, 1) + " dB, Detection Level "
            + plugkit::ui::valueText::signedDb (level, { .decimals = 1, .unit = false }) + " dB";
 }
 

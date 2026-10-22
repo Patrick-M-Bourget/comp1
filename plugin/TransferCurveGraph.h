@@ -34,10 +34,10 @@ namespace comp1
 // Drawn with stock Staple tokens on plugkit-ui's grid layer: a line every 10 dB on both axes, the 0 dB ones the zero
 // lines, with dB labels; the curve a curve-main line and the dot filled in anSc; the edges dissolve into the window's
 // background over the design system's display fades. A screen reader finds it as a read-only image titled "Transfer
-// Curve Graph", read with the settings it draws, as their knobs read them (controls::spokenValue), and the Detection
-// Level ("Threshold −18.00 dB, Ratio 4:1, Knee +6.00 dB, Detection Level −20.0 dB"); it is no stop for Tab and takes no
-// mouse input. Named "Transfer Curve", as its tab, which
-// a test finds it by.
+// Curve Graph", read with the settings it draws and the Detection Level: Threshold and Ratio as their knobs read them
+// (controls::spokenValue), Knee unsigned, a width, to one decimal ("Threshold −18.00 dB, Ratio 4:1, Knee 6.0 dB,
+// Detection Level −20.0 dB"); it is no stop for Tab and takes no mouse input. Named "Transfer Curve", as its tab,
+// which a test finds it by.
 class TransferCurveGraph final : public juce::Component, private plugkit::ui::EditorTick::Client
 {
 public:
