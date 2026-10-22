@@ -38,6 +38,7 @@ target_sources(comp1 PRIVATE
     Display.cpp
     Footer.cpp
     GainReductionMeter.cpp
+    LevelGraph.cpp
     LevelHistory.cpp
     Parameters.cpp
     PluginEditor.cpp

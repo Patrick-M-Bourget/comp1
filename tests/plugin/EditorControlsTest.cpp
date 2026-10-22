@@ -104,7 +104,8 @@ std::map<juce::String, std::vector<juce::Component*>> accessibleNames (juce::Com
             {
                 const auto role = handler->getRole();
                 if (role == Role::button || role == Role::toggleButton || role == Role::radioButton || role == Role::comboBox
-                    || role == Role::slider || role == Role::editableText || role == Role::progressBar)
+                    || role == Role::slider || role == Role::editableText || role == Role::progressBar
+                    || role == Role::image)
                     names[handler->getTitle()].push_back (child);
             }
             visit (*child);
@@ -271,6 +272,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Hold");
     expected.push_back ("Knee");
     expected.push_back ("Level");
+    expected.push_back ("Level and Gain Reduction Graph");
     expected.push_back ("Limiter");
     expected.push_back (juce::String (juce::CharPointer_UTF8 ("Load Preset File" "\xe2\x80\xa6")));
     expected.push_back ("Lookahead");

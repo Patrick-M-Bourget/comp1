@@ -81,3 +81,35 @@ TEST_CASE ("Expanded View snapshots: default at 100% and 200%, on mono, with Com
     presets.onClick();
     snapshot (host, "expanded-preset-browser");
 }
+
+TEST_CASE ("Expanded View snapshot: the Level tab's Level and Gain Reduction Graph with a compressed tone stepping up and down, then a burst train", "[.screens]")
+{
+    host::EditorHost host;
+    openOn (host, juce::AudioChannelSet::stereo());
+    // Clean at -30 dB, 4:1, a hard knee, a 10 ms Attack and a 100 ms Release: Attack and Release show at the tone's
+    // steps, and pumping on a burst train of a 50 ms period.
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Clean));
+    host.edit (comp1::parameters::compFollowId, 0.0f);
+    host.edit (comp1::parameters::thresholdId, -30.0f);
+    host.edit (comp1::parameters::ratioId, 4.0f);
+    host.edit (comp1::parameters::kneeId, 0.0f);
+    host.edit (comp1::parameters::attackId, 10.0f);
+    host.edit (comp1::parameters::releaseId, 100.0f);
+    const auto loud = sine (std::pow (10.0, -10.0 / 20.0)), quiet = sine (std::pow (10.0, -50.0 / 20.0));
+    constexpr int period = 2400; // 50 ms at 48 kHz
+    const auto burst = [&] (int n) { return n % period < period / 2 ? loud (n) : quiet (n); };
+    // Seconds of signal, a few blocks between the editor's ticks.
+    const auto playFor = [&host] (double seconds, auto&& signal) {
+        for (int n = 0; n < static_cast<int> (seconds * 48000.0); n += 4 * 512)
+        {
+            host.play (4, 512, [&signal, n] (int i) { return signal (n + i); });
+            host.settle (20);
+        }
+    };
+    playFor (0.4, quiet);
+    playFor (1.6, loud);
+    playFor (0.6, quiet);
+    playFor (2.4, burst);
+    REQUIRE (host.expandedView().display().shownTab() == comp1::DisplayTab::level);
+    harness::writeSnapshot (*host.editor, "expanded-level-graph", {}, 1.0f);
+}
