@@ -14,12 +14,12 @@ namespace
 // The editor's areas, in the content's logical pixels (as at 100%).
 struct Areas
 {
-    juce::Rectangle<int> header, display, levelTab, detectionEqTab, gainReduction, outputMeter, sections, style, footer;
+    juce::Rectangle<int> header, display, levelTab, detectionEqTab, gainReduction, outputMeter, sections, character, footer;
     juce::Rectangle<int> gateGainReduction, limiterGainReduction;
     juce::Rectangle<int> transferCurveTab;
 };
 
-// The showing component named name: the shown view's, as both views have a "Style" section and a "Gain Reduction"
+// The showing component named name: the shown view's, as both views have a "Gate" section and a "Gain Reduction"
 // meter.
 juce::Component& named (juce::Component& editor, const juce::String& name)
 {
@@ -47,7 +47,7 @@ Areas areasOf (juce::AudioProcessorEditor& editor)
              in (named (editor, "Gain Reduction")),
              in (*meter),
              in (named (editor, "Sections")),
-             in (named (editor, "Style")),
+             in (named (editor, "Character and Saturation")),
              in (*footer),
              in (named (editor, "Gate Gain Reduction")),
              in (named (editor, "Limiter Gain Reduction")),
@@ -113,7 +113,7 @@ TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes noth
     CHECK (areas.display.contains (areas.levelTab));
     CHECK (areas.display.contains (areas.transferCurveTab));
     CHECK (areas.transferCurveTab == areas.levelTab);
-    CHECK (areas.sections.contains (areas.style));
+    CHECK (areas.sections.contains (areas.character));
 
     // What the window grows by goes to the display, and its width to the section row; the rest keep their size.
     const int wider = size.x - window.minimum.x, taller = size.y - window.minimum.y;
@@ -128,8 +128,8 @@ TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes noth
     // The meters are as tall as the display.
     CHECK (areas.gateGainReduction.getHeight() == areas.display.getHeight());
     CHECK (areas.limiterGainReduction.getHeight() == areas.display.getHeight());
-    CHECK (areas.style.getWidth() == smallest.style.getWidth());
-    CHECK (areas.style.getHeight() == smallest.style.getHeight());
+    CHECK (areas.character.getWidth() == smallest.character.getWidth());
+    CHECK (areas.character.getHeight() == smallest.character.getHeight());
     CHECK (areas.header.getHeight() == smallest.header.getHeight());
     CHECK (areas.footer.getHeight() == smallest.footer.getHeight());
 }
@@ -140,7 +140,7 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
     const auto& window = comp1::PluginProcessor::expandedWindow;
     host.editor->setSize (window.minimum.x, window.minimum.y);
     auto& sections = named (*host.editor, "Sections");
-    const auto names = { "Style", "Gate", "Compressor", "Character and Saturation", "Dry/Wet", "Detection", "Stereo", "Lookahead" };
+    const auto names = { "Gate", "Compressor", "Character and Saturation", "Dry/Wet", "Detection", "Stereo", "Lookahead" };
     REQUIRE (static_cast<size_t> (sections.getNumChildComponents()) == names.size());
     std::vector<juce::Rectangle<int>> placed;
     for (const auto* name : names)

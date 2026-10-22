@@ -1,9 +1,10 @@
 // The Expanded View's controls: one for each host parameter, what a screen reader and the tooltips read, Tab's order and
-// the keys; and the Compact View's: its four host parameters' controls, the footer's and the output popover's, the
+// the keys; and the Compact View's: its three host parameters' controls, the footer's and the output popover's, the
 // names a screen reader reads and Tab's order.
 
 #include "EditorHost.h"
 #include "Footer.h"
+#include "plugkit/ui/OutputPopoverFrame.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -43,7 +44,7 @@ void everythingAvailable (host::EditorHost& host)
     host.openOutputPopover();
     host.edit (parameters::processingModeId, 1.0f);
     host.edit (parameters::compFollowId, 0.0f);
-    REQUIRE (host.settleUntil ([&] { return host.showing<juce::ToggleButton> ("Auto Gain").isEnabled() && host.knob ("Lookahead").isEnabled(); }));
+    REQUIRE (host.settleUntil ([&] { return host.showing<plugkit::ui::OutputToggle> ("Auto Gain").isEnabled() && host.knob ("Lookahead").isEnabled(); }));
 }
 
 float plainOf (juce::RangedAudioParameter& parameter) { return parameter.convertFrom0to1 (parameter.getValue()); }
@@ -78,9 +79,19 @@ void changeByMouse (juce::Component& control, juce::RangedAudioParameter& parame
         box->setSelectedItemIndex (box->getSelectedItemIndex() == 0 ? 1 : 0, juce::sendNotificationSync);
 }
 
-// Changes it by the keys: an arrow for a knob or a choice, Space for a button.
-void changeByKeys (host::EditorHost& host, juce::Component& control, juce::RangedAudioParameter& parameter)
+// Changes it by the keys: an arrow for a knob or a choice, Space for a button. The Style chip, which has no steps (each
+// would write a Style's defaults), instead opens its menu on Return, where a pick is the mouse's: false then, once the
+// menu has opened, and closed again.
+bool changeByKeys (host::EditorHost& host, juce::Component& control, juce::RangedAudioParameter& parameter)
 {
+    if (dynamic_cast<comp1::ChoiceChip*> (&control) != nullptr && control.getTitle() == "Style")
+    {
+        pressIn (host, control, juce::KeyPress (juce::KeyPress::returnKey));
+        REQUIRE (host.settleUntil ([] { return harness::openMenu() != nullptr; }));
+        juce::PopupMenu::dismissAllActiveMenus();
+        REQUIRE (host.settleUntil ([] { return harness::openMenu() == nullptr; }));
+        return false;
+    }
     if (dynamic_cast<staple::Knob*> (&control) != nullptr || dynamic_cast<juce::ComboBox*> (&control) != nullptr
         || dynamic_cast<comp1::ChoiceChip*> (&control) != nullptr)
     {
@@ -91,6 +102,7 @@ void changeByKeys (host::EditorHost& host, juce::Component& control, juce::Range
     }
     else
         pressIn (host, control, juce::KeyPress (juce::KeyPress::spaceKey));
+    return true;
 }
 
 // Every element showing that a screen reader is told about and the user operates or reads (a button, toggle, choice,
@@ -192,8 +204,8 @@ TEST_CASE ("Every host parameter has exactly one control, titled with its name, 
         host.settle();
 
         const float byMouse = parameter.getValue();
-        changeByKeys (host, control, parameter);
-        CHECK_FALSE (juce::exactlyEqual (parameter.getValue(), byMouse));
+        if (changeByKeys (host, control, parameter))
+            CHECK_FALSE (juce::exactlyEqual (parameter.getValue(), byMouse));
         // Back where it was for the next, so Comp Follow and Processing Mode leave the rest available.
         host.edit (parameter.getParameterID(), parameter.convertFrom0to1 (before));
         everythingAvailable (host);
@@ -410,10 +422,10 @@ TEST_CASE ("Tab walks the header, the display's tabs and the shown tab's control
                                               : juce::StringArray { "Transfer Curve inset" };
     juce::StringArray order { "Presets", "Level", "Detection EQ", "Transfer Curve" };
     order.addArray (tabControls);
-    order.addArray (juce::StringArray { "Output Meter", "Style", "Gate", "Gate Hold", "Comp Follow", "Comp", "Threshold", "Range", "Colour",
+    order.addArray (juce::StringArray { "Output Meter", "Gate", "Gate Hold", "Comp Follow", "Comp", "Threshold", "Range", "Colour",
                                         "Saturation Position", "Dry", "Wet", "Detection Source", "Detection Free Band Q", "Stereo Placement",
-                                        "Stereo Link", "Lookahead", "Global Bypass", "Processing Mode", "Oversampling", "Output", "UI Scale",
-                                        "Switch to the Compact View" });
+                                        "Stereo Link", "Lookahead", "Global Bypass", "Style", "Processing Mode", "Oversampling", "Output",
+                                        "UI Scale", "Switch to the Compact View" });
     int last = -1;
     for (const auto& title : order)
     {
@@ -491,9 +503,9 @@ TEST_CASE ("Space and Return toggle a toggle, and up and down step a choice, one
     everythingAvailable (host);
     auto& history = host.processor.session().editHistory();
 
-    const juce::String toggle = GENERATE (as<juce::String> {}, "Gate", "Auto Release", "Saturation", "Limiter", "Detection High-Pass", "Detection Free Band");
+    const juce::String toggle = GENERATE (as<juce::String> {}, "Gate", "Auto Release", "Saturation", "Auto Gain", "Limiter", "Detection High-Pass", "Detection Free Band");
     CAPTURE (toggle);
-    auto& button = host.showing<juce::ToggleButton> (toggle);
+    auto& button = host.showing<juce::Button> (toggle);
     const bool was = button.getToggleState();
     int steps = history.undoSteps();
     pressIn (host, button, juce::KeyPress (juce::KeyPress::spaceKey));
@@ -573,13 +585,13 @@ void showCompactView (host::EditorHost& host)
     }));
 }
 
-// The host parameters with a control in the Compact View: its own four, the footer's, then the output popover's.
-const std::set<juce::String> compactParameters { "Style",        "Gate",        "Gate Threshold", "Comp",    "Global Bypass", "Processing Mode",
-                                                 "Oversampling", "Output Gain", "Auto Gain",      "Limiter", "Ceiling" };
+// The host parameters with a control in the Compact View: its own three, the footer's, then the output popover's.
+const std::set<juce::String> compactParameters { "Gate",         "Gate Threshold", "Comp",      "Global Bypass", "Style",  "Processing Mode",
+                                                 "Oversampling", "Output Gain",    "Auto Gain", "Limiter",       "Ceiling" };
 
 } // namespace
 
-TEST_CASE ("In the Compact View, Style, Gate, Gate Threshold, Comp, the footer's three and the output popover's four each have exactly one showing control, titled with its name, that changes it by mouse and by keys; no other host parameter has one")
+TEST_CASE ("In the Compact View, Gate, Gate Threshold, Comp, the footer's four and the output popover's four each have exactly one showing control, titled with its name, that changes it by mouse and by keys; no other host parameter has one")
 {
     host::EditorHost host;
     showCompactView (host);
@@ -608,14 +620,14 @@ TEST_CASE ("In the Compact View, Style, Gate, Gate Threshold, Comp, the footer's
         host.settle();
 
         const float byMouse = parameter.getValue();
-        changeByKeys (host, control, parameter);
-        CHECK_FALSE (juce::exactlyEqual (parameter.getValue(), byMouse));
+        if (changeByKeys (host, control, parameter))
+            CHECK_FALSE (juce::exactlyEqual (parameter.getValue(), byMouse));
         // Back where it was for the next, in High Quality with Comp Follow off, so Auto Gain is enabled.
         host.edit (parameter.getParameterID(), parameter.convertFrom0to1 (before));
         host.edit (parameters::processingModeId, 1.0f);
         host.edit (parameters::compFollowId, 0.0f);
         REQUIRE (host.settleUntil ([&] {
-            return host.showing<juce::Component> ("Oversampling").isEnabled() && host.showing<juce::ToggleButton> ("Auto Gain").isEnabled();
+            return host.showing<juce::Component> ("Oversampling").isEnabled() && host.showing<plugkit::ui::OutputToggle> ("Auto Gain").isEnabled();
         }));
     }
     CHECK (found == compactParameters);
@@ -688,7 +700,7 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
     CHECK (listed == expected);
 }
 
-TEST_CASE ("Tab walks the Compact View: the header, Style, Gate, Gate Threshold, Comp and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
+TEST_CASE ("Tab walks the Compact View: the header, Gate, Gate Threshold, Comp and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
 {
     host::EditorHost host;
     showCompactView (host);
@@ -719,9 +731,9 @@ TEST_CASE ("Tab walks the Compact View: the header, Style, Gate, Gate Threshold,
         CHECK (std::count (walked.begin(), walked.end(), control) == 1);
     }
     CHECK_FALSE (titles.contains ("Gain Reduction"));
-    // In order: the header's first, then these, the body's four one after another.
-    const juce::StringArray order { "Presets",      "Style",  "Gate",     "Gate Threshold",             "Comp", "Global Bypass", "Processing Mode",
-                                    "Oversampling", "Output", "UI Scale", "Switch to the Expanded View" };
+    // In order: the header's first, then these, the body's three one after another.
+    const juce::StringArray order { "Presets",         "Gate",         "Gate Threshold", "Comp",     "Global Bypass", "Style",
+                                    "Processing Mode", "Oversampling", "Output",         "UI Scale", "Switch to the Expanded View" };
     int last = -1;
     for (const auto& title : order)
     {
@@ -730,8 +742,8 @@ TEST_CASE ("Tab walks the Compact View: the header, Style, Gate, Gate Threshold,
         CHECK (at > last);
         last = std::max (last, at);
     }
-    const int style = titles.indexOf ("Style");
-    CHECK (titles.indexOf ("Global Bypass") == style + 4);
+    const int gate = titles.indexOf ("Gate");
+    CHECK (titles.indexOf ("Global Bypass") == gate + 3);
 
     // Shift+Tab, backwards.
     std::vector<juce::Component*> back;

@@ -93,15 +93,38 @@ DryWetSection::DryWetSection (PluginProcessor& p) : ControlSection ("Dry/Wet", p
     addKnob (parameters::wetId, knobSize::medium, "Wet");
 }
 
-OutputSection::OutputSection (PluginProcessor& p, LevelHistory& history) : ControlSection ("Output", p), processor (p)
+namespace
+{
+constexpr auto autoGainTooltip = "Auto Gain: compensates the output level, estimated from the settings, so compression is heard without a loudness bias";
+constexpr auto followedAutoGainTooltip = "Auto Gain: Comp Follow holds it on";
+} // namespace
+
+OutputSection::OutputSection (PluginProcessor& p, LevelHistory& history)
+    : ControlSection ("Output", p), processor (p), autoGain ("Auto Gain", std::nullopt, "A"), limiter ("Limiter", std::nullopt, "L")
 {
     addKnob (parameters::outputGainId, knobSize::medium, "Output Gain");
-    autoGain = &addToggle (parameters::autoGainId, "Auto Gain", true, false);
-    addToggle (parameters::limiterId, "Limiter", false);
-    ceiling = &addKnob (parameters::ceilingId, knobSize::medium, "Ceiling", Place::underStack);
+    ceiling = &addKnob (parameters::ceilingId, knobSize::medium, "Ceiling");
     ring = std::make_unique<LevelRing> (ceiling->knob, ceiling->parameter, history, LevelRing::limiterGainReduction());
     ceiling->setRing (*ring);
+
+    autoGain.setTitle (parameter (parameters::autoGainId).getName (100));
+    limiter.setTitle (parameter (parameters::limiterId).getName (100));
+    limiter.setTooltip ("Limiter: keeps the output from passing the Ceiling");
+    limiterAttachment = std::make_unique<juce::ButtonParameterAttachment> (parameter (parameters::limiterId), limiter);
+    addSelfPlaced (autoGain);
+    addSelfPlaced (limiter);
     follow();
+}
+
+int OutputSection::idealHeight() const { return ControlSection::idealHeight() + letterRowGap + letterHeight; }
+
+void OutputSection::resized()
+{
+    ControlSection::resized();
+    auto row = controlArea().removeFromBottom (letterHeight);
+    const int width = (row.getWidth() - letterGap) / 2;
+    autoGain.setBounds (row.removeFromLeft (width));
+    limiter.setBounds (row.removeFromRight (width));
 }
 
 OutputSection::~OutputSection()
@@ -114,24 +137,22 @@ bool OutputSection::following() const { return isOn (processor, parameters::comp
 
 void OutputSection::follow()
 {
-    const bool on = following();
-    if (on && autoGainAttachment != nullptr)
+    if (following())
     {
         autoGainAttachment.reset();
-        autoGain->setTooltip ("Auto Gain: Comp Follow holds it on");
+        autoGain.setToggleState (true, juce::dontSendNotification);
+        autoGain.setTooltip (followedAutoGainTooltip);
     }
-    if (on)
-        autoGain->setToggleState (true, juce::dontSendNotification);
     else if (autoGainAttachment == nullptr)
     {
-        autoGainAttachment = std::make_unique<juce::ButtonParameterAttachment> (parameter (parameters::autoGainId), *autoGain);
-        autoGain->setTooltip (autoGain->getTitle());
+        autoGainAttachment = std::make_unique<juce::ButtonParameterAttachment> (parameter (parameters::autoGainId), autoGain);
+        autoGain.setTooltip (autoGainTooltip);
     }
 }
 
 bool OutputSection::isControlEnabled (juce::Component& control) const
 {
-    return &control != autoGain || ! following();
+    return &control != &autoGain || ! following();
 }
 
 DetectionSection::DetectionSection (PluginProcessor& p) : ControlSection ("Detection", p)

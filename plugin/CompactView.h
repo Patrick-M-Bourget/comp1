@@ -5,7 +5,6 @@
 #include "GainReductionMeter.h"
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
-#include "StyleSection.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -15,11 +14,10 @@
 namespace comp1
 {
 
-// The Compact View's body, under the editor's shared header and footer, named "Compact View": Style, Gate, Comp and
-// the compressor's Gain Reduction meter, left to right in one row, which is Tab's order too. Output Gain is the
-// footer's, in the output popover its Output readout opens, as in the Expanded View.
+// The Compact View's body, under the editor's shared header and footer, named "Compact View": Gate, Comp and the
+// compressor's Gain Reduction meter, left to right in one row, which is Tab's order too. Style is the footer's chip, and
+// Output Gain is in the output popover the footer's Output readout opens, as in the Expanded View.
 //
-// - Style: a StyleSection, which chooses through PluginProcessor::chooseStyle, as in the Expanded View.
 // - Gate: its on/off toggle over Gate Threshold, attached as the Expanded View's Gate section attaches them.
 // - Comp: the Comp knob alone, attached as the Expanded View's (addCompKnob): grabbing it while Comp Follow is off
 //   follows, with the edit that follows as one undo step. There is no Comp Follow toggle, Threshold or Ratio.
@@ -44,9 +42,8 @@ public:
 
 private:
     // The sections, left to right.
-    std::array<Section*, 3> sections() { return { &style, &gate, &compressor }; }
+    std::array<Section*, 2> sections() { return { &gate, &compressor }; }
 
-    StyleSection style;
     ControlSection gate, compressor;
     GainReductionMeter gainReduction;
     std::optional<CompFollowAttachment> compAttachment;
