@@ -63,6 +63,8 @@ public:
     std::optional<double> dotDb() const;
     // Where the dot is drawn, in dB: x the Detection Level, y the curve's output there; none while it isn't drawn.
     std::optional<juce::Point<double>> dot() const;
+    // Where an input and output level in dB are drawn, from its top left.
+    juce::Point<float> pointAt (double inputDb, double outputDb) const;
 
     // The text a screen reader reads as its value: settingsText(), then the Detection Level.
     juce::String valueText() const;
