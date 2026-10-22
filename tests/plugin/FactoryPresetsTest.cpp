@@ -1,5 +1,5 @@
-// The Factory Presets: what the plugin bundles from presets/factory, and the gate each one passes (spec #1,
-// "Factory Presets"). Each rule is a function of one Preset, or of the library for unique names, giving what is wrong
+// The Factory Presets: what the plugin bundles from presets/factory, and the gate each one passes, the content rules
+// every Factory Preset follows: starting points built on a Style, compressing modestly. Each rule is a function of one Preset, or of the library for unique names, giving what is wrong
 // with it or nothing; the gate runs every rule over the real library, and each rule is shown to reject a bad example.
 
 #include "Measure.h"
@@ -142,7 +142,7 @@ juce::String duplicateName (const std::vector<FactoryPreset>& library)
     return {};
 }
 
-// Rule: but for Default, the name is "<Category> – <Name>", the Category one of spec #1's.
+// Rule: but for Default, the name is "<Category> – <Name>", the Category one of these eight.
 juce::String namingProblem (const FactoryPreset& p)
 {
     static const juce::StringArray categories { "Vocals", "Drums", "Bass", "Guitar", "Keys", "Mix Bus", "Master", "Utility" };
@@ -308,8 +308,8 @@ juce::String unroutedSidechainProblem (const FactoryPreset& p)
 
 // --- The Gain Reduction check -------------------------------------------------------------------------------
 
-// The reference signals, synthetic and seeded, stereo at 48 kHz. Material is taken as gain-staged (spec #1, "Factory
-// Presets"): tracks around -18 dBFS RMS, peaks around -6 dBFS.
+// The reference signals, synthetic and seeded, stereo at 48 kHz. The Factory Presets take material as gain-staged,
+// since the Comp Curves' Thresholds are absolute: tracks around -18 dBFS RMS, peaks around -6 dBFS.
 constexpr int referenceSamples = static_cast<int> (sampleRate) * 8;
 
 // A track's: pink noise in phrases, 1.5 s sung and 0.5 s silent, each phrase in syllables at 4 Hz that swing 12 dB,
