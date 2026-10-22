@@ -82,6 +82,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/ColourParameterTest.cpp
         plugin/CompParameterTest.cpp
         plugin/DryWetParameterTest.cpp
+        plugin/FactoryPresetsTest.cpp
         plugin/GateParameterTest.cpp
         plugin/GlobalBypassParameterTest.cpp
         plugin/LatencyReportTest.cpp
@@ -102,6 +103,8 @@ if(COMP1_BUILD_PLUGIN)
         $<TARGET_PROPERTY:comp1,INCLUDE_DIRECTORIES>
         $<TARGET_PROPERTY:plugkit-ui,INTERFACE_INCLUDE_DIRECTORIES>)
     target_compile_definitions(comp1_plugin_tests PRIVATE $<TARGET_PROPERTY:comp1,COMPILE_DEFINITIONS>)
+    # The Factory folder, so a test can check every file in it is bundled.
+    target_compile_definitions(comp1_plugin_tests PRIVATE COMP1_FACTORY_PRESETS="${PROJECT_SOURCE_DIR}/presets/factory")
     target_link_libraries(comp1_plugin_tests PRIVATE comp1 comp1::engine Catch2::Catch2WithMain)
     # The tests compare samples and values exactly, on purpose. Set on the sources, whose options come after the
     # -Wfloat-equal JUCE's recommended warnings bring in through the plugin target.
