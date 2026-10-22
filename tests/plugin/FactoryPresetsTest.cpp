@@ -200,50 +200,21 @@ juce::String processingModeProblem (const FactoryPreset& p)
 // --- The audio rules --------------------------------------------------------------------------------------------
 
 using comp1::test::Channels;
+using comp1::test::pinkNoise;
+using comp1::test::rmsDb;
 constexpr double sampleRate = 48000.0;
 constexpr int seconds = 2;
 
-// The RMS level of samples in dB.
-double rmsDb (const float* samples, int count)
-{
-    double power = 0.0;
-    for (int i = 0; i < count; ++i)
-        power += static_cast<double> (samples[i]) * samples[i];
-    return 10.0 * std::log10 (power / count);
-}
-
-// Seeded pink-like noise on each channel at an RMS level of rmsLevelDb: white noise (comp1::test::noise) through Paul
-// Kellet's three-pole pink filter, each channel its own, the same on every platform.
-Channels pinkNoise (int numChannels, int numSamples, double rmsLevelDb, std::uint32_t seed = 7)
-{
-    auto audio = comp1::test::noise (numChannels, numSamples, seed);
-    for (auto& channel : audio)
-    {
-        double b0 = 0.0, b1 = 0.0, b2 = 0.0;
-        for (auto& x : channel)
-        {
-            const double w = x;
-            b0 = 0.99765 * b0 + 0.0990460 * w;
-            b1 = 0.96300 * b1 + 0.2965164 * w;
-            b2 = 0.57000 * b2 + 1.0526913 * w;
-            x = static_cast<float> (b0 + b1 + b2 + 0.1848 * w);
-        }
-        const auto gain = static_cast<float> (std::pow (10.0, (rmsLevelDb - rmsDb (channel.data(), numSamples)) / 20.0));
-        for (auto& x : channel)
-            x *= gain;
-    }
-    return audio;
-}
-
 // What the plugin plays from a stereo input with the Preset loaded, at 48 kHz in blocks of 512, as a host plays it:
-// with a Sidechain connected and silent, or with none connected. Its latency comes back too.
+// with a stereo Sidechain connected, playing sidechainSamples (as long as input) when given and silent otherwise, or
+// with none connected. Its latency comes back too.
 struct Played
 {
     Channels output;
     int latency = 0;
 };
 
-Played playedThroughPlugin (const FactoryPreset& p, const Channels& input, bool sidechainConnected)
+Played playedThroughPlugin (const FactoryPreset& p, const Channels& input, bool sidechainConnected, const Channels* sidechainSamples = nullptr)
 {
     constexpr int blockSize = 512;
     host::SessionHost host;
@@ -259,13 +230,18 @@ Played playedThroughPlugin (const FactoryPreset& p, const Channels& input, bool 
     Played played { Channels (2, std::vector<float> (static_cast<std::size_t> (numSamples))), processor.getLatencySamples() };
     juce::AudioBuffer<float> buffer (processor.getTotalNumInputChannels(), blockSize);
     juce::MidiBuffer midi;
+    REQUIRE ((sidechainSamples == nullptr || sidechainConnected));
     for (int start = 0; start < numSamples; start += blockSize)
     {
         const int count = std::min (blockSize, numSamples - start);
         buffer.setSize (buffer.getNumChannels(), count, false, false, true);
         buffer.clear();
         for (int ch = 0; ch < 2; ++ch)
+        {
             buffer.copyFrom (ch, 0, input[static_cast<std::size_t> (ch)].data() + start, count);
+            if (sidechainSamples != nullptr)
+                buffer.copyFrom (ch + 2, 0, (*sidechainSamples)[static_cast<std::size_t> (ch)].data() + start, count);
+        }
         processor.processBlock (buffer, midi);
         for (int ch = 0; ch < 2; ++ch)
             std::copy_n (buffer.getReadPointer (ch), count, played.output[static_cast<std::size_t> (ch)].data() + start);
@@ -276,7 +252,7 @@ Played playedThroughPlugin (const FactoryPreset& p, const Channels& input, bool 
 // Rule: 2 s of stereo pink noise at -18 dBFS RMS comes out finite, its peak no more than 12 dB above the input's.
 juce::String loudnessProblem (const FactoryPreset& p)
 {
-    const auto input = pinkNoise (2, static_cast<int> (sampleRate) * seconds, -18.0);
+    const auto input = pinkNoise (2, static_cast<int> (sampleRate) * seconds, -18.0, 7);
     const auto played = playedThroughPlugin (p, input, true);
     for (const auto& channel : played.output)
         if (! std::all_of (channel.begin(), channel.end(), [] (float x) { return std::isfinite (x); }))
@@ -293,7 +269,7 @@ juce::String unroutedSidechainProblem (const FactoryPreset& p)
     if (! isSidechainPreset (p))
         return {};
     const int numSamples = static_cast<int> (sampleRate) * seconds;
-    const auto input = pinkNoise (2, numSamples, -18.0);
+    const auto input = pinkNoise (2, numSamples, -18.0, 7);
     const auto played = playedThroughPlugin (p, input, false);
     constexpr int window = static_cast<int> (sampleRate / 10);
     for (std::size_t ch = 0; ch < 2; ++ch)
@@ -693,45 +669,6 @@ TEST_CASE ("The Factory gate rejects a De-Esser that misses sibilance, or compre
     CHECK (gainReductionProblem (deEsserWith ({ { ids::thresholdId, -2.0f } })) == "");
 }
 
-namespace
-{
-
-// What the plugin plays from a stereo input with the Preset loaded and stereo sidechainSamples on the Sidechain, at
-// 48 kHz in blocks of 512, as a host plays it.
-Channels playedWithSidechain (const FactoryPreset& p, const Channels& input, const Channels& sidechainSamples)
-{
-    constexpr int blockSize = 512;
-    host::SessionHost host;
-    auto& processor = *host.processor;
-    juce::AudioProcessor::BusesLayout layout;
-    layout.inputBuses.add (juce::AudioChannelSet::stereo());
-    layout.inputBuses.add (juce::AudioChannelSet::stereo());
-    layout.outputBuses.add (juce::AudioChannelSet::stereo());
-    REQUIRE (processor.setBusesLayout (layout));
-    processor.prepareToPlay (sampleRate, blockSize);
-    REQUIRE (host.session.loadPreset (p.preset, p.name));
-    const int numSamples = static_cast<int> (input.front().size());
-    Channels output (2, std::vector<float> (static_cast<std::size_t> (numSamples)));
-    juce::AudioBuffer<float> buffer (4, blockSize);
-    juce::MidiBuffer midi;
-    for (int start = 0; start < numSamples; start += blockSize)
-    {
-        const int count = std::min (blockSize, numSamples - start);
-        buffer.setSize (4, count, false, false, true);
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            buffer.copyFrom (ch, 0, input[static_cast<std::size_t> (ch)].data() + start, count);
-            buffer.copyFrom (ch + 2, 0, sidechainSamples[static_cast<std::size_t> (ch)].data() + start, count);
-        }
-        processor.processBlock (buffer, midi);
-        for (int ch = 0; ch < 2; ++ch)
-            std::copy_n (buffer.getReadPointer (ch), count, output[static_cast<std::size_t> (ch)].data() + start);
-    }
-    return output;
-}
-
-} // namespace
-
 TEST_CASE ("Every Sidechain Preset dips the signal by at least 3 dB under loud audio on the Sidechain")
 {
     // The Utility Sidechain Presets, each of which must be in the library.
@@ -752,7 +689,7 @@ TEST_CASE ("Every Sidechain Preset dips the signal by at least 3 dB under loud a
         if (! isSidechainPreset (p))
             continue;
         CAPTURE (p.name);
-        const auto output = playedWithSidechain (p, input, sidechainSamples);
+        const auto output = playedThroughPlugin (p, input, true, &sidechainSamples).output;
         for (std::size_t ch = 0; ch < 2; ++ch)
             CHECK (rmsDb (input[ch].data() + settled, numSamples - settled) - rmsDb (output[ch].data() + settled, numSamples - settled) >= 3.0);
     }
@@ -800,7 +737,7 @@ TEST_CASE ("A parallel Factory Preset's Dry path is heard: with Wet Off, its out
         if (! std::isinf (settingsOf (p).dryDb))
             parallel.push_back (p);
     REQUIRE (std::any_of (parallel.begin(), parallel.end(), [] (const auto& p) { return p.name == named ("Drums \xe2\x80\x93 All-In Crush"); }));
-    const auto input = pinkNoise (2, static_cast<int> (sampleRate) * seconds, -18.0);
+    const auto input = pinkNoise (2, static_cast<int> (sampleRate) * seconds, -18.0, 7);
     for (const auto& p : parallel)
     {
         CAPTURE (p.name);
