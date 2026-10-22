@@ -8,5 +8,7 @@
   <PARAM id="release" value="50.0"/>
   <PARAM id="comp" value="85.0"/>
   <PARAM id="dry" value="0.0"/>
-  <PARAM id="wet" value="-6.0"/>
+  <PARAM id="wet" value="-8.0"/>
+  <PARAM id="saturation" value="1.0"/>
+  <PARAM id="drive" value="4.0"/>
 </comp1>
