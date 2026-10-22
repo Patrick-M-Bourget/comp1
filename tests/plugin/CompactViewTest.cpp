@@ -78,7 +78,7 @@ TEST_CASE ("With Comp Follow off, grabbing the Compact View's Comp turns it on, 
     auto& history = host.processor.session().editHistory();
     const int steps = history.undoSteps();
 
-    const juce::String how = GENERATE (as<juce::String> {}, "press", "drag", "typed", "key");
+    const juce::String how = GENERATE (as<juce::String> {}, "press", "drag", "typed", "key", "screen reader");
     CAPTURE (how);
     host::GestureRecorder recorder;
     host.processor.addListener (&recorder);
@@ -88,6 +88,13 @@ TEST_CASE ("With Comp Follow off, grabbing the Compact View's Comp turns it on, 
         host::EditorHost::drag (comp, 20.0f);
     else if (how == "typed")
         REQUIRE (comp.commitTypedText ("60 %"));
+    else if (how == "screen reader")
+    {
+        auto* handler = comp.getAccessibilityHandler();
+        REQUIRE (handler != nullptr);
+        REQUIRE (handler->getValueInterface() != nullptr);
+        handler->getValueInterface()->setValueAsString ("60 %");
+    }
     else
     {
         comp.grabKeyboardFocus();
@@ -102,7 +109,7 @@ TEST_CASE ("With Comp Follow off, grabbing the Compact View's Comp turns it on, 
     else if (how == "drag")
         // 20 px of the knob's 200 px for 0 to 100%, from 80%.
         CHECK_THAT (host.value (parameters::compId), WithinAbs (90.0f, 0.1));
-    else if (how == "typed")
+    else if (how == "typed" || how == "screen reader")
         CHECK_THAT (host.value (parameters::compId), WithinAbs (60.0f, 1.0e-4));
     else
     {

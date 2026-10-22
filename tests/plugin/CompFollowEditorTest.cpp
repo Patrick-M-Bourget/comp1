@@ -242,6 +242,37 @@ TEST_CASE ("An arrow key on Comp while Comp Follow is off follows: Comp nearest 
     CHECK (allValues (host) == before);
 }
 
+TEST_CASE ("A screen reader's set of Comp while Comp Follow is off follows: Comp nearest the stored Threshold, then the value set, as one undo step")
+{
+    host::EditorHost host;
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    host.edit (parameters::compFollowId, 0.0f);
+    host.edit (parameters::thresholdId, -32.4f);
+    const auto before = allValues (host);
+    auto& history = host.processor.session().editHistory();
+    const int steps = history.undoSteps();
+
+    host::GestureRecorder recorder;
+    host.processor.addListener (&recorder);
+    auto* handler = host.knob ("Comp").getAccessibilityHandler();
+    REQUIRE (handler != nullptr);
+    REQUIRE (handler->getValueInterface() != nullptr);
+    handler->getValueInterface()->setValueAsString ("60 %");
+    host.processor.removeListener (&recorder);
+
+    CHECK (host.value (parameters::compFollowId) == 1.0f);
+    CHECK_THAT (host.value (parameters::compId), WithinAbs (60.0f, 1.0e-4));
+    CHECK (history.undoSteps() == steps + 1);
+    REQUIRE_FALSE (recorder.changes.empty());
+    for (const auto& [index, inGesture] : recorder.changes)
+    {
+        CAPTURE (index);
+        CHECK (inGesture);
+    }
+    history.undo();
+    CHECK (allValues (host) == before);
+}
+
 TEST_CASE ("The Comp Follow toggle turns it on through followComp() and off through stopFollowingComp(), one undo step each")
 {
     host::EditorHost host;
