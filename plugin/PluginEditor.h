@@ -81,7 +81,6 @@ private:
     GateSection gate;
     CompressorSection compressor;
     CharacterSection character;
-    DryWetSection dryWet;
     DetectionSection detection;
     StereoSection stereo;
     LookaheadSection lookahead;

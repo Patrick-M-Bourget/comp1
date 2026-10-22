@@ -5,6 +5,7 @@
 #include "EditorHost.h"
 #include "Footer.h"
 #include "plugkit/ui/OutputPopoverFrame.h"
+#include "plugkit/ui/PopoverSlider.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -62,6 +63,13 @@ void changeByMouse (juce::Component& control, juce::RangedAudioParameter& parame
 {
     if (auto* knob = dynamic_cast<staple::Knob*> (&control))
         host::EditorHost::drag (*knob, parameter.getValue() < 0.5f ? 60.0f : -60.0f);
+    else if (auto* slider = dynamic_cast<plugkit::ui::PopoverSlider*> (&control))
+    {
+        // A click on its track, at the end away from where it is.
+        const juce::Point<float> at { parameter.getValue() < 0.5f ? static_cast<float> (slider->getWidth()) : 0.0f, 7.0f };
+        slider->mouseDown (harness::mouseEvent (*slider, at, juce::ModifierKeys::leftButtonModifier, at));
+        slider->mouseUp (harness::mouseEvent (*slider, at, {}, at));
+    }
     else if (auto* chip = dynamic_cast<comp1::ChoiceChip*> (&control))
     {
         const auto menu = chip->menu();
@@ -79,10 +87,10 @@ void changeByMouse (juce::Component& control, juce::RangedAudioParameter& parame
         box->setSelectedItemIndex (box->getSelectedItemIndex() == 0 ? 1 : 0, juce::sendNotificationSync);
 }
 
-// Changes it by the keys: an arrow for a knob or a choice, Space for a button.
+// Changes it by the keys: an arrow for a knob, a slider or a choice, Space for a button.
 void changeByKeys (host::EditorHost& host, juce::Component& control, juce::RangedAudioParameter& parameter)
 {
-    if (dynamic_cast<staple::Knob*> (&control) != nullptr || dynamic_cast<juce::ComboBox*> (&control) != nullptr
+    if (dynamic_cast<juce::Slider*> (&control) != nullptr || dynamic_cast<juce::ComboBox*> (&control) != nullptr
         || dynamic_cast<comp1::ChoiceChip*> (&control) != nullptr)
     {
         const float before = parameter.getValue();
@@ -332,7 +340,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     CHECK (listed == expected);
 }
 
-TEST_CASE ("Each knob reads its value with its unit as its tooltip shows it: Ratio as 4:1 and infinity:1, Ceiling in dBFS, Dry and Wet Off at the bottom")
+TEST_CASE ("Each knob reads its value with its unit as its tooltip shows it: Ratio as 4:1 and infinity:1, Ceiling in dBFS")
 {
     host::EditorHost host;
     everythingAvailable (host);
@@ -353,10 +361,6 @@ TEST_CASE ("Each knob reads its value with its unit as its tooltip shows it: Rat
     REQUIRE (host.settleUntil ([&] { return spoken ("Ratio") == juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x9e:1")); }));
     host.edit (parameters::ceilingId, -3.0f);
     REQUIRE (host.settleUntil ([&] { return spoken ("Ceiling") == juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92" "3.00 dBFS")); }));
-    host.edit (parameters::dryId, -std::numeric_limits<float>::infinity());
-    host.edit (parameters::wetId, -std::numeric_limits<float>::infinity());
-    REQUIRE (host.settleUntil ([&] { return spoken ("Dry") == "Off" && spoken ("Wet") == "Off"; }));
-    CHECK (host.knob ("Dry").tooltipValue() == "Off");
 
     // What it reads, typed back, sets it.
     auto& ratio = host.knob ("Ratio");
@@ -366,8 +370,6 @@ TEST_CASE ("Each knob reads its value with its unit as its tooltip shows it: Rat
     CHECK (std::isinf (host.value (parameters::ratioId)));
     REQUIRE (host.knob ("Ceiling").commitTypedText (juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x92" "6.00 dBFS"))));
     CHECK_THAT (host.value (parameters::ceilingId), Catch::Matchers::WithinAbs (-6.0f, 1.0e-4));
-    REQUIRE (host.knob ("Wet").commitTypedText ("-3 dB"));
-    CHECK_THAT (host.value (parameters::wetId), Catch::Matchers::WithinAbs (-3.0f, 1.0e-4));
 }
 
 TEST_CASE ("Tab walks the header, the display's tabs and the shown tab's controls, the Output Meter, the sections in signal order and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
@@ -412,7 +414,7 @@ TEST_CASE ("Tab walks the header, the display's tabs and the shown tab's control
     juce::StringArray order { "Presets", "Level", "Detection EQ", "Transfer Curve" };
     order.addArray (tabControls);
     order.addArray (juce::StringArray { "Output Meter", "Style", "Gate", "Gate Hold", "Comp Follow", "Comp", "Threshold", "Range", "Colour",
-                                        "Saturation Position", "Dry", "Wet", "Detection Source", "Detection Free Band Q", "Stereo Placement",
+                                        "Saturation Position", "Detection Source", "Detection Free Band Q", "Stereo Placement",
                                         "Stereo Link", "Lookahead", "Global Bypass", "Processing Mode", "Oversampling", "Output", "UI Scale",
                                         "Switch to the Compact View" });
     int last = -1;
@@ -576,11 +578,12 @@ void showCompactView (host::EditorHost& host)
 
 // The host parameters with a control in the Compact View: its own four, the footer's, then the output popover's.
 const std::set<juce::String> compactParameters { "Style",        "Gate",        "Gate Threshold", "Comp",    "Global Bypass", "Processing Mode",
-                                                 "Oversampling", "Output Gain", "Auto Gain",      "Limiter", "Ceiling" };
+                                                 "Oversampling", "Output Gain", "Auto Gain",      "Limiter", "Ceiling",         "Dry",
+                                                 "Wet" };
 
 } // namespace
 
-TEST_CASE ("In the Compact View, Style, Gate, Gate Threshold, Comp, the footer's three and the output popover's four each have exactly one showing control, titled with its name, that changes it by mouse and by keys; no other host parameter has one")
+TEST_CASE ("In the Compact View, Style, Gate, Gate Threshold, Comp, the footer's three and the output popover's six each have exactly one showing control, titled with its name, that changes it by mouse and by keys; no other host parameter has one")
 {
     host::EditorHost host;
     showCompactView (host);
@@ -663,6 +666,7 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
                                                "Close Preset browser",
                                                "Comp",
                                                "Copy A to B",
+                                               "Dry",
                                                "Factory",
                                                "Gain Reduction",
                                                "Gate",
@@ -685,7 +689,8 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
                                                "Switch to the Expanded View",
                                                "UI Scale",
                                                "Undo",
-                                               "User" };
+                                               "User",
+                                               "Wet" };
     CHECK (listed == expected);
 }
 
