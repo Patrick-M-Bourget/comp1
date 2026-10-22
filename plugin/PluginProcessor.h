@@ -3,6 +3,7 @@
 #include "Parameters.h"
 #include "comp1/Engine.h"
 #include "comp1/Style.h"
+#include "comp1/TransferCurve.h"
 #include "plugkit/ui/ClipLights.h"
 #include "plugkit/ui/OutputLevelSource.h"
 #include "plugkit/ui/Session.h"
@@ -134,6 +135,14 @@ public:
     // while Comp Follow is on, and what the editor shows then. Any thread.
     double followedThresholdDb() const;
     double followedRatio() const;
+    // The Transfer Curve's settings the Engine plays at the host parameters: the Comp Curve's Threshold and Ratio at
+    // Comp while Comp Follow is on (followedThresholdDb, followedRatio), else the stored ones; Knee and Range stored.
+    // Any thread.
+    clean::Curve playedCurve() const;
+    // Auto Gain's estimate in dB (comp1/AutoGain.h, ADR 0010) for the settings the host parameters hold, from the
+    // played Transfer Curve, the timing and the Character, while Auto Gain is in effect: on, or held on by Comp
+    // Follow; else 0. What the Engine glides its Auto Gain to. Any thread.
+    double appliedAutoGainDb() const;
 
     // Whether the editor offers Stereo Placement and Stereo Link: only on a stereo track. On a mono one both keep
     // their stored values and change nothing, the mono channel compressed as Stereo.

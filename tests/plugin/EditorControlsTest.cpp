@@ -295,6 +295,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Lookahead");
     expected.push_back ("Low-pass handle");
     expected.push_back ("Next Preset");
+    expected.push_back ("Output");
     expected.push_back ("Output Gain");
     expected.push_back ("Oversampling");
     expected.push_back ("Presets");
@@ -398,7 +399,7 @@ TEST_CASE ("Tab walks the header, the display's tabs, the Output Meter, the sect
                                     "Detection Audition", "Output Meter", "Style", "Gate", "Gate Hold", "Comp Follow", "Comp",
                                     "Threshold", "Range", "Colour", "Saturation Position", "Dry", "Wet", "Output Gain", "Ceiling",
                                     "Detection Source", "Detection Free Band Q", "Stereo Placement", "Stereo Link", "Lookahead",
-                                    "Global Bypass", "Processing Mode", "Oversampling", "UI Scale", "Switch to the Compact View" };
+                                    "Global Bypass", "Processing Mode", "Oversampling", "Output", "UI Scale", "Switch to the Compact View" };
     int last = -1;
     for (const auto& title : order)
     {
@@ -642,6 +643,7 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
                                                "Global Bypass",
                                                juce::String (juce::CharPointer_UTF8 ("Load Preset File" "\xe2\x80\xa6")),
                                                "Next Preset",
+                                               "Output",
                                                "Output Gain",
                                                "Oversampling",
                                                "Presets",
@@ -692,7 +694,8 @@ TEST_CASE ("Tab walks the Compact View: the header, Style, Gate, Gate Threshold,
     CHECK_FALSE (titles.contains ("Gain Reduction"));
     // In order: the header's first, then these, the body's five one after another.
     const juce::StringArray order { "Presets",       "Style",           "Gate",         "Gate Threshold", "Comp", "Output Gain",
-                                    "Global Bypass", "Processing Mode", "Oversampling", "UI Scale",       "Switch to the Expanded View" };
+                                    "Global Bypass", "Processing Mode", "Oversampling", "Output",         "UI Scale",
+                                    "Switch to the Expanded View" };
     int last = -1;
     for (const auto& title : order)
     {

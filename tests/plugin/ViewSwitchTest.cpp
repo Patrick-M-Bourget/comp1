@@ -415,7 +415,7 @@ TEST_CASE ("Tab walks the Compact View: the header, then Style, Gate, Gate Thres
         rest.add (walked[i]->getTitle());
     CHECK (rest
            == juce::StringArray { "Style",         "Gate",         "Gate Threshold", "Comp", "Output Gain", "Global Bypass", "Processing Mode",
-                                  "Oversampling", "UI Scale", "Switch to the Expanded View" });
+                                  "Oversampling", "Output", "UI Scale", "Switch to the Expanded View" });
 }
 
 TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and maximum sizes, the header, the body and the footer don't overlap, the body's sections and meter are inside it with each control inside its section, and the Preset browser opens inside the window")

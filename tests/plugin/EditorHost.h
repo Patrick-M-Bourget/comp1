@@ -2,6 +2,7 @@
 
 // The Expanded View as a host opens it, through plugkit's editor harness: what the editor's tests share.
 
+#include "Footer.h"
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "SessionHost.h"
@@ -58,6 +59,15 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
 
     // The knob titled title, showing.
     staple::Knob& knob (const juce::String& title) { return showing<staple::Knob> (title); }
+
+    // The footer both views share, and its Output readout.
+    comp1::Footer& footer()
+    {
+        auto* found = harness::findChild<comp1::Footer> (*editor);
+        REQUIRE (found != nullptr);
+        return *found;
+    }
+    plugkit::ui::OutputReadout& outputReadout() { return footer().outputReadout(); }
 
     // A mouse press on knob's face, a drag pixels up from it (down when negative), and the release, through the
     // knob's own handlers (CODING_STANDARDS "Editor behaviour").
