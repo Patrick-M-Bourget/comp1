@@ -84,6 +84,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/DisplayTabTest.cpp
         plugin/DryWetParameterTest.cpp
         plugin/EditorLayoutTest.cpp
+        plugin/EditorScreensTest.cpp
         plugin/EditorTest.cpp
         plugin/GateParameterTest.cpp
         plugin/GlobalBypassParameterTest.cpp
