@@ -14,8 +14,9 @@ namespace comp1
 {
 
 // The Plugin Shell: the JUCE processor around the Engine. It turns the host parameters into Settings once a
-// block, and saves, restores and edits them through its Session: User Presets, A/B Compare and undo and redo.
-class PluginProcessor final : public juce::AudioProcessor
+// block, and saves, restores and edits them through its Session: User Presets, A/B Compare and undo and redo. Not final:
+// a test's processor derives from it only to keep its per-user settings and User Presets in a folder of its own.
+class PluginProcessor : public juce::AudioProcessor
 {
 public:
     // As it ships: the per-user settings in UserSettings::defaultFile ("comp1"), and User Presets in
@@ -36,11 +37,7 @@ public:
     void processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
     using AudioProcessor::processBlockBypassed;
 
-    // A placeholder: the host parameters, as JUCE's generic editor lays them out. Its Style box sets the Style
-    // parameter alone, as a host would: the Character changes, and the Style's defaults are not written
-    // (chooseStyle() writes them). Its Comp Follow box sets that parameter alone too, which glides as Host Automation
-    // does, without followComp()'s or stopFollowingComp()'s writes; and while Comp Follow is on, its Threshold and
-    // Ratio sliders have no effect.
+    // The Expanded View (PluginEditor.h).
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
@@ -62,7 +59,7 @@ public:
     // adds A/B Compare.
     static constexpr int stateVersion = 2;
 
-    // The editor window's logical size, and its limits: a placeholder until the Expanded View sets its own.
+    // The Expanded View's logical size (as at 100% UI Scale), and its limits.
     static constexpr plugkit::ui::Session::Window window { { 1200, 760 }, { 960, 600 }, { 2560, 1600 } };
 
     void getStateInformation (juce::MemoryBlock& destData) override;
@@ -74,6 +71,8 @@ public:
     // load, an A/B switch or Copy, and their undo and redo may change Processing Mode, and the reported latency
     // follows it.
     plugkit::ui::Session& session() { return sessionState; }
+    // The host parameters, which the editor's controls attach to.
+    juce::AudioProcessorValueTreeState& parameterState() { return parameters; }
 
     // The Styles the editor offers: the ones with defaults to write (comp1/Style.h), which is all eight, in the frozen
     // order, the four Character Styles then the four Source Styles.

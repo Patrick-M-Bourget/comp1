@@ -1,5 +1,7 @@
 #include "PluginProcessor.h"
 
+#include "PluginEditor.h"
+
 #include "comp1/Latency.h"
 #include "plugkit/ui/SetTogether.h"
 
@@ -228,7 +230,7 @@ bool PluginProcessor::followComp()
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()
 {
-    return new juce::GenericAudioProcessorEditor (*this);
+    return new PluginEditor (*this);
 }
 
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
