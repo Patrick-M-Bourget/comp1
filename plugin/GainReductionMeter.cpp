@@ -13,13 +13,37 @@ namespace
 {
 namespace colour = staple::tokens::colour;
 namespace size = staple::tokens::size;
+
+double LevelRecord::* readingOf (GainReductionMeter::Stage stage)
+{
+    switch (stage)
+    {
+        case GainReductionMeter::Stage::gate: return &LevelRecord::gateGainReductionDb;
+        case GainReductionMeter::Stage::limiter: return &LevelRecord::limiterGainReductionDb;
+        case GainReductionMeter::Stage::compressor: break;
+    }
+    return &LevelRecord::gainReductionDb;
+}
+
+juce::String nameOf (GainReductionMeter::Stage stage)
+{
+    switch (stage)
+    {
+        case GainReductionMeter::Stage::gate: return "Gate Gain Reduction";
+        case GainReductionMeter::Stage::limiter: return "Limiter Gain Reduction";
+        case GainReductionMeter::Stage::compressor: break;
+    }
+    return "Gain Reduction";
+}
 } // namespace
 
-GainReductionMeter::GainReductionMeter (LevelHistory& h) : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), history (h)
+GainReductionMeter::GainReductionMeter (LevelHistory& h, Stage stage)
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), history (h), reading (readingOf (stage))
 {
-    setName ("Gain Reduction");
-    setTitle ("Gain Reduction");
-    setTooltip ("Gain Reduction");
+    const auto name = nameOf (stage);
+    setName (name);
+    setTitle (name);
+    setTooltip (name);
     setWantsKeyboardFocus (false);
     setInterceptsMouseClicks (false, false);
     history.subscribe (*this);
@@ -35,7 +59,7 @@ double GainReductionMeter::position (double db) { return std::clamp (db / scaleD
 void GainReductionMeter::levelsRead (std::span<const LevelRecord> records)
 {
     for (const auto& record : records)
-        most = std::max (most, record.gainReductionDb);
+        most = std::max (most, record.*reading);
 }
 
 void GainReductionMeter::tick (double seconds)

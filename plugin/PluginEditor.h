@@ -18,9 +18,11 @@ namespace comp1
 {
 
 // comp1's Expanded View, on plugkit's editor shell (EditorShell), which gives it its header, keys, UI Scale and
-// window. Under the header: the display, its two tabs over its full width, with the Gain Reduction meter and the Output
-// Meter's rail at its right edge; under that the sections in signal order, in two rows; and the footer. The display
-// takes whatever the window grows by, and the section rows its width; each section keeps its own size.
+// window. Under the header: the display, its two tabs over its full width, with three Gain Reduction meters and the
+// Output Meter's rail at its right edge; under that the sections in signal order, in two rows; and the footer. The
+// display takes whatever the window grows by, and the section rows its width; each section keeps its own size. The
+// meters are the Gate's, the compressor's and the Limiter's, left to right in signal order (their placement is
+// provisional, #94).
 //
 // It shows either view, the one the processor holds, the Compact View being its body under the same header and
 // footer. Each view has its own window limits and size (PluginProcessor::windowOf, setView).
@@ -34,6 +36,8 @@ public:
     // The editor's one reader of the level history, which whatever shows levels over time subscribes to.
     LevelHistory& levelHistory() { return history; }
     GainReductionMeter& gainReductionMeter() { return gainReduction; }
+    GainReductionMeter& gateGainReductionMeter() { return gateGainReduction; }
+    GainReductionMeter& limiterGainReductionMeter() { return limiterGainReduction; }
     DetectionLevelRing& detectionLevelRing() { return compressor.detectionLevelRing(); }
 
     // The section rows' height, together with the gap between them, and the Style section's width.
@@ -58,6 +62,8 @@ public:
     LevelHistory history;
     Display displaySlot;
     GainReductionMeter gainReduction;
+    GainReductionMeter gateGainReduction { history, GainReductionMeter::Stage::gate };
+    GainReductionMeter limiterGainReduction { history, GainReductionMeter::Stage::limiter };
     plugkit::ui::OutputMeter outputMeter;
     // The sections, left to right in signal order. Named "Sections", as a test finds it.
     juce::Component sections;

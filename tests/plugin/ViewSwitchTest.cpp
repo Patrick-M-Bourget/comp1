@@ -31,7 +31,8 @@ std::vector<juce::Component*> expandedParts (host::EditorHost& host)
     auto* sections = harness::findChild<juce::Component> (editor, [] (juce::Component& c) { return c.getName() == "Sections"; });
     REQUIRE (outputMeter != nullptr);
     REQUIRE (sections != nullptr);
-    return { &editor.display(), &editor.gainReductionMeter(), outputMeter, sections };
+    return { &editor.display(),          &editor.gateGainReductionMeter(), &editor.gainReductionMeter(),
+             &editor.limiterGainReductionMeter(), outputMeter,                        sections };
 }
 
 // What the editor shows: the view's own body, and the switch titled by what it does.
