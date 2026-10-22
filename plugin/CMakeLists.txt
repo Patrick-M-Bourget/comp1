@@ -37,6 +37,7 @@ target_sources(comp1 PRIVATE
     DetectionEqDisplay.cpp
     DetectionLevelRing.cpp
     Display.cpp
+    DisplayFades.cpp
     Footer.cpp
     GainReductionMeter.cpp
     LevelGraph.cpp

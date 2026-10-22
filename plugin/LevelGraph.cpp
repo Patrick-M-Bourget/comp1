@@ -6,7 +6,6 @@
 #include "plugkit/ui/AssumedSampleRate.h"
 #include "plugkit/ui/ValueText.h"
 #include "plugkit/ui/staple/Tokens.h"
-#include "plugkit/ui/staple/WindowBackground.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,8 +20,6 @@ namespace colour = staple::tokens::colour;
 namespace size = staple::tokens::size;
 namespace display = plugkit::ui::display;
 
-// The display's edge fades, as plugkit's Staple design system gives them (its design-system README.md, "The display").
-constexpr display::EdgeFades edgeFades { .top = 18.0f, .bottom = 84.0f, .left = 36.0f, .right = 56.0f };
 // The dB labels: right-aligned this far in from the right edge, each this big, kept inside the graph.
 constexpr float labelFromRight = 6.0f, labelWidth = 32.0f, labelHeight = 12.0f;
 constexpr float levelLineWidth = 1.0f, curveLineWidth = 1.5f;
@@ -32,15 +29,6 @@ juce::String spokenLevel (double db)
 {
     const double shown = db <= plugkit::levelFloorDb ? -std::numeric_limits<double>::infinity() : db;
     return plugkit::ui::valueText::signedDb (shown, { .decimals = 1, .unit = false }) + " dBFS";
-}
-
-// The component the editor shell draws the window's background over, which holds everything the editor shows.
-const juce::Component* windowOf (const juce::Component& component)
-{
-    for (auto* c = component.getParentComponent(); c != nullptr; c = c->getParentComponent())
-        if (dynamic_cast<const juce::AudioProcessorEditor*> (c->getParentComponent()) != nullptr)
-            return c;
-    return nullptr;
 }
 } // namespace
 
@@ -216,7 +204,7 @@ void LevelGraph::paint (juce::Graphics& g)
         g.strokePath (output, juce::PathStrokeType (curveLineWidth));
     }
 
-    paintEdgeFades (g);
+    fades.paint (g, *this);
 
     // The dB labels at the right, over the fades.
     std::vector<display::Label> scale;
@@ -229,28 +217,7 @@ void LevelGraph::paint (juce::Graphics& g)
                            colour::text3,
                            size::fs1 });
     }
-    const auto* window = windowOf (*this);
-    labels.paint (g, window != nullptr ? window->getLocalPoint (this, juce::Point<float>()) : juce::Point<float>(), scale);
-}
-
-void LevelGraph::paintEdgeFades (juce::Graphics& g)
-{
-    const auto* window = windowOf (*this);
-    if (window == nullptr)
-        return;
-    const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
-    const auto at = window->getLocalPoint (this, juce::Point<float>());
-    const auto madeFor = juce::Rectangle<float> (at.x, at.y, static_cast<float> (getWidth()), static_cast<float> (getHeight()));
-    if (madeFor != fadesMadeFor || ! juce::exactlyEqual (scale, fades.scale))
-    {
-        fadesMadeFor = madeFor;
-        const auto windowArea = window->getLocalBounds().toFloat();
-        fades = display::edgeFadeOverlay ({ .width = getWidth(), .height = getHeight() }, edgeFades, scale, [&] (juce::Graphics& behind) {
-            behind.addTransform (juce::AffineTransform::translation (-at.x, -at.y));
-            staple::paintWindowBackground (behind, windowArea);
-        });
-    }
-    display::paintEdgeFades (g, fades);
+    labels.paint (g, DisplayFades::originInWindow (*this), scale);
 }
 
 } // namespace comp1
