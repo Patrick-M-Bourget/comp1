@@ -45,17 +45,6 @@ std::map<juce::String, float> values (juce::AudioProcessor& processor)
     return all;
 }
 
-// Records, for each parameter change the host hears, whether it came inside that parameter's gesture.
-struct GestureRecorder final : juce::AudioProcessorListener
-{
-    std::set<int> open;
-    std::vector<std::pair<int, bool>> changes; // the parameter's index, and whether its gesture was open
-    void audioProcessorParameterChanged (juce::AudioProcessor*, int index, float) override { changes.emplace_back (index, open.contains (index)); }
-    void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails&) override {}
-    void audioProcessorParameterChangeGestureBegin (juce::AudioProcessor*, int index) override { open.insert (index); }
-    void audioProcessorParameterChangeGestureEnd (juce::AudioProcessor*, int index) override { open.erase (index); }
-};
-
 // Opto chosen (Comp Follow on, Comp 50%), then Comp moved to 80%, and the stored Threshold, Ratio and Auto Gain moved
 // well off the Comp Curve by Host Automation, which the Engine ignores while following.
 void followingOffTheCurve (const host::SessionHost& host)
@@ -179,7 +168,7 @@ TEST_CASE ("Stopping following writes Comp Follow off, the Comp Curve's Threshol
     CHECK_THAT (threshold, WithinAbs (-32.4, 1.0e-9));
     CHECK_THAT (ratio, WithinAbs (4.29, 0.005));
 
-    GestureRecorder recorder;
+    host::GestureRecorder recorder;
     host.processor->addListener (&recorder);
     REQUIRE (host.processor->stopFollowingComp());
     host.processor->removeListener (&recorder);
@@ -252,7 +241,7 @@ TEST_CASE ("Following writes Comp at the position nearest the stored Threshold, 
     const auto before = values (*host.processor);
     const int steps = host.history.undoSteps();
 
-    GestureRecorder recorder;
+    host::GestureRecorder recorder;
     host.processor->addListener (&recorder);
     REQUIRE (host.processor->followComp());
     host.processor->removeListener (&recorder);

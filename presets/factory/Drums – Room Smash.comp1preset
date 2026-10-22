@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<comp1 version="2">
+  <PARAM id="style" value="7.0"/>
+  <PARAM id="detection_high_pass_on" value="1.0"/>
+  <PARAM id="detection_high_pass_frequency" value="120.0"/>
+  <PARAM id="comp" value="100.0"/>
+  <PARAM id="comp_follow" value="1.0"/>
+  <PARAM id="knee" value="3.0"/>
+  <PARAM id="attack" value="5.0"/>
+  <PARAM id="release" value="50.0"/>
+  <PARAM id="saturation" value="1.0"/>
+  <PARAM id="saturation_position" value="0.0"/>
+</comp1>

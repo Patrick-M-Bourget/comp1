@@ -68,16 +68,16 @@ TEST_CASE ("The window's size and UI Scale survive closing and reopening the edi
 {
     host::EditorHost host;
     pickUiScale (host, 150);
-    host.editor->setSize (1800, 1200); // 1200 x 800 logical
+    host.editor->setSize (2100, 1260); // 1400 x 840 logical
     host.reopen();
-    CHECK (host.editor->getWidth() == 1800);
-    CHECK (host.editor->getHeight() == 1200);
+    CHECK (host.editor->getWidth() == 2100);
+    CHECK (host.editor->getHeight() == 1260);
     CHECK (uiScaleMenu (host).shownPercent() == 150);
 
     host::EditorHost other;
     host::restore (other.processor, host::saved (host.processor));
-    REQUIRE (other.settleUntil ([&] { return other.editor->getWidth() == 1800; }));
-    CHECK (other.editor->getHeight() == 1200);
+    REQUIRE (other.settleUntil ([&] { return other.editor->getWidth() == 2100; }));
+    CHECK (other.editor->getHeight() == 1260);
     CHECK (uiScaleMenu (other).shownPercent() == 150);
 }
 

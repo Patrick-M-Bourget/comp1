@@ -428,7 +428,7 @@ double medianGainReductionDb (const FactoryPreset& p, const Channels& signal)
 const juce::StringArray& crushAndParallel()
 {
     static const juce::StringArray names { named ("Drums \xe2\x80\x93 All-In Crush"), named ("Drums \xe2\x80\x93 Room Smash"),
-                                           named ("Mix Bus \xe2\x80\x93 Parallel Lift") };
+                                           named ("Vocals \xe2\x80\x93 Parallel Thicken"), named ("Mix Bus \xe2\x80\x93 Parallel Lift") };
     return names;
 }
 
@@ -691,6 +691,126 @@ TEST_CASE ("The Factory gate rejects a De-Esser that misses sibilance, or compre
     CHECK (deEsserProblem (deEsserWith ({ { ids::thresholdId, -40.0f } })).isNotEmpty());
     // Its own check, not the Vocals band.
     CHECK (gainReductionProblem (deEsserWith ({ { ids::thresholdId, -2.0f } })) == "");
+}
+
+namespace
+{
+
+// What the plugin plays from a stereo input with the Preset loaded and a stereo key on the Sidechain, at 48 kHz in
+// blocks of 512, as a host plays it.
+Channels playedWithKey (const FactoryPreset& p, const Channels& input, const Channels& key)
+{
+    constexpr int blockSize = 512;
+    host::SessionHost host;
+    auto& processor = *host.processor;
+    juce::AudioProcessor::BusesLayout layout;
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.outputBuses.add (juce::AudioChannelSet::stereo());
+    REQUIRE (processor.setBusesLayout (layout));
+    processor.prepareToPlay (sampleRate, blockSize);
+    REQUIRE (host.session.loadPreset (p.preset, p.name));
+    const int numSamples = static_cast<int> (input.front().size());
+    Channels output (2, std::vector<float> (static_cast<std::size_t> (numSamples)));
+    juce::AudioBuffer<float> buffer (4, blockSize);
+    juce::MidiBuffer midi;
+    for (int start = 0; start < numSamples; start += blockSize)
+    {
+        const int count = std::min (blockSize, numSamples - start);
+        buffer.setSize (4, count, false, false, true);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            buffer.copyFrom (ch, 0, input[static_cast<std::size_t> (ch)].data() + start, count);
+            buffer.copyFrom (ch + 2, 0, key[static_cast<std::size_t> (ch)].data() + start, count);
+        }
+        processor.processBlock (buffer, midi);
+        for (int ch = 0; ch < 2; ++ch)
+            std::copy_n (buffer.getReadPointer (ch), count, output[static_cast<std::size_t> (ch)].data() + start);
+    }
+    return output;
+}
+
+} // namespace
+
+TEST_CASE ("Every Sidechain Preset dips the signal by at least 3 dB under a loud key on the Sidechain")
+{
+    // The Utility Sidechain Presets, each of which must be in the library.
+    const auto factory = factoryPresets();
+    for (const auto* name : { "Utility \xe2\x80\x93 Duck Under Voice (Sidechain)", "Utility \xe2\x80\x93 Kick Pump (Sidechain)" })
+    {
+        CAPTURE (named (name));
+        CHECK (std::any_of (factory.begin(), factory.end(), [name] (const auto& p) { return p.name == named (name); }));
+    }
+    // Pink noise on the main at -18 dBFS RMS, and on the Sidechain at -12 dBFS RMS: loud, and in band for any Detection
+    // EQ, a kick's lows as much as a voice's middle. Measured over the second second, once the dip has settled.
+    const int numSamples = static_cast<int> (sampleRate) * seconds;
+    const auto input = pinkNoise (2, numSamples, -18.0, 29);
+    const auto key = pinkNoise (2, numSamples, -12.0, 31);
+    const int settled = static_cast<int> (sampleRate);
+    for (const auto& p : factory)
+    {
+        if (! isSidechainPreset (p))
+            continue;
+        CAPTURE (p.name);
+        const auto output = playedWithKey (p, input, key);
+        for (std::size_t ch = 0; ch < 2; ++ch)
+            CHECK (rmsDb (input[ch].data() + settled, numSamples - settled) - rmsDb (output[ch].data() + settled, numSamples - settled) >= 3.0);
+    }
+}
+
+TEST_CASE ("Duck Under Kick, the Bass Sidechain Preset, leaves the bass alone unrouted, and dips it under a kick on the Sidechain")
+{
+    const auto factory = factoryPresets();
+    const auto found = std::find_if (factory.begin(), factory.end(), [] (const auto& p) {
+        return p.name == named ("Bass \xe2\x80\x93 Duck Under Kick (Sidechain)");
+    });
+    REQUIRE (found != factory.end());
+    CHECK (unroutedSidechainProblem (*found) == "");
+
+    // A bass line, 40 to 200 Hz at -18 dBFS RMS, and on the Sidechain a kick at 120 bpm: 40 to 120 Hz in 100 ms hits
+    // at -10 dBFS RMS. Or hi-hats instead, 5 to 10 kHz in 30 ms hits between the kicks at -10 dBFS RMS, which its
+    // Detection Low-pass keeps it from hearing.
+    const auto onKick = [] (double t) { return std::fmod (t, 0.5) < 0.1; };
+    const auto onHat = [] (double t) { return std::fmod (t + 0.25, 0.5) < 0.03; };
+    const auto bass = toneBand (40.0, 200.0, -18.0, [] (double) { return true; }, 29);
+    const auto kick = toneBand (40.0, 120.0, -10.0, onKick, 31);
+    const auto hats = toneBand (5000.0, 10000.0, -10.0, onHat, 37);
+    const auto settings = settingsOf (*found);
+    // The output's level against the bass's, in dB, over the times when (t) holds, after the first second.
+    const auto changeDb = [&bass] (const Channels& output, auto when) {
+        double in = 0.0, out = 0.0;
+        for (std::size_t ch = 0; ch < 2; ++ch)
+            for (int n = static_cast<int> (sampleRate); n < referenceSamples; ++n)
+                if (when (n / sampleRate))
+                {
+                    const auto i = static_cast<std::size_t> (n);
+                    in += static_cast<double> (bass[ch][i]) * bass[ch][i];
+                    out += static_cast<double> (output[ch][i]) * output[ch][i];
+                }
+        return 10.0 * std::log10 (out / in);
+    };
+    CHECK (changeDb (comp1::test::played (settings, sampleRate, bass, { 512 }, &kick), onKick) <= -3.0);
+    CHECK (changeDb (comp1::test::played (settings, sampleRate, bass, { 512 }, &hats), onHat) > -0.5);
+}
+
+TEST_CASE ("A parallel Factory Preset's Dry path is heard: with Wet Off, its output is its input")
+{
+    std::vector<FactoryPreset> parallel;
+    for (const auto& p : factoryPresets())
+        if (! std::isinf (settingsOf (p).dryDb))
+            parallel.push_back (p);
+    REQUIRE (std::any_of (parallel.begin(), parallel.end(), [] (const auto& p) { return p.name == named ("Drums \xe2\x80\x93 All-In Crush"); }));
+    const auto input = pinkNoise (2, static_cast<int> (sampleRate) * seconds, -18.0);
+    for (const auto& p : parallel)
+    {
+        CAPTURE (p.name);
+        auto settings = settingsOf (p);
+        settings.wetDb = -comp1::parameterRanges::inf;
+        const auto latency = comp1::test::impulseDelaySamples (settings, sampleRate);
+        REQUIRE (latency >= 0);
+        const auto output = comp1::test::played (settings, sampleRate, input);
+        CHECK (comp1::test::worstRelativeError (output, comp1::test::delayed (input, latency), std::pow (10.0, settings.dryDb / 20.0)) < 1.0e-6);
+    }
 }
 
 TEST_CASE ("The limiting Master Presets hold a hot master's true peak to their -1 dBFS Ceiling, in High Quality")
