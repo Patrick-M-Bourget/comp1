@@ -58,8 +58,11 @@ How far the compressor, Gate or Limiter is lowering the level at this moment, in
 _Avoid_: GR (in user-facing text), attenuation
 
 **Auto Gain**:
-Automatic compensation of output level, estimated from the Transfer Curve rather than measured, so that compression is heard without a loudness bias.
+Automatic compensation of output level, estimated from the settings (the Transfer Curve, the timing and the Character) rather than measured, so that compression is heard without a loudness bias.
 _Avoid_: Make-up gain, gain compensation
+
+**Timing Offset**:
+How much higher than each reference level Auto Gain's estimate reads the Transfer Curve, in dB, for the Attack, Release, Auto Release, Hold and Character: what the timing does to the level the Transfer Curve alone predicts.
 
 **Dry** / **Wet**:
 The separate levels of the unprocessed and the compressed signal, summed for parallel compression.
