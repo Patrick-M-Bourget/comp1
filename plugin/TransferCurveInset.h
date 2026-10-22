@@ -24,7 +24,7 @@ namespace comp1
 //   range): down raises it, bending the curve over Threshold down, up lowers it. Shift drags finely, by the knobs'
 //   proportion (fineDragPixels). A double-click is two presses: it resets nothing.
 // - **Keys:** while focused, left and right step Threshold, up and down Ratio, each 1% of its parameter's travel
-//   (0.2% with Shift), as the knobs' arrows do, in the drag's directions: up lowers Ratio.
+//   (0.2% with Shift), as the knobs' arrows do: right raises Threshold and up raises Ratio.
 // - **Comp Follow:** Threshold and Ratio are written through a CompFollowAttachment each, as the knobs are, so a grab
 //   while Comp Follow is on turns it off first (stopFollowingComp) in the same undo step, and the edit carries on from
 //   the followed values. A drag, or a key press with its repeats, is one undo step, inside gestures the host sees.
