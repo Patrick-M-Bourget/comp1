@@ -711,6 +711,7 @@ struct Engine::Impl
     std::atomic<int> outputLevelChannels { 0 };
     RunLevels runLevels;
     LevelHistory levelHistory;
+    DetectionSourceTap detectionSourceTap;
 
     void applySettings()
     {
@@ -786,6 +787,7 @@ struct Engine::Impl
         oversampledSaturation (beforeSection, SaturationPosition::Before, wet, highQuality);
         const auto* sidechainHeard = delayedSidechain (sidechainPiece, wet.numSamples, highQuality);
         const auto detected = detection.process ({ wet.channels, wet.numChannels, wet.numSamples }, sidechainHeard);
+        detectionSourceTap.push (detected.sourceMean, detected.numSamples);
         if (gridPosition == 0)
         {
             // Comp Follow's glide moves Auto Gain's estimate a run at a time.
@@ -954,6 +956,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->outputLevelChannels.store (outputLevelChannels, std::memory_order_release);
     impl->runLevels = {};
     impl->levelHistory.prepare (sampleRate);
+    impl->detectionSourceTap.prepare (sampleRate);
     impl->snapToSettings = true;
 }
 
@@ -1027,6 +1030,21 @@ void Engine::skipLevels()
 int Engine::levelHistoryCapacity() const
 {
     return impl->levelHistory.capacity();
+}
+
+int Engine::readDetectionSourceSamples (float* destination, int maxSamples)
+{
+    return impl->detectionSourceTap.pop (destination, maxSamples);
+}
+
+void Engine::skipDetectionSourceSamples()
+{
+    impl->detectionSourceTap.skip();
+}
+
+int Engine::detectionSourceSampleCapacity() const
+{
+    return impl->detectionSourceTap.capacity();
 }
 
 } // namespace comp1
