@@ -1,5 +1,6 @@
 #pragma once
 
+#include "PluginProcessor.h"
 #include "Section.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/staple/Icons.h"
@@ -62,7 +63,7 @@ public:
         void setRing (staple::Knob::RingHandler& handler);
     };
 
-    ControlSection (const juce::String& title, juce::AudioProcessor& processor);
+    ControlSection (const juce::String& title, PluginProcessor& processor);
     ~ControlSection() override;
 
     // Whether the controls are enabled, read on the tick; always, unless set.
@@ -128,7 +129,7 @@ private:
     int knobTop() const;
     static int knobExtent (const KnobControl& control);
 
-    juce::AudioProcessor& processor;
+    PluginProcessor& processor;
     std::function<bool()> availability;
     std::vector<std::unique_ptr<KnobControl>> knobs;
     std::vector<std::unique_ptr<juce::Component>> others;

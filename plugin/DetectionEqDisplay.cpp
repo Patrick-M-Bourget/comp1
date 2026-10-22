@@ -54,11 +54,7 @@ public:
     Handle (DetectionEqDisplay& d, DetectionEqBand b) : owner (d), band (b)
     {
         auto& state = owner.processor.parameterState();
-        const auto parameter = [&state] (const juce::String& id) {
-            auto* p = state.getParameter (id);
-            jassert (p != nullptr);
-            return p;
-        };
+        const auto parameter = [&state] (const juce::String& id) { return &parameters::parameterOf (state, id); };
         switch (band)
         {
             case DetectionEqBand::highPass:

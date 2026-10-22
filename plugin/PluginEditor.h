@@ -59,6 +59,8 @@ public:
     std::vector<std::vector<Section*>> sectionRows();
     static int widthOf (Section& section);
     static int heightOf (Section& section);
+    // A row's height: its tallest section's.
+    static int rowHeight (const std::vector<Section*>& row);
 
     // Before every component that subscribes to it, so it outlives them.
     LevelHistory history;

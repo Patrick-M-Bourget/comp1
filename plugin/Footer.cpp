@@ -7,20 +7,14 @@
 #include "plugkit/ui/staple/LookAndFeel.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace comp1
 {
 
 namespace
 {
-juce::RangedAudioParameter& parameterOf (PluginProcessor& processor, const juce::String& id) { return *processor.parameterState().getParameter (id); }
-
 int choiceOf (const juce::RangedAudioParameter& parameter) { return juce::roundToInt (parameter.convertFrom0to1 (parameter.getValue())); }
-
-bool inHighQuality (PluginProcessor& processor)
-{
-    return choiceOf (parameterOf (processor, parameters::processingModeId)) == static_cast<int> (ProcessingMode::HighQuality);
-}
 
 double sampleRateOf (const PluginProcessor& processor)
 {
@@ -29,8 +23,8 @@ double sampleRateOf (const PluginProcessor& processor)
 }
 } // namespace
 
-ChoiceChip::ChoiceChip (juce::RangedAudioParameter& p, Config c)
-    : staple::TextChip ({}, Look::plain), plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), parameter (p),
+ChoiceChip::ChoiceChip (juce::RangedAudioParameter& p, plugkit::ui::EditHistory& h, Config c)
+    : staple::TextChip ({}, Look::plain), plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), parameter (p), history (h),
       choices (p.getAllValueStrings()), config (std::move (c))
 {
     setName (parameter.getName (100));
@@ -43,6 +37,8 @@ ChoiceChip::ChoiceChip (juce::RangedAudioParameter& p, Config c)
     };
     show();
 }
+
+ChoiceChip::~ChoiceChip() { endStep(); }
 
 std::vector<int> ChoiceChip::offered() const
 {
@@ -76,9 +72,7 @@ void ChoiceChip::pick (int choice)
 bool ChoiceChip::keyPressed (const juce::KeyPress& key)
 {
     const int code = key.getKeyCode();
-    const int direction = code == juce::KeyPress::downKey || code == juce::KeyPress::rightKey ? 1
-                          : code == juce::KeyPress::upKey || code == juce::KeyPress::leftKey  ? -1
-                                                                                               : 0;
+    const int direction = code == juce::KeyPress::downKey ? 1 : code == juce::KeyPress::upKey ? -1 : 0;
     if (direction == 0 || key.getModifiers().isAnyModifierKeyDown() || ! isEnabled())
         return staple::TextChip::keyPressed (key);
     staple::LookAndFeel::keyUsed (*this);
@@ -86,8 +80,31 @@ bool ChoiceChip::keyPressed (const juce::KeyPress& key)
     const auto at = std::find (choicesOffered.begin(), choicesOffered.end(), shownChoice());
     const auto index = (at == choicesOffered.end() ? 0 : static_cast<int> (at - choicesOffered.begin())) + direction;
     if (index >= 0 && index < static_cast<int> (choicesOffered.size()))
+    {
+        if (! std::exchange (stepping, true))
+            history.beginTransaction();
         pick (choicesOffered[static_cast<size_t> (index)]);
+    }
     return true;
+}
+
+bool ChoiceChip::keyStateChanged (bool isKeyDown)
+{
+    if (! isKeyDown)
+        endStep();
+    return staple::TextChip::keyStateChanged (isKeyDown);
+}
+
+void ChoiceChip::focusLost (FocusChangeType cause)
+{
+    endStep();
+    staple::TextChip::focusLost (cause);
+}
+
+void ChoiceChip::endStep()
+{
+    if (std::exchange (stepping, false))
+        history.endTransaction();
 }
 
 int ChoiceChip::widestIdealWidth()
@@ -115,8 +132,9 @@ void ChoiceChip::show()
 
 Footer::Footer (PluginProcessor& p)
     : globalBypassAttachment (p.parameterState(), parameters::globalBypassId, globalBypass),
-      processingMode (parameterOf (p, parameters::processingModeId), {}),
-      oversampling (parameterOf (p, parameters::oversamplingId),
+      processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
+      oversampling (parameters::parameterOf (p.parameterState(), parameters::oversamplingId),
+                    p.session().editHistory(),
                     { .offered =
                           [&p] {
                               std::vector<int> allowed;
@@ -126,17 +144,17 @@ Footer::Footer (PluginProcessor& p)
                           },
                       .shown =
                           [&p] {
-                              const auto stored = static_cast<Oversampling> (choiceOf (parameterOf (p, parameters::oversamplingId)));
+                              const auto stored = static_cast<Oversampling> (choiceOf (parameters::parameterOf (p.parameterState(), parameters::oversamplingId)));
                               return static_cast<int> (oversamplingInForce (stored, sampleRateOf (p)));
                           },
-                      .available = [&p] { return inHighQuality (p); } }),
+                      .available = [&p] { return parameters::inHighQuality (p.parameterState()); } }),
       uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
     // Its "on" is bypassed, so on it shows Off.
     globalBypass.setOffLook (true);
     globalBypass.setIconSize (14.0f);
-    globalBypass.setTitle (p.parameterState().getParameter (parameters::globalBypassId)->getName (100));
+    globalBypass.setTitle (parameters::parameterOf (p.parameterState(), parameters::globalBypassId).getName (100));
     globalBypass.setTooltip ("Global Bypass (Cmd/Ctrl+B)");
     // Left to right.
     int order = 0;

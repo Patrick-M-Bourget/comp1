@@ -15,7 +15,6 @@ bool isOn (PluginProcessor& processor, const juce::String& id)
     return processor.parameterState().getRawParameterValue (id)->load (std::memory_order_relaxed) >= 0.5f;
 }
 
-bool inHighQuality (PluginProcessor& processor) { return isOn (processor, parameters::processingModeId); }
 } // namespace
 
 ControlSection::KnobControl& addCompKnob (ControlSection& section, PluginProcessor& processor, std::optional<CompFollowAttachment>& attachment, Place place)
@@ -155,7 +154,7 @@ StereoSection::StereoSection (PluginProcessor& p) : ControlSection ("Stereo", p)
 LookaheadSection::LookaheadSection (PluginProcessor& p) : ControlSection ("Lookahead", p)
 {
     addKnob (parameters::lookaheadId, knobSize::medium, "Lookahead");
-    setAvailability ([&p] { return inHighQuality (p); });
+    setAvailability ([&p] { return parameters::inHighQuality (p.parameterState()); });
 }
 
 } // namespace comp1

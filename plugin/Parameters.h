@@ -61,6 +61,13 @@ inline const juce::String globalBypassId { "global_bypass" };
 // as the signal meets them; then the whole plugin's, Processing Mode, Lookahead, Oversampling and Global Bypass.
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
+// The host parameter whose ID is id, one of those above: what every control and display that edits or reads one
+// looks it up through.
+juce::RangedAudioParameter& parameterOf (juce::AudioProcessorValueTreeState& parameters, const juce::String& id);
+
+// Whether the Processing Mode is High Quality, read from any thread.
+bool inHighQuality (juce::AudioProcessorValueTreeState& parameters);
+
 // The host parameters as Settings, each resolved once. Reads from any thread, with no allocation or lock.
 class SettingsReader
 {

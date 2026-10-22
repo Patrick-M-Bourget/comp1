@@ -110,16 +110,19 @@ int PluginEditor::heightOf (Section& section)
     return 0;
 }
 
+int PluginEditor::rowHeight (const std::vector<Section*>& row)
+{
+    int height = 0;
+    for (auto* section : row)
+        height = std::max (height, heightOf (*section));
+    return height;
+}
+
 int PluginEditor::sectionRowsHeight()
 {
     int height = 0;
     for (auto& row : sectionRows())
-    {
-        int rowHeight = 0;
-        for (auto* section : row)
-            rowHeight = std::max (rowHeight, heightOf (*section));
-        height += rowHeight + sectionGap;
-    }
+        height += rowHeight (row) + sectionGap;
     return height - sectionGap;
 }
 
@@ -141,10 +144,7 @@ void PluginEditor::layOutBody (juce::Rectangle<int> area)
     auto rows = sections.getLocalBounds();
     for (auto& row : sectionRows())
     {
-        int rowHeight = 0;
-        for (auto* section : row)
-            rowHeight = std::max (rowHeight, heightOf (*section));
-        auto line = rows.removeFromTop (rowHeight);
+        auto line = rows.removeFromTop (rowHeight (row));
         rows.removeFromTop (sectionGap);
         for (auto* section : row)
         {

@@ -16,8 +16,9 @@ namespace comp1
 {
 
 // A choice host parameter as a text chip showing its choice, which opens a menu of the choices offered, the one shown
-// ticked: a pick writes it inside a gesture, one undo step. Up and down (left and right too) step it to the previous
-// or next choice offered, one undo step each; Space and Return open the menu (plugkit::ui::KeyboardControl). It shows,
+// ticked: a pick writes it inside a gesture, one undo step. Up and down step it to the previous or next choice offered,
+// a held key with its repeats being one undo step, ended by the key's release or the chip losing focus, as
+// plugkit::ui::KeyboardControl steps a ComboBox; Space and Return open the menu (KeyboardControl). It shows,
 // on the editor's tick, the choice shown() gives and is enabled while available() is true. Titled with its
 // parameter's name, and read with its choice as its value.
 class ChoiceChip final : public staple::TextChip, private plugkit::ui::EditorTick::Client
@@ -33,7 +34,8 @@ public:
         std::function<bool()> available;
     };
 
-    ChoiceChip (juce::RangedAudioParameter& parameter, Config config);
+    ChoiceChip (juce::RangedAudioParameter& parameter, plugkit::ui::EditHistory& history, Config config);
+    ~ChoiceChip() override;
 
     // The menu a click opens, each choice offered an item that picks it.
     juce::PopupMenu menu();
@@ -44,16 +46,22 @@ public:
     int widestIdealWidth();
 
     bool keyPressed (const juce::KeyPress& key) override;
+    bool keyStateChanged (bool isKeyDown) override;
+    void focusLost (FocusChangeType cause) override;
 
 private:
     void tick (double) override { show(); }
     void show();
+    // Ends a held key's undo step, if one is open.
+    void endStep();
     std::vector<int> offered() const;
     int shownChoice() const;
 
     juce::RangedAudioParameter& parameter;
+    plugkit::ui::EditHistory& history;
     const juce::StringArray choices;
     Config config;
+    bool stepping = false; // a held key's undo step is open
 };
 
 // The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Processing

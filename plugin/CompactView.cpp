@@ -42,10 +42,8 @@ int CompactView::rowWidth()
 
 int CompactView::sectionsHeight()
 {
-    int height = 0;
-    for (auto* section : sections())
-        height = std::max (height, PluginEditor::heightOf (*section));
-    return height;
+    const auto all = sections();
+    return PluginEditor::rowHeight ({ all.begin(), all.end() });
 }
 
 void CompactView::resized()
