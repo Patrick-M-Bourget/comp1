@@ -69,9 +69,9 @@ public:
     static constexpr int stateVersion = 2;
 
     // The Expanded View's logical size (as at 100% UI Scale), and its limits: at the minimum every section fits, the
-    // widest row of them (from Character and Saturation to Lookahead) inside the window's padding, and each size is whole
+    // widest row of them (from Style to Character and Saturation) inside the window's padding, and each size is whole
     // pixels at every UI Scale.
-    static constexpr plugkit::ui::Session::Window window { { 1320, 860 }, { 1292, 720 }, { 2560, 1600 } };
+    static constexpr plugkit::ui::Session::Window window { { 1400, 860 }, { 1356, 720 }, { 2560, 1600 } };
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     // Restoring a state of comp1's lets go of Detection Audition and puts out the Clip Lights, then restores through

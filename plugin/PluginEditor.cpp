@@ -42,7 +42,7 @@ PluginEditor::~PluginEditor() = default;
 
 std::vector<std::vector<Section*>> PluginEditor::sectionRows()
 {
-    return { { &styleSection, &gate, &compressor }, { &character, &mix, &output, &detection, &stereo, &lookahead } };
+    return { { &styleSection, &gate, &compressor, &character }, { &mix, &output, &detection, &stereo, &lookahead } };
 }
 
 int PluginEditor::widthOf (Section& section)

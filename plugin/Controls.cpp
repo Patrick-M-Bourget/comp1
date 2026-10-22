@@ -249,7 +249,7 @@ int ControlSection::idealWidth() const
     int width = 0;
     for (const auto& column : columns)
         width += columnWidth (column) + columnGap;
-    return std::max (0, width - columnGap);
+    return std::max (titleWidth() + 2, width - columnGap);
 }
 
 int ControlSection::idealHeight() const

@@ -52,20 +52,20 @@ Areas areasOf (juce::AudioProcessorEditor& editor)
 TEST_CASE ("At its default size the Expanded View is the header, the display with the Gain Reduction meter and the Output Meter's rail at its right, the sections and the footer")
 {
     host::EditorHost host;
-    REQUIRE (host.editor->getWidth() == 1320);
+    REQUIRE (host.editor->getWidth() == 1400);
     REQUIRE (host.editor->getHeight() == 860);
 
-    // 14 px padding and 12 px gaps; two 40 px meter rails and the two rows of sections, 190 and 144 px tall.
+    // 14 px padding and 12 px gaps; two 40 px meter rails and the two rows of sections, 190 and 134 px tall.
     const auto areas = areasOf (*host.editor);
-    CHECK (areas.header == juce::Rectangle<int> (14, 14, 1292, 52));
-    CHECK (areas.display == juce::Rectangle<int> (14, 78, 1188, 354));
-    CHECK (areas.gainReduction == juce::Rectangle<int> (1214, 78, 40, 354));
-    CHECK (areas.outputMeter == juce::Rectangle<int> (1266, 78, 40, 354));
-    CHECK (areas.sections == juce::Rectangle<int> (14, 444, 1292, 346));
-    CHECK (areas.footer == juce::Rectangle<int> (14, 802, 1292, 44));
+    CHECK (areas.header == juce::Rectangle<int> (14, 14, 1372, 52));
+    CHECK (areas.display == juce::Rectangle<int> (14, 78, 1268, 364));
+    CHECK (areas.gainReduction == juce::Rectangle<int> (1294, 78, 40, 364));
+    CHECK (areas.outputMeter == juce::Rectangle<int> (1346, 78, 40, 364));
+    CHECK (areas.sections == juce::Rectangle<int> (14, 454, 1372, 336));
+    CHECK (areas.footer == juce::Rectangle<int> (14, 802, 1372, 44));
     // Each tab's content is the display under its tabs.
     CHECK (areas.levelTab == areas.detectionEqTab);
-    CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1188, 320));
+    CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1268, 330));
 }
 
 TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes nothing overlaps, and only the display and the section row's width grow")
@@ -132,6 +132,8 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
         for (const auto& other : placed)
             CHECK_FALSE (other.intersects (section.getBounds()));
         placed.push_back (section.getBounds());
+        // Its title shows whole.
+        CHECK (section.getWidth() >= dynamic_cast<comp1::Section&> (section).titleWidth());
         // Each control's own area: a knob's face (its shadow may reach past it), anything else its bounds.
         for (auto* control : section.getChildren())
         {
@@ -147,3 +149,4 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
         }
     }
 }
+
