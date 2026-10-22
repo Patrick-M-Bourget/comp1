@@ -18,6 +18,28 @@ const juce::Identifier versionProperty { "version" };
 // released: sessions keep them.
 const juce::Identifier displayTabProperty { "display_tab" };
 const juce::String levelTab { "level" }, detectionEqTab { "detection_eq" };
+// The view, and the hidden view's size in logical pixels: view properties the session saves and restore takes off.
+// Their names and values are permanent once released: sessions keep them.
+const juce::Identifier viewProperty { "view" }, hiddenViewWidthProperty { "hidden_view_width" }, hiddenViewHeightProperty { "hidden_view_height" };
+const juce::String expandedView { "expanded" }, compactView { "compact" };
+
+View otherThan (View view) { return view == View::compact ? View::expanded : View::compact; }
+
+// A logical size held to window's limits.
+juce::Point<int> within (const plugkit::ui::Session::Window& window, juce::Point<int> size)
+{
+    return { juce::jlimit (window.minimum.x, window.maximum.x, size.x), juce::jlimit (window.minimum.y, window.maximum.y, size.y) };
+}
+
+// A saved size's side: a finite number held to its limits and rounded, or none (0).
+int restoredSide (const juce::var& saved, int minimum, int maximum)
+{
+    const auto text = saved.toString().trim();
+    const double side = text.getDoubleValue();
+    if (text.isEmpty() || ! std::isfinite (side) || ! text.containsAnyOf ("0123456789"))
+        return 0;
+    return juce::jlimit (minimum, maximum, juce::roundToInt (juce::jlimit (static_cast<double> (minimum), static_cast<double> (maximum), side)));
+}
 
 // Brings a saved state, or a Preset, from an older version up to stateVersion, one version at a time.
 void migrate (juce::ValueTree& state)
@@ -107,7 +129,7 @@ plugkit::ui::Session::Config sessionConfig (juce::File userSettingsFile, juce::F
     config.factoryPresets = factoryPresets (config.presetFileExtension);
     config.stateVersion = PluginProcessor::stateVersion;
     config.migrate = migrate;
-    config.window = PluginProcessor::window;
+    config.window = PluginProcessor::sessionWindow;
     config.userSettingsFile = std::move (userSettingsFile);
     config.presetFolder = std::move (presetFolder);
     return config;
@@ -250,6 +272,25 @@ bool PluginProcessor::followComp()
     return true;
 }
 
+void PluginProcessor::setView (View shown)
+{
+    if (shown == view())
+        return;
+    const auto next = hiddenViewSize();
+    const auto last = within (windowOf (view()), sessionState.editorSize());
+    hiddenWidth = last.x;
+    hiddenHeight = last.y;
+    sessionState.setEditorSize (next);
+    chosenView = shown;
+}
+
+juce::Point<int> PluginProcessor::hiddenViewSize() const
+{
+    const auto& hidden = windowOf (otherThan (view()));
+    const juce::Point<int> stored { hiddenWidth.load(), hiddenHeight.load() };
+    return stored.x > 0 && stored.y > 0 ? within (hidden, stored) : hidden.defaultSize;
+}
+
 juce::AudioProcessorEditor* PluginProcessor::createEditor()
 {
     return new PluginEditor (*this);
@@ -259,6 +300,10 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = sessionState.saved();
     state.setProperty (displayTabProperty, displayTab() == DisplayTab::detectionEq ? detectionEqTab : levelTab, nullptr);
+    state.setProperty (viewProperty, view() == View::compact ? compactView : expandedView, nullptr);
+    const auto hidden = hiddenViewSize();
+    state.setProperty (hiddenViewWidthProperty, hidden.x, nullptr);
+    state.setProperty (hiddenViewHeightProperty, hidden.y, nullptr);
     if (const auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -273,6 +318,15 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     sessionState.restore (juce::ValueTree::fromXml (*xml), [this] (juce::ValueTree& state) {
         setDisplayTab (state.getProperty (displayTabProperty).toString() == detectionEqTab ? DisplayTab::detectionEq : DisplayTab::level);
         state.removeProperty (displayTabProperty, nullptr);
+        // The Session holds the restored size to the envelope of both views; the shown view's holds it to its own.
+        const auto shown = state.getProperty (viewProperty).toString() == compactView ? View::compact : View::expanded;
+        chosenView = shown;
+        sessionState.setEditorSize (within (windowOf (shown), sessionState.editorSize()));
+        const auto& hidden = windowOf (otherThan (shown));
+        hiddenWidth = restoredSide (state.getProperty (hiddenViewWidthProperty), hidden.minimum.x, hidden.maximum.x);
+        hiddenHeight = restoredSide (state.getProperty (hiddenViewHeightProperty), hidden.minimum.y, hidden.maximum.y);
+        for (const auto& property : { viewProperty, hiddenViewWidthProperty, hiddenViewHeightProperty })
+            state.removeProperty (property, nullptr);
     });
     reportLatency();
 }

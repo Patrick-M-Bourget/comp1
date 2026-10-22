@@ -56,8 +56,8 @@ private:
     Config config;
 };
 
-// The Expanded View's footer: Global Bypass at the far left, the power button showing Off while on; then Processing
-// Mode and Oversampling, as chips that open menus; and the UI Scale menu at the right.
+// The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Processing
+// Mode and Oversampling, as chips that open menus; the UI Scale menu at the right; and the switch between the views.
 //
 // Oversampling offers only the factors at or under the cap at the sample rate the processor was prepared at (or the
 // assumed one before it is), comp1/Latency.h's maxOversampling, and shows the factor in force, the cap when the
@@ -71,6 +71,14 @@ public:
 
     plugkit::ui::UiScaleMenu& uiScaleMenu() { return uiScale; }
 
+    // The switch between the views, at the far right after the UI Scale menu, last in Tab's order: Staple icon buttons
+    // titled by what they do, the collapse arrow "Switch to the Compact View" in the Expanded View, the expand arrow
+    // "Switch to the Expanded View" in the Compact View. A click, or Space or Return, calls onSwitchView.
+    juce::Button& viewSwitch() { return toCompact.isVisible() ? toCompact : toExpanded; }
+    std::function<void()> onSwitchView;
+    // Shows the switch for the view shown, keeping keyboard focus on the switch if it had it.
+    void showSwitchFor (View shown);
+
     static constexpr int buttonSize = 28, inset = 6, chipGap = 8;
 
 private:
@@ -78,6 +86,8 @@ private:
     juce::AudioProcessorValueTreeState::ButtonAttachment globalBypassAttachment;
     ChoiceChip processingMode, oversampling;
     plugkit::ui::UiScaleMenu uiScale;
+    staple::IconButton toCompact { "Switch to the Compact View", staple::Icon::collapse },
+        toExpanded { "Switch to the Expanded View", staple::Icon::expand };
 };
 
 } // namespace comp1

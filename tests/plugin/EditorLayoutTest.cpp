@@ -73,7 +73,7 @@ TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes noth
     host::EditorHost host;
     auto* menu = harness::findChild<plugkit::ui::UiScaleMenu> (*host.editor);
     REQUIRE (menu != nullptr);
-    const auto& window = comp1::PluginProcessor::window;
+    const auto& window = comp1::PluginProcessor::expandedWindow;
 
     const int percent = GENERATE (75, 100, 125, 150, 200);
     CAPTURE (percent);
@@ -117,7 +117,7 @@ TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes noth
 TEST_CASE ("At the minimum size every section fits in the section rows, none overlapping another, each with its controls inside it")
 {
     host::EditorHost host;
-    const auto& window = comp1::PluginProcessor::window;
+    const auto& window = comp1::PluginProcessor::expandedWindow;
     host.editor->setSize (window.minimum.x, window.minimum.y);
     auto& sections = named (*host.editor, "Sections");
     const auto names = { "Style", "Gate", "Compressor", "Character and Saturation", "Dry/Wet", "Output", "Detection", "Stereo", "Lookahead" };
