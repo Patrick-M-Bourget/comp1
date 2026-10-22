@@ -692,3 +692,23 @@ TEST_CASE ("The Factory gate rejects a De-Esser that misses sibilance, or compre
     // Its own check, not the Vocals band.
     CHECK (gainReductionProblem (deEsserWith ({ { ids::thresholdId, -2.0f } })) == "");
 }
+
+TEST_CASE ("The limiting Master Presets hold a hot master's true peak to their -1 dBFS Ceiling, in High Quality")
+{
+    // Pink noise at -8 dBFS RMS, its true peak well over the Ceiling: a master pushed hard into the Limiter.
+    const auto input = pinkNoise (2, referenceSamples, -8.0, 41);
+    REQUIRE (comp1::test::truePeak (input) > comp1::test::gainOf (-1.0));
+    const auto factory = factoryPresets();
+    for (const auto* name : { "Master \xe2\x80\x93 Loud Limit", "Master \xe2\x80\x93 Warm Glue" })
+    {
+        CAPTURE (named (name));
+        const auto found = std::find_if (factory.begin(), factory.end(), [name] (const auto& p) { return p.name == named (name); });
+        REQUIRE (found != factory.end());
+        const auto settings = settingsOf (*found);
+        CHECK (settings.processingMode == comp1::ProcessingMode::HighQuality);
+        CHECK (settings.limiter);
+        CHECK (std::abs (settings.ceilingDb + 1.0) < 1.0e-4);
+        const auto played = playedThroughPlugin (*found, input, false);
+        CHECK (comp1::test::truePeak (played.output, played.latency) <= comp1::test::gainOf (-1.0));
+    }
+}
