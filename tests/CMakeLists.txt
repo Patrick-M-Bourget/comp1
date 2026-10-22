@@ -83,6 +83,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/ColourParameterTest.cpp
         plugin/CompFollowEditorTest.cpp
         plugin/CompParameterTest.cpp
+        plugin/DetectionEqDisplayTest.cpp
         plugin/DisplayTabTest.cpp
         plugin/DryWetParameterTest.cpp
         plugin/EditorControlsTest.cpp

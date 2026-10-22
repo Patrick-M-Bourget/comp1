@@ -23,6 +23,7 @@ Display::Display (PluginProcessor& p) : plugkit::ui::EditorTick::Client (static_
         addAndMakeVisible (chip);
         addChildComponent (tabContent (tab));
     }
+    detectionEq.addAndMakeVisible (eqDisplay);
     show (processor.displayTab());
 }
 
@@ -40,6 +41,9 @@ void Display::show (DisplayTab tab)
         chipOf (each).setToggleState (each == tab, juce::dontSendNotification);
         tabContent (each).setVisible (each == tab);
     }
+    // Detection Audition is held only while its tab shows.
+    if (tab != DisplayTab::detectionEq)
+        eqDisplay.letGoOfDetectionAudition();
 }
 
 void Display::resized()
@@ -54,6 +58,7 @@ void Display::resized()
         tabs.removeFromLeft (tabGap);
         tabContent (tab).setBounds (area);
     }
+    eqDisplay.setBounds (detectionEq.getLocalBounds());
 }
 
 } // namespace comp1

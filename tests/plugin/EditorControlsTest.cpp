@@ -203,6 +203,9 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     host.editor.reset();
     harness::useLayout (host.processor, channels);
     host.reopen();
+    // On the Detection EQ tab, so its handles and Detection Audition show.
+    host.processor.setDisplayTab (comp1::DisplayTab::detectionEq);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::detectionEq; }));
     // The Preset browser's names too, with a User Preset in it.
     auto& session = host.processor.session();
     REQUIRE (session.presetLibrary().save ("Lead Vocal", session.presetState()));
@@ -244,6 +247,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Comp");
     expected.push_back ("Comp Follow");
     expected.push_back ("Copy A to B");
+    expected.push_back ("Detection Audition");
     expected.push_back ("Detection EQ");
     expected.push_back ("Detection Free Band");
     expected.push_back ("Detection Free Band Frequency");
@@ -260,6 +264,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Drive");
     expected.push_back ("Dry");
     expected.push_back ("Factory");
+    expected.push_back ("Free band handle");
     expected.push_back ("Gain Reduction");
     expected.push_back ("Gate");
     expected.push_back ("Gate Attack");
@@ -268,12 +273,14 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Gate Release");
     expected.push_back ("Gate Threshold");
     expected.push_back ("Global Bypass");
+    expected.push_back ("High-pass handle");
     expected.push_back ("Hold");
     expected.push_back ("Knee");
     expected.push_back ("Level");
     expected.push_back ("Limiter");
     expected.push_back (juce::String (juce::CharPointer_UTF8 ("Load Preset File" "\xe2\x80\xa6")));
     expected.push_back ("Lookahead");
+    expected.push_back ("Low-pass handle");
     expected.push_back ("Next Preset");
     expected.push_back ("Output Gain");
     expected.push_back ("Oversampling");
@@ -342,6 +349,9 @@ TEST_CASE ("Tab walks the header, the display's tabs, the Output Meter, the sect
 {
     host::EditorHost host;
     everythingAvailable (host);
+    // On the Detection EQ tab, so its handles and Detection Audition are reached too.
+    host.processor.setDisplayTab (comp1::DisplayTab::detectionEq);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::detectionEq; }));
     juce::Component::unfocusAllComponents();
     std::vector<juce::Component*> walked;
     for (int i = 0; i < 200; ++i)
@@ -368,7 +378,8 @@ TEST_CASE ("Tab walks the header, the display's tabs, the Output Meter, the sect
         CHECK (std::count (walked.begin(), walked.end(), control) == 1);
     }
     // In order: the header's first, then these.
-    const juce::StringArray order { "Presets", "Level", "Detection EQ", "Output Meter", "Style", "Gate", "Gate Hold", "Comp Follow", "Comp",
+    const juce::StringArray order { "Presets", "Level", "Detection EQ", "High-pass handle", "Free band handle", "Low-pass handle",
+                                    "Detection Audition", "Output Meter", "Style", "Gate", "Gate Hold", "Comp Follow", "Comp",
                                     "Threshold", "Range", "Colour", "Saturation Position", "Dry", "Wet", "Output Gain", "Ceiling",
                                     "Detection Source", "Detection Free Band Q", "Stereo Placement", "Stereo Link", "Lookahead",
                                     "Global Bypass", "Processing Mode", "Oversampling", "UI Scale" };
