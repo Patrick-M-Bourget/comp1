@@ -186,7 +186,7 @@ How far the compressor sees ahead of the audio it processes, in High Quality onl
 _Avoid_: Pre-delay, latency
 
 **Compact View**:
-The editor showing only Style, Gate, Comp and a Gain Reduction meter, with Output Gain in the footer's output popover.
+The editor showing only Gate, Comp and a Gain Reduction meter, with Style in the footer and Output Gain in the footer's output popover.
 _Avoid_: Simple view, mini view, basic mode
 
 **Expanded View**:

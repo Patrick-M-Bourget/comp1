@@ -19,11 +19,11 @@ namespace comp1
 {
 
 // A choice host parameter as a text chip showing its choice, which opens a menu of the choices offered, the one shown
-// ticked: a pick writes it inside a gesture, one undo step. Up and down step it to the previous or next choice offered,
-// a held key with its repeats being one undo step, ended by the key's release or the chip losing focus, as
-// plugkit::ui::KeyboardControl steps a ComboBox; Space and Return open the menu (KeyboardControl). It shows,
-// on the editor's tick, the choice shown() gives and is enabled while available() is true. Titled with its
-// parameter's name, and read with its choice as its value.
+// ticked: a pick chooses it, by default writing it inside a gesture, one undo step. Unless told not to step, up and
+// down step it to the previous or next choice offered, a held key with its repeats being one undo step, ended by the
+// key's release or the chip losing focus, as plugkit::ui::KeyboardControl steps a ComboBox; Space and Return open the
+// menu (KeyboardControl). It shows, on the editor's tick, the choice shown() gives and is enabled while available() is
+// true. Titled with its parameter's name, and read with the shown choice's menu item as its value.
 class ChoiceChip final : public staple::TextChip, private plugkit::ui::EditorTick::Client
 {
 public:
@@ -35,6 +35,15 @@ public:
         std::function<int()> shown;
         // Whether it is enabled; always unless given.
         std::function<bool()> available;
+        // Its text for a choice; the choice's name unless given.
+        std::function<juce::String (int)> text;
+        // A choice's menu item, which a screen reader reads as its value while it shows that choice; the choice's name
+        // unless given.
+        std::function<juce::String (int)> item;
+        // What a pick does; unless given, writes the choice inside a gesture: one undo step.
+        std::function<void (int)> choose;
+        // Whether up and down step it. Space and Return open its menu either way.
+        bool steps = true;
     };
 
     ChoiceChip (juce::RangedAudioParameter& parameter, plugkit::ui::EditHistory& history, Config config);
@@ -42,10 +51,10 @@ public:
 
     // The menu a click opens, each choice offered an item that picks it.
     juce::PopupMenu menu();
-    // Writes choice, inside a gesture: one undo step.
+    // Picks choice, as its menu item does: choose() it, or write it inside a gesture, one undo step.
     void pick (int choice);
 
-    // As wide as its longest choice needs, so it keeps its width whichever it shows.
+    // As wide as its longest choice's text needs, so it keeps its width whichever it shows.
     int widestIdealWidth();
 
     bool keyPressed (const juce::KeyPress& key) override;
@@ -53,8 +62,11 @@ public:
     void focusLost (FocusChangeType cause) override;
 
 private:
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
     void tick (double) override { show(); }
     void show();
+    juce::String textOf (int choice) const;
+    juce::String itemOf (int choice) const;
     // Ends a held key's undo step, if one is open.
     void endStep();
     std::vector<int> offered() const;
@@ -67,9 +79,16 @@ private:
     bool stepping = false; // a held key's undo step is open
 };
 
-// The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Processing
-// Mode and Oversampling, as chips that open menus; at the right the Output readout, the UI Scale menu and the switch
-// between the views, in that order, which is Tab's order too.
+// The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Style,
+// Processing Mode and Oversampling, as chips that open menus; at the right the Output readout, the UI Scale menu and the
+// switch between the views, in that order, which is Tab's order too.
+//
+// The Style chip reads "Style: " and the Style. Its menu lists the offered Styles (PluginProcessor::offeredStyles) in
+// Style's order, each with the Character it plays in brackets, "Drums (FET)", or alone where the Style is that
+// Character, "FET"; a screen reader reads that item as its value. A pick chooses the Style
+// (PluginProcessor::chooseStyle), so its defaults are written as one undo step; the chip never writes the Style
+// parameter itself. Up and down don't step it, as each step would write a Style's defaults. It shows the Style
+// parameter, so it follows an undo, a loaded Preset, a restored session and an A/B switch.
 //
 // The Output readout (plugkit::ui::OutputReadout) reads Output Gain plus Auto Gain's estimate while Auto Gain is in
 // effect, on or held on by Comp Follow (PluginProcessor::appliedAutoGainDb), signed to one decimal; Output Gain's range
@@ -111,7 +130,7 @@ private:
     PluginProcessor& processor;
     staple::IconButton globalBypass { "Global Bypass", staple::Icon::power };
     juce::AudioProcessorValueTreeState::ButtonAttachment globalBypassAttachment;
-    ChoiceChip processingMode, oversampling;
+    ChoiceChip style, processingMode, oversampling;
     plugkit::ui::OutputReadout output;
     OutputPopover popover;
     plugkit::ui::UiScaleMenu uiScale;

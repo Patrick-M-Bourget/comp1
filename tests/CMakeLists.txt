@@ -120,8 +120,8 @@ if(COMP1_BUILD_PLUGIN)
         plugin/SessionTest.cpp
         plugin/StateTest.cpp
         plugin/StereoParametersTest.cpp
+        plugin/StyleChipTest.cpp
         plugin/StyleParameterTest.cpp
-        plugin/StylePickerTest.cpp
         plugin/TransferCurveGraphTest.cpp
         plugin/TransferCurveInsetTest.cpp
         plugin/UiScaleTest.cpp

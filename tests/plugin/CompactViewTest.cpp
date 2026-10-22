@@ -38,7 +38,7 @@ staple::Knob& compactKnob (host::EditorHost& host, const juce::String& title) { 
 
 } // namespace
 
-TEST_CASE ("A Style picked in the Compact View writes that Style's defaults as one undo step, and the Expanded View shows them after switching")
+TEST_CASE ("A Style picked from the footer's chip in the Compact View writes that Style's defaults as one undo step, and the Expanded View shows them after switching")
 {
     host::EditorHost host;
     host.edit (parameters::compFollowId, 0.0f);
@@ -47,7 +47,11 @@ TEST_CASE ("A Style picked in the Compact View writes that Style's defaults as o
     auto& history = host.processor.session().editHistory();
     const int steps = history.undoSteps();
 
-    host::EditorHost::pick (compact<juce::ComboBox> (host, "Style"), "Drums");
+    auto& chip = host.showing<comp1::ChoiceChip> ("Style");
+    REQUIRE (host.footer().isParentOf (&chip));
+    auto pick = harness::actionOf (chip.menu(), "Drums (FET)");
+    REQUIRE (pick != nullptr);
+    pick();
     CHECK (host.value (parameters::styleId) == static_cast<float> (comp1::Style::Drums));
     // Drums' defaults (comp1/Style.h): Comp Follow on and a 5 ms Attack.
     CHECK (host.value (parameters::compFollowId) == 1.0f);
@@ -55,8 +59,8 @@ TEST_CASE ("A Style picked in the Compact View writes that Style's defaults as o
     CHECK (history.undoSteps() == steps + 1);
 
     host::EditorHost::click (host.expandedView().viewSwitch());
-    REQUIRE (host.settleUntil ([&] { return host.showing<juce::ComboBox> ("Style").getText() == "Drums"; }));
-    CHECK (host.showing<juce::ToggleButton> ("Comp Follow").getToggleState());
+    CHECK (host.showing<comp1::ChoiceChip> ("Style").getButtonText() == "Style: Drums");
+    REQUIRE (host.settleUntil ([&] { return host.showing<juce::ToggleButton> ("Comp Follow").getToggleState(); }));
     CHECK_THAT (host.knob ("Attack").getValue(), WithinAbs (5.0, 1.0e-4));
 
     history.undo();
