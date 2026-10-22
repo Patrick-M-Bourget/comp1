@@ -424,10 +424,11 @@ double medianGainReductionDb (const FactoryPreset& p, const Channels& signal)
 }
 
 // The Presets whose purpose is to crush, or to compress hard under a Dry path: they may reach 30 dB. The batches add
-// their Parallel Presets here (#77 to #79).
+// their Parallel Presets here.
 const juce::StringArray& crushAndParallel()
 {
-    static const juce::StringArray names { named ("Drums \xe2\x80\x93 All-In Crush"), named ("Drums \xe2\x80\x93 Room Smash") };
+    static const juce::StringArray names { named ("Drums \xe2\x80\x93 All-In Crush"), named ("Drums \xe2\x80\x93 Room Smash"),
+                                           named ("Mix Bus \xe2\x80\x93 Parallel Lift") };
     return names;
 }
 
