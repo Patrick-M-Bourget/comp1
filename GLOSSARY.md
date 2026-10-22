@@ -202,8 +202,12 @@ The Expanded View's graph of the Transfer Curve the Engine plays, output level o
 _Avoid_: I/O graph, transfer function plot
 
 **Transfer Curve inset**:
-The small Transfer Curve Graph over the top-left corner of the Level and Gain Reduction Graph, on the Level tab: a drag or the arrow keys on it move Threshold across and Ratio up and down.
+The small Transfer Curve Graph over the top-left corner of the Level and Gain Reduction Graph, on the Level tab: its Threshold handle drags Threshold across and its Ratio handle drags Ratio up and down, and the arrow keys on it move both.
 _Avoid_: Mini curve, transfer widget
+
+**Threshold handle** / **Ratio handle**:
+The Transfer Curve inset's two drag handles: the Threshold handle on the curve at the knee, where the input is Threshold, the Ratio handle at the curve's right end, where the input is 0 dB. Only they take the mouse.
+_Avoid_: Knee handle (for the Threshold handle), dot (the Detection Level's)
 
 **Output Gain**:
 The gain applied to the whole plugin's output, after Dry and Wet are summed and before the Limiter, in dB.
