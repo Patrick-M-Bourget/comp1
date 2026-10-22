@@ -52,6 +52,7 @@ add_executable(comp1_engine_tests
     engine/StyleTest.cpp
     engine/SubnormalsTest.cpp
     engine/TransferCurveTest.cpp
+    engine/VocalStyleTest.cpp
 )
 # The detection stage is Engine-private (engine/src), and its contract is tested directly, with the plugkit pieces it
 # includes.

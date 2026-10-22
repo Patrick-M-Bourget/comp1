@@ -482,11 +482,17 @@ const std::vector<Jump>& jumps()
           { onOpto, onFet },
           1,
           colourful },
-        // A Style change: from Clean's Style to each other Character Style's, and between FET's and Opto's.
+        // A Style change: from Clean's Style to each other Style's, between FET's and Opto's, and from Vocal's, which
+        // switches the Gate, Auto Release and the Limiter on, to Drums', which switches them off.
         styleJump (Style::Clean, Style::VCA, "Style, Clean and VCA"),
         styleJump (Style::Clean, Style::FET, "Style, Clean and FET"),
         styleJump (Style::Clean, Style::Opto, "Style, Clean and Opto"),
         styleJump (Style::FET, Style::Opto, "Style, FET and Opto"),
+        styleJump (Style::Clean, Style::Vocal, "Style, Clean and Vocal"),
+        styleJump (Style::Clean, Style::Instrument, "Style, Clean and Instrument"),
+        styleJump (Style::Clean, Style::Bus, "Style, Clean and Bus"),
+        styleJump (Style::Clean, Style::Drums, "Style, Clean and Drums"),
+        styleJump (Style::Vocal, Style::Drums, "Style, Vocal and Drums"),
         // In High Quality at the largest Oversampling allowed, where Colour is oversampled: VCA's and FET's Colour
         // crossfade in the After section, each worked out on the compressed signal.
         { "Character, VCA and FET, oversampled",
