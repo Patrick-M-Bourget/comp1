@@ -53,7 +53,7 @@ bool pressIn (host::EditorHost& host, juce::Component& control, const juce::KeyP
 }
 
 // Changes parameter's control by the mouse, as the user does: a drag, a click, a pick from its menu.
-void changeByMouse (host::EditorHost& host, juce::Component& control, juce::RangedAudioParameter& parameter)
+void changeByMouse (juce::Component& control, juce::RangedAudioParameter& parameter)
 {
     if (auto* knob = dynamic_cast<staple::Knob*> (&control))
         host::EditorHost::drag (*knob, parameter.getValue() < 0.5f ? 60.0f : -60.0f);
@@ -182,7 +182,7 @@ TEST_CASE ("Every host parameter has exactly one control, titled with its name, 
         REQUIRE (control.isEnabled());
 
         const float before = parameter.getValue();
-        changeByMouse (host, control, parameter);
+        changeByMouse (control, parameter);
         CHECK_FALSE (juce::exactlyEqual (parameter.getValue(), before));
         host.settle();
 
