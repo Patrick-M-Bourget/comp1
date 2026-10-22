@@ -68,6 +68,22 @@ inline std::vector<RenderScene> renderScenes()
         { .name = "output-gain-6", .settings = with ([] (Settings& s) { s.outputGainDb = 6.0; }) },
         { .name = "threshold-glide", .settings = {}, .change = with ([] (Settings& s) { s.thresholdDb = -40.0; }) },
         { .name = "auto-gain-on", .settings = {}, .change = with ([] (Settings& s) { s.autoGain = true; }) },
+        // Auto Gain's estimate moving with the timing: FET's fast Style timing, then a slow Attack and Release with Auto
+        // Release, Auto Gain gliding from one estimate to the other.
+        { .name = "auto-gain-timing",
+          .settings = with ([] (Settings& s) {
+              s.character = Character::FET;
+              s.attackMs = 0.5;
+              s.releaseMs = 50.0;
+              s.autoGain = true;
+          }),
+          .change = with ([] (Settings& s) {
+              s.character = Character::FET;
+              s.attackMs = 30.0;
+              s.releaseMs = 400.0;
+              s.autoRelease = true;
+              s.autoGain = true;
+          }) },
         // The Characters and Colour.
         { .name = "vca", .settings = with ([] (Settings& s) { s.character = Character::VCA; }) },
         { .name = "fet", .settings = with ([] (Settings& s) { s.character = Character::FET; }) },
