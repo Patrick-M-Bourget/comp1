@@ -209,6 +209,39 @@ TEST_CASE ("Grabbing Comp while Comp Follow is off follows: Comp nearest the sto
     CHECK (allValues (host) == before);
 }
 
+TEST_CASE ("An arrow key on Comp while Comp Follow is off follows: Comp nearest the stored Threshold, then the step from there, as one undo step")
+{
+    host::EditorHost host;
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    host.edit (parameters::compFollowId, 0.0f);
+    host.edit (parameters::thresholdId, -32.4f);
+    const auto before = allValues (host);
+    auto& history = host.processor.session().editHistory();
+    const int steps = history.undoSteps();
+
+    host::GestureRecorder recorder;
+    host.processor.addListener (&recorder);
+    auto& comp = host.knob ("Comp");
+    comp.grabKeyboardFocus();
+    REQUIRE (comp.hasKeyboardFocus (false));
+    CHECK (host.press (juce::KeyPress (juce::KeyPress::upKey)));
+    host.processor.removeListener (&recorder);
+
+    CHECK (host.value (parameters::compFollowId) == 1.0f);
+    // One step up from Opto's 80% at -32.4 dB (CompParameterTest's), not from the 50% before the key.
+    CHECK (host.value (parameters::compId) > 80.0f);
+    CHECK (host.value (parameters::compId) < 82.0f);
+    CHECK (history.undoSteps() == steps + 1);
+    REQUIRE_FALSE (recorder.changes.empty());
+    for (const auto& [index, inGesture] : recorder.changes)
+    {
+        CAPTURE (index);
+        CHECK (inGesture);
+    }
+    history.undo();
+    CHECK (allValues (host) == before);
+}
+
 TEST_CASE ("The Comp Follow toggle turns it on through followComp() and off through stopFollowingComp(), one undo step each")
 {
     host::EditorHost host;
