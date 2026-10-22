@@ -323,6 +323,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Threshold");
     expected.push_back ("Transfer Curve");
     expected.push_back ("Transfer Curve Graph");
+    expected.push_back ("Transfer Curve inset");
     expected.push_back ("UI Scale");
     expected.push_back ("Undo");
     expected.push_back ("User");
@@ -368,13 +369,16 @@ TEST_CASE ("Each knob reads its value with its unit as its tooltip shows it: Rat
     CHECK_THAT (host.value (parameters::wetId), Catch::Matchers::WithinAbs (-3.0f, 1.0e-4));
 }
 
-TEST_CASE ("Tab walks the header, the display's tabs, the Output Meter, the sections in signal order and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
+TEST_CASE ("Tab walks the header, the display's tabs and the shown tab's controls, the Output Meter, the sections in signal order and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
 {
     host::EditorHost host;
     everythingAvailable (host);
-    // On the Detection EQ tab, so its handles and Detection Audition are reached too.
-    host.processor.setDisplayTab (comp1::DisplayTab::detectionEq);
-    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::detectionEq; }));
+    // On the Detection EQ tab, so its handles and Detection Audition are reached too; and on the Level tab, the
+    // Transfer Curve inset.
+    const auto tab = GENERATE (comp1::DisplayTab::detectionEq, comp1::DisplayTab::level);
+    CAPTURE (static_cast<int> (tab));
+    host.processor.setDisplayTab (tab);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == tab; }));
     juce::Component::unfocusAllComponents();
     std::vector<juce::Component*> walked;
     for (int i = 0; i < 200; ++i)
@@ -401,11 +405,15 @@ TEST_CASE ("Tab walks the header, the display's tabs, the Output Meter, the sect
         CHECK (std::count (walked.begin(), walked.end(), control) == 1);
     }
     // In order: the header's first, then these.
-    const juce::StringArray order { "Presets", "Level", "Detection EQ", "Transfer Curve", "High-pass handle", "Free band handle", "Low-pass handle",
-                                    "Detection Audition", "Output Meter", "Style", "Gate", "Gate Hold", "Comp Follow", "Comp",
-                                    "Threshold", "Range", "Colour", "Saturation Position", "Dry", "Wet",
-                                    "Detection Source", "Detection Free Band Q", "Stereo Placement", "Stereo Link", "Lookahead",
-                                    "Global Bypass", "Processing Mode", "Oversampling", "Output", "UI Scale", "Switch to the Compact View" };
+    const juce::StringArray tabControls = tab == comp1::DisplayTab::detectionEq
+                                              ? juce::StringArray { "High-pass handle", "Free band handle", "Low-pass handle", "Detection Audition" }
+                                              : juce::StringArray { "Transfer Curve inset" };
+    juce::StringArray order { "Presets", "Level", "Detection EQ", "Transfer Curve" };
+    order.addArray (tabControls);
+    order.addArray (juce::StringArray { "Output Meter", "Style", "Gate", "Gate Hold", "Comp Follow", "Comp", "Threshold", "Range", "Colour",
+                                        "Saturation Position", "Dry", "Wet", "Detection Source", "Detection Free Band Q", "Stereo Placement",
+                                        "Stereo Link", "Lookahead", "Global Bypass", "Processing Mode", "Oversampling", "Output", "UI Scale",
+                                        "Switch to the Compact View" });
     int last = -1;
     for (const auto& title : order)
     {

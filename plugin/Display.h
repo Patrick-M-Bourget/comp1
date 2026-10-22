@@ -5,6 +5,7 @@
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
 #include "TransferCurveGraph.h"
+#include "TransferCurveInset.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/staple/controls/TextChip.h"
 
@@ -17,6 +18,8 @@ namespace comp1
 // under them the chosen tab's content: on Level, the Level and Gain Reduction Graph (LevelGraph), fed from the editor's
 // level history; on Detection EQ, the Detection EQ display (DetectionEqDisplay); on Transfer Curve, the Transfer Curve
 // Graph (TransferCurveGraph), fed from the level history too. The Transfer Curve tab's place is provisional (#94).
+// While the Level tab shows, the Transfer Curve inset (TransferCurveInset) sits over the Level graph's top-left corner,
+// insetGap in from it, over its oldest audio: a Tab stop after the tabs, with its own mouse handling.
 // Named "Display", and each content by its tab, as a test finds them.
 //
 // The chosen tab is the processor's (PluginProcessor::displayTab): a tab clicked, or pressed with Space or Return,
@@ -36,8 +39,10 @@ public:
     DetectionEqDisplay& detectionEqDisplay() { return eqDisplay; }
     // What fills the Transfer Curve tab's content.
     TransferCurveGraph& transferCurveGraph() { return transferCurve; }
+    // Over the Level tab's content, shown with it.
+    TransferCurveInset& transferCurveInset() { return inset; }
 
-    static constexpr int tabHeight = 28, tabGap = 4, contentGap = 6;
+    static constexpr int tabHeight = 28, tabGap = 4, contentGap = 6, insetGap = 8;
 
 private:
     void tick (double seconds) override;
@@ -56,6 +61,7 @@ private:
     DisplayTab shown = DisplayTab::level;
     DetectionEqDisplay eqDisplay { processor };
     TransferCurveGraph transferCurve;
+    TransferCurveInset inset;
 };
 
 } // namespace comp1

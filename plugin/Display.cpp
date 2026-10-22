@@ -4,7 +4,8 @@ namespace comp1
 {
 
 Display::Display (PluginProcessor& p, LevelHistory& history)
-    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), level (history, p), transferCurve (p, history)
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), level (history, p), transferCurve (p, history),
+      inset (p, history)
 {
     setName ("Display");
     level.setName ("Level");
@@ -25,6 +26,9 @@ Display::Display (PluginProcessor& p, LevelHistory& history)
         addChildComponent (tabContent (tab));
     }
     detectionEq.addAndMakeVisible (eqDisplay);
+    // After the tabs.
+    inset.setExplicitFocusOrder (++order);
+    addChildComponent (inset);
     show (processor.displayTab());
 }
 
@@ -64,6 +68,7 @@ void Display::show (DisplayTab tab)
         chipOf (each).setToggleState (each == tab, juce::dontSendNotification);
         tabContent (each).setVisible (each == tab);
     }
+    inset.setVisible (tab == DisplayTab::level);
     // Detection Audition is held only while its tab shows.
     if (tab != DisplayTab::detectionEq)
         eqDisplay.letGoOfDetectionAudition();
@@ -82,6 +87,7 @@ void Display::resized()
         tabContent (tab).setBounds (area);
     }
     eqDisplay.setBounds (detectionEq.getLocalBounds());
+    inset.setTopLeftPosition (level.getPosition().translated (insetGap, insetGap));
 }
 
 } // namespace comp1
