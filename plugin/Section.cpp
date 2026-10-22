@@ -3,6 +3,8 @@
 #include "plugkit/ui/staple/Fonts.h"
 #include "plugkit/ui/staple/Tokens.h"
 
+#include <cmath>
+
 namespace comp1
 {
 
@@ -32,5 +34,10 @@ void Section::paint (juce::Graphics& g)
 }
 
 juce::Rectangle<int> Section::controlArea() const { return getLocalBounds().withTrimmedTop (titleHeight + dividerGap); }
+
+int Section::titleWidth() const
+{
+    return static_cast<int> (std::ceil (juce::GlyphArrangement::getStringWidth (titleFont(), getName().toUpperCase())));
+}
 
 } // namespace comp1

@@ -1,4 +1,5 @@
 #include "EditorHost.h"
+#include "comp1/Style.h"
 #include "plugkit/ui/UiScaleMenu.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -30,7 +31,7 @@ auto sine (double amplitude)
 
 } // namespace
 
-TEST_CASE ("Expanded View snapshots: default at 100% and 200%, on mono, with signal playing, a lit Clip Light, and the Preset browser open", "[.screens]")
+TEST_CASE ("Expanded View snapshots: default at 100% and 200%, on mono, with Comp Follow on and off, in High Quality, with signal playing, a lit Clip Light, and the Preset browser open", "[.screens]")
 {
     host::EditorHost host;
     openOn (host, juce::AudioChannelSet::stereo());
@@ -44,7 +45,24 @@ TEST_CASE ("Expanded View snapshots: default at 100% and 200%, on mono, with sig
     snapshot (host, "expanded-mono");
 
     openOn (host, juce::AudioChannelSet::stereo());
-    // Playing: the Output Meter's bars up, as the editor's tick reads them between blocks.
+    // Comp Follow on (Opto, Comp at 80%), Threshold and Ratio showing the Comp Curve's and Auto Gain held on; then off,
+    // as the toggle turns it off.
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    host.edit (comp1::parameters::compId, 80.0f);
+    snapshot (host, "expanded-comp-follow-on");
+    REQUIRE (host.processor.stopFollowingComp());
+    snapshot (host, "expanded-comp-follow-off");
+    host.processor.session().editHistory().undo();
+    host.processor.session().editHistory().undo();
+    host.processor.session().editHistory().undo();
+
+    // High Quality: Lookahead and Oversampling enabled.
+    host.edit (comp1::parameters::processingModeId, 1.0f);
+    snapshot (host, "expanded-high-quality");
+    host.processor.session().editHistory().undo();
+
+    // Playing: the Output Meter's bars, the Gain Reduction meter and the Detection Level ring up, as the editor's tick
+    // reads them between blocks.
     for (int i = 0; i < 12; ++i)
     {
         host.play (4, 512, sine (0.5));

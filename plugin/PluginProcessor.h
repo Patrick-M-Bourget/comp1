@@ -68,8 +68,10 @@ public:
     // adds A/B Compare.
     static constexpr int stateVersion = 2;
 
-    // The Expanded View's logical size (as at 100% UI Scale), and its limits.
-    static constexpr plugkit::ui::Session::Window window { { 1200, 760 }, { 960, 600 }, { 2560, 1600 } };
+    // The Expanded View's logical size (as at 100% UI Scale), and its limits: at the minimum every section fits, the
+    // widest row of them (from Style to Character and Saturation) inside the window's padding, and each size is whole
+    // pixels at every UI Scale.
+    static constexpr plugkit::ui::Session::Window window { { 1400, 860 }, { 1356, 720 }, { 2560, 1600 } };
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     // Restoring a state of comp1's lets go of Detection Audition and puts out the Clip Lights, then restores through
@@ -115,6 +117,10 @@ public:
     // their stored values and change nothing, the mono channel compressed as Stereo.
     bool isStereoPlacementAvailable() const { return getMainBusNumOutputChannels() == 2; }
     bool isStereoLinkAvailable() const { return getMainBusNumOutputChannels() == 2; }
+
+    // The sample rate prepareToPlay() was last given, in Hz, or 0 before the first: the rate the Engine plays at, so the
+    // one the editor offers Oversampling at (comp1/Latency.h's maxOversampling). Any thread.
+    double preparedSampleRateHz() const { return preparedSampleRate.load (std::memory_order_relaxed); }
 
     // The Output Meter's source, from the Engine's Output Level, from the message thread: one bar per main channel.
     // A peak above 0 dBFS lights its channel's Clip Light, which stays lit until cleared, whether or not the editor is
