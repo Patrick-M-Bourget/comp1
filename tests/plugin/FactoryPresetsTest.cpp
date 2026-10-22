@@ -424,10 +424,11 @@ double medianGainReductionDb (const FactoryPreset& p, const Channels& signal)
 }
 
 // The Presets whose purpose is to crush, or to compress hard under a Dry path: they may reach 30 dB. The batches add
-// their Parallel Presets here (#77 to #79).
+// their Parallel Presets here.
 const juce::StringArray& crushAndParallel()
 {
-    static const juce::StringArray names { named ("Drums \xe2\x80\x93 All-In Crush"), named ("Drums \xe2\x80\x93 Room Smash") };
+    static const juce::StringArray names { named ("Drums \xe2\x80\x93 All-In Crush"), named ("Drums \xe2\x80\x93 Room Smash"),
+                                           named ("Vocals \xe2\x80\x93 Parallel Thicken") };
     return names;
 }
 
@@ -690,4 +691,69 @@ TEST_CASE ("The Factory gate rejects a De-Esser that misses sibilance, or compre
     CHECK (deEsserProblem (deEsserWith ({ { ids::thresholdId, -40.0f } })).isNotEmpty());
     // Its own check, not the Vocals band.
     CHECK (gainReductionProblem (deEsserWith ({ { ids::thresholdId, -2.0f } })) == "");
+}
+
+namespace
+{
+
+// What the plugin plays from a stereo input with the Preset loaded and a stereo key on the Sidechain, at 48 kHz in
+// blocks of 512, as a host plays it.
+Channels playedWithKey (const FactoryPreset& p, const Channels& input, const Channels& key)
+{
+    constexpr int blockSize = 512;
+    host::SessionHost host;
+    auto& processor = *host.processor;
+    juce::AudioProcessor::BusesLayout layout;
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.outputBuses.add (juce::AudioChannelSet::stereo());
+    REQUIRE (processor.setBusesLayout (layout));
+    processor.prepareToPlay (sampleRate, blockSize);
+    REQUIRE (host.session.loadPreset (p.preset, p.name));
+    const int numSamples = static_cast<int> (input.front().size());
+    Channels output (2, std::vector<float> (static_cast<std::size_t> (numSamples)));
+    juce::AudioBuffer<float> buffer (4, blockSize);
+    juce::MidiBuffer midi;
+    for (int start = 0; start < numSamples; start += blockSize)
+    {
+        const int count = std::min (blockSize, numSamples - start);
+        buffer.setSize (4, count, false, false, true);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            buffer.copyFrom (ch, 0, input[static_cast<std::size_t> (ch)].data() + start, count);
+            buffer.copyFrom (ch + 2, 0, key[static_cast<std::size_t> (ch)].data() + start, count);
+        }
+        processor.processBlock (buffer, midi);
+        for (int ch = 0; ch < 2; ++ch)
+            std::copy_n (buffer.getReadPointer (ch), count, output[static_cast<std::size_t> (ch)].data() + start);
+    }
+    return output;
+}
+
+} // namespace
+
+TEST_CASE ("Every Sidechain Preset dips the signal by at least 3 dB under a loud key on the Sidechain")
+{
+    // The Utility Sidechain Presets, each of which must be in the library.
+    const auto factory = factoryPresets();
+    for (const auto* name : { "Utility \xe2\x80\x93 Duck Under Voice (Sidechain)", "Utility \xe2\x80\x93 Kick Pump (Sidechain)" })
+    {
+        CAPTURE (named (name));
+        CHECK (std::any_of (factory.begin(), factory.end(), [name] (const auto& p) { return p.name == named (name); }));
+    }
+    // Pink noise on the main at -18 dBFS RMS, and on the Sidechain at -12 dBFS RMS: loud, and in band for any Detection
+    // EQ, a kick's lows as much as a voice's middle. Measured over the second second, once the dip has settled.
+    const int numSamples = static_cast<int> (sampleRate) * seconds;
+    const auto input = pinkNoise (2, numSamples, -18.0, 29);
+    const auto key = pinkNoise (2, numSamples, -12.0, 31);
+    const int settled = static_cast<int> (sampleRate);
+    for (const auto& p : factory)
+    {
+        if (! isSidechainPreset (p))
+            continue;
+        CAPTURE (p.name);
+        const auto output = playedWithKey (p, input, key);
+        for (std::size_t ch = 0; ch < 2; ++ch)
+            CHECK (rmsDb (input[ch].data() + settled, numSamples - settled) - rmsDb (output[ch].data() + settled, numSamples - settled) >= 3.0);
+    }
 }
