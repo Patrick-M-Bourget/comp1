@@ -440,16 +440,20 @@ void DetectionEqDisplay::tick (double seconds)
     // A restored session lets go of Detection Audition behind the button's back.
     if (holdingAudition && ! processor.detectionAudition())
         letGoOfDetectionAudition();
+    // Analysed and repainted only while shown, and only as samples arrive: with no audio it holds still.
     if (isShowing())
     {
-        detectionSpectrum.update (seconds, analyzer.speed);
-        repaint();
+        if (samplesArriving)
+        {
+            detectionSpectrum.update (seconds, analyzer.speed);
+            repaint();
+        }
     }
     else if (holdingAudition)
         letGoOfDetectionAudition();
 }
 
-bool DetectionEqDisplay::isActive() const { return isShowing(); }
+bool DetectionEqDisplay::isActive() const { return isShowing() && samplesArriving; }
 
 void DetectionEqDisplay::auditionStateChanged()
 {

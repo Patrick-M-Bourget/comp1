@@ -37,7 +37,8 @@ enum class DetectionEqBand
 // - **Spectrum:** the Engine's detection source tap (PluginProcessor::readDetectionSourceSamples), the Detection Source
 //   before the Detection EQ, as one line in the Detection EQ's colour (the Analyzer's Sidechain line). The tap is
 //   skipped as the display opens, and drained every tick even while the Level tab is shown, so the reader never falls
-//   behind; it is analysed and repainted only while this tab is shown.
+//   behind; it is analysed and repainted only while this tab is shown and samples arrive, so with no audio the tab
+//   holds still and asks for no repaint.
 // - **Curve:** the Detection EQ's combined magnitude response, worked out from the Settings the Engine gets
 //   (parameters::SettingsReader) with plugkit's designBand and responseAt at the sample rate the Engine plays at, so the
 //   two agree; an Off band contributes nothing. Redrawn only when the settings or the size change.

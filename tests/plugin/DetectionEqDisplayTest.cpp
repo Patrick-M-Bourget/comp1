@@ -624,3 +624,29 @@ TEST_CASE ("Expanded View snapshots on the Detection EQ tab: signal playing with
         harness::writeSnapshot (*host.editor, "expanded-detection-eq-audition", {}, 1.0f);
     }
 }
+
+TEST_CASE ("With no audio the Detection EQ tab asks for no repaint; samples arriving, or a setting changing, repaint it")
+{
+    DetectionEqHost host;
+    const auto tone = [] (int n) { return sine (1000.0, 0.5, n); };
+    const auto none = [] (int) { return 0.0; };
+    host.playForASecond (tone, none);
+    // The last samples read, then ticks with nothing played.
+    host.settle (16);
+    auto& repaints = harness::countRepaintsOf (host.eqDisplay());
+    host.settle (300);
+    CHECK (repaints.count == 0);
+
+    // A setting changed by Host Automation repaints it, on the tick.
+    host.edit (parameters::detectionHighPassOnId, 1.0f);
+    REQUIRE (host.settleUntil ([&] { return repaints.count > 0; }));
+    host.settle (16);
+    repaints.count = 0;
+    host.settle (300);
+    CHECK (repaints.count == 0);
+
+    // Playing again repaints it.
+    host.playForASecond (tone, none);
+    CHECK (repaints.count > 0);
+    host.eqDisplay().setCachedComponentImage (nullptr);
+}
