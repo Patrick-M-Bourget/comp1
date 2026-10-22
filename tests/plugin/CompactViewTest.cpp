@@ -1,5 +1,5 @@
-// The Compact View's controls at work: a Style pick, Comp and Comp Follow (ADR 0004), the Gate, Output Gain into the
-// Limiter, the Gain Reduction meter and the editor-wide keys.
+// The Compact View's controls at work: a Style pick, Comp and Comp Follow (ADR 0004), the Gate, the output popover's
+// Output Gain into the Limiter, the Gain Reduction meter and the editor-wide keys.
 
 #include "Host.h"
 #include "Playing.h"
@@ -189,7 +189,7 @@ TEST_CASE ("The Compact View's Gate toggle turns the Gate on and off and its Gat
     CHECK (host.value (parameters::gateThresholdId) == before);
 }
 
-TEST_CASE ("The Compact View's Output Gain drag is one undo step, and with the Limiter on a steady tone it pushes over the Ceiling never passes it")
+TEST_CASE ("In the Compact View the output popover's Output Gain drag is one undo step, and with the Limiter on a steady tone it pushes over the Ceiling never passes it")
 {
     host::Playing host;
     // A steady -12 dB, at 1:1 so the compressor leaves it alone, into the Limiter at -6 dBFS.
@@ -218,7 +218,8 @@ TEST_CASE ("The Compact View's Output Gain drag is one undo step, and with the L
     CHECK_THAT (most, WithinAbs (std::pow (10.0, -12.0 / 20.0), 1.0e-3));
 
     // Up by 72 px of 200 for the 72 dB range: about +26 dB, so the tone would reach +14 dBFS, 20 dB over the Ceiling.
-    host::EditorHost::drag (compactKnob (host, "Output Gain"), 72.0f);
+    host.openOutputPopover();
+    host::EditorHost::drag (host.knob ("Output Gain"), 72.0f);
     CHECK (history.undoSteps() == steps + 1);
     REQUIRE (host.value (parameters::outputGainId) > 20.0f);
     const auto buffer = playBlocks (100);
@@ -265,17 +266,18 @@ TEST_CASE ("In the Compact View Cmd-Z undoes, Shift-Cmd-Z redoes and Cmd-B toggl
     host::EditorHost host;
     showCompactView (host);
     const auto command = juce::ModifierKeys::commandModifier;
-    auto& outputGain = compactKnob (host, "Output Gain");
-    host::EditorHost::drag (outputGain, 20.0f);
-    const float edited = host.value (parameters::outputGainId);
-    REQUIRE (edited > 0.0f);
-    outputGain.grabKeyboardFocus();
-    REQUIRE (outputGain.hasKeyboardFocus (false));
+    auto& gateThreshold = compactKnob (host, "Gate Threshold");
+    const float before = host.value (parameters::gateThresholdId);
+    host::EditorHost::drag (gateThreshold, 20.0f);
+    const float edited = host.value (parameters::gateThresholdId);
+    REQUIRE (edited > before);
+    gateThreshold.grabKeyboardFocus();
+    REQUIRE (gateThreshold.hasKeyboardFocus (false));
 
     CHECK (host.press (juce::KeyPress ('z', command, 0)));
-    CHECK (host.value (parameters::outputGainId) == 0.0f);
+    CHECK (host.value (parameters::gateThresholdId) == before);
     CHECK (host.press (juce::KeyPress ('z', command | juce::ModifierKeys::shiftModifier, 0)));
-    CHECK (host.value (parameters::outputGainId) == edited);
+    CHECK (host.value (parameters::gateThresholdId) == edited);
     CHECK (host.press (juce::KeyPress ('b', command, 0)));
     CHECK (host.value (parameters::globalBypassId) == 1.0f);
     CHECK (host.press (juce::KeyPress ('b', command, 0)));

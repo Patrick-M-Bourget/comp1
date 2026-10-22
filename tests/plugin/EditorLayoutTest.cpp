@@ -62,22 +62,22 @@ TEST_CASE ("At its default size the Expanded View is the header, the display wit
     REQUIRE (host.editor->getWidth() == 1400);
     REQUIRE (host.editor->getHeight() == 860);
 
-    // 14 px padding and 12 px gaps; four 40 px meter rails and the two rows of sections, 190 and 164 px tall (the
-    // second's Ceiling ring reaching past its knob, as Threshold's does in the first).
+    // 14 px padding and 12 px gaps; four 40 px meter rails and the two rows of sections, 190 and 108 px tall (the
+    // first's Threshold ring reaching past its knob).
     const auto areas = areasOf (*host.editor);
     CHECK (areas.header == juce::Rectangle<int> (14, 14, 1372, 52));
-    CHECK (areas.display == juce::Rectangle<int> (14, 78, 1164, 334));
+    CHECK (areas.display == juce::Rectangle<int> (14, 78, 1164, 390));
     // The Gain Reduction meters in signal order, then the Output Meter.
-    CHECK (areas.gateGainReduction == juce::Rectangle<int> (1190, 78, 40, 334));
-    CHECK (areas.gainReduction == juce::Rectangle<int> (1242, 78, 40, 334));
-    CHECK (areas.limiterGainReduction == juce::Rectangle<int> (1294, 78, 40, 334));
-    CHECK (areas.outputMeter == juce::Rectangle<int> (1346, 78, 40, 334));
-    CHECK (areas.sections == juce::Rectangle<int> (14, 424, 1372, 366));
+    CHECK (areas.gateGainReduction == juce::Rectangle<int> (1190, 78, 40, 390));
+    CHECK (areas.gainReduction == juce::Rectangle<int> (1242, 78, 40, 390));
+    CHECK (areas.limiterGainReduction == juce::Rectangle<int> (1294, 78, 40, 390));
+    CHECK (areas.outputMeter == juce::Rectangle<int> (1346, 78, 40, 390));
+    CHECK (areas.sections == juce::Rectangle<int> (14, 480, 1372, 310));
     CHECK (areas.footer == juce::Rectangle<int> (14, 802, 1372, 44));
     // Each tab's content is the display under its tabs.
     CHECK (areas.levelTab == areas.detectionEqTab);
     CHECK (areas.levelTab == areas.transferCurveTab);
-    CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1164, 300));
+    CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1164, 356));
 }
 
 TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes nothing overlaps, and only the display and the section row's width grow")
@@ -140,7 +140,7 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
     const auto& window = comp1::PluginProcessor::expandedWindow;
     host.editor->setSize (window.minimum.x, window.minimum.y);
     auto& sections = named (*host.editor, "Sections");
-    const auto names = { "Style", "Gate", "Compressor", "Character and Saturation", "Dry/Wet", "Output", "Detection", "Stereo", "Lookahead" };
+    const auto names = { "Style", "Gate", "Compressor", "Character and Saturation", "Dry/Wet", "Detection", "Stereo", "Lookahead" };
     REQUIRE (static_cast<size_t> (sections.getNumChildComponents()) == names.size());
     std::vector<juce::Rectangle<int>> placed;
     for (const auto* name : names)

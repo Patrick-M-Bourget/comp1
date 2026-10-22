@@ -1,6 +1,5 @@
 #include "comp1/Engine.h"
 
-#include "AutoGain.h"
 #include "Character.h"
 #include "Clean.h"
 #include "Colour.h"
@@ -16,6 +15,7 @@
 #include "ModeFade.h"
 #include "OversampledSection.h"
 #include "SaturationStage.h"
+#include "comp1/AutoGain.h"
 #include "comp1/Latency.h"
 
 #include <plugkit/LatestValue.h>
@@ -147,7 +147,7 @@ public:
         autoRelease = settings.autoRelease;
     }
 
-    // Auto Gain's estimate for the settings as they stand, in dB (AutoGain.h): from the mixed settings' Transfer Curve
+    // Auto Gain's estimate for the settings as they stand, in dB (comp1/AutoGain.h): from the mixed settings' Transfer Curve
     // while Comp Follow's share is above 0 (all of it while following), and the stored settings' alone at 0, 0 dB with
     // the stored Auto Gain off; and from the timing and the Character asked for, not the ones mid-glide, so a change of
     // Character moves it at once while the voices crossfade. Off, its share of the estimate is Comp Follow's, so it

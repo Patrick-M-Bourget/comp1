@@ -130,8 +130,9 @@ void ChoiceChip::show()
         setEnabled (available);
 }
 
-Footer::Footer (PluginProcessor& p)
-    : globalBypassAttachment (p.parameterState(), parameters::globalBypassId, globalBypass),
+Footer::Footer (PluginProcessor& p, LevelHistory& history)
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),
+      globalBypassAttachment (p.parameterState(), parameters::globalBypassId, globalBypass),
       processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
       oversampling (parameters::parameterOf (p.parameterState(), parameters::oversamplingId),
                     p.session().editHistory(),
@@ -148,7 +149,7 @@ Footer::Footer (PluginProcessor& p)
                               return static_cast<int> (oversamplingInForce (stored, sampleRateOf (p)));
                           },
                       .available = [&p] { return parameters::inHighQuality (p.parameterState()); } }),
-      uiScale (p.session())
+      popover (p, history), uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
     // Its "on" is bypassed, so on it shows Off.
@@ -158,7 +159,7 @@ Footer::Footer (PluginProcessor& p)
     globalBypass.setTooltip ("Global Bypass (Cmd/Ctrl+B)");
     // Left to right.
     int order = 0;
-    for (juce::Component* child : std::initializer_list<juce::Component*> { &globalBypass, &processingMode, &oversampling, &uiScale })
+    for (juce::Component* child : std::initializer_list<juce::Component*> { &globalBypass, &processingMode, &oversampling, &output, &uiScale })
     {
         addAndMakeVisible (*child);
         child->setExplicitFocusOrder (++order);
@@ -177,6 +178,42 @@ Footer::Footer (PluginProcessor& p)
         addChildComponent (*button);
     }
     showSwitchFor (p.view());
+
+    output.onClick = [this] {
+        if (popover.isOpen())
+            popover.close();
+        else
+        {
+            popover.openFrom (output);
+            output.setOpen (popover.isOpen());
+        }
+    };
+    // Back in the footer once closed, hidden, so it stays on the editor's tick.
+    popover.onClose = [this] {
+        output.setOpen (false);
+        addChildComponent (popover);
+    };
+    addChildComponent (popover);
+    showOutput();
+}
+
+Footer::~Footer()
+{
+    popover.onClose = nullptr;
+    popover.close();
+}
+
+void Footer::showOutput()
+{
+    const double db = processor.parameterState().getRawParameterValue (parameters::outputGainId)->load (std::memory_order_relaxed)
+                      + processor.appliedAutoGainDb();
+    if (const auto text = plugkit::ui::outputReadoutText (db); text != output.getButtonText())
+    {
+        output.setButtonText (text);
+        resized();
+    }
+    if (const bool bypassed = globalBypass.getToggleState(); bypassed != output.isNotApplied())
+        output.setNotApplied (bypassed);
 }
 
 void Footer::showSwitchFor (View shown)
@@ -203,6 +240,8 @@ void Footer::resized()
     toExpanded.setBounds (switchArea);
     row.removeFromRight (chipGap);
     uiScale.setBounds (row.removeFromRight (buttonSize));
+    row.removeFromRight (chipGap);
+    output.setBounds (row.removeFromRight (std::max (outputWidth, output.getIdealWidth())));
     for (auto* chip : { &processingMode, &oversampling })
     {
         row.removeFromLeft (chipGap);

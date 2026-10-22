@@ -68,6 +68,9 @@ public:
 
     // Whether the controls are enabled, read on the tick; always, unless set.
     void setAvailability (std::function<bool()> available);
+    // Follows the processor now, as on the editor's tick: what the section shows beyond its attachments, and which of
+    // its controls are enabled.
+    void followProcessor() { tick (0.0); }
 
     // Where a knob goes: in a column of its own, or under the stack of the column being filled.
     enum class Place

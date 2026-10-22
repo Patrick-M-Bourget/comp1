@@ -3,6 +3,7 @@
 #include "FactoryPresets.h"
 #include "PluginEditor.h"
 
+#include "comp1/AutoGain.h"
 #include "comp1/Latency.h"
 #include "plugkit/ui/SetTogether.h"
 
@@ -265,6 +266,31 @@ double PluginProcessor::followedRatio() const
 {
     const auto settings = reader.read();
     return compRatio (settings.compCurve, settings.comp);
+}
+
+clean::Curve PluginProcessor::playedCurve() const
+{
+    const auto settings = reader.read();
+    auto curve = clean::curveOf (settings);
+    if (settings.compFollow)
+    {
+        curve.thresholdDb = compThresholdDb (settings.compCurve, settings.comp);
+        curve.inverseRatio = compInverseRatio (settings.compCurve, settings.comp);
+    }
+    return curve;
+}
+
+double PluginProcessor::appliedAutoGainDb() const
+{
+    const auto settings = reader.read();
+    if (! settings.autoGain && ! settings.compFollow)
+        return 0.0;
+    return autogain::estimateDb (playedCurve(),
+                                 { .attackMs = settings.attackMs,
+                                   .releaseMs = settings.releaseMs,
+                                   .holdMs = settings.holdMs,
+                                   .autoRelease = settings.autoRelease,
+                                   .character = settings.character });
 }
 
 bool PluginProcessor::stopFollowingComp()

@@ -33,15 +33,14 @@ struct GateSection final : ControlSection
     explicit GateSection (PluginProcessor& processor);
 };
 
-// Compressor: Comp Follow and Auto Gain over Comp, Threshold (with the Detection Level ring), Ratio, Knee, Attack,
-// Release, Auto Release over Hold, and Range. Comp, Comp Follow, Threshold, Ratio and Auto Gain follow ADR 0004:
+// Compressor: Comp Follow over Comp, Threshold (with the Detection Level ring), Ratio, Knee, Attack, Release, Auto
+// Release over Hold, and Range. Comp, Comp Follow, Threshold and Ratio follow ADR 0004:
 // - Comp, Threshold and Ratio are attached through CompFollowAttachment: grabbing Threshold or Ratio while Comp
 //   Follow is on stops following (stopFollowingComp), grabbing Comp while it is off follows (followComp), each with
 //   the edit that follows as one undo step; while following, Threshold and Ratio show the followed values.
 // - The Comp Follow toggle turns it on through followComp() and off through stopFollowingComp(), never by writing it
 //   alone, and shows the parameter, followed on the tick.
-// - While following, Auto Gain shows on and is disabled, its tooltip saying Comp Follow holds it on; otherwise it is
-//   attached as usual.
+// Auto Gain, which Comp Follow holds on, is in the output popover's OutputSection.
 class CompressorSection final : public ControlSection
 {
 public:
@@ -52,15 +51,13 @@ public:
 
 private:
     void follow() override;
-    bool isControlEnabled (juce::Component& control) const override;
     bool following() const;
 
     PluginProcessor& processor;
     KnobControl *comp = nullptr, *threshold = nullptr, *ratio = nullptr;
-    juce::ToggleButton *compFollow = nullptr, *autoGain = nullptr;
+    juce::ToggleButton* compFollow = nullptr;
     std::unique_ptr<LevelRing> ring;
     std::optional<CompFollowAttachment> compAttachment, thresholdAttachment, ratioAttachment;
-    std::unique_ptr<juce::ButtonParameterAttachment> autoGainAttachment;
 };
 
 // Character and Saturation: Colour; Saturation on/off and Saturation Position over Drive.
@@ -75,7 +72,9 @@ struct DryWetSection final : ControlSection
     explicit DryWetSection (PluginProcessor& processor);
 };
 
-// Output: Output Gain; the Limiter's on/off over Ceiling, with the Ceiling ring (LevelRing::limiterGainReduction).
+// Output, the output popover's (OutputPopover), in both views: Output Gain; Auto Gain and the Limiter's on/off over
+// Ceiling, with the Ceiling ring (LevelRing::limiterGainReduction). Auto Gain follows ADR 0004: while Comp Follow is
+// on it shows on and is disabled, its tooltip saying Comp Follow holds it on; otherwise it is attached as usual.
 class OutputSection final : public ControlSection
 {
 public:
@@ -85,8 +84,15 @@ public:
     LevelRing& ceilingRing() { return *ring; }
 
 private:
+    void follow() override;
+    bool isControlEnabled (juce::Component& control) const override;
+    bool following() const;
+
+    PluginProcessor& processor;
     KnobControl* ceiling = nullptr;
+    juce::ToggleButton* autoGain = nullptr;
     std::unique_ptr<LevelRing> ring;
+    std::unique_ptr<juce::ButtonParameterAttachment> autoGainAttachment;
 };
 
 // Detection: Detection Source and the High-pass's on/off over its Frequency, then its Slope; the Low-pass's on/off over

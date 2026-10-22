@@ -43,6 +43,7 @@ target_sources(comp1 PRIVATE
     LevelGraph.cpp
     LevelHistory.cpp
     LevelRing.cpp
+    OutputPopover.cpp
     Parameters.cpp
     PluginEditor.cpp
     PluginProcessor.cpp

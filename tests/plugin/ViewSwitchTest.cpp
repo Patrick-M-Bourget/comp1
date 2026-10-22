@@ -378,7 +378,7 @@ TEST_CASE ("Switching to the Compact View lets go of Detection Audition")
     audition.mouseUp (harness::mouseEvent (audition, centre, {}, centre));
 }
 
-TEST_CASE ("Tab walks the Compact View: the header, then Style, Gate, Gate Threshold, Comp, Output Gain, Global Bypass, Processing Mode, Oversampling, UI Scale and the switch, reaching nothing of the Expanded View")
+TEST_CASE ("Tab walks the Compact View: the header, then Style, Gate, Gate Threshold, Comp, Global Bypass, Processing Mode, Oversampling, the Output readout, UI Scale and the switch, reaching nothing of the Expanded View")
 {
     host::EditorHost host;
     // High Quality, so Oversampling is enabled.
@@ -414,8 +414,8 @@ TEST_CASE ("Tab walks the Compact View: the header, then Style, Gate, Gate Thres
     for (auto i = inHeader; i < walked.size(); ++i)
         rest.add (walked[i]->getTitle());
     CHECK (rest
-           == juce::StringArray { "Style",         "Gate",         "Gate Threshold", "Comp", "Output Gain", "Global Bypass", "Processing Mode",
-                                  "Oversampling", "UI Scale", "Switch to the Expanded View" });
+           == juce::StringArray { "Style",  "Gate",     "Gate Threshold", "Comp", "Global Bypass", "Processing Mode", "Oversampling",
+                                  "Output", "UI Scale", "Switch to the Expanded View" });
 }
 
 TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and maximum sizes, the header, the body and the footer don't overlap, the body's sections and meter are inside it with each control inside its section, and the Preset browser opens inside the window")
@@ -490,7 +490,7 @@ TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and max
             CHECK (part->getLocalBounds().contains (area));
         }
     }
-    CHECK (placed.size() == 5);
+    CHECK (placed.size() == 4);
     CHECK (body.gainReductionMeter().getHeight() == body.getHeight());
 
     // The Preset browser opens over everything, its panel whole inside its margin.

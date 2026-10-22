@@ -168,9 +168,10 @@ TEST_CASE ("Expanded View snapshot: the Gate's, the compressor's and the Limiter
     harness::writeSnapshot (*host.editor, "expanded-gain-reduction-meters", {}, 1.0f);
 }
 
-TEST_CASE ("Expanded View snapshot: the Ceiling ring filled with the Limiter's Gain Reduction", "[.screens]")
+TEST_CASE ("Expanded View snapshot: the output popover open, its Ceiling ring filled with the Limiter's Gain Reduction", "[.screens]")
 {
     host::Playing host;
+    host.openOutputPopover();
     // A steady 0 dB level at 1:1 into the Limiter at -12 dBFS: 12 dB of Gain Reduction, the top two fifths of
     // Ceiling's lane.
     host.edit (comp1::parameters::ratioId, 1.0f);
@@ -206,6 +207,34 @@ TEST_CASE ("Compact View snapshots: default at 100% and 200%, with Comp Follow o
     REQUIRE (presets.onClick != nullptr);
     presets.onClick();
     snapshot (host, "compact-preset-browser");
+}
+
+TEST_CASE ("Output popover snapshots: open in the Expanded View and the Compact View, with Auto Gain on, and with Comp Follow holding it on", "[.screens]")
+{
+    host::EditorHost host;
+    openOn (host, juce::AudioChannelSet::stereo());
+    // Auto Gain on at Threshold -30 dB, Output Gain +1 dB and the Limiter on at -1 dBFS.
+    host.edit (comp1::parameters::compFollowId, 0.0f);
+    host.edit (comp1::parameters::thresholdId, -30.0f);
+    host.edit (comp1::parameters::autoGainId, 1.0f);
+    host.edit (comp1::parameters::outputGainId, 1.0f);
+    host.edit (comp1::parameters::limiterId, 1.0f);
+    host.edit (comp1::parameters::ceilingId, -1.0f);
+    host.openOutputPopover();
+    snapshot (host, "expanded-output-popover");
+
+    // Comp Follow on (Opto, Comp at 80%): Auto Gain held on, disabled.
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    host.edit (comp1::parameters::compId, 80.0f);
+    snapshot (host, "expanded-output-popover-comp-follow");
+
+    host.outputPopover().close();
+    host::EditorHost::click (host.expandedView().viewSwitch());
+    REQUIRE (host.expandedView().shownView() == comp1::View::compact);
+    host.openOutputPopover();
+    snapshot (host, "compact-output-popover-comp-follow");
+    host.edit (comp1::parameters::compFollowId, 0.0f);
+    snapshot (host, "compact-output-popover");
 }
 
 TEST_CASE ("Compact View snapshot: with signal playing, so the Gain Reduction meter reads", "[.screens]")

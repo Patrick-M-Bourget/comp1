@@ -37,25 +37,13 @@ bool operator== (const clean::Curve& a, const clean::Curve& b)
 } // namespace
 
 TransferCurveGraph::TransferCurveGraph (PluginProcessor& p, LevelHistory& h)
-    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), reader (p.parameterState()), drawn (played()),
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), drawn (p.playedCurve()),
       level (h, &LevelRecord::detectionLevelDb, -scaleDb, 0.0)
 {
     setName ("Transfer Curve");
     setTitle ("Transfer Curve Graph");
     setWantsKeyboardFocus (false);
     setInterceptsMouseClicks (false, false);
-}
-
-clean::Curve TransferCurveGraph::played() const
-{
-    const auto settings = reader.read();
-    auto curve = clean::curveOf (settings);
-    if (settings.compFollow)
-    {
-        curve.thresholdDb = processor.followedThresholdDb();
-        curve.inverseRatio = 1.0 / processor.followedRatio();
-    }
-    return curve;
 }
 
 std::optional<double> TransferCurveGraph::dotDb() const
@@ -75,7 +63,7 @@ std::optional<juce::Point<double>> TransferCurveGraph::dot() const
 void TransferCurveGraph::tick (double seconds)
 {
     const double levelDb = level.next (seconds);
-    const auto now = played();
+    const auto now = processor.playedCurve();
     if (juce::exactlyEqual (levelDb, shown) && now == drawn)
         return;
     shown = levelDb;

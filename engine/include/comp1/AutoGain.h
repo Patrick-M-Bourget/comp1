@@ -2,13 +2,33 @@
 
 // Auto Gain's estimate: worked out from the settings, never measured from the audio (ADR 0010), as dyn-lab models it
 // (tools/dyn-lab/USAGE.md, "autogain"). It reads the Transfer Curve, the timing (Attack, Release, Auto Release and Hold)
-// and the Character, and nothing that depends on the material or the routing.
+// and the Character, and nothing that depends on the material or the routing. Public, so the editor reads the estimate
+// the Engine plays from the same functions.
 
-#include "Clean.h"
 #include "comp1/Settings.h"
+#include "comp1/TransferCurve.h"
 
 #include <algorithm>
 #include <cmath>
+
+namespace comp1::clean
+{
+
+// The Transfer Curve's average Gain Reduction in dB over dyn-lab's reference level distribution, Detection Levels from
+// -40 to 0 dB in 2 dB steps, each equally likely (REFERENCE_LEVELS; its USAGE.md gives the reasons), each read offsetDb
+// higher: Auto Gain's estimate with the Timing Offset (autogain::estimateDb, below). Exactly 0 at 1:1, whatever the
+// offset.
+inline double averageGainReductionDb (const Curve& curve, double offsetDb)
+{
+    constexpr int lowestDb = -40, highestDb = 0, stepDb = 2;
+    double sum = 0.0;
+    int count = 0;
+    for (int levelDb = lowestDb; levelDb <= highestDb; levelDb += stepDb, ++count)
+        sum += gainReduction (levelDb + offsetDb, curve);
+    return sum / count;
+}
+
+} // namespace comp1::clean
 
 namespace comp1::autogain
 {

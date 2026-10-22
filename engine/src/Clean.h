@@ -13,19 +13,6 @@
 namespace comp1::clean
 {
 
-// The Transfer Curve's average Gain Reduction in dB over dyn-lab's reference level distribution, Detection Levels from
-// -40 to 0 dB in 2 dB steps, each equally likely (REFERENCE_LEVELS; its USAGE.md gives the reasons), each read offsetDb
-// higher: Auto Gain's estimate with the Timing Offset (AutoGain.h). Exactly 0 at 1:1, whatever the offset.
-inline double averageGainReductionDb (const Curve& curve, double offsetDb)
-{
-    constexpr int lowestDb = -40, highestDb = 0, stepDb = 2;
-    double sum = 0.0;
-    int count = 0;
-    for (int levelDb = lowestDb; levelDb <= highestDb; levelDb += stepDb, ++count)
-        sum += gainReduction (levelDb + offsetDb, curve);
-    return sum / count;
-}
-
 // The settings the detector reads, at the sample rate.
 struct Timing
 {

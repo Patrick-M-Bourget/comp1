@@ -1,7 +1,10 @@
 #pragma once
 
+#include "LevelHistory.h"
+#include "OutputPopover.h"
 #include "PluginProcessor.h"
 #include "plugkit/ui/EditorTick.h"
+#include "plugkit/ui/OutputReadout.h"
 #include "plugkit/ui/Session.h"
 #include "plugkit/ui/UiScaleMenu.h"
 #include "plugkit/ui/staple/controls/IconButton.h"
@@ -65,19 +68,29 @@ private:
 };
 
 // The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Processing
-// Mode and Oversampling, as chips that open menus; the UI Scale menu at the right; and the switch between the views.
+// Mode and Oversampling, as chips that open menus; at the right the Output readout, the UI Scale menu and the switch
+// between the views, in that order, which is Tab's order too.
+//
+// The Output readout (plugkit::ui::OutputReadout) reads Output Gain plus Auto Gain's estimate while Auto Gain is in
+// effect, on or held on by Comp Follow (PluginProcessor::appliedAutoGainDb), signed to one decimal; Output Gain's range
+// has no silent bottom, so it always reads as a level. It is drawn in text4, not applied, while Global Bypass is on.
+// A click on it, or Space or Return, opens and closes the output popover (OutputPopover), fill2 behind the readout
+// while it is open. It follows the processor on the editor's tick.
 //
 // Oversampling offers only the factors at or under the cap at the sample rate the processor was prepared at (or the
 // assumed one before it is), comp1/Latency.h's maxOversampling, and shows the factor in force, the cap when the
 // stored one is over it. In Zero Latency, which has no Oversampling, it is disabled.
-class Footer final : public juce::Component
+class Footer final : public juce::Component, private plugkit::ui::EditorTick::Client
 {
 public:
-    explicit Footer (PluginProcessor& processor);
+    Footer (PluginProcessor& processor, LevelHistory& history);
+    ~Footer() override;
 
     void resized() override;
 
     plugkit::ui::UiScaleMenu& uiScaleMenu() { return uiScale; }
+    plugkit::ui::OutputReadout& outputReadout() { return output; }
+    OutputPopover& outputPopover() { return popover; }
 
     // The switch between the views, at the far right after the UI Scale menu, last in Tab's order: Staple icon buttons
     // titled by what they do, the collapse arrow "Switch to the Compact View" in the Expanded View, the expand arrow
@@ -87,12 +100,20 @@ public:
     // Shows the switch for the view shown, keeping keyboard focus on the switch if it had it.
     void showSwitchFor (View shown);
 
-    static constexpr int buttonSize = 28, inset = 6, chipGap = 8;
+    // The Output readout is at least outputWidth wide, so it keeps its width as its level changes.
+    static constexpr int buttonSize = 28, inset = 6, chipGap = 8, outputWidth = 70;
 
 private:
+    void tick (double) override { showOutput(); }
+    // Shows the Output readout's level, and whether it is applied.
+    void showOutput();
+
+    PluginProcessor& processor;
     staple::IconButton globalBypass { "Global Bypass", staple::Icon::power };
     juce::AudioProcessorValueTreeState::ButtonAttachment globalBypassAttachment;
     ChoiceChip processingMode, oversampling;
+    plugkit::ui::OutputReadout output;
+    OutputPopover popover;
     plugkit::ui::UiScaleMenu uiScale;
     staple::IconButton toCompact { "Switch to the Compact View", staple::Icon::collapse },
         toExpanded { "Switch to the Expanded View", staple::Icon::expand };

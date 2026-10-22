@@ -1,6 +1,6 @@
 // The Expanded View's controls: one for each host parameter, what a screen reader and the tooltips read, Tab's order and
-// the keys; and the Compact View's: its five host parameters' controls, the names a screen reader reads and Tab's
-// order.
+// the keys; and the Compact View's: its four host parameters' controls, the footer's and the output popover's, the
+// names a screen reader reads and Tab's order.
 
 #include "EditorHost.h"
 #include "Footer.h"
@@ -29,16 +29,18 @@ bool isControl (juce::Component& c)
     return dynamic_cast<juce::Slider*> (&c) != nullptr || dynamic_cast<juce::Button*> (&c) != nullptr || dynamic_cast<juce::ComboBox*> (&c) != nullptr;
 }
 
-// The showing controls titled title: the shown view's, the header's and the footer's.
+// The showing controls titled title: the shown view's, the header's, the footer's and the output popover's while open.
 std::vector<juce::Component*> controlsTitled (host::EditorHost& host, const juce::String& title)
 {
     return host.findAll<juce::Component> ([&title] (juce::Component& c) { return isControl (c) && c.isShowing() && c.getTitle() == title; });
 }
 
-// Every control can be: Comp Follow off (so Auto Gain is enabled), High Quality (so Lookahead and Oversampling are),
-// on a stereo track (so Stereo Placement and Stereo Link are).
+// Every control can be: the output popover open (so Output Gain, Auto Gain, the Limiter and Ceiling show), Comp
+// Follow off (so Auto Gain is enabled), High Quality (so Lookahead and Oversampling are), on a stereo track (so Stereo
+// Placement and Stereo Link are).
 void everythingAvailable (host::EditorHost& host)
 {
+    host.openOutputPopover();
     host.edit (parameters::processingModeId, 1.0f);
     host.edit (parameters::compFollowId, 0.0f);
     REQUIRE (host.settleUntil ([&] { return host.showing<juce::ToggleButton> ("Auto Gain").isEnabled() && host.knob ("Lookahead").isEnabled(); }));
@@ -225,6 +227,10 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::transferCurve; }));
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
+    // And the output popover's.
+    host.openOutputPopover();
+    for (const auto& [name, components] : accessibleNames (*host.editor))
+        names[name] = components;
     const auto glossary = readGlossary();
     REQUIRE_FALSE (glossary.avoided.empty());
     std::vector<juce::String> listed;
@@ -295,6 +301,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Lookahead");
     expected.push_back ("Low-pass handle");
     expected.push_back ("Next Preset");
+    expected.push_back ("Output");
     expected.push_back ("Output Gain");
     expected.push_back ("Oversampling");
     expected.push_back ("Presets");
@@ -396,9 +403,9 @@ TEST_CASE ("Tab walks the header, the display's tabs, the Output Meter, the sect
     // In order: the header's first, then these.
     const juce::StringArray order { "Presets", "Level", "Detection EQ", "Transfer Curve", "High-pass handle", "Free band handle", "Low-pass handle",
                                     "Detection Audition", "Output Meter", "Style", "Gate", "Gate Hold", "Comp Follow", "Comp",
-                                    "Threshold", "Range", "Colour", "Saturation Position", "Dry", "Wet", "Output Gain", "Ceiling",
+                                    "Threshold", "Range", "Colour", "Saturation Position", "Dry", "Wet",
                                     "Detection Source", "Detection Free Band Q", "Stereo Placement", "Stereo Link", "Lookahead",
-                                    "Global Bypass", "Processing Mode", "Oversampling", "UI Scale", "Switch to the Compact View" };
+                                    "Global Bypass", "Processing Mode", "Oversampling", "Output", "UI Scale", "Switch to the Compact View" };
     int last = -1;
     for (const auto& title : order)
     {
@@ -558,16 +565,18 @@ void showCompactView (host::EditorHost& host)
     }));
 }
 
-// The host parameters with a control in the Compact View: its own five, then the footer's.
-const std::set<juce::String> compactParameters { "Style",       "Gate",          "Gate Threshold",  "Comp",
-                                                 "Output Gain", "Global Bypass", "Processing Mode", "Oversampling" };
+// The host parameters with a control in the Compact View: its own four, the footer's, then the output popover's.
+const std::set<juce::String> compactParameters { "Style",        "Gate",        "Gate Threshold", "Comp",    "Global Bypass", "Processing Mode",
+                                                 "Oversampling", "Output Gain", "Auto Gain",      "Limiter", "Ceiling" };
 
 } // namespace
 
-TEST_CASE ("In the Compact View, Style, Gate, Gate Threshold, Comp, Output Gain and the footer's three each have exactly one showing control, titled with its name, that changes it by mouse and by keys; no other host parameter has one")
+TEST_CASE ("In the Compact View, Style, Gate, Gate Threshold, Comp, the footer's three and the output popover's four each have exactly one showing control, titled with its name, that changes it by mouse and by keys; no other host parameter has one")
 {
     host::EditorHost host;
     showCompactView (host);
+    host.edit (parameters::compFollowId, 0.0f);
+    host.openOutputPopover();
     std::set<juce::String> found;
     for (auto* each : host.processor.getParameters())
     {
@@ -593,10 +602,13 @@ TEST_CASE ("In the Compact View, Style, Gate, Gate Threshold, Comp, Output Gain 
         const float byMouse = parameter.getValue();
         changeByKeys (host, control, parameter);
         CHECK_FALSE (juce::exactlyEqual (parameter.getValue(), byMouse));
-        // Back where it was for the next, in High Quality.
+        // Back where it was for the next, in High Quality with Comp Follow off, so Auto Gain is enabled.
         host.edit (parameter.getParameterID(), parameter.convertFrom0to1 (before));
         host.edit (parameters::processingModeId, 1.0f);
-        REQUIRE (host.settleUntil ([&] { return host.showing<juce::Component> ("Oversampling").isEnabled(); }));
+        host.edit (parameters::compFollowId, 0.0f);
+        REQUIRE (host.settleUntil ([&] {
+            return host.showing<juce::Component> ("Oversampling").isEnabled() && host.showing<juce::ToggleButton> ("Auto Gain").isEnabled();
+        }));
     }
     CHECK (found == compactParameters);
 }
@@ -617,10 +629,15 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
     REQUIRE (presets.onClick != nullptr);
     presets.onClick();
     host.settleAnimations();
+    auto names = accessibleNames (*host.editor);
+    // And the output popover's.
+    host.openOutputPopover();
+    for (const auto& [name, components] : accessibleNames (*host.editor))
+        names[name] = components;
 
     const auto glossary = readGlossary();
     std::vector<juce::String> listed;
-    for (const auto& [name, components] : accessibleNames (*host.editor))
+    for (const auto& [name, components] : names)
     {
         CAPTURE (name, components.size());
         CHECK (name.isNotEmpty());
@@ -632,6 +649,8 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
     }
     // Every name, in order; the same on mono, as the Compact View has no Clip Light.
     const std::vector<juce::String> expected { "A/B Compare",
+                                               "Auto Gain",
+                                               "Ceiling",
                                                "Close Preset browser",
                                                "Comp",
                                                "Copy A to B",
@@ -640,8 +659,10 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
                                                "Gate",
                                                "Gate Threshold",
                                                "Global Bypass",
+                                               "Limiter",
                                                juce::String (juce::CharPointer_UTF8 ("Load Preset File" "\xe2\x80\xa6")),
                                                "Next Preset",
+                                               "Output",
                                                "Output Gain",
                                                "Oversampling",
                                                "Presets",
@@ -659,7 +680,7 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
     CHECK (listed == expected);
 }
 
-TEST_CASE ("Tab walks the Compact View: the header, Style, Gate, Gate Threshold, Comp, Output Gain and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
+TEST_CASE ("Tab walks the Compact View: the header, Style, Gate, Gate Threshold, Comp and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
 {
     host::EditorHost host;
     showCompactView (host);
@@ -690,9 +711,9 @@ TEST_CASE ("Tab walks the Compact View: the header, Style, Gate, Gate Threshold,
         CHECK (std::count (walked.begin(), walked.end(), control) == 1);
     }
     CHECK_FALSE (titles.contains ("Gain Reduction"));
-    // In order: the header's first, then these, the body's five one after another.
-    const juce::StringArray order { "Presets",       "Style",           "Gate",         "Gate Threshold", "Comp", "Output Gain",
-                                    "Global Bypass", "Processing Mode", "Oversampling", "UI Scale",       "Switch to the Expanded View" };
+    // In order: the header's first, then these, the body's four one after another.
+    const juce::StringArray order { "Presets",      "Style",  "Gate",     "Gate Threshold",             "Comp", "Global Bypass", "Processing Mode",
+                                    "Oversampling", "Output", "UI Scale", "Switch to the Expanded View" };
     int last = -1;
     for (const auto& title : order)
     {
@@ -702,7 +723,7 @@ TEST_CASE ("Tab walks the Compact View: the header, Style, Gate, Gate Threshold,
         last = std::max (last, at);
     }
     const int style = titles.indexOf ("Style");
-    CHECK (titles.indexOf ("Global Bypass") == style + 5);
+    CHECK (titles.indexOf ("Global Bypass") == style + 4);
 
     // Shift+Tab, backwards.
     std::vector<juce::Component*> back;

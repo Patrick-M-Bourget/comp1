@@ -102,6 +102,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/LevelHistoryTest.cpp
         plugin/LimiterParameterTest.cpp
         plugin/OutputMeterTest.cpp
+        plugin/OutputPopoverTest.cpp
         plugin/OversamplingParameterTest.cpp
         plugin/PluginShellTest.cpp
         plugin/SaturationParameterTest.cpp
