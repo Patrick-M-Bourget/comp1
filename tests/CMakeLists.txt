@@ -112,6 +112,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/StyleParameterTest.cpp
         plugin/StylePickerTest.cpp
         plugin/TransferCurveGraphTest.cpp
+        plugin/TransferCurveInsetTest.cpp
         plugin/UiScaleTest.cpp
         plugin/ViewSwitchTest.cpp
     )

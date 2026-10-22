@@ -50,6 +50,7 @@ target_sources(comp1 PRIVATE
     Section.cpp
     Sections.cpp
     TransferCurveGraph.cpp
+    TransferCurveInset.cpp
     StyleSection.cpp)
 
 # The Factory Presets, bundled into the plugin: every file in presets/factory, found again at each build

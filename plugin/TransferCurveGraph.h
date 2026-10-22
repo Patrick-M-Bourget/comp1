@@ -38,12 +38,22 @@ namespace comp1
 // (controls::spokenValue), Knee unsigned, a width, to one decimal ("Threshold −18.00 dB, Ratio 4:1, Knee 6.0 dB,
 // Detection Level −20.0 dB"); it is no stop for Tab and takes no mouse input. Named "Transfer Curve", as its tab,
 // which a test finds it by.
+//
+// The Transfer Curve inset (TransferCurveInset) draws one in its inset look: the same curve, dot and following, the grid
+// and labels thinned to every 20 dB to fit, and no fades, as it sits on a slab of its own (provisional, #94).
 class TransferCurveGraph final : public juce::Component, private plugkit::ui::EditorTick::Client
 {
 public:
-    TransferCurveGraph (PluginProcessor& processor, LevelHistory& history);
+    // The Transfer Curve tab's, or the Transfer Curve inset's.
+    enum class Look
+    {
+        tab,
+        inset
+    };
 
-    static constexpr double scaleDb = 60.0, gridStepDb = 10.0;
+    TransferCurveGraph (PluginProcessor& processor, LevelHistory& history, Look look = Look::tab);
+
+    static constexpr double scaleDb = 60.0, gridStepDb = 10.0, insetGridStepDb = 20.0;
 
     // The Transfer Curve's settings it draws from.
     const clean::Curve& curve() const { return drawn; }
@@ -54,8 +64,10 @@ public:
     // Where the dot is drawn, in dB: x the Detection Level, y the curve's output there; none while it isn't drawn.
     std::optional<juce::Point<double>> dot() const;
 
-    // The text a screen reader reads as its value.
+    // The text a screen reader reads as its value: settingsText(), then the Detection Level.
     juce::String valueText() const;
+    // The settings it draws, as a screen reader reads them: "Threshold −18.00 dB, Ratio 4:1, Knee 6.0 dB".
+    juce::String settingsText() const;
 
     void paint (juce::Graphics& g) override;
 
@@ -65,6 +77,7 @@ private:
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
     PluginProcessor& processor;
+    const Look look;
     clean::Curve drawn;
     ShownLevel level; // the Detection Level, on the graph's scale
     double shown = -scaleDb;

@@ -201,6 +201,10 @@ _Avoid_: Scope, waveform, history view
 The Expanded View's graph of the Transfer Curve the Engine plays, output level over input level from -60 to 0 dB, with the Detection Level as a dot moving along it.
 _Avoid_: I/O graph, transfer function plot
 
+**Transfer Curve inset**:
+The small Transfer Curve Graph over the top-left corner of the Level and Gain Reduction Graph, on the Level tab: a drag or the arrow keys on it move Threshold across and Ratio up and down.
+_Avoid_: Mini curve, transfer widget
+
 **Output Gain**:
 The gain applied to the whole plugin's output, after Dry and Wet are summed and before the Limiter, in dB.
 _Avoid_: Master gain, Gain (unqualified)
