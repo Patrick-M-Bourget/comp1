@@ -78,6 +78,17 @@ add_test(NAME engine_has_no_juce
         "-DLINKS=$<TARGET_PROPERTY:comp1_engine,LINK_LIBRARIES>;$<TARGET_PROPERTY:comp1_engine,INTERFACE_LINK_LIBRARIES>"
         -P ${CMAKE_CURRENT_SOURCE_DIR}/engine/NoJuce.cmake)
 
+# On macOS each plugin bundle's signature seals everything in it, moduleinfo.json included, or hosts such as Live
+# refuse to load it (plugin/CMakeLists.txt signs the bundle last).
+if(COMP1_BUILD_PLUGIN AND APPLE)
+    foreach(format VST3 AU AAX Standalone CLAP)
+        if(TARGET comp1_${format})
+            add_test(NAME "The ${format} bundle's signature seals its contents"
+                COMMAND codesign --verify --strict "$<TARGET_BUNDLE_DIR:comp1_${format}>")
+        endif()
+    endforeach()
+endif()
+
 if(COMP1_BUILD_PLUGIN)
     # Host-level checks drive the Plugin Shell the way a host does. One source per line, as above.
     add_executable(comp1_plugin_tests
