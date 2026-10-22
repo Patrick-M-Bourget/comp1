@@ -1,4 +1,5 @@
 #include "EditorHost.h"
+#include "Playing.h"
 #include "comp1/Style.h"
 #include "plugkit/ui/UiScaleMenu.h"
 
@@ -142,4 +143,27 @@ TEST_CASE ("Expanded View snapshots: the Transfer Curve tab with a hard and a wi
         return graph.dotDb().has_value() && *graph.dotDb() > -14.0;
     }));
     harness::writeSnapshot (*host.editor, "expanded-transfer-curve-playing", {}, 1.0f);
+}
+
+TEST_CASE ("Expanded View snapshot: the Gate's, the compressor's and the Limiter's Gain Reduction meters all reading", "[.screens]")
+{
+    host::Playing host;
+    // A loud passage the compressor takes 18 dB off (-30 dB at 4:1, a hard knee), which Output Gain then takes 12 dB
+    // over Ceiling for the Limiter; then a quiet one under Gate Threshold, which the Gate closes on by all of Gate Range,
+    // while the other two meters fall.
+    host.edit (comp1::parameters::thresholdId, -30.0f);
+    host.edit (comp1::parameters::ratioId, 4.0f);
+    host.edit (comp1::parameters::kneeId, 0.0f);
+    host.edit (comp1::parameters::outputGainId, 36.0f);
+    host.edit (comp1::parameters::limiterId, 1.0f);
+    host.edit (comp1::parameters::ceilingId, 0.0f);
+    host.edit (comp1::parameters::gateId, 1.0f);
+    host.edit (comp1::parameters::gateThresholdId, -40.0f);
+    host.edit (comp1::parameters::gateRangeId, 20.0f);
+    host.edit (comp1::parameters::gateReleaseId, 20.0f);
+    host.playFor (1.0, host::steady (-6.0));
+    REQUIRE (host.keepPlayingUntil (host::steady (-60.0), [&] { return host.gateMeter().shownDb() >= 19.5; }));
+    CHECK (host.meter().shownDb() > 6.0);
+    CHECK (host.limiterMeter().shownDb() > 3.0);
+    harness::writeSnapshot (*host.editor, "expanded-gain-reduction-meters", {}, 1.0f);
 }

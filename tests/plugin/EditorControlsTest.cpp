@@ -276,6 +276,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Gain Reduction");
     expected.push_back ("Gate");
     expected.push_back ("Gate Attack");
+    expected.push_back ("Gate Gain Reduction");
     expected.push_back ("Gate Hold");
     expected.push_back ("Gate Range");
     expected.push_back ("Gate Release");
@@ -287,6 +288,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Level");
     expected.push_back ("Level and Gain Reduction Graph");
     expected.push_back ("Limiter");
+    expected.push_back ("Limiter Gain Reduction");
     expected.push_back (juce::String (juce::CharPointer_UTF8 ("Load Preset File" "\xe2\x80\xa6")));
     expected.push_back ("Lookahead");
     expected.push_back ("Low-pass handle");
