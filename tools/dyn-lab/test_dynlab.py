@@ -190,14 +190,97 @@ class AutoRelease(unittest.TestCase):
 
 
 class AutoGain(unittest.TestCase):
-    def test_the_estimate_is_the_average_gain_reduction_over_the_reference_levels(self):
+    def test_the_average_gain_reduction_over_the_reference_levels_worked_by_hand(self):
         # Worked by hand at the defaults over -40 to 0 dB in 2 dB steps (21 levels). The Knee runs from -21 to
         # -15 dB: 0.75 (L + 21)^2 / 12 at -20, -18 and -16 dB is 0.0625, 0.5625 and 1.5625. Above it, 0.75 (L + 18)
         # from -14 to 0 dB sums to 66. Below it, nothing. (66 + 2.1875) / 21.
-        self.assertAlmostEqual(dynlab.auto_gain(dynlab.Settings()), 68.1875 / 21, places=9)
+        self.assertAlmostEqual(dynlab.average_gain_reduction(dynlab.Settings()), 68.1875 / 21, places=9)
         # Range 6 caps the six levels from -10 dB up at 6 dB: 3 + 4.5 + 6 * 6 above the Knee.
-        self.assertAlmostEqual(dynlab.auto_gain(dynlab.Settings(range=6)), 45.6875 / 21, places=9)
-        self.assertEqual(dynlab.auto_gain(dynlab.Settings(ratio=1)), 0)
+        self.assertAlmostEqual(dynlab.average_gain_reduction(dynlab.Settings(range=6)), 45.6875 / 21, places=9)
+        # Read 2 dB higher, the levels are -38 to +2 dB: the same three in the Knee, and above it one more, +2 dB's
+        # 0.75 * 20 = 15. (68.1875 + 15) / 21.
+        self.assertAlmostEqual(dynlab.average_gain_reduction(dynlab.Settings(), 2.0), 83.1875 / 21, places=9)
+        self.assertEqual(dynlab.average_gain_reduction(dynlab.Settings(ratio=1), 5.0), 0)
+
+    def test_the_estimate_reads_the_reference_levels_the_timing_offset_higher(self):
+        for character in dynlab.CHARACTERS:
+            for options in ({}, {"attack": 0.5, "release": 400}, {"attack": 30, "release": 20, "auto_release": True},
+                            {"hold": 20}):
+                settings = dynlab.Settings(character=character, **options)
+                with self.subTest(character=character, **options):
+                    self.assertEqual(dynlab.auto_gain(settings),
+                                     dynlab.average_gain_reduction(settings, dynlab.timing_offset(settings)))
+
+    def test_at_the_reference_timing_the_offset_is_the_characters_own_constant(self):
+        # Attack 10 ms, Release 100 ms, no Auto Release and no Hold: every term but the constant is 0.
+        for character, timing in dynlab.AUTO_GAIN_TIMING.items():
+            with self.subTest(character):
+                self.assertEqual(dynlab.timing_offset(dynlab.Settings(character=character)), timing.offset)
+
+    def test_the_offset_rises_with_release_falls_with_attack_and_rises_with_auto_release_and_hold(self):
+        # A fast Attack and a slow Release hold the detector near the noise's crests, so the signal comes out quieter
+        # and the estimate must read higher levels; Auto Release lengthens Release, and Hold holds the crests.
+        for character in dynlab.CHARACTERS:
+            def offset(**options):
+                return dynlab.timing_offset(dynlab.Settings(character=character, **options))
+            with self.subTest(character):
+                self.assertGreater(offset(release=400), offset())
+                self.assertLess(offset(attack=30), offset())
+                self.assertGreater(offset(auto_release=True), offset())
+                self.assertGreater(offset(hold=20), offset())
+                self.assertGreater(offset(hold=100), offset(hold=20))
+                # Where the timing alone holds the crests harder than Hold would, Hold leaves the offset where it is.
+                slow = {"attack": 0.5, "release": 400, "auto_release": True}
+                self.assertEqual(offset(hold=100, **slow), offset(**slow))
+
+    def test_beyond_the_grid_the_offset_holds_its_value_at_the_grids_edge(self):
+        for character in dynlab.CHARACTERS:
+            def offset(**options):
+                return dynlab.timing_offset(dynlab.Settings(character=character, **options))
+            with self.subTest(character):
+                self.assertEqual(offset(attack=0.05), offset(attack=0.5))
+                self.assertEqual(offset(attack=100), offset(attack=30))
+                self.assertEqual(offset(release=5), offset(release=20))
+                self.assertEqual(offset(release=5000, auto_release=True), offset(release=400, auto_release=True))
+
+    def test_the_grid_is_every_depth_attack_release_and_auto_release_with_hold_rows_on_top(self):
+        cells = dynlab.auto_gain_grid()
+        held = [cell for cell in cells if cell.hold > 0]
+        self.assertEqual(len(cells) - len(held), 1120)
+        self.assertEqual(len(held), 112)
+        self.assertEqual(len(set(map(repr, cells))), len(cells))
+        for cell in cells:
+            self.assertEqual((cell.colour, cell.range), (0.0, 60.0))
+        self.assertEqual({(c.attack, c.release) for c in held}, {(10.0, 100.0)})
+        self.assertEqual({c.hold for c in held}, {20.0, 100.0})
+        self.assertEqual({(c.threshold, c.ratio, c.knee) for c in cells},
+                         {(-6, 2, 6), (-18, 4, 6), (-18, 4, 3), (-30, math.inf, 6), (-36, 8, 6), (-28, 20, 3),
+                          (-42, 6, 12)})
+
+    def test_the_grid_sample_keeps_its_corners_and_each_characters_worst_cell(self):
+        sample = dynlab.auto_gain_grid_sample()
+        grid = dynlab.auto_gain_grid()
+        self.assertTrue(all(cell in grid for cell in sample))
+        for character in dynlab.CHARACTERS:
+            with self.subTest(character):
+                self.assertIn(dynlab.AUTO_GAIN_GRID_WORST[character], sample)
+                self.assertEqual(dynlab.AUTO_GAIN_GRID_WORST[character].character, character)
+                corners = {(c.attack, c.release, c.auto_release, c.threshold) for c in sample
+                           if c.character == character and c.hold == 0}
+                self.assertTrue({(a, r, ar, t) for a in (0.5, 30) for r in (20, 400) for ar in (False, True)
+                                 for t in (-6, -42)} <= corners)
+
+    def test_the_reference_signal_heard_lookahead_early_comes_out_quieter(self):
+        # The detector meets each crest before the audio it turns down, so it catches more of it.
+        defaults = dynlab.Settings(colour=0.0)
+        self.assertEqual(dynlab.level_difference(defaults, lookahead=0.0), dynlab.level_difference(defaults))
+        self.assertLess(dynlab.level_difference(defaults, lookahead=5.0), dynlab.level_difference(defaults))
+
+    def test_at_ratio_1_the_estimate_is_0_at_every_timing(self):
+        for character in dynlab.CHARACTERS:
+            for options in ({}, {"attack": 0.5, "release": 400, "auto_release": True}, {"hold": 100}):
+                with self.subTest(character=character, **options):
+                    self.assertEqual(dynlab.auto_gain(dynlab.Settings(character=character, ratio=1, **options)), 0)
 
     def test_the_estimate_is_far_below_the_textbook_makeup(self):
         # Making up the Gain Reduction at 0 dBFS gives 13.5 dB at the defaults: loud material would get louder.
@@ -1163,22 +1246,16 @@ class Comp(unittest.TestCase):
         # Clean's runs straight from 0 dB at 0% to -18 dB at 50%: -9 dB is a quarter of the way.
         self.assertAlmostEqual(dynlab.comp_for_threshold(dynlab.STYLE_DEFAULTS["clean"].comp_curve, -9), 25, places=9)
 
-    def test_along_each_curve_the_reference_signal_keeps_its_level_within_the_styles_tolerance(self):
-        for name, style in dynlab.STYLE_DEFAULTS.items():
+    def test_along_each_curve_the_reference_signal_keeps_its_level_within_the_tolerance(self):
+        for name in dynlab.STYLE_DEFAULTS:
             with self.subTest(name):
                 rows = dynlab.comp_curve_rows(name)
                 self.assertEqual([row.comp for row in rows], list(self.COMPS))
-                self.assertTrue(all(abs(row.difference) <= style.auto_gain_tolerance for row in rows))
+                self.assertTrue(all(abs(row.difference) <= dynlab.AUTO_GAIN_TOLERANCE for row in rows))
 
-    def test_only_fet_has_a_tolerance_of_its_own_its_worst_shortfall_rounded_up_to_half_a_db(self):
-        for name, style in dynlab.STYLE_DEFAULTS.items():
-            if name != "fet":
-                self.assertEqual(style.auto_gain_tolerance, dynlab.AUTO_GAIN_TOLERANCE)
-        fet = dynlab.STYLE_DEFAULTS["fet"]
-        worst = max(-row.difference for row in dynlab.comp_curve_rows("fet"))
-        self.assertGreater(worst, dynlab.AUTO_GAIN_TOLERANCE)
-        self.assertEqual(fet.auto_gain_tolerance, math.ceil(worst * 2) / 2)
-        self.assertEqual(fet.auto_gain_tolerance, 2.5)
+    def test_no_style_has_a_tolerance_of_its_own(self):
+        self.assertFalse(hasattr(dynlab, "FET_AUTO_GAIN_TOLERANCE"))
+        self.assertNotIn("auto_gain_tolerance", {f.name for f in dynlab.fields(dynlab.StyleDefaults)})
 
     def test_the_glide_runs_over_its_time_from_0_to_1_without_a_corner_at_either_end(self):
         self.assertEqual(dynlab.COMP_FOLLOW_GLIDE_MS, 300)
@@ -1277,10 +1354,31 @@ class CommandLine(unittest.TestCase):
                     self.assertIn(word, result.stderr)
 
     def test_autogain_exits_non_zero_when_the_level_moves_past_the_tolerance(self):
-        # Threshold -60 dB at Ratio inf asks for more than the estimate can keep level (USAGE.md says why).
-        result = run("autogain", "--threshold", "-60", "--ratio", "inf")
+        # Attack 100 ms, beyond the grid, deep: the estimate holds the grid's slowest Attack's offset (USAGE.md says why).
+        result = run("autogain", "--threshold", "-36", "--ratio", "8", "--attack", "100")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("outside", result.stdout)
+
+    def test_autogain_takes_the_timing_and_prints_it_beside_the_estimate(self):
+        result = run("autogain", "--threshold", "-36", "--ratio", "6", "--knee", "3", "--attack", "0.5", "--release",
+                     "400", "--auto-release", "--hold", "0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Attack 0.5 ms, Release 400 ms, Auto Release on, Hold 0 ms", result.stdout)
+        settings = dynlab.Settings(threshold=-36, ratio=6, knee=3, attack=0.5, release=400, auto_release=True)
+        self.assertIn(f"estimate {dynlab.auto_gain(settings):+.4f} dB", result.stdout)
+        self.assertIn(f"Timing Offset {dynlab.timing_offset(settings):+.4f} dB", result.stdout)
+        self.assertNotEqual(run("autogain", "--attack", "300").returncode, 0)
+
+    def test_autogaingrid_prints_each_characters_worst_cell_and_exits_non_zero_past_the_tolerance(self):
+        result = run("autogaingrid", "--sample")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for character in dynlab.CHARACTERS:
+            self.assertIn(f"worst {character}", result.stdout)
+        self.assertNotIn("outside", result.stdout)
+        strict = run("autogaingrid", "--sample", "--character", "fet", "--tolerance", "0.1")
+        self.assertNotEqual(strict.returncode, 0)
+        self.assertIn("outside", strict.stdout)
+        self.assertNotIn("worst clean", strict.stdout)
 
     def test_aliasing_exits_non_zero_when_a_row_is_outside_the_tolerance(self):
         # At 96 kHz a 10 kHz tone is a smaller fraction of the rate, and its naive aliases are lower, so ADAA's
@@ -1376,15 +1474,15 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(rows[5][1:3], ["-18.00", "3.00"])
         self.assertTrue(all(row[-1] == "within" for row in rows))
         self.assertNotEqual(run("compcurve", "--style", "tube").returncode, 0)
-        # Every Source Style holds the ±1 dB tolerance along its whole curve.
-        for name in SOURCE_STYLES:
+        # Every Style holds the ±1 dB tolerance along its whole curve, FET's included.
+        for name in ("fet", *SOURCE_STYLES):
             with self.subTest(name):
                 source = run("compcurve", "--style", name)
                 self.assertEqual(source.returncode, 0, source.stderr)
                 self.assertIn("within ±1 dB", source.stdout)
                 self.assertNotIn("outside", source.stdout)
-        # FET's Comp Curve at Clean's ±1 dB tolerance: past it from 50% up.
-        strict = run("compcurve", "--style", "fet", "--tolerance", "1")
+        # FET's Comp Curve at a tighter tolerance: past it toward 100%.
+        strict = run("compcurve", "--style", "fet", "--tolerance", "0.1")
         self.assertNotEqual(strict.returncode, 0)
         self.assertIn("outside", strict.stdout)
 

@@ -33,7 +33,7 @@ Every option has a default, and a setting outside its range exits with an error 
 | Gate Hold | 0 to 500 ms | 20 ms |
 | Character | `clean`, `vca`, `fet` or `opto` (`--character`) | `clean` |
 
-`--character` is taken by `transfer`, `step`, `bursts`, `autogain` and `colour`. Clean's figures are the same with it as without. So is `--style <name>`, which runs any Style's Character at that Style's compressor defaults (see [Styles](#styles)); an option given beside it overrides that one default.
+`--character` is taken by `transfer`, `step`, `bursts`, `autogain` and `colour`, and `autogaingrid` takes one or more. Clean's figures are the same with it as without. So is `--style <name>`, which runs any Style's Character at that Style's compressor defaults (see [Styles](#styles)); an option given beside it overrides that one default.
 
 ## `transfer`
 
@@ -112,15 +112,36 @@ The filters' figures are the same at every rate in host terms: the designs are f
 
 ## `autogain`
 
-Prints the Auto Gain estimate for a Threshold, Ratio, Knee and Range, then checks it on the reference signal. It exits non-zero when the check fails.
+Prints the Auto Gain estimate for a Threshold, Ratio, Knee and Range, an Attack, Release, Hold and Auto Release (`--attack`, `--release`, `--hold`, `--auto-release`) and a Character, with the timing it estimated for and its Timing Offset, then checks it on the reference signal. It exits non-zero when the check fails.
 
-**The estimate** is the negated average Gain Reduction of the Transfer Curve over the reference level distribution: the gain Auto Gain adds, in dB. It is worked out from the settings alone, never measured from the audio, so the Engine computes it the same way.
+**The estimate** is the gain Auto Gain adds, in dB: the Transfer Curve's average Gain Reduction over the reference level distribution, each level read the Timing Offset higher (`auto_gain`). It is worked out from the settings, never measured from the audio (ADR 0010), so the Engine computes it the same way. It reads Threshold, Ratio, Knee and Range; Attack, Release, Auto Release and Hold; and the Character. It doesn't read Lookahead, the Detection EQ, Stereo Link, Stereo Placement, the Detection Source, Colour or Saturation: each depends on the material or the routing rather than on how the compressor moves, and with an External Detection Source the estimate is the Internal one.
 
-**The reference level distribution** (`REFERENCE_LEVELS`) is Detection Levels from −40 to 0 dB in 2 dB steps, each equally likely. It spans the levels mixed material moves through, from quiet passages to full scale, evenly, so no one Threshold is favoured. It is not the textbook make-up gain, the Gain Reduction at 0 dBFS: that assumes everything is full scale, and adds +13.5 dB at the defaults, where this adds +3.25 dB.
+**The reference level distribution** (`REFERENCE_LEVELS`) is Detection Levels from −40 to 0 dB in 2 dB steps, each equally likely. It spans the levels mixed material moves through, from quiet passages to full scale, evenly, so no one Threshold is favoured. It is not the textbook make-up gain, the Gain Reduction at 0 dBFS: that assumes everything is full scale, and adds +13.5 dB at the defaults, where this adds +2.83 dB.
 
-**The measured check** builds the reference signal: pink-like noise (a 32-bit linear congruential generator with a fixed seed, through Paul Kellet's three-pole pink filter), 0.5 s at each reference level in turn, lowest first, at 48 kHz. Each segment has the power of a sine whose peak reads its level: the detector reads peaks, and a full-scale sine reads 0 dB. It runs the signal through the Clean model at the default Attack, Release and Hold, with Auto Gain applied, and prints the long-term level difference, output minus input: each segment's difference, averaged in dB over the segments, as the estimate averages its levels.
+**The measured check** builds the reference signal: pink-like noise (a 32-bit linear congruential generator with a fixed seed, through Paul Kellet's three-pole pink filter), 0.5 s at each reference level in turn, lowest first, at 48 kHz. Each segment has the power of a sine whose peak reads its level: the detector reads peaks, and a full-scale sine reads 0 dB. It runs the signal through the Character's model at the settings' Attack, Release, Hold and Auto Release, with Auto Gain applied, and prints the long-term level difference, output minus input: each segment's difference, averaged in dB over the segments, as the estimate averages its levels.
 
-**The tolerance** (`AUTO_GAIN_TOLERANCE`) is ±1 dB, about the smallest change in level a listener notices on music, so within it compression is heard without a loudness bias. The estimate is of the Transfer Curve's steady Gain Reduction, while the detector, with its fast Attack and slow Release, holds near each segment's peaks, so the signal comes out slightly louder, more so the more Gain Reduction there is: about 6% of the estimate. The tolerance holds while the estimate is up to about 15 dB, which covers every setting below. Deeper settings overshoot it: Threshold −40 dB at Ratio ∞ (20 dB of Auto Gain) comes out 1.24 dB louder, and Threshold −60 dB at Ratio ∞ fails outright.
+**The tolerance** (`AUTO_GAIN_TOLERANCE`) is ±1 dB, about the smallest change in level a listener notices on music, so within it compression is heard without a loudness bias.
+
+**The Timing Offset** (`timing_offset`) is what the timing does to the level. The detector doesn't hold the Transfer Curve's steady Gain Reduction on noise: it rises on each crest in Attack and falls between them in Release. A fast Attack with a slow Release holds it near the crests, so the signal comes out quieter than the Transfer Curve says; a slow Attack with a fast Release lets it fall between them, so louder. Auto Release lengthens Release and Hold holds the crests, both quieter. The Transfer Curve alone (the estimate at Timing Offset 0) misses by 1 to 6 dB at common timings: over the Auto Gain grid below, 615 of its 1232 cells fall outside ±1 dB, the worst +6.45 dB (Clean, −42 dB 6:1 Knee 12 dB, Attack 30 ms, Release 20 ms) and −4.94 dB (FET, −36 dB 8:1, Attack 0.5 ms, Release 400 ms, Auto Release on).
+
+Solved cell by cell, the offset that makes the estimate exact is nearly the same at every depth for a timing and a Character: so the estimate reads each reference level that much higher, one offset for every depth. It is a closed form, a quadratic surface in a = ln(Attack / 10 ms) and r = ln(effective Release / 100 ms):
+
+offset = offset₀ + attack·a + release·r + cross·a·r + attack curve·a² + release curve·r²
+
+then Hold moves it toward a held offset, 1 − e^(−Hold / hold time) of the way, when the held offset is the higher. The effective Release is Release, or with Auto Release on, Release times the Character's Auto Release factor: on the reference signal, which compresses most of the time, Auto Release's sustain state stays near three quarters full, so it releases about four times as slowly, and the offset at Release R with Auto Release is the offset at 4R without, within 0.1 dB at Attack 10 ms. Hold holds each crest's Gain Reduction for Hold ms, and pink noise's crests come every few ms, so by 20 ms Hold has turned the detector into a peak hold on every Character but VCA, whose RMS stage has smoothed the crests away (its hold time is 135 ms). The grid's Hold rows are at Attack 10 ms and Release 100 ms; where a fast Attack and a slow Release already hold the crests harder than Hold would, its offset is above the held one, and Hold leaves it there rather than lowering it. Hold there is beyond the grid: Clean at −36 dB 8:1, Attack 0.5 ms, Release 100 ms and Hold 20 ms comes out −1.27 dB, the timing and Hold together holding the crests harder than either alone. Beyond the grid's Attacks and effective Releases the offset holds its value at the grid's edge, so a curvature fitted inside it never runs away outside it.
+
+Each Character's constants (`AUTO_GAIN_TIMING`), fitted by least squares on the level error, then reweighted toward the smallest worst cell, over every cell of the grid:
+
+| Character | offset₀ | attack | release | cross | attack curve | release curve | Auto Release factor | held offset | hold time |
+|---|---|---|---|---|---|---|---|---|---|
+| Clean | −1.2690 dB | −2.1654 | +1.9583 | +0.2911 | −0.2014 | −0.1824 | 4.00 | +3.5129 dB | 6.6 ms |
+| VCA | +0.9240 dB | −0.5444 | +0.5334 | −0.0296 | −0.0747 | −0.0343 | 4.55 | +2.7740 dB | 135 ms |
+| FET | +0.4186 dB | −1.7589 | +1.6848 | +0.2602 | −0.1775 | −0.1390 | 3.96 | +4.8621 dB | 11.6 ms |
+| Opto | +0.4233 dB | −1.4763 | +0.9939 | +0.0306 | −0.0641 | −0.0762 | 4.55 | +4.3769 dB | 10.6 ms |
+
+Clean's and FET's slopes are the steepest: they read peaks, so the timing decides how much of each crest they catch. VCA's are a quarter of Clean's, as its 5 ms RMS stage has already smoothed the crests before the detector sees them. Opto's attack follows the overshoot, so its offset leans less on Release than FET's, whose loop it shares.
+
+What was tried first: the same offset with four terms (offset₀, attack, release, cross) held the grid too, but only just (Clean −0.76 dB, FET −0.72 dB at worst); the two curvatures cut Clean's worst cell by half and FET's by a third. A separate surface with Auto Release on, in place of the factor, held no better for twice the constants. A table over Attack × Release, interpolated, wasn't needed: no offset holds Opto closer than its worst cell here (−0.86 dB), since that cell's offset differs most from depth to depth, so the table could gain only where the closed form is already well within.
 
 These are the settings the check covers, the Engine's tests too:
 
@@ -132,10 +153,64 @@ These are the settings the check covers, the Engine's tests too:
     python3 tools/dyn-lab/dynlab.py autogain --threshold -30
     python3 tools/dyn-lab/dynlab.py autogain --threshold -30 --ratio inf
     python3 tools/dyn-lab/dynlab.py autogain --threshold -6 --ratio 2
+    python3 tools/dyn-lab/dynlab.py autogain --threshold -36 --ratio 6 --knee 3 --attack 0.5 --release 400
+    python3 tools/dyn-lab/dynlab.py autogain --threshold -36 --ratio 6 --knee 3 --attack 0.5 --release 400 --auto-release
+    python3 tools/dyn-lab/dynlab.py autogain --threshold -36 --ratio 6 --knee 3 --attack 30 --release 20
+    python3 tools/dyn-lab/dynlab.py autogain --threshold -36 --ratio 6 --knee 3 --attack 5 --auto-release
+    python3 tools/dyn-lab/dynlab.py autogain --hold 20
+
+The timing probes, on Clean, the level difference with the Transfer Curve's estimate and with this one:
+
+| Settings | Transfer Curve alone | With the Timing Offset |
+|---|---|---|
+| −36 dB, 6:1, Knee 3 dB, Attack 0.5 ms, Release 400 ms | −3.51 dB | +0.05 dB |
+| the same, Auto Release on | −4.22 dB | −0.29 dB |
+| −36 dB, 6:1, Knee 3 dB, Attack 30 ms, Release 20 ms | +5.34 dB | +0.09 dB |
+| −36 dB, 6:1, Knee 3 dB, Attack 5 ms, Auto Release on | −1.51 dB | +0.17 dB |
+| the defaults, Hold 20 ms | −1.25 dB | −0.04 dB |
+
+### `autogaingrid`
+
+Runs the Auto Gain grid: the reference signal's level difference with the estimate as Auto Gain at every cell, on every Character (`--character` names some), Colour 0%, Range 60 dB, Zero Latency and the Internal Detection Source, at 48 kHz. It prints each Character's worst cell and every cell outside the tolerance (`--tolerance` checks another), and exits non-zero when a cell is outside.
+
+- Depths (`AUTO_GAIN_GRID_DEPTHS`, Threshold, Ratio, Knee): −6 dB 2:1 6 dB; −18 dB 4:1 6 dB; −18 dB 4:1 3 dB; −30 dB ∞:1 6 dB; −36 dB 8:1 6 dB; −28 dB 20:1 3 dB; −42 dB 6:1 12 dB. From a gentle 2:1 near the top, past each Style's default and deepest points, to a limiter.
+- Attack 0.5, 2, 5, 10 and 30 ms; Release 20, 50, 100 and 400 ms; Auto Release off and on; Hold 0 ms. The span every Style and Factory Preset plays in.
+- Hold rows on top: Hold 20 and 100 ms at Attack 10 ms and Release 100 ms, Auto Release off and on, at every depth.
+
+That is 1120 cells at Hold 0 and 112 Hold cells. The whole grid takes about five minutes on 8 cores (it runs a cell per core, with the standard library's `multiprocessing`), so the example runs `--sample`: each Character's corners (Attack 0.5 and 30 ms × Release 20 and 400 ms × Auto Release off and on, at the first and last depth, and Hold 100 ms there) and its worst cell of the whole grid (`AUTO_GAIN_GRID_WORST`). The whole grid holds on every Character:
+
+| Character | Worst cell | Level |
+|---|---|---|
+| Clean | −18 dB, 4:1, Knee 3 dB, Attack 30 ms, Release 50 ms | −0.34 dB |
+| VCA | −42 dB, 6:1, Knee 12 dB, Attack 5 ms, Release 50 ms | +0.07 dB |
+| FET | −18 dB, 4:1, Knee 3 dB, Attack 30 ms, Release 20 ms | −0.46 dB |
+| Opto | −18 dB, 4:1, Knee 6 dB, Attack 30 ms, Release 20 ms | −0.86 dB |
+
+Each worst cell is a slow Attack over a fast Release at a shallow depth: there the detector falls furthest between crests, and the depth decides how far, so one offset fits the shallow depths and the deep ones least alike.
+
+**Beyond the grid** (`--beyond`), the estimate isn't held to the tolerance, but the lab prints the level at these rows, each with Auto Release off unless named, Hold 0 ms, at −18 dB 4:1 and −36 dB 8:1, Knee 6 dB:
+
+| Row | Clean | VCA | FET | Opto |
+|---|---|---|---|---|
+| −18 dB, Attack 0.05 ms, Release 100 ms | −0.71 dB | −0.06 dB | −0.51 dB | −0.53 dB |
+| −18 dB, Attack 100 ms, Release 100 ms | +0.46 dB | +0.29 dB | +0.34 dB | +0.09 dB |
+| −18 dB, Attack 10 ms, Release 1000 ms | −0.04 dB | −0.06 dB | −0.08 dB | −0.35 dB |
+| the same, Auto Release on | −0.14 dB | −0.10 dB | −0.18 dB | −0.39 dB |
+| −18 dB, the defaults, Lookahead 5 ms | −0.28 dB | −0.06 dB | −0.34 dB | −0.50 dB |
+| −36 dB, Attack 0.05 ms, Release 100 ms | −1.25 dB | −0.08 dB | −0.76 dB | −0.79 dB |
+| −36 dB, Attack 100 ms, Release 100 ms | +2.20 dB | +0.70 dB | +1.95 dB | +1.66 dB |
+| −36 dB, Attack 10 ms, Release 1000 ms | +0.17 dB | −0.07 dB | +0.24 dB | −0.40 dB |
+| the same, Auto Release on | −0.20 dB | −0.17 dB | −0.22 dB | −0.69 dB |
+| −36 dB, the defaults, Lookahead 5 ms | −0.16 dB | −0.08 dB | −0.08 dB | −0.11 dB |
+
+The offset holds its value at the grid's edge, Attack 0.5 or 30 ms, so past it the estimate is the edge's: a 0.05 ms Attack catches a little more of each crest than 0.5 ms, and comes out quieter (Clean −1.25 dB at −36 dB), and a 100 ms Attack catches less than 30 ms, louder (Clean +2.20 dB, FET +1.95 dB, Opto +1.66 dB). Release 1000 ms is within the effective Releases the grid's Auto Release rows reach (400 ms × the factor), so it holds. Lookahead moves the level by under 0.1 dB: the detector meets each crest Lookahead early, so the gain is down a little sooner, but it catches the same crests. Clean at Threshold −40 dB, Ratio ∞ comes out +0.02 dB, and at −60 dB +0.78 dB: the offset is the defaults' at any depth.
+
+    python3 tools/dyn-lab/dynlab.py autogaingrid --sample
+    python3 tools/dyn-lab/dynlab.py autogaingrid --beyond
 
 ## VCA
 
-VCA is Clean with an RMS Detection Level. On each detection channel, a one-pole mean-square average of the detection signal, with time constant `VCA_RMS_MS`, is read sine-calibrated: 10·log10(2 · mean square) dB, so a sine reads its peak level, as it does on Clean. That level feeds Clean's gain computer and detector unchanged, so Threshold, Ratio, Knee, Range, Attack, Release, Hold and Auto Release all work as on Clean, and the Transfer Curve is Clean's. Auto Gain's estimate is the Transfer Curve's, so it is Clean's too.
+VCA is Clean with an RMS Detection Level. On each detection channel, a one-pole mean-square average of the detection signal, with time constant `VCA_RMS_MS`, is read sine-calibrated: 10·log10(2 · mean square) dB, so a sine reads its peak level, as it does on Clean. That level feeds Clean's gain computer and detector unchanged, so Threshold, Ratio, Knee, Range, Attack, Release, Hold and Auto Release all work as on Clean, and the Transfer Curve is Clean's. Auto Gain's estimate reads VCA's own Timing Offset (see [`autogain`](#autogain)).
 
 **`VCA_RMS_MS`, 5 ms:** the averaging window, and so the shortest response the RMS stage allows. A step's level takes about one window to reach 63%, which lengthens the detector's own times. At the defaults, Attack's 63% is 12.1 ms rather than 10 ms, and Release's 111.8 ms rather than 100 ms. At Attack 0.5 ms the RMS stage sets the pace: 63% takes 1.7 ms. A longer window would lengthen every fast Attack further. A shorter one lets the level ripple more on bass: a sine's mean square ripples at twice its frequency, and 5 ms holds that ripple to +0.6/−0.7 dB at 100 Hz and ±0.07 dB at 1 kHz, before the detector's own Attack and Release smooth it.
 
@@ -152,7 +227,7 @@ VCA is Clean with an RMS Detection Level. On each detection channel, a one-pole 
 
 **Auto Release on VCA** releases a little later after a transient than on Clean: the RMS level falls away over its window after the burst ends, and the Transfer Curve keeps asking for Gain Reduction meanwhile, so a 1 ms burst releases in 106.7 ms with Auto Release on, 6.7% past Release, where Clean's is within `AUTO_RELEASE_TRANSIENT_MARGIN`. The margin is Clean's figure; VCA's is what the lab prints.
 
-**Auto Gain on VCA:** the measured check runs the reference signal through the VCA model, without Colour, whose distortion Auto Gain doesn't compensate. It holds at every setting `autogain` lists, VCA's output coming out 0.09 to 0.65 dB quieter than the input: the RMS stage reads the noise's own level rather than holding near its peaks. It holds at Threshold −40 dB, Ratio ∞ too (−0.82 dB), where Clean's overshoots.
+**Auto Gain on VCA:** the measured check runs the reference signal through the VCA model, without Colour, whose distortion Auto Gain doesn't compensate. It holds at every setting `autogain` lists, VCA's output within 0.04 dB of the input: the RMS stage reads the noise's own level rather than its crests, so VCA's Timing Offset moves least with the timing and the depth. It holds at Threshold −40 dB, Ratio ∞ too (+0.08 dB).
 
     python3 tools/dyn-lab/dynlab.py autogain --character vca
     python3 tools/dyn-lab/dynlab.py autogain --character vca --ratio inf
@@ -203,7 +278,7 @@ Past 4:1 the cap holds the speed-up at 3.8 to 3.9×: the step starts far over Th
 
 **`transfer --character fet`** measures each row by running the loop at that steady level, at 48 kHz (`FET_TRANSFER_RATE`) and the default Attack, from no Gain Reduction until it moves less than 10⁻¹² dB in a sample (`FET_SETTLED_DB`). Its last line gives the largest difference from Clean's Transfer Curve: under 10⁻⁹ dB at every setting listed. The steady test signal is Clean's, a square wave at each level.
 
-**Auto Gain on FET:** the estimate is the Transfer Curve's, Clean's. The measured check runs the reference signal through FET's loop. It holds at every setting `autogain` lists, FET's output within 0.6 dB of the input, and at Threshold −40 dB, Ratio ∞ too (−0.17 dB), where Clean's overshoots: the loop catches the noise's peaks a few times faster than its Attack, so it holds the level nearer the Transfer Curve's.
+**Auto Gain on FET:** the estimate reads FET's own Timing Offset. The measured check runs the reference signal through FET's loop. It holds at every setting `autogain` lists, FET's output within 0.4 dB of the input, and at Threshold −40 dB, Ratio ∞ too (+0.24 dB).
 
 **Auto Release on FET** is Clean's: a step down to under the Knee releases as on Clean, so `bursts --character fet` prints Clean's figures.
 
@@ -276,7 +351,7 @@ With Auto Release on, the fast part follows the material: after a transient it r
 
 **With Lookahead** the loop reads the detection signal Lookahead early, times the gain it applies in that sample, as FET's does, so `step --lookahead` reports Attack's times against the delayed audio.
 
-**Auto Gain on Opto:** the estimate is the Transfer Curve's, Clean's. The measured check runs the reference signal through Opto's model: −0.62 dB at the defaults, −0.61 dB at Ratio ∞, and −0.26 dB at Threshold −40 dB, Ratio ∞, where Clean's overshoots, all within the tolerance.
+**Auto Gain on Opto:** the estimate reads Opto's own Timing Offset. The measured check runs the reference signal through Opto's model: −0.47 dB at the defaults, −0.41 dB at Ratio ∞, and +0.15 dB at Threshold −40 dB, Ratio ∞, all within the tolerance.
 
 **Opto's Colour** is in [Colour](#colour).
 
@@ -556,7 +631,7 @@ Every Character Style writes the Gate off and the Limiter off, each at its defau
 | FET | 0.15, 0.31 | 50.00, 115.15 |
 | Opto | 4.00, 12.04 | 297.17, 2120.04 |
 
-**Auto Gain at the Character Styles:** no Style writes Auto Gain (ADR 0002), but on VCA's and Opto's defaults its check holds, the reference signal coming out 0.33 and 0.37 dB quieter. On FET's it doesn't: `autogain --style fet` leaves it 1.38 dB quieter, outside the ±1 dB tolerance, and exits non-zero. The estimate is the Transfer Curve's, and a 0.5 ms Attack catches the noise's peaks, which a 10 ms one smooths over: Clean at Attack 0.5 ms and Release 50 ms comes out 1.02 dB quieter too. The fast Attack is what FET's Style is for, so it stays, and the shortfall is the cost of an estimated rather than measured Auto Gain at fast Attacks.
+**Auto Gain at the Character Styles:** no Style writes Auto Gain (ADR 0002), but at each Character Style's defaults its check holds, the reference signal coming out 0.01 dB (VCA), 0.12 dB (FET) and 0.24 dB (Opto) quieter. FET's 0.5 ms Attack catches the noise's crests, which a 10 ms one smooths over, and its Timing Offset reads them: +3.40 dB, against +0.42 dB at Attack 10 ms.
 
     python3 tools/dyn-lab/dynlab.py styles
     python3 tools/dyn-lab/dynlab.py step --style clean
@@ -567,6 +642,7 @@ Every Character Style writes the Gate off and the Limiter off, each at its defau
     python3 tools/dyn-lab/dynlab.py transfer --style opto
     python3 tools/dyn-lab/dynlab.py bursts --style fet --rates 48000
     python3 tools/dyn-lab/dynlab.py autogain --style vca
+    python3 tools/dyn-lab/dynlab.py autogain --style fet
     python3 tools/dyn-lab/dynlab.py autogain --style opto
     python3 tools/dyn-lab/dynlab.py colour --style opto --rates 48000
 
@@ -586,7 +662,7 @@ Each keeps Threshold −18 dB, Hold 0 ms, Range 60 dB and Colour 100%, as the Ch
 - **Vocal** is the RVox chain: the Gate, then Clean with Auto Release, then the Limiter. It is the one Style for a known material, so it is the one that writes the Gate and the Limiter on. Clean, because a voice wants its level held without a Character's Colour on it. Ratio 3:1, a little gentler than Clean's 4:1, so a phrase is levelled without flattening its consonants. Auto Release, because a voice alternates sustained notes with syllables: after a held line Release lengthens (456 ms at 63% from steady compression), so the level doesn't pump between words, while after a short syllable it stays near Release (100.4 ms after a 1 ms burst). The Gate at its defaults (Gate Threshold −40 dB, Gate Range 20 dB) lowers the room and breaths between phrases by 20 dB rather than muting them, so the pauses still sound like a voice in a room. The Limiter at Ceiling 0 dBFS stops only overs: the peaks a 10 ms Attack lets through before the compressor catches them, once Comp's Auto Gain has made the voice up.
 - **Instrument** is Opto: bass, keys and guitars want even levelling more than control of each transient, which Opto's material-dependent attack and two-stage release give, a note's attack easing in (63% in 2.7 ms on the 20 dB step) and its tail let back slowly (63% in 297 ms after a second of compression). Ratio 4:1 and Clean's 6 dB Knee, firmer than the Opto Style's 3:1 over 12 dB: an instrument in a mix is held within a narrower range than an Opto Style's gentle levelling holds it. Its timing is the defaults, around which Opto's own varies.
 - **Bus** is VCA: glue on a group or the mix, where VCA's RMS stage and precise onset are chosen. Ratio 2:1, the gentlest of any Style, since a bus is compressed a few dB at a time. Attack 30 ms, three times the default, so a group's transients pass before the gain comes down and the mix keeps its punch (63% in 32.0 ms with the RMS stage). Auto Release, because a mix is dense: after sustained compression Release lengthens to about 470 ms at 63%, so the bus breathes rather than pumps, while after a single hit it stays near Release (106.6 ms after a 1 ms burst). Clean's 6 dB Knee, softer than the VCA Style's 3 dB, so it eases in across the changing level of a whole mix.
-- **Drums** is FET: a FET is chosen for drums' grab and snap. Attack 5 ms, ten times the FET Style's 0.5 ms: the loop's speed-up brings its 63% to 1.27 ms, fast enough to shape a hit, while the first milliseconds of the stick's attack pass, so the drums keep their crack rather than being flattened. Release 50 ms, FET's quick release, so the gain is back before the next hit. The Knee is FET's 3 dB. The slower Attack is also what lets Drums hold ±1 dB of Auto Gain along its curve where the FET Style can't (see [Comp](#comp)).
+- **Drums** is FET: a FET is chosen for drums' grab and snap. Attack 5 ms, ten times the FET Style's 0.5 ms: the loop's speed-up brings its 63% to 1.27 ms, fast enough to shape a hit, while the first milliseconds of the stick's attack pass, so the drums keep their crack rather than being flattened. Release 50 ms, FET's quick release, so the gain is back before the next hit. The Knee is FET's 3 dB.
 
 `step --style` at each Source Style, at 48 kHz (63% and 90%, in ms):
 
@@ -599,7 +675,7 @@ Each keeps Threshold −18 dB, Hold 0 ms, Range 60 dB and Colour 100%, as the Ch
 
 Vocal's and Bus's Release are Auto Release's after the step's steady compression, the longest it gives; `bursts --style` prints how they shorten after shorter bursts. Instrument's is Opto's two-stage release after a second of compression.
 
-**Auto Gain at the Source Styles:** at each one's defaults the check holds: the reference signal comes out 0.38 dB (Vocal), 0.62 dB (Instrument), 0.23 dB (Bus) and 0.47 dB (Drums) quieter. The check runs through the compressor alone, as `autogain` and `compcurve` do: the Gate and the Limiter are outside Auto Gain's promise. With Vocal's Gate on, the reference signal's quietest segments, the ones at and near Gate Threshold (−40 dB), would be gated by up to Gate Range, 20 dB: the Gate is there to lower exactly such quiet passages, which no makeup gain should restore.
+**Auto Gain at the Source Styles:** at each one's defaults the check holds: the reference signal comes out 0.04 dB (Vocal), 0.47 dB (Instrument), 0.01 dB (Bus) and 0.32 dB (Drums) quieter. The check runs through the compressor alone, as `autogain` and `compcurve` do: the Gate and the Limiter are outside Auto Gain's promise. With Vocal's Gate on, the reference signal's quietest segments, the ones at and near Gate Threshold (−40 dB), would be gated by up to Gate Range, 20 dB: the Gate is there to lower exactly such quiet passages, which no makeup gain should restore.
 
     python3 tools/dyn-lab/dynlab.py step --style vocal --rates 48000
     python3 tools/dyn-lab/dynlab.py step --style instrument --rates 48000
@@ -624,29 +700,29 @@ Comp, 0 to 100% (`COMP_RANGE`), sets Threshold and Ratio together along the Styl
 
 A curve is three points (`CompCurve`): Comp 0%, the default Comp, and 100%, each a Threshold and a Ratio. Between neighbours Threshold runs in a straight line, and so does 1/Ratio, as the Engine glides Ratio. The first point's Ratio is 1:1, so 0% compresses nothing and Auto Gain adds 0 dB; its Threshold, 0 dB, starts the fall from the top of Threshold's range. Each point's Threshold is lower than the one before and its Ratio higher, so Threshold falls and Ratio rises monotonically with Comp, and each Threshold on the curve has one Comp: `comp_for_threshold` finds it, clamped to the curve's span, which is where turning Comp Follow on from the editor puts Comp. The middle point is the Style's default Threshold and Ratio, which the default Comp lands on exactly (`comp_threshold`, `comp_ratio`). A Source Style's curve is the same form, three points of its own.
 
-| Style | 0% | 50% (default) | 100% | Auto Gain tolerance |
-|---|---|---|---|---|
-| Clean | 0 dB, 1:1 | −18 dB, 4:1 | −36 dB, 8:1 | ±1 dB |
-| VCA | 0 dB, 1:1 | −18 dB, 4:1 | −36 dB, 10:1 | ±1 dB |
-| FET | 0 dB, 1:1 | −18 dB, 4:1 | −28 dB, 20:1 | ±2.5 dB |
-| Opto | 0 dB, 1:1 | −18 dB, 3:1 | −42 dB, 6:1 | ±1 dB |
-| Vocal | 0 dB, 1:1 | −18 dB, 3:1 | −36 dB, 6:1 | ±1 dB |
-| Instrument | 0 dB, 1:1 | −18 dB, 4:1 | −36 dB, 8:1 | ±1 dB |
-| Bus | 0 dB, 1:1 | −18 dB, 2:1 | −30 dB, 4:1 | ±1 dB |
-| Drums | 0 dB, 1:1 | −18 dB, 4:1 | −30 dB, 10:1 | ±1 dB |
+| Style | 0% | 50% (default) | 100% |
+|---|---|---|---|
+| Clean | 0 dB, 1:1 | −18 dB, 4:1 | −36 dB, 8:1 |
+| VCA | 0 dB, 1:1 | −18 dB, 4:1 | −36 dB, 10:1 |
+| FET | 0 dB, 1:1 | −18 dB, 4:1 | −28 dB, 20:1 |
+| Opto | 0 dB, 1:1 | −18 dB, 3:1 | −42 dB, 6:1 |
+| Vocal | 0 dB, 1:1 | −18 dB, 3:1 | −36 dB, 6:1 |
+| Instrument | 0 dB, 1:1 | −18 dB, 4:1 | −36 dB, 8:1 |
+| Bus | 0 dB, 1:1 | −18 dB, 2:1 | −30 dB, 4:1 |
+| Drums | 0 dB, 1:1 | −18 dB, 4:1 | −30 dB, 10:1 |
 
 Below the default every curve eases in alike, from nothing to the Style's default over 0 to 50%. Above it each goes where its Character is chosen for:
 
-- **Clean**, to −36 dB at 8:1: general-purpose compression, getting firmer as it gets deeper, without reaching limiting. The deepest point keeps the reference signal within the ±1 dB tolerance (+0.87 dB); 10:1 there would leave it.
-- **VCA**, to −36 dB at 10:1: the same depth as Clean's, a little firmer, for the controlled bus and drum compression VCA is chosen for. Its RMS stage keeps the check well within (−0.71 dB).
-- **FET**, to −28 dB at 20:1: a FET's top end is the all-out grab, so its Ratio climbs to near limiting while its Threshold stays higher than the others', which keeps how far its Auto Gain falls short bounded. At −36 dB, 10:1 it falls 2.63 dB short.
-- **Opto**, to −42 dB at 6:1: an optical cell levels rather than limits, so its curve goes deepest with the gentlest Ratio, and the 12 dB Knee keeps the check within at every point (−0.60 dB at worst, at 70%).
-- **Vocal**, to −36 dB at 6:1: one knob from untouched to a voice held flat and forward, Clean's depth at a gentler Ratio, doubling its default 3:1 as Clean's curve doubles 4:1, so the top end levels a voice hard without limiting it; the Limiter is there for the peaks. Its check stays within everywhere (−0.78 dB at 100%).
-- **Instrument**, to −36 dB at 8:1: Clean's curve on Opto, deep enough to flatten a bass line or a strummed guitar, with Opto's slow release keeping it smooth. Its check is worst at its default (−0.62 dB) and stays within everywhere.
-- **Bus**, to −30 dB at 4:1: a bus is compressed a few dB at a time, so its curve is the shallowest, never past 4:1, and stops 6 dB above the others, where a mix would be crushed. Its 30 ms Attack keeps the check well within (−0.53 dB at 100%).
-- **Drums**, to −30 dB at 10:1: FET's grab for drums, firmer than Clean's at its end for smashed room and parallel sounds, but stopping short of FET's 20:1, where FET compresses close to limiting. Its 5 ms Attack keeps its Auto Gain within ±1 dB along the whole curve (−0.49 dB at worst).
+- **Clean**, to −36 dB at 8:1: general-purpose compression, getting firmer as it gets deeper, without reaching limiting. Its check stays within everywhere (−0.25 dB at worst, at its default).
+- **VCA**, to −36 dB at 10:1: the same depth as Clean's, a little firmer, for the controlled bus and drum compression VCA is chosen for. Its check stays well within everywhere (+0.03 dB at worst).
+- **FET**, to −28 dB at 20:1: a FET's top end is the all-out grab, so its Ratio climbs to near limiting while its Threshold stays higher than the others'. Its check stays within everywhere (−0.12 dB at worst).
+- **Opto**, to −42 dB at 6:1: an optical cell levels rather than limits, so its curve goes deepest with the gentlest Ratio. Its check stays within at every point (−0.39 dB at worst, at 70%).
+- **Vocal**, to −36 dB at 6:1: one knob from untouched to a voice held flat and forward, Clean's depth at a gentler Ratio, doubling its default 3:1 as Clean's curve doubles 4:1, so the top end levels a voice hard without limiting it; the Limiter is there for the peaks. Its check stays within everywhere (−0.05 dB at worst, at 40%).
+- **Instrument**, to −36 dB at 8:1: Clean's curve on Opto, deep enough to flatten a bass line or a strummed guitar, with Opto's slow release keeping it smooth. Its check is worst at its default (−0.47 dB) and stays within everywhere.
+- **Bus**, to −30 dB at 4:1: a bus is compressed a few dB at a time, so its curve is the shallowest, never past 4:1, and stops 6 dB above the others, where a mix would be crushed. Its check stays well within everywhere (−0.02 dB at worst).
+- **Drums**, to −30 dB at 10:1: FET's grab for drums, firmer than Clean's at its end for smashed room and parallel sounds, but stopping short of FET's 20:1, where FET compresses close to limiting. Its check stays within everywhere (−0.32 dB at worst, at its default).
 
-**Auto Gain along each curve:** `compcurve` runs the reference signal (see [`autogain`](#autogain)) at each point, at the Style's other defaults, with the estimate as Auto Gain. Clean, VCA, Opto and every Source Style keep within ±1 dB everywhere. FET can't: its 0.5 ms Attack catches the noise's crests, which an estimate from the Transfer Curve can't see, so its output comes out quieter the more it compresses, 1.38 dB at its default and 2.36 dB at 100%. Its fast Attack is what FET's Style is for, so it stays, and FET has a tolerance of its own, its worst shortfall rounded up to the half dB, ±2.5 dB (`FET_AUTO_GAIN_TOLERANCE`), the cost of an estimate that doesn't know Attack. Every other Style stays at ±1 dB (`AUTO_GAIN_TOLERANCE`), Drums too, though it plays FET: its 5 ms Attack smooths over the crests FET's 0.5 ms catches, so its shortfall stays under 0.5 dB. The check runs through the compressor alone, at each Style's other defaults: Vocal's Gate and Limiter are outside it (see [Source Styles](#source-styles)).
+**Auto Gain along each curve:** `compcurve` runs the reference signal (see [`autogain`](#autogain)) at each point, at the Style's other defaults, with the estimate as Auto Gain. Every Style keeps within ±1 dB (`AUTO_GAIN_TOLERANCE`) everywhere, FET too: its 0.5 ms Attack catches the noise's crests, and its Timing Offset reads them, so its level stays within 0.12 dB along its curve. The check runs through the compressor alone, at each Style's other defaults: Vocal's Gate and Limiter are outside it (see [Source Styles](#source-styles)).
 
 **The glide:** turning Comp Follow on glides Threshold, Ratio and Auto Gain from the stored settings onto the curve over a fixed time, and turning it off glides them back over the same one: 300 ms (`COMP_FOLLOW_GLIDE_MS`). A fixed time, not one over the knob's travel, so playback reproduces it (ADR 0004). 300 ms is six times the 50 ms every other setting glides over, so a move of 30 dB of Threshold is heard as compression easing over rather than a jump, and it has arrived within a beat at 200 bpm, so grabbing Comp still answers at once. The glide follows a smoothstep, 3f² − 2f³ of the fraction of the time gone (`follow_share`), whose slope is 0 at each end, so it starts and ends without a corner.
 
@@ -664,52 +740,52 @@ Below the default every curve eases in alike, from nothing to the Style's defaul
 | Comp | Threshold | Ratio | Estimate | Level |
 |---|---|---|---|---|
 | 0% | 0.00 dB | 1.00 | +0.0000 dB | +0.00 dB |
-| 10% | −3.60 dB | 1.18 | +0.0425 dB | −0.02 dB |
-| 20% | −7.20 dB | 1.43 | +0.2497 dB | −0.03 dB |
-| 30% | −10.80 dB | 1.82 | +0.7602 dB | −0.01 dB |
-| 40% | −14.40 dB | 2.50 | +1.7130 dB | +0.05 dB |
-| 50% | −18.00 dB | 4.00 | +3.2470 dB | +0.17 dB |
-| 60% | −21.60 dB | 4.44 | +4.7370 dB | +0.28 dB |
-| 70% | −25.20 dB | 5.00 | +6.5629 dB | +0.41 dB |
-| 80% | −28.80 dB | 5.71 | +8.7480 dB | +0.55 dB |
-| 90% | −32.40 dB | 6.67 | +11.3154 dB | +0.71 dB |
-| 100% | −36.00 dB | 8.00 | +14.2882 dB | +0.87 dB |
+| 10% | −3.60 dB | 1.18 | +0.0246 dB | −0.04 dB |
+| 20% | −7.20 dB | 1.43 | +0.1811 dB | −0.10 dB |
+| 30% | −10.80 dB | 1.82 | +0.6084 dB | −0.16 dB |
+| 40% | −14.40 dB | 2.50 | +1.4454 dB | −0.22 dB |
+| 50% | −18.00 dB | 4.00 | +2.8308 dB | −0.25 dB |
+| 60% | −21.60 dB | 4.44 | +4.2226 dB | −0.23 dB |
+| 70% | −25.20 dB | 5.00 | +5.9450 dB | −0.21 dB |
+| 80% | −28.80 dB | 5.71 | +8.0210 dB | −0.17 dB |
+| 90% | −32.40 dB | 6.67 | +10.4739 dB | −0.13 dB |
+| 100% | −36.00 dB | 8.00 | +13.3268 dB | −0.09 dB |
 
 `compcurve --style fet`:
 
 | Comp | Threshold | Ratio | Estimate | Level |
 |---|---|---|---|---|
 | 0% | 0.00 dB | 1.00 | +0.0000 dB | +0.00 dB |
-| 10% | −3.60 dB | 1.18 | +0.0386 dB | −0.09 dB |
-| 20% | −7.20 dB | 1.43 | +0.2414 dB | −0.26 dB |
-| 30% | −10.80 dB | 1.82 | +0.7478 dB | −0.52 dB |
-| 40% | −14.40 dB | 2.50 | +1.6972 dB | −0.88 dB |
-| 50% | −18.00 dB | 4.00 | +3.2277 dB | −1.38 dB |
-| 60% | −20.00 dB | 4.76 | +4.1522 dB | −1.57 dB |
-| 70% | −22.00 dB | 5.88 | +5.2320 dB | −1.76 dB |
-| 80% | −24.00 dB | 7.69 | +6.4784 dB | −1.95 dB |
-| 90% | −26.00 dB | 11.11 | +7.9029 dB | −2.15 dB |
-| 100% | −28.00 dB | 20.00 | +9.5170 dB | −2.36 dB |
+| 10% | −3.60 dB | 1.18 | +0.1149 dB | −0.01 dB |
+| 20% | −7.20 dB | 1.43 | +0.4820 dB | −0.02 dB |
+| 30% | −10.80 dB | 1.82 | +1.2404 dB | −0.03 dB |
+| 40% | −14.40 dB | 2.50 | +2.5282 dB | −0.05 dB |
+| 50% | −18.00 dB | 4.00 | +4.4837 dB | −0.12 dB |
+| 60% | −20.00 dB | 4.76 | +5.6031 dB | −0.12 dB |
+| 70% | −22.00 dB | 5.88 | +6.8907 dB | −0.10 dB |
+| 80% | −24.00 dB | 7.69 | +8.3580 dB | −0.07 dB |
+| 90% | −26.00 dB | 11.11 | +10.0163 dB | −0.04 dB |
+| 100% | −28.00 dB | 20.00 | +11.8771 dB | +0.00 dB |
 
 `compcurve` at each Source Style, the level column (output minus input, dB, with Auto Gain on):
 
 | Comp | Vocal | Instrument | Bus | Drums |
 |---|---|---|---|---|
 | 0% | +0.00 | +0.00 | +0.00 | +0.00 |
-| 10% | −0.03 | −0.02 | −0.01 | −0.03 |
-| 20% | −0.09 | −0.06 | −0.04 | −0.07 |
-| 30% | −0.17 | −0.12 | −0.08 | −0.13 |
-| 40% | −0.27 | −0.26 | −0.15 | −0.23 |
-| 50% | −0.38 | −0.62 | −0.23 | −0.47 |
-| 60% | −0.45 | −0.45 | −0.28 | −0.48 |
-| 70% | −0.53 | −0.44 | −0.33 | −0.49 |
-| 80% | −0.61 | −0.43 | −0.39 | −0.49 |
-| 90% | −0.69 | −0.41 | −0.46 | −0.48 |
-| 100% | −0.78 | −0.36 | −0.53 | −0.47 |
+| 10% | −0.01 | −0.02 | −0.00 | −0.02 |
+| 20% | −0.03 | −0.03 | −0.00 | −0.04 |
+| 30% | −0.04 | −0.07 | −0.00 | −0.07 |
+| 40% | −0.05 | −0.17 | −0.01 | −0.14 |
+| 50% | −0.04 | −0.47 | −0.01 | −0.32 |
+| 60% | −0.03 | −0.27 | −0.01 | −0.31 |
+| 70% | −0.02 | −0.23 | −0.02 | −0.29 |
+| 80% | −0.00 | −0.18 | −0.01 | −0.26 |
+| 90% | +0.01 | −0.12 | −0.02 | −0.22 |
+| 100% | +0.04 | −0.04 | −0.02 | −0.17 |
 
 ### `compcurve`
 
-Prints any Style's Comp Curve (`--style`, required) at Comp 0, 10, … 100%: the Threshold and Ratio there, the Auto Gain estimate, and the reference signal's level difference with it, output minus input, at the Style's other defaults, each marked within or outside the Style's tolerance. A last line gives the glide time. It exits non-zero when a point is outside the tolerance; `--tolerance <dB>` checks against another in place of the Style's own, so `--style fet --tolerance 1` shows where FET's curve leaves ±1 dB.
+Prints any Style's Comp Curve (`--style`, required) at Comp 0, 10, … 100%: the Threshold and Ratio there, the Auto Gain estimate, and the reference signal's level difference with it, output minus input, at the Style's other defaults, each marked within or outside the tolerance. A last line gives the glide time. It exits non-zero when a point is outside the tolerance; `--tolerance <dB>` checks against another in place of `AUTO_GAIN_TOLERANCE`, so `--style fet --tolerance 0.1` shows where FET's curve leaves ±0.1 dB.
 
 ## Tests
 

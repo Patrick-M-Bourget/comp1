@@ -618,10 +618,81 @@ def latency(mode, fs):
 REFERENCE_LEVELS = tuple(range(-40, 1, 2))
 
 
+def average_gain_reduction(settings, offset_db=0.0):
+    """The Transfer Curve's Gain Reduction in dB, with Range, averaged over REFERENCE_LEVELS, each read offset_db
+    higher. Exactly 0 at Ratio 1:1, which compresses nothing, whatever the offset: gain_reduction leaves a rounding
+    error there off the 2 dB grid."""
+    if settings.ratio == 1:
+        return 0.0
+    return sum(gain_reduction(level + offset_db, settings) for level in REFERENCE_LEVELS) / len(REFERENCE_LEVELS)
+
+
+@dataclass(frozen=True)
+class AutoGainTiming:
+    """A Character's Timing Offset constants (timing_offset): the offset in dB at the reference timing; its slopes in
+    dB per natural-log unit of Attack (attack) and of the effective Release (release), their product's (cross), and
+    each one's curvature (attack_curve, release_curve); how many times Release Auto Release's comes to on the
+    reference signal (auto_release); and the offset Hold moves it toward (held), and how fast, in ms of Hold
+    (hold_ms). USAGE.md ("autogain") gives the fit and the reasons."""
+    offset: float
+    attack: float
+    release: float
+    cross: float
+    attack_curve: float
+    release_curve: float
+    auto_release: float
+    held: float
+    hold_ms: float
+
+
+# The reference timing the Timing Offset is written about: the defaults' Attack and Release.
+AUTO_GAIN_REFERENCE_ATTACK_MS = 10.0
+AUTO_GAIN_REFERENCE_RELEASE_MS = 100.0
+# The Auto Gain grid's span of Attack and Release in ms: the Timing Offset is fitted over it, and holds its value at
+# its edges beyond it (an effective Release up to the longest Release times auto_release).
+AUTO_GAIN_GRID_ATTACKS = (0.5, 2.0, 5.0, 10.0, 30.0)
+AUTO_GAIN_GRID_RELEASES = (20.0, 50.0, 100.0, 400.0)
+# Each Character's Timing Offset constants, fitted over the Auto Gain grid (`autogaingrid`).
+AUTO_GAIN_TIMING = {
+    "clean": AutoGainTiming(offset=-1.2690, attack=-2.1654, release=1.9583, cross=0.2911, attack_curve=-0.2014,
+                            release_curve=-0.1824, auto_release=4.0, held=3.5129, hold_ms=6.6),
+    "vca": AutoGainTiming(offset=0.9240, attack=-0.5444, release=0.5334, cross=-0.0296, attack_curve=-0.0747,
+                          release_curve=-0.0343, auto_release=4.55, held=2.7740, hold_ms=135.0),
+    "fet": AutoGainTiming(offset=0.4186, attack=-1.7589, release=1.6848, cross=0.2602, attack_curve=-0.1775,
+                          release_curve=-0.1390, auto_release=3.96, held=4.8621, hold_ms=11.6),
+    "opto": AutoGainTiming(offset=0.4233, attack=-1.4763, release=0.9939, cross=0.0306, attack_curve=-0.0641,
+                           release_curve=-0.0762, auto_release=4.55, held=4.3769, hold_ms=10.6),
+}
+
+
+def _clamped_log(value, low, high):
+    return math.log(min(max(value, low), high))
+
+
+def timing_offset(settings):
+    """The Timing Offset in dB: how much higher than each reference level the estimate reads the Transfer Curve, for
+    the settings' Attack, Release, Auto Release, Hold and Character. A quadratic surface in a = ln(Attack / 10 ms) and
+    r = ln(effective Release / 100 ms), the effective Release being Release times the Character's auto_release with
+    Auto Release on, each held at the Auto Gain grid's edge beyond it; then Hold moves it toward the Character's held
+    offset, 1 - exp(-Hold / hold_ms) of the way, when that is higher: Hold only ever holds the crests harder."""
+    timing = AUTO_GAIN_TIMING[settings.character]
+    release = settings.release * (timing.auto_release if settings.auto_release else 1.0)
+    a = _clamped_log(settings.attack, AUTO_GAIN_GRID_ATTACKS[0], AUTO_GAIN_GRID_ATTACKS[-1]) \
+        - math.log(AUTO_GAIN_REFERENCE_ATTACK_MS)
+    r = _clamped_log(release, AUTO_GAIN_GRID_RELEASES[0], AUTO_GAIN_GRID_RELEASES[-1] * timing.auto_release) \
+        - math.log(AUTO_GAIN_REFERENCE_RELEASE_MS)
+    offset = (timing.offset + timing.attack * a + timing.release * r + timing.cross * a * r
+              + timing.attack_curve * a * a + timing.release_curve * r * r)
+    if settings.hold > 0 and timing.held > offset:
+        offset += (timing.held - offset) * (1 - math.exp(-settings.hold / timing.hold_ms))
+    return offset
+
+
 def auto_gain(settings):
-    """The Auto Gain estimate in dB: the negated average Gain Reduction of the Transfer Curve, with Range,
-    over REFERENCE_LEVELS. It depends only on Threshold, Ratio, Knee and Range, never on the audio."""
-    return sum(gain_reduction(level, settings) for level in REFERENCE_LEVELS) / len(REFERENCE_LEVELS)
+    """The Auto Gain estimate in dB: the Transfer Curve's average Gain Reduction, with Range, over REFERENCE_LEVELS,
+    each read the Timing Offset higher (timing_offset). It reads Threshold, Ratio, Knee and Range, Attack, Release, Auto
+    Release and Hold, and the Character, never the audio."""
+    return average_gain_reduction(settings, timing_offset(settings))
 
 
 # How far the reference signal's level may move with Auto Gain on, in dB, over the settings USAGE.md lists.
@@ -668,20 +739,30 @@ def reference_signal():
     return segments
 
 
-def level_difference(settings, auto_gain_db=None):
+def level_difference(settings, auto_gain_db=None, lookahead=LOOKAHEAD_DEFAULT):
     """Runs the reference signal through the Character's model, Attack, Release and Hold as settings has them, then
     Auto Gain (the estimate unless auto_gain_db is given), and returns the long-term level difference in dB,
     output minus input: each segment's level difference (its power ratio), averaged over the segments. The
-    average is in dB, as the estimate's is, so every level counts the same, the quiet ones as much as the loud."""
+    average is in dB, as the estimate's is, so every level counts the same, the quiet ones as much as the loud.
+
+    With Lookahead (ms), the detector hears each sample Lookahead, in whole samples, before the gain it gives turns that
+    sample down, as High Quality's delayed audio has it; the last Lookahead of the signal takes the last gain."""
     makeup = 10 ** ((auto_gain(settings) if auto_gain_db is None else auto_gain_db) / 20)
     detector = Detector(settings, REFERENCE_RATE)
+    segments = reference_signal()
+    ahead = round(lookahead * REFERENCE_RATE / 1000)
+    heard = [x for segment in segments for x in segment]
+    gains = [10 ** (-detector.hear_sample(x) / 20) for x in heard]
+    gains += [gains[-1]] * ahead
     differences = []
-    for segment in reference_signal():
+    start = 0
+    for segment in segments:
         power_in = power_out = 0.0
-        for x in segment:
-            y = x * 10 ** (-detector.hear_sample(x) / 20) * makeup
+        for i, x in enumerate(segment, start + ahead):
+            y = x * gains[i] * makeup
             power_in += x * x
             power_out += y * y
+        start += len(segment)
         differences.append(10 * math.log10(power_out / power_in))
     return sum(differences) / len(differences)
 
@@ -2359,6 +2440,10 @@ def report_latency(sample_rates):
 def autogain_options(parser):
     transfer_options(parser)
     character_option(parser)
+    parser.add_argument("--attack", type=float, metavar="ms")
+    parser.add_argument("--release", type=float, metavar="ms")
+    parser.add_argument("--hold", type=float, metavar="ms")
+    parser.add_argument("--auto-release", action="store_true", default=None)
 
 
 @command("autogain", options=autogain_options)
@@ -2367,17 +2452,176 @@ def run_autogain(args):
         raise SystemExit(1)
 
 
+def _auto_gain_timing_heading(settings):
+    return (f"Attack {settings.attack:g} ms, Release {settings.release:g} ms, "
+            f"Auto Release {_on_off(settings.auto_release)}, Hold {settings.hold:g} ms")
+
+
 def report_autogain(settings):
     """The Auto Gain estimate, and the measured check on the reference signal. True when the check holds."""
     print(f"Auto Gain, {_transfer_heading(settings)}")
-    print(f"estimate {auto_gain(settings):+.4f} dB: the average Gain Reduction over Detection Levels "
-          f"{REFERENCE_LEVELS[0]} to {REFERENCE_LEVELS[-1]} dB, {REFERENCE_LEVELS[1] - REFERENCE_LEVELS[0]} dB apart")
+    print(f"estimate {auto_gain(settings):+.4f} dB for {_auto_gain_timing_heading(settings)}: the average Gain "
+          f"Reduction over Detection Levels {REFERENCE_LEVELS[0]} to {REFERENCE_LEVELS[-1]} dB, "
+          f"{REFERENCE_LEVELS[1] - REFERENCE_LEVELS[0]} dB apart, each read the Timing Offset "
+          f"{timing_offset(settings):+.4f} dB higher")
     difference = level_difference(settings)
     within = abs(difference) <= AUTO_GAIN_TOLERANCE
-    print(f"reference signal, Attack {settings.attack:g} ms, Release {settings.release:g} ms, "
-          f"Hold {settings.hold:g} ms: output minus input {difference:+.2f} dB, "
+    print(f"reference signal: output minus input {difference:+.2f} dB, "
           f"{'within' if within else 'outside'} the ±{AUTO_GAIN_TOLERANCE:g} dB tolerance")
     return within
+
+
+# --- Auto Gain: the grid ----------------------------------------------------------------------------
+
+# The Auto Gain grid's depths, as (Threshold dB, Ratio, Knee dB): from a gentle 2:1 near the top to a limiter and a deep,
+# soft levelling, Range 60 dB. With AUTO_GAIN_GRID_ATTACKS, AUTO_GAIN_GRID_RELEASES and Auto Release off and on, at
+# Hold 0, on every Character; then AUTO_GAIN_GRID_HOLDS at the reference timing, Auto Release off and on, at every depth.
+AUTO_GAIN_GRID_DEPTHS = ((-6.0, 2.0, 6.0), (-18.0, 4.0, 6.0), (-18.0, 4.0, 3.0), (-30.0, inf, 6.0), (-36.0, 8.0, 6.0),
+                         (-28.0, 20.0, 3.0), (-42.0, 6.0, 12.0))
+AUTO_GAIN_GRID_HOLDS = (20.0, 100.0)
+
+
+def _grid_cell(character, depth, attack, release, auto_release, hold=0.0):
+    threshold, ratio, knee = depth
+    return Settings(threshold=threshold, ratio=ratio, knee=knee, attack=attack, release=release, hold=hold,
+                    range=RANGE_RANGE[1], auto_release=auto_release, character=character, colour=0.0)
+
+
+def auto_gain_grid(characters=CHARACTERS):
+    """The Auto Gain grid's cells, as Settings, Character by Character: Colour 0% and Range 60 dB, each held to
+    AUTO_GAIN_TOLERANCE."""
+    return [cell for character in characters for cell in
+            [_grid_cell(character, depth, attack, release, auto_release)
+             for depth in AUTO_GAIN_GRID_DEPTHS for attack in AUTO_GAIN_GRID_ATTACKS
+             for release in AUTO_GAIN_GRID_RELEASES for auto_release in (False, True)]
+            + [_grid_cell(character, depth, AUTO_GAIN_REFERENCE_ATTACK_MS, AUTO_GAIN_REFERENCE_RELEASE_MS, auto_release,
+                          hold)
+               for depth in AUTO_GAIN_GRID_DEPTHS for hold in AUTO_GAIN_GRID_HOLDS for auto_release in (False, True)]]
+
+
+# Each Character's worst cell of the whole grid, as `autogaingrid` prints it, which the sample keeps.
+AUTO_GAIN_GRID_WORST = {
+    "clean": _grid_cell("clean", AUTO_GAIN_GRID_DEPTHS[2], 30.0, 50.0, False),
+    "vca": _grid_cell("vca", AUTO_GAIN_GRID_DEPTHS[6], 5.0, 50.0, False),
+    "fet": _grid_cell("fet", AUTO_GAIN_GRID_DEPTHS[2], 30.0, 20.0, False),
+    "opto": _grid_cell("opto", AUTO_GAIN_GRID_DEPTHS[1], 30.0, 20.0, False),
+}
+
+
+def auto_gain_grid_sample(characters=CHARACTERS):
+    """A sample of the grid quick enough to run with every example: each Character's corners (the fastest and slowest
+    Attack and Release, Auto Release off and on, at the first and last depth, and the longest Hold there), and its
+    worst cell."""
+    sample = []
+    for character in characters:
+        corners = [_grid_cell(character, depth, attack, release, auto_release)
+                   for depth in (AUTO_GAIN_GRID_DEPTHS[0], AUTO_GAIN_GRID_DEPTHS[-1])
+                   for attack in (AUTO_GAIN_GRID_ATTACKS[0], AUTO_GAIN_GRID_ATTACKS[-1])
+                   for release in (AUTO_GAIN_GRID_RELEASES[0], AUTO_GAIN_GRID_RELEASES[-1])
+                   for auto_release in (False, True)]
+        corners += [_grid_cell(character, depth, AUTO_GAIN_REFERENCE_ATTACK_MS, AUTO_GAIN_REFERENCE_RELEASE_MS,
+                               auto_release, AUTO_GAIN_GRID_HOLDS[-1])
+                    for depth in (AUTO_GAIN_GRID_DEPTHS[0], AUTO_GAIN_GRID_DEPTHS[-1]) for auto_release in (False, True)]
+        worst = AUTO_GAIN_GRID_WORST[character]
+        sample += corners + ([] if worst in corners else [worst])
+    return sample
+
+
+def _level_difference_of(cell):
+    """level_difference of one cell, given as (settings, lookahead), for a worker process."""
+    settings, lookahead = cell
+    return level_difference(settings, lookahead=lookahead)
+
+
+def level_differences(cells, lookaheads=None):
+    """level_difference at each of cells (Settings), each at its Lookahead (0 ms by default), run across the machine's
+    cores: each cell takes about a second."""
+    import multiprocessing
+    jobs = list(zip(cells, lookaheads or [LOOKAHEAD_DEFAULT] * len(cells)))
+    with multiprocessing.Pool() as pool:
+        return pool.map(_level_difference_of, jobs, chunksize=1)
+
+
+def _depth_heading(settings):
+    return f"{settings.threshold:g} dB, {_shown(settings.ratio)}:1, Knee {settings.knee:g} dB"
+
+
+def _grid_row(settings, difference, tolerance):
+    within = abs(difference) <= tolerance
+    return (f"{settings.character:<6} {_depth_heading(settings):<26} {settings.attack:6g} {settings.release:7g} "
+            f"{_on_off(settings.auto_release):>4} {settings.hold:5g} {auto_gain(settings):+9.4f} "
+            f"{difference:+6.2f} {'within' if within else 'outside'}")
+
+
+GRID_COLUMNS = (f"{'char':<6} {'depth':<26} {'attack':>6} {'release':>7} {'auto':>4} {'hold':>5} {'estimate':>9} "
+                f"{'level':>6}")
+
+# The rows beyond the grid USAGE.md records, not held to the tolerance: at each of BEYOND_DEPTHS on every Character, as
+# (Attack, Release, Auto Release, Lookahead); then Clean deeper than the grid goes.
+BEYOND_DEPTHS = ((-18.0, 4.0, 6.0), (-36.0, 8.0, 6.0))
+BEYOND_TIMINGS = ((0.05, 100.0, False, 0.0), (100.0, 100.0, False, 0.0), (10.0, 1000.0, False, 0.0),
+                  (10.0, 1000.0, True, 0.0), (10.0, 100.0, False, 5.0))
+BEYOND_DEEPER = ((-40.0, inf, 6.0), (-60.0, inf, 6.0))
+
+
+def beyond_the_grid():
+    """The rows beyond the grid, as (Settings, Lookahead in ms)."""
+    rows = [(_grid_cell(character, depth, attack, release, auto_release), lookahead)
+            for character in CHARACTERS for depth in BEYOND_DEPTHS
+            for attack, release, auto_release, lookahead in BEYOND_TIMINGS]
+    return rows + [(_grid_cell("clean", depth, AUTO_GAIN_REFERENCE_ATTACK_MS, AUTO_GAIN_REFERENCE_RELEASE_MS, False),
+                    LOOKAHEAD_DEFAULT) for depth in BEYOND_DEEPER]
+
+
+def autogaingrid_options(parser):
+    parser.add_argument("--character", choices=CHARACTERS, nargs="+", default=list(CHARACTERS))
+    parser.add_argument("--sample", action="store_true",
+                        help="run each Character's corners and worst cell rather than the whole grid (about 10 "
+                             "minutes on 8 cores)")
+    parser.add_argument("--beyond", action="store_true",
+                        help="print the rows beyond the grid instead, which the tolerance doesn't hold")
+    parser.add_argument("--tolerance", type=float, default=AUTO_GAIN_TOLERANCE, metavar="dB",
+                        help="check against this tolerance in place of AUTO_GAIN_TOLERANCE")
+
+
+@command("autogaingrid", options=autogaingrid_options)
+def run_autogaingrid(args):
+    if args.beyond:
+        report_beyond_the_grid()
+    elif not report_autogaingrid(args.character, args.sample, args.tolerance):
+        raise SystemExit(1)
+
+
+def report_autogaingrid(characters, sample=False, tolerance=AUTO_GAIN_TOLERANCE):
+    """The reference signal's level difference with the estimate as Auto Gain over the Auto Gain grid (or its sample):
+    each Character's worst cell, and every cell outside the tolerance. True when every cell holds."""
+    cells = auto_gain_grid_sample(characters) if sample else auto_gain_grid(characters)
+    differences = level_differences(cells)
+    print(f"Auto Gain grid{' sample' if sample else ''}: {len(cells)} cells, Colour 0%, Range 60 dB, Zero Latency, "
+          f"at {REFERENCE_RATE} Hz; the reference signal's output minus input with the estimate as Auto Gain, "
+          f"within ±{tolerance:g} dB")
+    print(GRID_COLUMNS)
+    held = True
+    for character in characters:
+        rows = [(cell, difference) for cell, difference in zip(cells, differences) if cell.character == character]
+        cell, difference = max(rows, key=lambda row: abs(row[1]))
+        print(f"worst {character}: {_grid_row(cell, difference, tolerance)}")
+        for cell, difference in rows:
+            if abs(difference) > tolerance:
+                held = False
+                print(_grid_row(cell, difference, tolerance))
+    return held
+
+
+def report_beyond_the_grid():
+    """The level difference at the rows beyond the grid, with the estimate as Auto Gain."""
+    rows = beyond_the_grid()
+    differences = level_differences([cell for cell, _ in rows], [lookahead for _, lookahead in rows])
+    print("Beyond the Auto Gain grid, not held to the tolerance: the reference signal's output minus input with the "
+          "estimate as Auto Gain, Colour 0%, Range 60 dB")
+    print(f"{GRID_COLUMNS} {'lookahead':>9}")
+    for (cell, lookahead), difference in zip(rows, differences):
+        print(f"{_grid_row(cell, difference, AUTO_GAIN_TOLERANCE)} {lookahead:6g} ms")
 
 
 # --- Auto Release: bursts -----------------------------------------------------------------------
@@ -2917,28 +3161,20 @@ def follow_share(fraction):
 class StyleDefaults:
     """What choosing a Style writes (ADR 0002): the compressor's Settings, its Character among them, its
     default Comp in % (and Comp Follow on), the Gate's, and the Limiter on or off with its Ceiling. Beside them, the
-    Style's Comp Curve, and how far its Auto Gain may let the reference signal's level move along it, in dB."""
+    Style's Comp Curve."""
     settings: Settings
     comp: float
     comp_curve: CompCurve
     gate: Gate = field(default_factory=Gate)
     limiter: bool = False
     ceiling: float = CEILING_DEFAULT
-    auto_gain_tolerance: float = AUTO_GAIN_TOLERANCE
-
-
-# FET's Auto Gain tolerance along its Comp Curve, in dB: its worst shortfall there (2.36 dB, at 100%), rounded up to the
-# half dB. Its 0.5 ms Attack catches the reference noise's crests, which an estimate from the Transfer Curve can't see,
-# so the reference signal comes out quieter, the more so the more it compresses. The fast Attack is what FET's Style is
-# for, so it stays, and this is the cost until Auto Gain's estimate knows Attack.
-FET_AUTO_GAIN_TOLERANCE = 2.5
 
 # Every Style's defaults, in the Style order (ADR 0003): the Character Styles, then the Source Styles, each of which
 # plays a Character at defaults and a Comp Curve of its own (ADR 0002). Clean's are the lab's defaults, so a new
 # instance, which plays Clean, holds its own Style's. Every Style but Vocal writes the Gate and the Limiter off, at their
 # defaults: each is a tool for the material, not a part of a Character. Vocal is the one Style for a known material, a
 # voice, so it writes both on: the Gate, then Clean with Auto Release, then the Limiter. Every default Comp is 50%, the
-# middle of the knob, with as much room to compress more as less, and every Style but FET keeps Auto Gain within
+# middle of the knob, with as much room to compress more as less, and every Style keeps Auto Gain within
 # AUTO_GAIN_TOLERANCE along its curve. USAGE.md ("Styles" and "Comp") gives each row's reasons and its `step --style`
 # and `compcurve` figures.
 STYLE_DEFAULTS = {
@@ -2947,8 +3183,7 @@ STYLE_DEFAULTS = {
     "vca": StyleDefaults(Settings(character="vca", knee=3.0), 50.0,
                          CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 4.0), CompPoint(100.0, -36.0, 10.0)))),
     "fet": StyleDefaults(Settings(character="fet", knee=3.0, attack=0.5, release=50.0), 50.0,
-                         CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 4.0), CompPoint(100.0, -28.0, 20.0))),
-                         auto_gain_tolerance=FET_AUTO_GAIN_TOLERANCE),
+                         CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 4.0), CompPoint(100.0, -28.0, 20.0)))),
     "opto": StyleDefaults(Settings(character="opto", ratio=3.0, knee=12.0), 50.0,
                           CompCurve((CompPoint(0.0, 0.0, 1.0), CompPoint(50.0, -18.0, 3.0), CompPoint(100.0, -42.0, 6.0)))),
     "vocal": StyleDefaults(Settings(ratio=3.0, auto_release=True), 50.0,
@@ -3018,7 +3253,7 @@ def comp_curve_rows(name):
 def compcurve_options(parser):
     parser.add_argument("--style", choices=STYLE_DEFAULTS, required=True)
     parser.add_argument("--tolerance", type=float, metavar="dB",
-                        help="check against this tolerance in place of the Style's own")
+                        help="check against this tolerance in place of AUTO_GAIN_TOLERANCE")
 
 
 @command("compcurve", options=compcurve_options)
@@ -3030,7 +3265,7 @@ def run_compcurve(args):
 def report_compcurve(name, tolerance=None):
     """A Style's Comp Curve at each of COMP_STEPS, and the Auto Gain check along it. True when every point holds."""
     style = STYLE_DEFAULTS[name]
-    tolerance = style.auto_gain_tolerance if tolerance is None else tolerance
+    tolerance = AUTO_GAIN_TOLERANCE if tolerance is None else tolerance
     s = style.settings
     print(f"Comp Curve, {name}: Threshold and 1/Ratio straight between "
           + ", ".join(f"Comp {p.comp:g}% ({p.threshold:g} dB, {_shown(p.ratio)}:1)" for p in style.comp_curve.points)
