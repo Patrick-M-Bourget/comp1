@@ -3,7 +3,7 @@
 #include "Display.h"
 #include "Footer.h"
 #include "PluginProcessor.h"
-#include "Section.h"
+#include "StyleSection.h"
 #include "plugkit/ui/EditorShell.h"
 #include "plugkit/ui/OutputMeter.h"
 
@@ -32,7 +32,7 @@ private:
     plugkit::ui::OutputMeter outputMeter;
     // The sections, left to right in signal order. Named "Sections", as a test finds it.
     juce::Component sections;
-    Section styleSection { "Style" };
+    StyleSection styleSection;
     Footer footer;
 };
 

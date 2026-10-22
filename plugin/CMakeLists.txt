@@ -37,7 +37,8 @@ target_sources(comp1 PRIVATE
     Parameters.cpp
     PluginEditor.cpp
     PluginProcessor.cpp
-    Section.cpp)
+    Section.cpp
+    StyleSection.cpp)
 
 # comp1 reads and writes no audio or image file, and opens no web page: every codec and browser JUCE would
 # otherwise compile in is off.

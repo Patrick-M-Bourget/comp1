@@ -97,6 +97,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/StateTest.cpp
         plugin/StereoParametersTest.cpp
         plugin/StyleParameterTest.cpp
+        plugin/StylePickerTest.cpp
         plugin/UiScaleTest.cpp
     )
     # tests/engine for Measure.h, the test helpers both targets share. plugkit-ui's headers, not its sources, which

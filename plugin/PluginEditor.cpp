@@ -9,7 +9,7 @@ namespace comp1
 namespace layout = staple::tokens::layout;
 
 PluginEditor::PluginEditor (PluginProcessor& p)
-    : EditorShell (p, p.session(), { "comp1", parameters::globalBypassId }), displaySlot (p), outputMeter (p), footer (p.parameterState(), p.session())
+    : EditorShell (p, p.session(), { "comp1", parameters::globalBypassId }), displaySlot (p), outputMeter (p), styleSection (p), footer (p.parameterState(), p.session())
 {
     sections.setName ("Sections");
     sections.addAndMakeVisible (styleSection);
