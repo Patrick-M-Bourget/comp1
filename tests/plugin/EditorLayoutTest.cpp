@@ -15,6 +15,7 @@ namespace
 struct Areas
 {
     juce::Rectangle<int> header, display, levelTab, detectionEqTab, gainReduction, outputMeter, sections, style, footer;
+    juce::Rectangle<int> gateGainReduction, limiterGainReduction;
 };
 
 juce::Component& named (juce::Component& editor, const juce::String& name)
@@ -44,7 +45,9 @@ Areas areasOf (juce::AudioProcessorEditor& editor)
              in (*meter),
              in (named (editor, "Sections")),
              in (named (editor, "Style")),
-             in (*footer) };
+             in (*footer),
+             in (named (editor, "Gate Gain Reduction")),
+             in (named (editor, "Limiter Gain Reduction")) };
 }
 
 } // namespace
@@ -55,17 +58,20 @@ TEST_CASE ("At its default size the Expanded View is the header, the display wit
     REQUIRE (host.editor->getWidth() == 1400);
     REQUIRE (host.editor->getHeight() == 860);
 
-    // 14 px padding and 12 px gaps; two 40 px meter rails and the two rows of sections, 190 and 134 px tall.
+    // 14 px padding and 12 px gaps; four 40 px meter rails and the two rows of sections, 190 and 134 px tall.
     const auto areas = areasOf (*host.editor);
     CHECK (areas.header == juce::Rectangle<int> (14, 14, 1372, 52));
-    CHECK (areas.display == juce::Rectangle<int> (14, 78, 1268, 364));
-    CHECK (areas.gainReduction == juce::Rectangle<int> (1294, 78, 40, 364));
+    CHECK (areas.display == juce::Rectangle<int> (14, 78, 1164, 364));
+    // The Gain Reduction meters in signal order, then the Output Meter.
+    CHECK (areas.gateGainReduction == juce::Rectangle<int> (1190, 78, 40, 364));
+    CHECK (areas.gainReduction == juce::Rectangle<int> (1242, 78, 40, 364));
+    CHECK (areas.limiterGainReduction == juce::Rectangle<int> (1294, 78, 40, 364));
     CHECK (areas.outputMeter == juce::Rectangle<int> (1346, 78, 40, 364));
     CHECK (areas.sections == juce::Rectangle<int> (14, 454, 1372, 336));
     CHECK (areas.footer == juce::Rectangle<int> (14, 802, 1372, 44));
     // Each tab's content is the display under its tabs.
     CHECK (areas.levelTab == areas.detectionEqTab);
-    CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1268, 330));
+    CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1164, 330));
 }
 
 TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes nothing overlaps, and only the display and the section row's width grow")
@@ -88,7 +94,8 @@ TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes noth
     const auto areas = areasOf (*host.editor);
 
     const juce::Rectangle<int> inside { 14, 14, size.x - 28, size.y - 28 };
-    const std::vector<juce::Rectangle<int>> rows { areas.header, areas.display, areas.gainReduction, areas.outputMeter, areas.sections, areas.footer };
+    const std::vector<juce::Rectangle<int>> rows { areas.header, areas.display, areas.gainReduction, areas.outputMeter, areas.sections, areas.footer,
+                                                   areas.gateGainReduction, areas.limiterGainReduction };
     for (size_t i = 0; i < rows.size(); ++i)
     {
         CAPTURE (i);
@@ -108,6 +115,11 @@ TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes noth
     CHECK (areas.sections.getHeight() == smallest.sections.getHeight());
     CHECK (areas.outputMeter.getWidth() == smallest.outputMeter.getWidth());
     CHECK (areas.gainReduction.getWidth() == smallest.gainReduction.getWidth());
+    CHECK (areas.gateGainReduction.getWidth() == smallest.gateGainReduction.getWidth());
+    CHECK (areas.limiterGainReduction.getWidth() == smallest.limiterGainReduction.getWidth());
+    // The meters are as tall as the display.
+    CHECK (areas.gateGainReduction.getHeight() == areas.display.getHeight());
+    CHECK (areas.limiterGainReduction.getHeight() == areas.display.getHeight());
     CHECK (areas.style.getWidth() == smallest.style.getWidth());
     CHECK (areas.style.getHeight() == smallest.style.getHeight());
     CHECK (areas.header.getHeight() == smallest.header.getHeight());

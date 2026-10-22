@@ -1,5 +1,6 @@
-// The Expanded View's Gain Reduction meter and the Detection Level ring on Threshold, which read the editor's level
-// history; and which controls are available on mono, in Zero Latency, and at each sample rate's Oversampling cap.
+// The Expanded View's Gain Reduction meters (the Gate's, the compressor's and the Limiter's) and the Detection Level
+// ring on Threshold, which read the editor's level history; and which controls are available on mono, in Zero Latency,
+// and at each sample rate's Oversampling cap.
 
 #include "Footer.h"
 #include "Measure.h"
@@ -24,21 +25,27 @@ using host::silence;
 using host::sine;
 using host::steady;
 
-// How far a meter falls over a wait with nothing to show: at most 20 dB/s of the wait and of the longest tick before it
-// (EditorTick's 0.25 s), whose fall a busy machine may count in the wait; and, unless it reached its floor, well on its
-// way. Falling at once, it would fall by tens of dB.
-template <typename Shown>
-void checkFallsAt20DbPerSecond (Playing& host, Shown&& shown, double floor)
+// How far a meter falls over a wait playing signal, which gives it nothing to show (silence unless given): at most
+// 20 dB/s of the wait and of the longest tick before it (EditorTick's 0.25 s), whose fall a busy machine may count in
+// the wait; and, unless it reached its floor, well on its way. Falling at once, it would fall by tens of dB.
+template <typename Shown, typename Signal>
+void checkFallsAt20DbPerSecond (Playing& host, Shown&& shown, double floor, Signal&& signal)
 {
     const double from = shown();
     const double start = juce::Time::getMillisecondCounterHiRes();
-    host.playFor (0.4, silence());
+    host.playFor (0.4, signal);
     const double seconds = (juce::Time::getMillisecondCounterHiRes() - start) / 1000.0;
     const double fell = from - shown();
     CAPTURE (from, seconds, fell);
     CHECK (fell <= 20.0 * (seconds + 0.25));
     if (shown() > floor)
         CHECK (fell >= 2.0);
+}
+
+template <typename Shown>
+void checkFallsAt20DbPerSecond (Playing& host, Shown&& shown, double floor)
+{
+    checkFallsAt20DbPerSecond (host, std::forward<Shown> (shown), floor, silence());
 }
 
 } // namespace
@@ -83,6 +90,42 @@ TEST_CASE ("On a steady level above Threshold the Gain Reduction meter reads the
     CHECK_FALSE (host.meter().getWantsKeyboardFocus());
 
     checkFallsAt20DbPerSecond (host, [&] { return host.meter().shownDb(); }, 0.0);
+}
+
+TEST_CASE ("With the Gate closed on a quiet passage the Gate Gain Reduction meter reads Gate Range, and only it; opened, it falls at 20 dB/s")
+{
+    Playing host;
+    host.edit (parameters::gateId, 1.0f);
+    host.edit (parameters::gateThresholdId, -20.0f);
+    host.edit (parameters::gateRangeId, 20.0f);
+    auto& gate = host.gateMeter();
+    auto& repaints = harness::countRepaintsOf (gate);
+    // A steady -50 dB, 30 dB under Gate Threshold, closes the Gate by all of Gate Range. It is under the compressor's
+    // Threshold, and the Limiter is off: only the Gate acts.
+    host.playFor (0.5, steady (-50.0));
+    CHECK (host.keepPlayingUntil (steady (-50.0), [&] { return std::abs (gate.shownDb() - 20.0) <= 0.5; }));
+    CHECK (repaints.count > 0);
+    gate.setCachedComponentImage (nullptr);
+    CHECK (host.meter().shownDb() == 0.0);
+    CHECK (host.limiterMeter().shownDb() == 0.0);
+
+    // Read as a meter, titled and valued; no stop for Tab, and no taker of the mouse.
+    auto* handler = gate.getAccessibilityHandler();
+    REQUIRE (handler != nullptr);
+    CHECK (handler->getRole() == juce::AccessibilityRole::progressBar);
+    CHECK (handler->getTitle() == "Gate Gain Reduction");
+    CHECK (gate.getName() == "Gate Gain Reduction");
+    CHECK (gate.getTooltip() == "Gate Gain Reduction");
+    CHECK (handler->getValueInterface()->isReadOnly());
+    CHECK (host.keepPlayingUntil (steady (-50.0), [&] { return handler->getValueInterface()->getCurrentValueAsString() == "20.0 dB"; }));
+    CHECK_FALSE (gate.getWantsKeyboardFocus());
+    bool clicks = true, childClicks = true;
+    gate.getInterceptsMouseClicks (clicks, childClicks);
+    CHECK_FALSE (clicks);
+    CHECK_FALSE (childClicks);
+
+    // A steady -6 dB opens the Gate: its meter falls as the compressor's does, though the tone plays on.
+    checkFallsAt20DbPerSecond (host, [&] { return gate.shownDb(); }, 0.0, steady (-6.0));
 }
 
 TEST_CASE ("The Detection Level ring fills Threshold's lane to the Detection Level on Threshold's scale, and falls at 20 dB/s after")
