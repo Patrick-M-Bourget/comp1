@@ -250,3 +250,31 @@ TEST_CASE ("Compact View snapshot: with signal playing, so the Gain Reduction me
     REQUIRE (host.keepPlayingUntil (host::steady (-6.0), [&] { return meter.shownDb() > 17.0; }));
     harness::writeSnapshot (*host.editor, "compact-playing", {}, 1.0f);
 }
+
+TEST_CASE ("Expanded View snapshots: the Transfer Curve inset's handles with signal playing, the Ratio handle hovered and the Threshold handle dragged with its readout card", "[.screens]")
+{
+    host::Playing host;
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Clean));
+    host.edit (comp1::parameters::compFollowId, 0.0f);
+    host.edit (comp1::parameters::thresholdId, -30.0f);
+    host.edit (comp1::parameters::ratioId, 4.0f);
+    host.edit (comp1::parameters::kneeId, 6.0f);
+    REQUIRE (host.expandedView().display().shownTab() == comp1::DisplayTab::level);
+    host.playFor (1.0, sine (0.5));
+    auto& inset = host.expandedView().display().transferCurveInset();
+    harness::writeSnapshot (*host.editor, "expanded-inset-handles-playing", {}, 1.0f);
+
+    // The pointer's events through the handles' own handlers: a test window isn't in front.
+    auto& ratio = inset.handle (comp1::InsetHandle::ratio);
+    const auto ratioCentre = inset.handleCentre (comp1::InsetHandle::ratio) - ratio.getPosition().toFloat();
+    ratio.mouseEnter (harness::mouseEvent (ratio, ratioCentre));
+    auto& threshold = inset.handle (comp1::InsetHandle::threshold);
+    const auto thresholdCentre = inset.handleCentre (comp1::InsetHandle::threshold) - threshold.getPosition().toFloat();
+    const auto held = juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier);
+    threshold.mouseDown (harness::mouseEvent (threshold, thresholdCentre, held));
+    threshold.mouseDrag (harness::mouseEvent (threshold, thresholdCentre + juce::Point<float> { 12.0f, 0.0f }, held, thresholdCentre));
+    host.playFor (0.3, sine (0.5));
+    harness::writeSnapshot (inset, "inset-handles-hovered-and-dragged", {}, 2.0f);
+    threshold.mouseUp (harness::mouseEvent (threshold, thresholdCentre + juce::Point<float> { 12.0f, 0.0f }, {}, thresholdCentre));
+    ratio.mouseExit (harness::mouseEvent (ratio, ratioCentre + juce::Point<float> { 30.0f, 0.0f }));
+}
