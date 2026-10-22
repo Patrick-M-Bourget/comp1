@@ -37,6 +37,9 @@ struct CompCurve
     constexpr bool operator== (const CompCurve&) const = default;
 };
 
+// Clean's Comp Curve (comp1/Style.h's table, dyn-lab's), which a default Settings holds too.
+inline constexpr CompCurve cleanCompCurve { { CompPoint { 0.0, 0.0, 1.0 }, CompPoint { 50.0, -18.0, 4.0 }, CompPoint { 100.0, -36.0, 8.0 } } };
+
 namespace detail
 {
 // The two points comp (clamped to the Comp Curve's span) falls between, and how far from the first to the second, 0 to 1.

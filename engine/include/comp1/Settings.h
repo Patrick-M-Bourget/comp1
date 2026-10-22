@@ -202,7 +202,7 @@ struct Settings
     // (comp1/Style.h's compCurveOf). The defaults are Clean's, its default Comp and its curve.
     double comp = 50.0;
     bool compFollow = false;
-    CompCurve compCurve { { CompPoint { 0.0, 0.0, 1.0 }, CompPoint { 50.0, -18.0, 4.0 }, CompPoint { 100.0, -36.0, 8.0 } } };
+    CompCurve compCurve = cleanCompCurve;
     // The compressor, in parameterRanges' units, with dyn-lab's defaults.
     double thresholdDb = -18.0;
     double ratio = 4.0; // parameterRanges::inf for ∞:1
