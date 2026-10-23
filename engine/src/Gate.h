@@ -123,10 +123,10 @@ public:
         detection.setDetectionEq (settings.detectionEq, snap);
         source = settings.detectionSource;
         const auto& gate = settings.gate;
-        on = gate.on;
-        wanted = settings.gatePosition;
+        gateOn = gate.on;
+        wantedPosition = settings.gatePosition;
         if (snap)
-            position = wanted;
+            position = wantedPosition;
         glideTo (glides[threshold], gate.thresholdDb, snap);
         glideTo (glides[range], gate.rangeDb, snap);
         glideTo (glides[hold], gate.holdMs, snap);
@@ -140,8 +140,8 @@ public:
     // At the start of each run: a stage faded out moves to its new position, and the settings move on by a run.
     void startRun()
     {
-        if (position != wanted && share.isSettled() && share.value() == 0.0)
-            position = wanted;
+        if (position != wantedPosition && share.isSettled() && share.value() == 0.0)
+            position = wantedPosition;
         share.setTarget (aimedShare());
         bool moving = false;
         for (auto& setting : glides)
@@ -183,7 +183,7 @@ public:
 
 private:
     // The share of the Gain Reduction to glide to: all of it while on and where it is wanted, none otherwise.
-    double aimedShare() const { return on && position == wanted ? 1.0 : 0.0; }
+    double aimedShare() const { return gateOn && position == wantedPosition ? 1.0 : 0.0; }
 
     // One sample of the Gate, from its Detection Level in dB (or none, with no Sidechain to listen to): its Gain
     // Reduction in dB.
@@ -231,8 +231,8 @@ private:
     LevelHold levelHold;
     plugkit::Smoother glides[count];
     plugkit::Smoother share; // 0 off, 1 on: the share of the Gain Reduction applied
-    bool on = false;
-    GatePosition position = GatePosition::Pre, wanted = GatePosition::Pre;
+    bool gateOn = false;
+    GatePosition position = GatePosition::Pre, wantedPosition = GatePosition::Pre;
     double thresholdDb = 0.0, rangeDb = 0.0;
     clean::Timing timing; // Gate Attack's pole for opening, Gate Release's for closing, and Gate Hold
     double gainReductionDb = 0.0;
