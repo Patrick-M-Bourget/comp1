@@ -79,6 +79,19 @@ private:
     bool stepping = false; // a held key's undo step is open
 };
 
+// The Auto Gain dot: a dot of diameter, in Auto Gain's on ink (the A toggle's, text1), centred in its bounds, which the
+// footer gives it in the gap right of the Output readout. No text; its tooltip reads "Auto Gain: " and the amount. It
+// takes no keyboard focus and is hidden from screen readers, as the readout's description says the amount.
+class AutoGainDot final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    AutoGainDot();
+
+    void paint (juce::Graphics& g) override;
+
+    static constexpr float diameter = 4.0f;
+};
+
 // The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Style,
 // Processing Mode and Oversampling, as chips that open menus; at the right the Output readout, the UI Scale menu and the
 // switch between the views, in that order, which is Tab's order too.
@@ -94,7 +107,9 @@ private:
 // (PluginProcessor::appliedAutoGainDb), signed to one decimal; Output Gain's range
 // has no silent bottom, so it always reads as a level. While Dry is above Off (parallel compression) a "||" mark leads
 // it, in its ink, and a screen reader is told so by its description. It is drawn in text4, not applied, while Global
-// Bypass is on.
+// Bypass is on. While it includes Auto Gain (an amount that reads other than zero), its description says so, "Includes
+// Auto Gain: -4.2 dB", after the parallel mark's, and the Auto Gain dot (AutoGainDot) shows in the gap right of it,
+// unless Global Bypass leaves it not applied; the dot's place is kept while it is hidden, so nothing moves.
 // A click on it, or Space or Return, opens and closes the output popover (OutputPopover), fill2 behind the readout
 // while it is open. It follows the processor on the editor's tick.
 //
@@ -112,6 +127,7 @@ public:
     plugkit::ui::UiScaleMenu& uiScaleMenu() { return uiScale; }
     plugkit::ui::OutputReadout& outputReadout() { return output; }
     OutputPopover& outputPopover() { return popover; }
+    AutoGainDot& autoGainDot() { return dot; }
 
     // The switch between the views, at the far right after the UI Scale menu, last in Tab's order: Staple icon buttons
     // titled by what they do, the collapse arrow "Switch to the Compact View" in the Expanded View, the expand arrow
@@ -134,6 +150,7 @@ private:
     juce::AudioProcessorValueTreeState::ButtonAttachment globalBypassAttachment;
     ChoiceChip style, processingMode, oversampling;
     plugkit::ui::OutputReadout output;
+    AutoGainDot dot;
     OutputPopover popover;
     plugkit::ui::UiScaleMenu uiScale;
     staple::IconButton toCompact { "Switch to the Compact View", staple::Icon::collapse },

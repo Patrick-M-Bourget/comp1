@@ -247,6 +247,27 @@ TEST_CASE ("Output popover snapshots: open in the Expanded View and the Compact 
     snapshot (host, "expanded-output-popover-parallel");
 }
 
+TEST_CASE ("Footer snapshots: the Output readout with Auto Gain off, then on with its dot, in the Expanded View and close up", "[.screens]")
+{
+    host::EditorHost host;
+    openOn (host, juce::AudioChannelSet::stereo());
+    // Threshold -30 dB with Output Gain +1 dB: the readout reads +1.0 dB, then +8.9 dB with Auto Gain's estimate.
+    host.edit (comp1::parameters::compFollowId, 0.0f);
+    host.edit (comp1::parameters::thresholdId, -30.0f);
+    host.edit (comp1::parameters::outputGainId, 1.0f);
+    for (const bool on : { false, true })
+    {
+        host.edit (comp1::parameters::autoGainId, on ? 1.0f : 0.0f);
+        REQUIRE (host.settleUntil ([&] { return host.footer().autoGainDot().isVisible() == on; }));
+        const juce::String name = on ? "auto-gain-on" : "auto-gain-off";
+        snapshot (host, "expanded-" + name);
+        // Close up, at 3x: the footer's right end, from just left of the readout, over the window's background.
+        auto& footer = host.footer();
+        const auto right = host.editor->getLocalArea (&footer, footer.getLocalBounds().withLeft (host.outputReadout().getX() - 24));
+        harness::writeSnapshot (*host.editor, "footer-" + name, right, 3.0f);
+    }
+}
+
 TEST_CASE ("Compact View snapshot: with signal playing, so the Gain Reduction meter reads", "[.screens]")
 {
     host::Playing host;
