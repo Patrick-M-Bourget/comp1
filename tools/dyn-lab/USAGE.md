@@ -574,7 +574,7 @@ Prints the Limiter's figures at a Ceiling (`--ceiling dB`, 0 dBFS by default) an
 
 ## Gate
 
-The Gate is a hard gate on the main input, before the Dry/Wet split, so it lowers the Dry and the Wet path alike. It listens to the Detection Source after the Detection EQ, and one Gate gain goes on every main channel, from the louder channel's Detection Level. Each sample:
+The Gate is a hard gate on the main input, before the Dry/Wet split, so it lowers the Dry and the Wet path alike: comp1's Gate Position Pre. dyn-lab doesn't model Post, where the Gate runs the same way on the compressed signal. It listens to the Detection Source after the Detection EQ, and one Gate gain goes on every main channel, from the louder channel's Detection Level. Each sample:
 
 - **The held level** is the loudest Detection Level over the sample and the `GATE_LEVEL_HOLD_MS` before it, in dB where a full-scale sine reads 0.
 - **Open or closed:** the Gate opens when the held level reaches Gate Threshold, and closes once it is `GATE_HYSTERESIS_DB` under it. In between it stays as it is.
