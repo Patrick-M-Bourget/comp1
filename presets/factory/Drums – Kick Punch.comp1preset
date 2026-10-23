@@ -4,6 +4,7 @@
   <PARAM id="style" value="7.0"/>
   <PARAM id="comp" value="60.0"/>
   <PARAM id="comp_follow" value="1.0"/>
+  <PARAM id="auto_gain" value="1.0"/>
   <PARAM id="knee" value="3.0"/>
   <PARAM id="release" value="60.0"/>
 </comp1>
