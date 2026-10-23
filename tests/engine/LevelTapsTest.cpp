@@ -37,27 +37,6 @@ std::vector<LevelRecord> readAll (Engine& engine)
     return records;
 }
 
-// Runs audio through engine in place as test::processInBlocks does, reading the level history after each block, as
-// the editor reads it while the host plays, and returns every record read.
-std::vector<LevelRecord> playAndRead (Engine& engine, test::Channels& audio, const std::vector<int>& blockSizes)
-{
-    std::vector<LevelRecord> all;
-    std::vector<LevelRecord> records (static_cast<std::size_t> (engine.levelHistoryCapacity()));
-    const int numSamples = static_cast<int> (audio.front().size());
-    std::vector<float*> main (audio.size());
-    for (int start = 0, block = 0; start < numSamples; ++block)
-    {
-        const int count = std::min (blockSizes[static_cast<std::size_t> (block) % blockSizes.size()], numSamples - start);
-        for (std::size_t ch = 0; ch < audio.size(); ++ch)
-            main[ch] = audio[ch].data() + start;
-        engine.process ({ main.data(), static_cast<int> (main.size()), count });
-        start += count;
-        const int read = engine.readLevels (records.data(), static_cast<int> (records.size()));
-        all.insert (all.end(), records.begin(), records.begin() + read);
-    }
-    return all;
-}
-
 double db (double amplitude)
 {
     return 20.0 * std::log10 (amplitude);
@@ -191,7 +170,7 @@ TEST_CASE ("The Detection Level reads 0 dB for a full-scale sine and the floor f
     for (std::size_t i = static_cast<std::size_t> (silent); i < audio.front().size(); ++i)
         audio.front()[i] = static_cast<float> (std::sin (2.0 * 3.141592653589793 * 1000.0 * static_cast<double> (i) / sampleRate));
 
-    const auto records = playAndRead (engine, audio, { 512 });
+    const auto records = test::playAndReadLevels (engine, audio, { 512 });
     REQUIRE (records.size() == audio.front().size() / 16);
     double loudest = plugkit::levelFloorDb;
     for (std::size_t run = 0; run < records.size(); ++run)
@@ -217,7 +196,7 @@ std::vector<LevelRecord> steadyRecords (const Settings& settings, const std::vec
     Engine engine;
     engine.prepare (sampleRate, 512, numChannels);
     engine.setSettings (settings);
-    return playAndRead (engine, audio, { 512 });
+    return test::playAndReadLevels (engine, audio, { 512 });
 }
 
 } // namespace
@@ -331,7 +310,7 @@ TEST_CASE ("On a step the Gain Reduction records follow the Engine's own step re
     Engine engine;
     engine.prepare (sampleRate, 512, 1);
     engine.setSettings ({});
-    const auto records = playAndRead (engine, audio, { 512 });
+    const auto records = test::playAndReadLevels (engine, audio, { 512 });
 
     const auto heard = test::gainReductionDb (input, audio.front());
     REQUIRE (records.size() == heard.size() / 16);
@@ -355,7 +334,7 @@ TEST_CASE ("The level history is the same, record for record, however the host c
         Engine engine;
         engine.prepare (48000.0, 4096, numChannels);
         engine.setSettings ({ .thresholdDb = -30.0, .autoGain = true });
-        return playAndRead (engine, audio, blockSizes);
+        return test::playAndReadLevels (engine, audio, blockSizes);
     };
     const auto reference = recordsCutBy ({ 512 });
     REQUIRE (reference.size() == 3000);
@@ -528,7 +507,7 @@ TEST_CASE ("Across a Gate step and an on/off glide the Gate's Gain Reduction rec
         if (start == 3 * length + length / 2)
             engine.setSettings (gated());
         piece.front().assign (audio.front().begin() + start, audio.front().begin() + start + length / 2);
-        const auto read = playAndRead (engine, piece, { 512 });
+        const auto read = test::playAndReadLevels (engine, piece, { 512 });
         records.insert (records.end(), read.begin(), read.end());
         std::copy (piece.front().begin(), piece.front().end(), audio.front().begin() + start);
     }
@@ -576,7 +555,7 @@ std::vector<LevelRecord> limitedRecords (const Settings& settings, std::vector<f
     Engine engine;
     engine.prepare (48000.0, 512, 1);
     engine.setSettings (settings);
-    return playAndRead (engine, audio, { 512 });
+    return test::playAndReadLevels (engine, audio, { 512 });
 }
 
 } // namespace
@@ -670,7 +649,7 @@ TEST_CASE ("The Gate's and the Limiter's Gain Reductions are the same, record fo
         Engine engine;
         engine.prepare (48000.0, 4096, numChannels);
         engine.setSettings (everyStage (mode));
-        return playAndRead (engine, audio, blockSizes);
+        return test::playAndReadLevels (engine, audio, blockSizes);
     };
     const auto reference = recordsCutBy ({ 512 });
     REQUIRE (reference.size() == 3000);
@@ -752,7 +731,7 @@ TEST_CASE ("Under Global Bypass and Detection Audition the Gate and the Limiter 
         Engine engine;
         engine.prepare (48000.0, 512, 2);
         engine.setSettings (settings);
-        return playAndRead (engine, audio, { 512 });
+        return test::playAndReadLevels (engine, audio, { 512 });
     };
     const auto plain = recordsWith (everyStage (mode));
     auto bypassed = everyStage (mode);

@@ -141,6 +141,35 @@ inline Channels played (const Settings& settings,
     return out;
 }
 
+// Runs audio through engine, already prepared and set up, in place, cut into blocks of the sizes given, in turn and
+// repeating; from change's sample on with its settings when there is one, the block before it cut short there. Reads
+// the level history after each block, as the editor reads it while the host plays, and returns every record read.
+// The block cut short at the change takes one turn of the sizes given, as a whole block would.
+inline std::vector<LevelRecord> playAndReadLevels (Engine& engine,
+                                                   Channels& audio,
+                                                   const std::vector<int>& blockSizes,
+                                                   const std::optional<SettingsChange>& change = std::nullopt)
+{
+    std::vector<LevelRecord> all, records (static_cast<std::size_t> (engine.levelHistoryCapacity()));
+    const int numSamples = static_cast<int> (audio.front().size());
+    std::vector<float*> main (audio.size());
+    for (int start = 0, block = 0; start < numSamples; ++block)
+    {
+        if (change && start == change->at)
+            engine.setSettings (change->settings);
+        int count = std::min (blockSizes[static_cast<std::size_t> (block) % blockSizes.size()], numSamples - start);
+        if (change && start < change->at)
+            count = std::min (count, change->at - start);
+        for (std::size_t ch = 0; ch < audio.size(); ++ch)
+            main[ch] = audio[ch].data() + start;
+        engine.process ({ main.data(), static_cast<int> (main.size()), count });
+        start += count;
+        const int read = engine.readLevels (records.data(), static_cast<int> (records.size()));
+        all.insert (all.end(), records.begin(), records.begin() + read);
+    }
+    return all;
+}
+
 // The level history of audio through a fresh Engine at sampleRate, with settings from the start, and from change's
 // sample on with its settings when there is one: every record, read after each host block of up to 512 samples, as
 // the editor reads it while the host plays.
@@ -150,23 +179,7 @@ inline std::vector<LevelRecord> levelHistory (const Settings& settings, double s
     Engine engine;
     engine.prepare (sampleRate, blockSize, static_cast<int> (audio.size()));
     engine.setSettings (settings);
-    std::vector<LevelRecord> all, records (static_cast<std::size_t> (engine.levelHistoryCapacity()));
-    const int numSamples = static_cast<int> (audio.front().size());
-    std::vector<float*> main (audio.size());
-    for (int start = 0; start < numSamples;)
-    {
-        if (change && start == change->at)
-            engine.setSettings (change->settings);
-        const int end = change && start < change->at ? std::min (start + blockSize, change->at) : start + blockSize;
-        const int count = std::min (end, numSamples) - start;
-        for (std::size_t ch = 0; ch < audio.size(); ++ch)
-            main[ch] = audio[ch].data() + start;
-        engine.process ({ main.data(), static_cast<int> (main.size()), count });
-        start += count;
-        const int read = engine.readLevels (records.data(), static_cast<int> (records.size()));
-        all.insert (all.end(), records.begin(), records.begin() + read);
-    }
-    return all;
+    return playAndReadLevels (engine, audio, { blockSize }, change);
 }
 
 // audio delayed by samples, the start filled with silence and the end cut off, so it keeps its length.
