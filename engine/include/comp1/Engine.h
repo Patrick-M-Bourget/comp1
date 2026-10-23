@@ -52,7 +52,7 @@ struct LevelRecord
 // whatever the other settings; what is said of the output below holds of it delayed so. Zero Latency has none.
 //
 // The level taps: the Output Level is read with readOutputLevel(), the level history with readLevels() and
-// skipLevels(), and the sample taps (the detection source tap, the input tap and the output tap) with their read and skip, each
+// skipLevels(), and the sample taps (the input tap and the output tap) with their read and skip, each
 // from one reader thread while process() runs on the audio thread. Reading never allocates, locks or does I/O, and
 // stays safe through any prepare(), at any sample rate or channel count: nothing a reader touches is freed or moved
 // while the Engine lives. In the levels, silence, anything quieter than plugkit::levelFloorDb, and NaN read the floor.
@@ -116,29 +116,14 @@ public:
     // big. Safe to call from any thread.
     int levelHistoryCapacity() const;
 
-    // The detection source tap, for a spectrum of what the detector listens to: the Detection Source before the
-    // Detection EQ, as one mono signal, the mean of its channels, a sample per input sample at the prepared rate. With
-    // Internal, the compressor's input as the detection stage takes it; with External, the Sidechain as the detection
-    // stage takes it (in High Quality both delayed by the Oversampling section ahead of the detection stage); with
-    // External and no Sidechain connected, silence. It is the same sample for sample however the host cuts the audio
-    // into blocks, and a Processing Mode switch's fade adds none, as only one path plays at a time.
-    //
-    // Copies up to maxSamples, oldest first, and returns how many were copied. When the reader falls behind, the tap
-    // holds detectionSourceSampleCapacity() samples and drops new ones.
-    int readDetectionSourceSamples (float* destination, int maxSamples);
-
-    // Drops what the tap holds, so the next readDetectionSourceSamples() copies only samples played after this. From
-    // its reader thread.
-    void skipDetectionSourceSamples();
-
-    // How many samples the tap holds between reads, at least 150 ms of them: the reader's buffer is this big. Safe to
-    // call from any thread.
-    int detectionSourceSampleCapacity() const;
-
     // The input tap and the output tap, for the Spectrum display: what the compressor takes away is the gap between
     // the two. Each is one mono signal, the mean of the channels, a sample per input sample at the prepared rate, the
-    // same sample for sample however the host cuts the audio into blocks, read, skipped and sized as the detection
-    // source tap is.
+    // same sample for sample however the host cuts the audio into blocks.
+    //
+    // A read copies up to maxSamples, oldest first, and returns how many were copied; when the reader falls behind, the
+    // tap holds its capacity's samples and drops new ones. A skip drops what the tap holds, so the next read copies
+    // only samples played after it; reads and skips come from the tap's one reader thread. The capacity, at least
+    // 150 ms of samples, is the reader's buffer size, safe to ask from any thread.
     //
     // The input tap carries the main input as process() receives it, before any stage: non-finite samples silenced, as
     // they play, and not delayed in either Processing Mode.

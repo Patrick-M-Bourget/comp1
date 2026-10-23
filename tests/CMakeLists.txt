@@ -28,7 +28,6 @@ add_executable(comp1_engine_tests
     engine/ColourTest.cpp
     engine/DetectionAuditionTest.cpp
     engine/DetectionEqTest.cpp
-    engine/DetectionSourceTapTest.cpp
     engine/DetectionSourceTest.cpp
     engine/DetectionStageTest.cpp
     engine/DryWetTest.cpp

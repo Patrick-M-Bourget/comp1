@@ -1,9 +1,8 @@
 #pragma once
 
 // The taps comp1 adds to plugkit's Output Level: a run's levels (RunLevels), gathered on the audio thread; the level
-// history (LevelHistory), which carries a record of each run to one reader thread; the detection source tap
-// (DetectionSourceTap), which carries the detection source's samples to one; and the input and output taps (MeanTap),
-// which carry the mean of a block's channels to one; all on one ring (TapRing).
+// history (LevelHistory), which carries a record of each run to one reader thread; and the input and output taps
+// (MeanTap), which carry the mean of a block's channels to one; both on one ring (TapRing).
 
 #include "comp1/Engine.h"
 
@@ -183,9 +182,6 @@ private:
 
 // The level history: a record per completed run.
 using LevelHistory = TapRing<LevelRecord, plugkit::runSamples>;
-
-// The detection source tap: a sample per input sample.
-using DetectionSourceTap = TapRing<float, 1>;
 
 // A tap of one point on the audio path, the input or the output tap: a mono sample per input sample, the mean of the
 // channels there, on a TapRing.

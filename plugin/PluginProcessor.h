@@ -167,13 +167,6 @@ public:
     void skipLevels() { engine.skipLevels(); }
     int levelHistoryCapacity() const { return engine.levelHistoryCapacity(); }
 
-    // The Engine's detection source tap, for the Detection EQ display, its one reader, from the message thread: the
-    // Detection Source before the Detection EQ, a mono sample per sample played since the last read, oldest first
-    // (Engine::readDetectionSourceSamples, skipDetectionSourceSamples, detectionSourceSampleCapacity).
-    int readDetectionSourceSamples (float* destination, int maxSamples) { return engine.readDetectionSourceSamples (destination, maxSamples); }
-    void skipDetectionSourceSamples() { engine.skipDetectionSourceSamples(); }
-    int detectionSourceSampleCapacity() const { return engine.detectionSourceSampleCapacity(); }
-
     // The Engine's input tap and output tap, for the Spectrum display, their one reader, from the message thread: the
     // main input before any stage, and the Wet path directly after the compressor, each a mono sample per sample played
     // since the last read, oldest first (Engine::readInputTapSamples, readOutputTapSamples and their skip and capacity).
