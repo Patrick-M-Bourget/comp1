@@ -121,9 +121,10 @@ TEST_CASE ("The Detection section opens collapsed, its title a disclosure titled
     const auto display = host.expandedView().display().getBounds();
 
     host::EditorHost::click (disclosure);
-    // Part-way, then open.
-    host.settle (60);
-    CHECK (section (host).getHeight() > comp1::Section::titleHeight);
+    // Sliding: open at once, its height still the strip's until the slide's frames grow it.
+    CHECK (section (host).isOpen());
+    CHECK (staple::Tween::numberEasing() > 0);
+    CHECK (section (host).getHeight() == comp1::Section::titleHeight);
     host.settleAnimations();
     checkOpen (host, true);
     const int grown = section (host).getHeight() - comp1::Section::titleHeight;
