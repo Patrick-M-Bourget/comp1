@@ -8,6 +8,7 @@
   <PARAM id="gate_hold" value="30.0"/>
   <PARAM id="comp" value="55.0"/>
   <PARAM id="comp_follow" value="1.0"/>
+  <PARAM id="auto_gain" value="1.0"/>
   <PARAM id="knee" value="3.0"/>
   <PARAM id="attack" value="3.0"/>
   <PARAM id="release" value="40.0"/>

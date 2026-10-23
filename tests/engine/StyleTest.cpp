@@ -233,15 +233,29 @@ TEST_CASE ("The Comp nearest a Threshold is the one that sets it, clamped to the
     CHECK (std::abs (compNearestThreshold (compCurveOf (Style::Clean), -9.0) - 25.0) <= 1.0e-9);
 }
 
-TEST_CASE ("Clean's row is a default Settings in every field it writes, but for Comp Follow, which choosing any Style turns on")
+TEST_CASE ("Clean's row is a default Settings in every field it writes, but for Comp Follow and Auto Gain, which choosing any Style turns on")
 {
     // With the next test, which applies it over every setting moved, every field it writes is the default's. A
-    // default Settings holds Comp Follow off, so an instance plays its stored settings.
+    // default Settings holds Comp Follow and Auto Gain off, so an instance plays its stored settings.
     auto clean = styled (Style::Clean);
     CHECK (clean.compFollow);
+    CHECK (clean.autoGain);
     CHECK_FALSE (Settings {}.compFollow);
+    CHECK_FALSE (Settings {}.autoGain);
     clean.compFollow = false;
+    clean.autoGain = false;
     CHECK (clean == Settings {});
+}
+
+TEST_CASE ("Choosing any Style turns Auto Gain on, from on or off")
+{
+    const auto style = GENERATE (from_range (test::everyStyle()));
+    const bool autoGainBefore = GENERATE (false, true);
+    CAPTURE (static_cast<int> (style), autoGainBefore);
+    Settings settings;
+    settings.autoGain = autoGainBefore;
+    CHECK (applyStyle (style, settings));
+    CHECK (settings.autoGain);
 }
 
 TEST_CASE ("Every Style writes only the settings ADR 0002 lists, and its Character")
@@ -252,7 +266,6 @@ TEST_CASE ("Every Style writes only the settings ADR 0002 lists, and its Charact
     auto expected = styled (style);
     // Everything a Style never touches keeps its value: the routing, the levels and the whole plugin's.
     expected.gatePosition = moved.gatePosition;
-    expected.autoGain = moved.autoGain;
     expected.saturation = moved.saturation;
     expected.driveDb = moved.driveDb;
     expected.saturationPosition = moved.saturationPosition;

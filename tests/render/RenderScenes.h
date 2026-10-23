@@ -37,12 +37,14 @@ struct RenderScene
 };
 
 // Comp Follow on or off at Comp 100%, the stored Threshold and Ratio compressing nothing (0 dB, 1:1): the Comp Follow
-// scenes switch between the two, far from the Comp Curve.
+// scenes switch between the two, far from the Comp Curve. Auto Gain is on, so its estimate glides with the Comp Curve,
+// from 0 dB at 1:1.
 inline Settings compFollowFar (bool compFollow)
 {
     Settings settings;
     settings.comp = 100.0;
     settings.compFollow = compFollow;
+    settings.autoGain = true;
     settings.thresholdDb = 0.0;
     settings.ratio = 1.0;
     return settings;
@@ -126,7 +128,7 @@ inline std::vector<RenderScene> renderScenes()
         { .name = "drums-comp-70", .settings = with ([] (Settings& s) { s = styled (Style::Drums); s.comp = 70.0; }) },
         { .name = "comp-follow-on", .settings = compFollowFar (false), .change = compFollowFar (true) },
         { .name = "comp-follow-off", .settings = compFollowFar (true), .change = compFollowFar (false) },
-        { .name = "comp-move", .settings = with ([] (Settings& s) { s.compFollow = true; s.comp = 20.0; }), .change = with ([] (Settings& s) { s.compFollow = true; s.comp = 90.0; }) },
+        { .name = "comp-move", .settings = with ([] (Settings& s) { s.compFollow = true; s.autoGain = true; s.comp = 20.0; }), .change = with ([] (Settings& s) { s.compFollow = true; s.autoGain = true; s.comp = 90.0; }) },
         // Saturation, and Dry/Wet.
         { .name = "saturation", .settings = with ([] (Settings& s) { s.saturation = true; }) },
         { .name = "saturation-before-drive-12", .settings = with ([] (Settings& s) {

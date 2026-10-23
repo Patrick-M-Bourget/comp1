@@ -90,8 +90,8 @@ private:
 // parameter itself. Up and down don't step it, as each step would write a Style's defaults. It shows the Style
 // parameter, so it follows an undo, a loaded Preset, a restored session and an A/B switch.
 //
-// The Output readout (plugkit::ui::OutputReadout) reads Output Gain plus Auto Gain's estimate while Auto Gain is in
-// effect, on or held on by Comp Follow (PluginProcessor::appliedAutoGainDb), signed to one decimal; Output Gain's range
+// The Output readout (plugkit::ui::OutputReadout) reads Output Gain plus Auto Gain's estimate while Auto Gain is on
+// (PluginProcessor::appliedAutoGainDb), signed to one decimal; Output Gain's range
 // has no silent bottom, so it always reads as a level. While Dry is above Off (parallel compression) a "||" mark leads
 // it, in its ink, and a screen reader is told so by its description. It is drawn in text4, not applied, while Global
 // Bypass is on.

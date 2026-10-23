@@ -45,8 +45,8 @@ std::map<juce::String, float> values (juce::AudioProcessor& processor)
     return all;
 }
 
-// Opto chosen (Comp Follow on, Comp 50%), then Comp moved to 80%, and the stored Threshold, Ratio and Auto Gain moved
-// well off the Comp Curve by Host Automation, which the Engine ignores while following.
+// Opto chosen (Comp Follow on, Comp 50%), then Comp moved to 80%, the stored Threshold and Ratio moved well off the
+// Comp Curve by Host Automation, which the Engine ignores while following, and Auto Gain turned off.
 void followingOffTheCurve (const host::SessionHost& host)
 {
     REQUIRE (host.processor->chooseStyle (Style::Opto));
@@ -157,10 +157,13 @@ TEST_CASE ("The followed Threshold and Ratio are the Style's Comp Curve at the c
     CHECK (host.processor->followedRatio() == 4.0);
 }
 
-TEST_CASE ("Stopping following writes Comp Follow off, the Comp Curve's Threshold and Ratio and Auto Gain on, as one undo step inside gestures, and the output doesn't change")
+TEST_CASE ("Stopping following writes Comp Follow off and the Comp Curve's Threshold and Ratio, leaving Auto Gain as it is, as one undo step inside gestures, and the output doesn't change")
 {
+    const float autoGain = GENERATE (0.0f, 1.0f);
+    CAPTURE (autoGain);
     host::SessionHost host;
     followingOffTheCurve (host);
+    host::set (*host.processor, "auto_gain", autoGain);
     const auto before = values (*host.processor);
     const int steps = host.history.undoSteps();
     // Opto's Comp Curve at 80%: -32.4 dB, 4.29:1 (python3 tools/dyn-lab/dynlab.py compcurve --style opto).
@@ -183,13 +186,11 @@ TEST_CASE ("Stopping following writes Comp Follow off, the Comp Curve's Threshol
             CHECK (value == asStored (*host.processor, id, threshold));
         else if (id == "ratio")
             CHECK (value == asStored (*host.processor, id, ratio));
-        else if (id == "auto_gain")
-            CHECK (value == 1.0f);
         else
-            CHECK (value == before.at (id));
+            CHECK (value == before.at (id)); // Auto Gain among them
     }
     CHECK (host.history.undoSteps() == steps + 1);
-    REQUIRE (recorder.changes.size() == 4);
+    REQUIRE (recorder.changes.size() == 3);
     for (const auto& [index, inGesture] : recorder.changes)
     {
         CAPTURE (index);
@@ -338,24 +339,27 @@ TEST_CASE ("Host Automation of Comp Follow, on and off mid-glide with Comp movin
     CHECK (automated() == first);
 }
 
-TEST_CASE ("While following, Host Automation of Threshold, Ratio and Auto Gain has no effect")
+TEST_CASE ("While following, Host Automation of Threshold and Ratio has no effect, and of Auto Gain has")
 {
     // FET chosen, following from the start, Comp moving; from block 20 on, a glide's worth after any start, the stored
     // settings move every block too.
-    const auto automated = [] (bool moveStored) {
+    const auto automated = [] (bool moveStored, bool moveAutoGain) {
         host::SessionHost host;
         REQUIRE (host.processor->chooseStyle (Style::FET));
-        return play (*host.processor, 64, [&host, moveStored] (int block) {
+        return play (*host.processor, 64, [&host, moveStored, moveAutoGain] (int block) {
             host::set (*host.processor, "comp", static_cast<float> (30 + block));
             if (moveStored && block >= 20)
             {
                 host::set (*host.processor, "threshold", static_cast<float> (-(block % 60)));
                 host::set (*host.processor, "ratio", 1.0f + static_cast<float> (block % 7));
-                host::set (*host.processor, "auto_gain", static_cast<float> (block % 2));
             }
+            if (moveAutoGain && block >= 20)
+                host::set (*host.processor, "auto_gain", static_cast<float> (block % 2));
         });
     };
-    CHECK (automated (true) == automated (false));
+    const auto following = automated (false, false);
+    CHECK (automated (true, false) == following);
+    CHECK (automated (false, true) != following);
 }
 
 TEST_CASE ("Comp and Comp Follow round-trip through sessions, Presets and A/B, and save, load and save again gives the same bytes")

@@ -46,7 +46,7 @@ struct GateSection final : ControlSection
 //   the edit that follows as one undo step; while following, Threshold and Ratio show the followed values.
 // - The Comp Follow toggle turns it on through followComp() and off through stopFollowingComp(), never by writing it
 //   alone, and shows the parameter, followed on the tick.
-// Auto Gain, which Comp Follow holds on, is in the output popover's OutputSection.
+// Auto Gain is in the output popover's OutputSection.
 class CompressorSection final : public ControlSection
 {
 public:
@@ -77,8 +77,7 @@ struct CharacterSection final : ControlSection
 // (plugkit::ui::PopoverSlider, filled from the left), each with its name and its level, "Off" at the bottom, beneath
 // it; under them one row of letter toggles (plugkit::ui::OutputToggle), A for Auto Gain and L for the Limiter, the
 // width of the knobs' row between them. Tab walks them in that order. Ceiling stays enabled while the Limiter is off,
-// as it still applies at delivery. Auto Gain follows ADR 0004: while Comp Follow is on it shows on and is disabled, its
-// tooltip saying Comp Follow holds it on; otherwise it is attached as usual.
+// as it still applies at delivery. Auto Gain is attached to its parameter whatever Comp Follow (ADR 0004).
 class OutputSection final : public ControlSection
 {
 public:
@@ -96,11 +95,6 @@ public:
     static constexpr int sliderTopGap = 12, sliderGap = 8;
 
 private:
-    void follow() override;
-    bool isControlEnabled (juce::Component& control) const override;
-    bool following() const;
-
-    PluginProcessor& processor;
     KnobControl* ceiling = nullptr;
     plugkit::ui::PopoverSlider dry, wet;
     plugkit::ui::OutputToggle autoGain, limiter;

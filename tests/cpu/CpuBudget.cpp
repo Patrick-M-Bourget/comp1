@@ -105,11 +105,12 @@ Settings highQuality()
     return settings;
 }
 
-// Comp Follow on.
+// Comp Follow on, with Auto Gain on, as choosing a Style leaves it, so its estimate is priced too.
 Settings following()
 {
     Settings settings;
     settings.compFollow = true;
+    settings.autoGain = true;
     return settings;
 }
 

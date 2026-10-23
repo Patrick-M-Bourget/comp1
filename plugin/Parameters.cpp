@@ -225,7 +225,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                                               juce::StringArray { "Pre", "Post" },
                                                               static_cast<int> (defaults.gatePosition)));
     // Comp and Comp Follow first (ADR 0004): while Comp Follow is on, Comp sets Threshold and Ratio along the Style's
-    // Comp Curve, and the stored Threshold, Ratio and Auto Gain below it are ignored. Both are automatable, so a session
+    // Comp Curve, and the stored Threshold and Ratio below it are ignored. Both are automatable, so a session
     // that switches Comp Follow mid-song plays back the same way every time.
     layout.add (floatParameter (compId, "Comp", linearRange (parameterRanges::comp), defaults.comp, withText (1, "%")),
                 std::make_unique<juce::AudioParameterBool> (juce::ParameterID { compFollowId, 1 }, "Comp Follow", defaults.compFollow),

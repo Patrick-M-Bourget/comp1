@@ -78,6 +78,7 @@ struct Engine::Impl
     RunLevels runLevels;
     LevelHistory levelHistory;
     DetectionSourceTap detectionSourceTap;
+    MeanTap inputTap, outputTap;
 
     void applySettings()
     {
@@ -125,10 +126,11 @@ struct Engine::Impl
 
     // The Wet path, on a piece of a run, in place, gated at Pre, with the Sidechain's piece (or none), on path:
     // Saturation Before, the detection stage, fed the compressor's input as the Internal signal, then the compressor,
-    // the Gate at Post, Colour and Saturation After, and Auto Gain; then the Dry/Wet sum, Detection Audition and Output Gain. Saturation runs at one
-    // of its two positions. The compressor's settings step at the start of each run, wherever the host's blocks fall;
+    // the Gate at Post, Colour and Saturation After, and Auto Gain; then the Dry/Wet sum, Detection Audition and Output
+    // Gain. Saturation runs at one of its two positions. The compressor's settings step at the start of each run, wherever the host's blocks fall;
     // Saturation, Auto Gain, Detection Audition and Output Gain glide a sample at a time with next(), so where the
-    // pieces fall changes nothing either.
+    // pieces fall changes nothing either. The output tap takes the compressor's output, after the Gate at Post, before
+    // anything after it.
     // From the sample a new setting is taken (the start of the host's block, so the host decides when a change lands),
     // the output is the same sample for sample however the audio is cut. The detector runs while Detection Audition
     // is held, so letting go doesn't restart compression from zero.
@@ -170,6 +172,9 @@ struct Engine::Impl
         // meet at Pre, with no Lookahead of its own.
         const auto* postGateSidechain = postGateSidechainDelay.process (sidechainHeard, wet.numSamples, highQuality);
         gate.process (GatePosition::Post, wet, postGateSidechain, runLevels);
+        // The output tap takes the compressor's output after the Gate at Post, so what it shows against the input tap,
+        // taken before the Gate at Pre, includes the Gate at either Gate Position.
+        outputTap.push ({ wet.channels, wet.numChannels, wet.numSamples });
         after (wet, highQuality);
         autoGain.process (wet);
         dryWet.sum (wet);
@@ -304,6 +309,8 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->runLevels = {};
     impl->levelHistory.prepare (sampleRate);
     impl->detectionSourceTap.prepare (sampleRate);
+    impl->inputTap.prepare (sampleRate, plugkit::runSamples);
+    impl->outputTap.prepare (sampleRate, plugkit::runSamples);
     impl->snapToSettings = true;
 }
 
@@ -330,6 +337,7 @@ void Engine::process (AudioBlock main, const ConstAudioBlock* sidechain)
         const auto path = impl->modeFade.startPiece();
         count = std::min ({ plugkit::runSamples - impl->gridPosition, main.numSamples - start, impl->modeFade.pieceLimit() });
         const auto wet = impl->sanitisedInput (main, channels, start, count);
+        impl->inputTap.push ({ wet.channels, wet.numChannels, wet.numSamples });
         for (int ch = 0; ch < sidechainChannels; ++ch)
             sidechainPiece[static_cast<std::size_t> (ch)] = sidechain->channels[ch] + start;
         const ConstAudioBlock sidechainBlock { sidechainPiece.data(), sidechainChannels, count };
@@ -392,6 +400,36 @@ void Engine::skipDetectionSourceSamples()
 int Engine::detectionSourceSampleCapacity() const
 {
     return impl->detectionSourceTap.capacity();
+}
+
+int Engine::readInputTapSamples (float* destination, int maxSamples)
+{
+    return impl->inputTap.pop (destination, maxSamples);
+}
+
+void Engine::skipInputTapSamples()
+{
+    impl->inputTap.skip();
+}
+
+int Engine::inputTapSampleCapacity() const
+{
+    return impl->inputTap.capacity();
+}
+
+int Engine::readOutputTapSamples (float* destination, int maxSamples)
+{
+    return impl->outputTap.pop (destination, maxSamples);
+}
+
+void Engine::skipOutputTapSamples()
+{
+    impl->outputTap.skip();
+}
+
+int Engine::outputTapSampleCapacity() const
+{
+    return impl->outputTap.capacity();
 }
 
 } // namespace comp1

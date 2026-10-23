@@ -29,7 +29,8 @@ inline constexpr int styleCount = 8;
 
 // What choosing a Style writes besides its Character and Comp Curve (ADR 0002): its default Comp, with Comp Follow on,
 // the compressor's Colour, Threshold, Ratio, Knee, Attack, Release, Auto Release, Hold and Range, the Gate's on/off and
-// five settings, and the Limiter's on/off and Ceiling, in Settings' units. Never Auto Gain, the routing or the levels.
+// five settings, and the Limiter's on/off and Ceiling, in Settings' units. Auto Gain on is every Style's, so it isn't a
+// row's (applyStyle). Never the routing or the levels.
 struct StyleDefaults
 {
     double comp;
@@ -101,8 +102,8 @@ inline constexpr const CompCurve& compCurveOf (Style style) { return describe (s
 // Whether a Style has defaults to write: every Style.
 inline constexpr bool hasDefaults (Style style) { return describe (style).defaults.has_value(); }
 
-// Writes a Style's Character, Comp Curve and defaults, Comp Follow on among them, into settings, touching nothing
-// else, and returns true; a Style with no defaults changes nothing and returns false.
+// Writes a Style's Character, Comp Curve and defaults, Comp Follow on among them, and Auto Gain on into settings,
+// touching nothing else, and returns true; a Style with no defaults changes nothing and returns false.
 inline bool applyStyle (Style style, Settings& settings)
 {
     const auto& row = describe (style);
@@ -113,6 +114,7 @@ inline bool applyStyle (Style style, Settings& settings)
     settings.compCurve = row.compCurve;
     settings.comp = d.comp;
     settings.compFollow = true;
+    settings.autoGain = true;
     settings.colour = d.colour;
     settings.thresholdDb = d.thresholdDb;
     settings.ratio = d.ratio;

@@ -79,7 +79,7 @@ The path from Comp to a Threshold and Ratio pair that each Style sets.
 _Avoid_: Curve (unqualified), Transfer Curve, macro curve
 
 **Comp Follow**:
-Whether Threshold and Ratio follow Comp. On, they come from the Comp Curve and Auto Gain is on; off, they are set directly.
+Whether Threshold and Ratio follow Comp. On, they come from the Comp Curve; off, they are set directly. Auto Gain is its own setting either way.
 _Avoid_: Linked, Link, Comp Link
 
 ## Gate, Saturation and Limiter
@@ -194,7 +194,7 @@ The editor showing only Gate, Comp and a Gain Reduction meter, with Style in the
 _Avoid_: Simple view, mini view, basic mode
 
 **Expanded View**:
-The editor showing every control, the Level and Gain Reduction Graph, the Detection EQ and the Transfer Curve Graph.
+The editor showing every control, the Level and Gain Reduction Graph, the Detection EQ, the Transfer Curve Graph and the Spectrum display.
 _Avoid_: Advanced view, full view, pro mode
 
 **Level and Gain Reduction Graph**:
@@ -208,6 +208,10 @@ _Avoid_: I/O graph, transfer function plot
 **Transfer Curve inset**:
 The small Transfer Curve Graph over the top-left corner of the Level and Gain Reduction Graph, on the Level tab: its Threshold handle drags Threshold across and its Ratio handle drags Ratio up and down, and the arrow keys on it move both.
 _Avoid_: Mini curve, transfer widget
+
+**Spectrum (display)**:
+The Expanded View's Spectrum tab: the spectrum of the input tap and of the output tap overlaid, the gap between them, where the output is under the input, shaded as Gain Reduction. comp1 is single-band, so the gap is the same at every frequency.
+_Avoid_: Analyzer (for the whole display), FFT view, spectrogram
 
 **Threshold handle** / **Ratio handle**:
 The Transfer Curve inset's two drag handles: the Threshold handle on the curve at the knee, where the input is Threshold, the Ratio handle at the curve's right end, where the input is 0 dB. Only they take the mouse.
@@ -256,6 +260,14 @@ _Avoid_: Input meter, pre level, Detection Level
 **Output Level**:
 What the plugin sends on, after every stage, per channel: its sample peak and its RMS over 300 ms, in dBFS.
 _Avoid_: Output meter (for the level itself), post level, output volume
+
+**Input tap**:
+The Engine's mono copy of the main input as the plugin receives it, before any stage, which the Spectrum display reads: the input's side of the gap.
+_Avoid_: Pre tap, Input Level (which is its peak, in dBFS)
+
+**Output tap**:
+The Engine's mono copy of the Wet path directly after the compressor, before Colour, Saturation After, Auto Gain, Dry/Wet, Output Gain and the Limiter, which the Spectrum display reads: so the gap to the input tap is what the compressor (with the Gate and Saturation Before) took away, never make-up gain.
+_Avoid_: Post tap, Output Level (which is after every stage)
 
 **Output Meter**:
 The display of the output's sample peak and RMS per channel, with a Clip Light.

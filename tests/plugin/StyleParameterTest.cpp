@@ -36,7 +36,8 @@ float asStored (juce::AudioProcessor& processor, const juce::String& id, double 
 }
 
 // The host parameters choosing style writes, with the plain values ADR 0002 has it write: Style, and the Style's
-// default Comp with Comp Follow on, its Colour, Threshold, Ratio, Knee, Attack, Release, Auto Release, Hold, Range, Gate and Limiter settings.
+// default Comp with Comp Follow on, its Colour, Threshold, Ratio, Knee, Attack, Release, Auto Release, Hold, Range, Gate and Limiter
+// settings, and Auto Gain on.
 std::map<juce::String, double> writtenBy (Style style)
 {
     const auto s = comp1::styled (style);
@@ -61,6 +62,7 @@ std::map<juce::String, double> writtenBy (Style style)
         { "gate_hold", s.gate.holdMs },
         { "limiter", s.limiter ? 1.0 : 0.0 },
         { "ceiling", s.ceilingDb },
+        { "auto_gain", 1.0 },
     };
 }
 
@@ -211,7 +213,7 @@ TEST_CASE ("Choosing a Style sets Style and exactly its defaults, as one undo st
         if (const auto w = written.find (id); w != written.end())
             CHECK_THAT (value, WithinRel (asStored (*host.processor, id, w->second), 1.0e-6f));
         else
-            CHECK (value == before.at (id)); // Auto Gain, the routing, the levels and the whole plugin's keep theirs
+            CHECK (value == before.at (id)); // the routing, the levels and the whole plugin's keep theirs
     }
     CHECK (host.history.undoSteps() == steps + 1);
     REQUIRE_FALSE (recorder.changes.empty());
@@ -225,6 +227,16 @@ TEST_CASE ("Choosing a Style sets Style and exactly its defaults, as one undo st
     CHECK (values (*host.processor) == before);
     host.history.redo();
     CHECK (values (*host.processor) == after);
+}
+
+TEST_CASE ("Choosing a Style with Auto Gain off turns it on")
+{
+    const auto style = GENERATE (from_range (comp1::test::everyStyle()));
+    CAPTURE (static_cast<int> (style));
+    host::SessionHost host;
+    host.edit ("auto_gain", 0.0f);
+    REQUIRE (host.processor->chooseStyle (style));
+    CHECK (host.value ("auto_gain") == 1.0f);
 }
 
 TEST_CASE ("Choosing the Style already chosen writes its defaults again")

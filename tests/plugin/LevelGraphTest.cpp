@@ -273,11 +273,12 @@ namespace
 {
 
 // Clean at -30 dB, 4:1, a hard knee, a 10 ms Attack and a 100 ms Release, nothing held: 20 dB over Threshold the
-// Transfer Curve takes off 15 dB.
+// Transfer Curve takes off 15 dB. Auto Gain off, so the output is the Transfer Curve's.
 void compress (Graphing& host)
 {
     REQUIRE (host.processor.chooseStyle (comp1::Style::Clean));
     host.edit (parameters::compFollowId, 0.0f);
+    host.edit (parameters::autoGainId, 0.0f);
     host.edit (parameters::thresholdId, -30.0f);
     host.edit (parameters::ratioId, 4.0f);
     host.edit (parameters::kneeId, 0.0f);

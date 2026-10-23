@@ -18,7 +18,7 @@ const juce::Identifier versionProperty { "version" };
 // The display tab, a view property the session saves and restore takes off. Its name and values are permanent once
 // released: sessions keep them.
 const juce::Identifier displayTabProperty { "display_tab" };
-const juce::String levelTab { "level" }, transferCurveTab { "transfer_curve" };
+const juce::String levelTab { "level" }, transferCurveTab { "transfer_curve" }, spectrumTab { "spectrum" };
 
 // A display tab as the session saves it, and back: anything else, a session saved without one included, is Level. So
 // is "detection_eq", a tab older sessions hold that the display no longer has.
@@ -28,6 +28,7 @@ const juce::String& savedTab (DisplayTab tab)
     {
         case DisplayTab::level: return levelTab;
         case DisplayTab::transferCurve: return transferCurveTab;
+        case DisplayTab::spectrum: return spectrumTab;
     }
     return levelTab;
 }
@@ -36,6 +37,8 @@ DisplayTab tabSaved (const juce::String& saved)
 {
     if (saved == transferCurveTab)
         return DisplayTab::transferCurve;
+    if (saved == spectrumTab)
+        return DisplayTab::spectrum;
     return DisplayTab::level;
 }
 
@@ -82,8 +85,8 @@ void migrate (juce::ValueTree& state)
 }
 
 // The host parameters choosing a Style writes, as plain values from settings: Style itself, then the settings ADR 0002
-// lists (the Character and the Comp Curve are Style's). Every other parameter is Auto Gain, routing or a level, which
-// a Style never touches.
+// lists (the Character and the Comp Curve are Style's). Every other parameter is routing or a level, which a Style
+// never touches.
 std::vector<std::pair<juce::String, float>> styleWrites (Style style, const Settings& s)
 {
     const auto plain = [] (double value) { return static_cast<float> (value); };
@@ -92,6 +95,7 @@ std::vector<std::pair<juce::String, float>> styleWrites (Style style, const Sett
         { parameters::styleId, static_cast<float> (style) },
         { parameters::compId, plain (s.comp) },
         { parameters::compFollowId, onOff (s.compFollow) },
+        { parameters::autoGainId, onOff (s.autoGain) },
         { parameters::colourId, plain (s.colour) },
         { parameters::thresholdId, plain (s.thresholdDb) },
         { parameters::ratioId, plain (s.ratio) },
@@ -285,7 +289,7 @@ clean::Curve PluginProcessor::playedCurve() const
 double PluginProcessor::appliedAutoGainDb() const
 {
     const auto settings = reader.read();
-    if (! settings.autoGain && ! settings.compFollow)
+    if (! settings.autoGain)
         return 0.0;
     return autogain::estimateDb (playedCurve(),
                                  { .attackMs = settings.attackMs,
@@ -305,7 +309,6 @@ bool PluginProcessor::stopFollowingComp()
                   sessionState.editHistory(),
                   { { parameters::thresholdId, static_cast<float> (compThresholdDb (settings.compCurve, settings.comp)) },
                     { parameters::ratioId, static_cast<float> (compRatio (settings.compCurve, settings.comp)) },
-                    { parameters::autoGainId, 1.0f },
                     { parameters::compFollowId, 0.0f } });
     return true;
 }

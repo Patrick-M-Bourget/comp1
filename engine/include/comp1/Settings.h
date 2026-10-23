@@ -209,8 +209,8 @@ struct Settings
     // it (comp1/Style.h).
     Character character = Character::Clean;
     // Comp, in % (parameterRanges::comp), and Comp Follow (ADR 0004): while Comp Follow is on, the compressor takes
-    // Threshold and Ratio from the Comp Curve at Comp, in place of the stored ones, and Auto Gain is on, whatever
-    // autoGain holds. Off, the default, it plays the stored settings. Turning it on or off glides over a fixed time.
+    // Threshold and Ratio from the Comp Curve at Comp, in place of the stored ones. Off, the default, it plays the
+    // stored settings. Turning it on or off glides over a fixed time. Auto Gain is autoGain's alone, either way.
     // The Comp Curve is not a host parameter, as the Character isn't: the Plugin Shell fills it from Style
     // (comp1/Style.h's compCurveOf). The defaults are Clean's, its default Comp and its curve.
     double comp = 50.0;
@@ -231,8 +231,8 @@ struct Settings
     // compressor adds (dyn-lab's USAGE.md, "Colour"). Clean has none, at any Colour.
     double colour = 100.0;
     // Auto Gain, on the Wet path after the compressor: estimated from the settings, never measured (ADR 0010): from
-    // Threshold, Ratio, Knee and Range, the derived ones while Comp Follow is on, which turns it on; Attack, Release,
-    // Auto Release and Hold; and the Character.
+    // Threshold, Ratio, Knee and Range, the derived ones while Comp Follow is on; Attack, Release, Auto Release and
+    // Hold; and the Character. On or off as stored, whatever Comp Follow (ADR 0004).
     bool autoGain = false;
     // Saturation, on the Wet path: one soft-clip shape, Drive dB into it, level-compensated, so below the shape's knee
     // (full scale at Drive 0 dB) it passes the signal through bit for bit (dyn-lab's USAGE.md, "Saturation").

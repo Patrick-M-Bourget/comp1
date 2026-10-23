@@ -83,7 +83,7 @@ TEST_CASE ("Picking a Style from the chip chooses it: its defaults are written a
 
     pick (host, "Drums (FET)");
     CHECK (host.value (parameters::styleId) == static_cast<float> (Style::Drums));
-    // Drums' defaults (comp1/Style.h): Comp Follow on, 5 ms Attack and 50 ms Release; Auto Gain untouched.
+    // Drums' defaults (comp1/Style.h): Comp Follow on, 5 ms Attack and 50 ms Release, Auto Gain on.
     CHECK (host.value (parameters::compFollowId) == 1.0f);
     CHECK_THAT (host.value (parameters::attackId), WithinRel (5.0f, 1.0e-5f));
     CHECK_THAT (host.value (parameters::releaseId), WithinRel (50.0f, 1.0e-5f));

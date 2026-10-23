@@ -4,6 +4,7 @@
   <PARAM id="style" value="5.0"/>
   <PARAM id="comp" value="60.0"/>
   <PARAM id="comp_follow" value="1.0"/>
+  <PARAM id="auto_gain" value="1.0"/>
   <PARAM id="saturation" value="1.0"/>
   <PARAM id="drive" value="8.0"/>
   <PARAM id="saturation_position" value="0.0"/>

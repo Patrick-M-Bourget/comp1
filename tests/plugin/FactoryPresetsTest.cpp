@@ -159,14 +159,18 @@ juce::String namingProblem (const FactoryPreset& p)
     return {};
 }
 
-// Rule: with Comp Follow on, it holds no Threshold, Ratio or Auto Gain, which Comp Follow ignores or holds on.
+// Rule: with Comp Follow on, it holds no Threshold or Ratio, which Comp Follow ignores, and holds Auto Gain on, as
+// choosing its Style does.
 juce::String compFollowProblem (const FactoryPreset& p)
 {
-    if (! settingsOf (p).compFollow)
+    const auto settings = settingsOf (p);
+    if (! settings.compFollow)
         return {};
-    for (const auto& id : { ids::thresholdId, ids::ratioId, ids::autoGainId })
+    for (const auto& id : { ids::thresholdId, ids::ratioId })
         if (heldSetting (p, id).isValid())
             return "holds " + id + " with Comp Follow on";
+    if (! settings.autoGain)
+        return "Auto Gain off with Comp Follow on";
     return {};
 }
 
@@ -658,13 +662,13 @@ TEST_CASE ("The Factory gate rejects a name outside the Category scheme")
     }
 }
 
-TEST_CASE ("The Factory gate rejects Threshold, Ratio or Auto Gain held with Comp Follow on")
+TEST_CASE ("The Factory gate rejects Threshold or Ratio held with Comp Follow on, and Comp Follow on without Auto Gain on")
 {
-    CHECK (compFollowProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::compFollowId, 1.0f }, { ids::compId, 60.0f } })) == "");
-    CHECK (compFollowProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::thresholdId, -30.0f }, { ids::autoGainId, 1.0f } })) == "");
-    CHECK (compFollowProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::compFollowId, 1.0f }, { ids::thresholdId, -30.0f } })).isNotEmpty());
-    CHECK (compFollowProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::compFollowId, 1.0f }, { ids::ratioId, 3.0f } })).isNotEmpty());
-    CHECK (compFollowProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::compFollowId, 1.0f }, { ids::autoGainId, 1.0f } })).isNotEmpty());
+    CHECK (compFollowProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::compFollowId, 1.0f }, { ids::compId, 60.0f }, { ids::autoGainId, 1.0f } })) == "");
+    CHECK (compFollowProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::thresholdId, -30.0f } })) == "");
+    CHECK (compFollowProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::compFollowId, 1.0f }, { ids::autoGainId, 1.0f }, { ids::thresholdId, -30.0f } })).isNotEmpty());
+    CHECK (compFollowProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::compFollowId, 1.0f }, { ids::autoGainId, 1.0f }, { ids::ratioId, 3.0f } })).isNotEmpty());
+    CHECK (compFollowProblem (preset ("Vocals \xe2\x80\x93 Lead", { { ids::compFollowId, 1.0f }, { ids::compId, 60.0f } })).isNotEmpty());
 }
 
 TEST_CASE ("The Factory gate rejects Detection Source External without (Sidechain) in the name, the reverse, and a Sidechain Preset that lifts or lowers")

@@ -21,7 +21,7 @@ namespace comp1
 // shows either view, the one the processor holds, each between the same header and footer (Footer), and each with its
 // own window limits and size (PluginProcessor::windowOf, setView).
 //
-// The Expanded View's body, under the header: the display, its two tabs over its full width (Display), with three
+// The Expanded View's body, under the header: the display, its three tabs over its full width (Display), with three
 // Gain Reduction meters and the Output Meter's rail at its right edge; under that the sections in signal order, in two
 // rows. The display takes whatever the window grows by, and the section rows its width; each section keeps its own
 // size, the Detection section's height following its slide open or closed (DetectionSection), the display taking up
