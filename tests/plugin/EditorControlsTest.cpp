@@ -348,6 +348,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back (juce::String (juce::CharPointer_UTF8 ("Save as" "\xe2\x80\xa6")));
     expected.push_back ("Search Presets");
     expected.push_back ("Show User Presets Folder");
+    expected.push_back ("Spectrum");
     expected.push_back ("Stereo Link");
     expected.push_back ("Stereo Placement");
     expected.push_back ("Style");

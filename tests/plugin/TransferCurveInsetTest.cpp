@@ -540,7 +540,7 @@ TEST_CASE ("The Transfer Curve inset is a slider titled Transfer Curve inset, re
         titles.add (focused->getTitle());
     }
     CAPTURE (titles.joinIntoString (", "));
-    const int tabs = titles.indexOf ("Transfer Curve");
+    const int tabs = titles.indexOf ("Spectrum");
     REQUIRE (tabs >= 0);
     CHECK (titles[tabs + 1] == "Transfer Curve inset");
     CHECK (titles[tabs + 2] == "Output Meter");

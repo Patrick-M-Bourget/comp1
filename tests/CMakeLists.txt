@@ -120,6 +120,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/PluginShellTest.cpp
         plugin/SaturationParameterTest.cpp
         plugin/SessionTest.cpp
+        plugin/SpectrumDisplayTest.cpp
         plugin/StateTest.cpp
         plugin/StereoParametersTest.cpp
         plugin/StyleChipTest.cpp
