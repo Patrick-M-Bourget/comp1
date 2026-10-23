@@ -103,7 +103,7 @@ TEST_CASE ("Comp and Comp Follow are automatable host parameters, first among th
     comp1::PluginProcessor processor;
     auto& comp = host::parameter (processor, "comp");
     auto& compFollow = host::parameter (processor, "comp_follow");
-    CHECK (comp.getParameterIndex() == host::parameter (processor, "gate_hold").getParameterIndex() + 1);
+    CHECK (comp.getParameterIndex() == host::parameter (processor, "gate_position").getParameterIndex() + 1);
     CHECK (compFollow.getParameterIndex() == comp.getParameterIndex() + 1);
     CHECK (host::parameter (processor, "threshold").getParameterIndex() == comp.getParameterIndex() + 2);
 
