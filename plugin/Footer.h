@@ -92,7 +92,9 @@ private:
 //
 // The Output readout (plugkit::ui::OutputReadout) reads Output Gain plus Auto Gain's estimate while Auto Gain is in
 // effect, on or held on by Comp Follow (PluginProcessor::appliedAutoGainDb), signed to one decimal; Output Gain's range
-// has no silent bottom, so it always reads as a level. It is drawn in text4, not applied, while Global Bypass is on.
+// has no silent bottom, so it always reads as a level. While Dry is above Off (parallel compression) a "||" mark leads
+// it, in its ink, and a screen reader is told so by its description. It is drawn in text4, not applied, while Global
+// Bypass is on.
 // A click on it, or Space or Return, opens and closes the output popover (OutputPopover), fill2 behind the readout
 // while it is open. It follows the processor on the editor's tick.
 //

@@ -209,7 +209,7 @@ TEST_CASE ("Compact View snapshots: default at 100% and 200%, with Comp Follow o
     snapshot (host, "compact-preset-browser");
 }
 
-TEST_CASE ("Output popover snapshots: open in the Expanded View and the Compact View, with Auto Gain on, and with Comp Follow holding it on", "[.screens]")
+TEST_CASE ("Output popover snapshots: open in the Expanded View and the Compact View, with Auto Gain on, with Comp Follow holding it on, and with Dry mixed in", "[.screens]")
 {
     host::EditorHost host;
     openOn (host, juce::AudioChannelSet::stereo());
@@ -235,6 +235,16 @@ TEST_CASE ("Output popover snapshots: open in the Expanded View and the Compact 
     snapshot (host, "compact-output-popover-comp-follow");
     host.edit (comp1::parameters::compFollowId, 0.0f);
     snapshot (host, "compact-output-popover");
+
+    // Parallel compression: Dry at -12 dB, Wet at -2 dB, the readout's mark showing.
+    host.edit (comp1::parameters::dryId, -12.0f);
+    host.edit (comp1::parameters::wetId, -2.0f);
+    snapshot (host, "compact-output-popover-parallel");
+    host.outputPopover().close();
+    host::EditorHost::click (host.expandedView().viewSwitch());
+    REQUIRE (host.expandedView().shownView() == comp1::View::expanded);
+    host.openOutputPopover();
+    snapshot (host, "expanded-output-popover-parallel");
 }
 
 TEST_CASE ("Compact View snapshot: with signal playing, so the Gain Reduction meter reads", "[.screens]")

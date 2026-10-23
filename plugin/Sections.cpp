@@ -1,6 +1,9 @@
 #include "Sections.h"
 
 #include "Parameters.h"
+#include "plugkit/ui/ValueText.h"
+
+#include <cmath>
 
 namespace comp1
 {
@@ -87,25 +90,41 @@ CharacterSection::CharacterSection (PluginProcessor& p) : ControlSection ("Chara
     addKnob (parameters::driveId, knobSize::medium, "Drive", Place::underStack);
 }
 
-DryWetSection::DryWetSection (PluginProcessor& p) : ControlSection ("Dry/Wet", p)
-{
-    addKnob (parameters::dryId, knobSize::medium, "Dry");
-    addKnob (parameters::wetId, knobSize::medium, "Wet");
-}
-
 namespace
 {
 constexpr auto autoGainTooltip = "Auto Gain: compensates the output level, estimated from the settings, so compression is heard without a loudness bias";
 constexpr auto followedAutoGainTooltip = "Auto Gain: Comp Follow holds it on";
+
+// Sets a Dry or Wet slider up for its parameter: attached, so a double-click sets its default as a knob's does; titled
+// and read as a knob is (controls::describe); its readout its name and its level, "Off" at the bottom, else signed to
+// 0.1 dB.
+std::unique_ptr<juce::SliderParameterAttachment> attachLevel (plugkit::ui::PopoverSlider& slider, juce::RangedAudioParameter& parameter, const juce::String& tooltip)
+{
+    auto attachment = std::make_unique<juce::SliderParameterAttachment> (parameter, slider);
+    slider.setTitle (parameter.getName (100));
+    slider.spokenValue = [&parameter] (double plain) { return controls::spokenValue (parameter, plain); };
+    slider.valueFromTextFunction = [&parameter] (const juce::String& text) { return controls::valueFromText (parameter, text); };
+    slider.readout = [title = slider.getTitle()] (double db) {
+        return plugkit::ui::PopoverSlider::Readout { title, {}, std::isinf (db) ? juce::String ("Off") : plugkit::ui::valueText::signedDb (db) };
+    };
+    slider.setTooltip (tooltip);
+    return attachment;
+}
 } // namespace
 
 OutputSection::OutputSection (PluginProcessor& p, LevelHistory& history)
-    : ControlSection ("Output", p), processor (p), autoGain ("Auto Gain", std::nullopt, "A"), limiter ("Limiter", std::nullopt, "L")
+    : ControlSection ("Output", p), processor (p), dry (plugkit::ui::PopoverSlider::Fill::fromLeft), wet (plugkit::ui::PopoverSlider::Fill::fromLeft),
+      autoGain ("Auto Gain", std::nullopt, "A"), limiter ("Limiter", std::nullopt, "L")
 {
     addKnob (parameters::outputGainId, knobSize::medium, "Output Gain");
     ceiling = &addKnob (parameters::ceilingId, knobSize::medium, "Ceiling");
     ring = std::make_unique<LevelRing> (ceiling->knob, ceiling->parameter, history, LevelRing::limiterGainReduction());
     ceiling->setRing (*ring);
+
+    dryAttachment = attachLevel (dry, parameter (parameters::dryId), "Dry: the unprocessed signal's level, summed with Wet for parallel compression. Double-click for Off");
+    wetAttachment = attachLevel (wet, parameter (parameters::wetId), "Wet: the compressed signal's level. Double-click for 0 dB");
+    addSelfPlaced (dry);
+    addSelfPlaced (wet);
 
     autoGain.setTitle (parameter (parameters::autoGainId).getName (100));
     limiter.setTitle (parameter (parameters::limiterId).getName (100));
@@ -116,12 +135,20 @@ OutputSection::OutputSection (PluginProcessor& p, LevelHistory& history)
     follow();
 }
 
-int OutputSection::idealHeight() const { return ControlSection::idealHeight() + letterRowGap + letterHeight; }
+int OutputSection::idealHeight() const
+{
+    return ControlSection::idealHeight() + sliderTopGap + 2 * plugkit::ui::PopoverSlider::height + sliderGap + letterRowGap + letterHeight;
+}
 
 void OutputSection::resized()
 {
     ControlSection::resized();
-    auto row = controlArea().removeFromBottom (letterHeight);
+    auto area = controlArea();
+    auto row = area.removeFromBottom (letterHeight);
+    area.removeFromBottom (letterRowGap);
+    wet.setBounds (area.removeFromBottom (plugkit::ui::PopoverSlider::height));
+    area.removeFromBottom (sliderGap);
+    dry.setBounds (area.removeFromBottom (plugkit::ui::PopoverSlider::height));
     const int width = (row.getWidth() - letterGap) / 2;
     autoGain.setBounds (row.removeFromLeft (width));
     limiter.setBounds (row.removeFromRight (width));

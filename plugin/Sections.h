@@ -6,6 +6,7 @@
 #include "LevelRing.h"
 #include "PluginProcessor.h"
 #include "plugkit/ui/OutputPopoverFrame.h"
+#include "plugkit/ui/PopoverSlider.h"
 
 #include <memory>
 #include <optional>
@@ -67,17 +68,13 @@ struct CharacterSection final : ControlSection
     explicit CharacterSection (PluginProcessor& processor);
 };
 
-// Dry/Wet: Dry and Wet.
-struct DryWetSection final : ControlSection
-{
-    explicit DryWetSection (PluginProcessor& processor);
-};
-
 // Output, the output popover's (OutputPopover), in both views: Output Gain and Ceiling side by side, Ceiling with its
-// ring (LevelRing::limiterGainReduction); under them one row of letter toggles (plugkit::ui::OutputToggle), A for Auto
-// Gain and L for the Limiter, the width of the knobs' row between them. Tab walks them in that order. Ceiling stays
-// enabled while the Limiter is off, as it still applies at delivery. Auto Gain follows ADR 0004: while Comp Follow is
-// on it shows on and is disabled, its tooltip saying Comp Follow holds it on; otherwise it is attached as usual.
+// ring (LevelRing::limiterGainReduction); under them Dry, then Wet, as level sliders the section's width
+// (plugkit::ui::PopoverSlider, filled from the left), each with its name and its level, "Off" at the bottom, beneath
+// it; under them one row of letter toggles (plugkit::ui::OutputToggle), A for Auto Gain and L for the Limiter, the
+// width of the knobs' row between them. Tab walks them in that order. Ceiling stays enabled while the Limiter is off,
+// as it still applies at delivery. Auto Gain follows ADR 0004: while Comp Follow is on it shows on and is disabled, its
+// tooltip saying Comp Follow holds it on; otherwise it is attached as usual.
 class OutputSection final : public ControlSection
 {
 public:
@@ -89,8 +86,10 @@ public:
     int idealHeight() const override;
     void resized() override;
 
-    // The letter toggles' row: its gap under the knobs' labels, its height, and the gap between A and L.
+    // The letter toggles' row: its gap under the sliders, its height, and the gap between A and L.
     static constexpr int letterRowGap = 12, letterHeight = 30, letterGap = 4;
+    // The sliders' gap under the knobs' labels, and between Dry and Wet.
+    static constexpr int sliderTopGap = 12, sliderGap = 8;
 
 private:
     void follow() override;
@@ -99,8 +98,10 @@ private:
 
     PluginProcessor& processor;
     KnobControl* ceiling = nullptr;
+    plugkit::ui::PopoverSlider dry, wet;
     plugkit::ui::OutputToggle autoGain, limiter;
     std::unique_ptr<LevelRing> ring;
+    std::unique_ptr<juce::SliderParameterAttachment> dryAttachment, wetAttachment;
     std::unique_ptr<juce::ButtonParameterAttachment> autoGainAttachment, limiterAttachment;
 };
 

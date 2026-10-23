@@ -5,11 +5,15 @@
 #include "EditorHost.h"
 #include "comp1/Style.h"
 #include "plugkit/ui/OutputPopoverFrame.h"
+#include "plugkit/ui/PopoverSlider.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <limits>
+#include <tuple>
 
 namespace parameters = comp1::parameters;
 
@@ -93,7 +97,7 @@ namespace
 {
 
 // The output popover's controls, in Tab's order: each titled with its host parameter's name.
-const juce::StringArray popoverControls { "Output Gain", "Ceiling", "Auto Gain", "Limiter" };
+const juce::StringArray popoverControls { "Output Gain", "Ceiling", "Dry", "Wet", "Auto Gain", "Limiter" };
 
 juce::Component* focused() { return juce::Component::getCurrentlyFocusedComponent(); }
 
@@ -111,7 +115,7 @@ TEST_CASE ("The Output readout opens the output popover above it by a click, and
     REQUIRE_FALSE (popover.isOpen());
     REQUIRE_FALSE (popover.isShowing());
 
-    // By a click: above the readout, right-aligned to it, holding its four controls inside the window.
+    // By a click: above the readout, right-aligned to it, holding its six controls inside the window.
     host.openOutputPopover();
     CHECK (readout.isOpen());
     const auto card = host.editor->getLocalArea (&popover, popover.getCardBounds());
@@ -296,4 +300,197 @@ TEST_CASE ("While open, the output popover's controls follow Host Automation, un
     REQUIRE (session.loadPreset (preset, "Quiet"));
     CHECK (shows (-1.0, -6.0, false, false));
     CHECK (host.outputPopover().isOpen());
+}
+
+namespace
+{
+
+constexpr float off = -std::numeric_limits<float>::infinity();
+const juce::String parallelMark = "||";
+
+// A press on slider's track at x, a drag by dx and the release; clicks 2 for a double-click's second press.
+void press (plugkit::ui::PopoverSlider& slider, float x, float dx = 0.0f, int clicks = 1)
+{
+    const juce::Point<float> from { x, 7.0f }, to { x + dx, 7.0f };
+    const juce::ModifierKeys left (juce::ModifierKeys::leftButtonModifier);
+    slider.mouseDown (harness::mouseEvent (slider, from, left, from, clicks));
+    if (dx != 0.0f)
+        slider.mouseDrag (harness::mouseEvent (slider, to, left, from, clicks));
+    slider.mouseUp (harness::mouseEvent (slider, to, {}, from, clicks));
+}
+
+} // namespace
+
+TEST_CASE ("The output popover holds Dry then Wet as full-width level sliders between the knobs and the A/L row, in both views")
+{
+    host::EditorHost host;
+    const bool compact = GENERATE (false, true);
+    CAPTURE (compact);
+    if (compact)
+        host::EditorHost::click (host.expandedView().viewSwitch());
+    auto& popover = host.openOutputPopover();
+    const auto inPopover = [&popover] (juce::Component& c) { return popover.getLocalArea (&c, c.getLocalBounds()); };
+
+    auto& dry = host.showing<plugkit::ui::PopoverSlider> ("Dry");
+    auto& wet = host.showing<plugkit::ui::PopoverSlider> ("Wet");
+    for (auto* slider : { &dry, &wet })
+    {
+        CAPTURE (slider->getTitle());
+        CHECK (slider->getFill() == plugkit::ui::PopoverSlider::Fill::fromLeft);
+        CHECK (slider->getHeight() == plugkit::ui::PopoverSlider::height);
+        CHECK (slider->getTooltip().startsWith (slider->getTitle() + ": "));
+    }
+    const auto d = inPopover (dry), w = inPopover (wet);
+    const auto a = inPopover (host.showing<plugkit::ui::OutputToggle> ("Auto Gain"));
+    const auto l = inPopover (host.showing<plugkit::ui::OutputToggle> ("Limiter"));
+    // The A/L row's full width, Dry over Wet over it.
+    CHECK (d.getX() == a.getX());
+    CHECK (d.getRight() == l.getRight());
+    CHECK (w.getX() == d.getX());
+    CHECK (w.getWidth() == d.getWidth());
+    CHECK (d.getBottom() < w.getY());
+    CHECK (w.getBottom() < a.getY());
+    // Under the knobs' labels.
+    for (auto* label : host.findAll<juce::Label> ([&popover] (juce::Label& each) { return popover.isParentOf (&each) && each.isShowing(); }))
+        CHECK (inPopover (*label).getBottom() < d.getY());
+    CHECK (popover.getCardBounds().contains (d.getUnion (w)));
+}
+
+TEST_CASE ("The Dry and Wet sliders set their levels across the full travel, Off at the left end and +12 dB at the right, each gesture one undo step, a double-click their defaults")
+{
+    host::EditorHost host;
+    host.openOutputPopover();
+    auto& history = host.processor.session().editHistory();
+    for (const auto& [title, id, defaultDb] : { std::tuple { "Dry", parameters::dryId, off }, std::tuple { "Wet", parameters::wetId, 0.0f } })
+    {
+        CAPTURE (title);
+        auto& slider = host.showing<plugkit::ui::PopoverSlider> (title);
+        const float width = static_cast<float> (slider.getWidth());
+        int steps = history.undoSteps();
+
+        press (slider, width);
+        CHECK (host.value (id) == 12.0f);
+        CHECK (history.undoSteps() == ++steps);
+        press (slider, 0.0f);
+        CHECK (std::isinf (host.value (id)));
+        CHECK (host.value (id) < 0.0f);
+        CHECK (history.undoSteps() == ++steps);
+        // Halfway along the travel, even in dB from -52 dB: -20 dB, the parameter's own mapping. A press and a drag
+        // are one gesture.
+        press (slider, 0.0f, width / 2.0f);
+        CHECK_THAT (host.value (id), Catch::Matchers::WithinAbs (-20.0f, 1.0e-3));
+        CHECK (history.undoSteps() == ++steps);
+        CHECK (slider.readoutNow() == plugkit::ui::PopoverSlider::Readout { title, {}, minus + "20.0 dB" });
+
+        // A double-click: its second press sets the default, one more undo step.
+        press (slider, width / 4.0f);
+        press (slider, width / 4.0f, 0.0f, 2);
+        CHECK (host.value (id) == defaultDb);
+        CHECK (history.undoSteps() == steps + 2);
+        history.undo();
+        CHECK (host.value (id) != defaultDb);
+    }
+}
+
+TEST_CASE ("The Dry and Wet sliders read Off at the bottom, else their level signed to 0.1 dB, and a screen reader reads them by title and value")
+{
+    host::EditorHost host;
+    host.openOutputPopover();
+    auto& dry = host.showing<plugkit::ui::PopoverSlider> ("Dry");
+    auto& wet = host.showing<plugkit::ui::PopoverSlider> ("Wet");
+    using Readout = plugkit::ui::PopoverSlider::Readout;
+    host.edit (parameters::dryId, off);
+    host.edit (parameters::wetId, -6.04f);
+    REQUIRE (host.settleUntil ([&] { return dry.readoutNow() == Readout { "Dry", {}, "Off" }; }));
+    CHECK (wet.readoutNow() == Readout { "Wet", {}, minus + "6.0 dB" });
+    host.edit (parameters::wetId, 3.5f);
+    CHECK (host.settleUntil ([&] { return wet.readoutNow() == Readout { "Wet", {}, "+3.5 dB" }; }));
+    host.edit (parameters::wetId, 0.0f);
+    CHECK (host.settleUntil ([&] { return wet.readoutNow() == Readout { "Wet", {}, "0.0 dB" }; }));
+
+    const auto spoken = [] (plugkit::ui::PopoverSlider& slider) {
+        auto* handler = slider.getAccessibilityHandler();
+        REQUIRE (handler != nullptr);
+        CHECK (handler->getRole() == juce::AccessibilityRole::slider);
+        REQUIRE (handler->getValueInterface() != nullptr);
+        return handler->getValueInterface()->getCurrentValueAsString();
+    };
+    CHECK (spoken (dry) == "Off");
+    CHECK (spoken (wet).contains ("dB"));
+    // What it reads, typed back, sets it.
+    REQUIRE (wet.commitTypedText ("-3 dB"));
+    CHECK_THAT (host.value (parameters::wetId), Catch::Matchers::WithinAbs (-3.0f, 1.0e-4));
+    REQUIRE (dry.commitTypedText ("Off"));
+    CHECK (std::isinf (host.value (parameters::dryId)));
+}
+
+TEST_CASE ("While open, the Dry and Wet sliders follow Host Automation, undo, A/B Compare and Presets")
+{
+    host::EditorHost host;
+    auto& session = host.processor.session();
+    host.openOutputPopover();
+    auto& dry = host.showing<plugkit::ui::PopoverSlider> ("Dry");
+    auto& wet = host.showing<plugkit::ui::PopoverSlider> ("Wet");
+    const auto shows = [&] (const juce::String& dryText, const juce::String& wetText) {
+        return host.settleUntil ([&] { return dry.readoutNow().right == dryText && wet.readoutNow().right == wetText; });
+    };
+    CHECK (shows ("Off", "0.0 dB"));
+
+    host.set (parameters::dryId, -12.0f);
+    host.set (parameters::wetId, -3.0f);
+    CHECK (shows (minus + "12.0 dB", minus + "3.0 dB"));
+
+    host.edit (parameters::dryId, 6.0f);
+    CHECK (shows ("+6.0 dB", minus + "3.0 dB"));
+    session.editHistory().undo();
+    CHECK (shows (minus + "12.0 dB", minus + "3.0 dB"));
+
+    session.copyToOther();
+    session.selectCompareSide (plugkit::ui::CompareSide::B);
+    host.edit (parameters::dryId, off);
+    CHECK (shows ("Off", minus + "3.0 dB"));
+    session.selectCompareSide (plugkit::ui::CompareSide::A);
+    CHECK (shows (minus + "12.0 dB", minus + "3.0 dB"));
+
+    host.edit (parameters::dryId, -24.0f);
+    host.edit (parameters::wetId, off);
+    const auto preset = session.presetState();
+    host.edit (parameters::dryId, off);
+    host.edit (parameters::wetId, 0.0f);
+    CHECK (shows ("Off", "0.0 dB"));
+    REQUIRE (session.loadPreset (preset, "Parallel"));
+    CHECK (shows (minus + "24.0 dB", "Off"));
+}
+
+TEST_CASE ("The Output readout shows the parallel mark exactly while Dry is not Off, and says parallel to a screen reader, in both views")
+{
+    host::EditorHost host;
+    const bool compact = GENERATE (false, true);
+    CAPTURE (compact);
+    if (compact)
+        host::EditorHost::click (host.expandedView().viewSwitch());
+    auto& readout = host.outputReadout();
+    host.edit (parameters::compFollowId, 0.0f);
+    host.edit (parameters::autoGainId, 0.0f);
+    host.edit (parameters::outputGainId, -1.8f);
+    host.edit (parameters::dryId, off);
+    REQUIRE (host.settleUntil ([&] { return readout.getButtonText() == minus + "1.8 dB"; }));
+    CHECK (readout.getDescription().isEmpty());
+
+    // Dry at its lowest level above Off, and up.
+    for (const float dry : { -51.9f, 0.0f, 12.0f })
+    {
+        CAPTURE (dry);
+        host.edit (parameters::dryId, dry);
+        CHECK (host.settleUntil ([&] { return readout.getButtonText() == parallelMark + " " + minus + "1.8 dB"; }));
+        CHECK (readout.getDescription() == "Parallel compression on: Dry is mixed in");
+        auto* handler = readout.getAccessibilityHandler();
+        REQUIRE (handler != nullptr);
+        CHECK (handler->getDescription().contains ("Parallel"));
+        // Wide enough for the mark.
+        CHECK (readout.getWidth() >= readout.getIdealWidth());
+    }
+    host.edit (parameters::dryId, off);
+    CHECK (host.settleUntil ([&] { return readout.getButtonText() == minus + "1.8 dB"; }));
+    CHECK (readout.getDescription().isEmpty());
 }
