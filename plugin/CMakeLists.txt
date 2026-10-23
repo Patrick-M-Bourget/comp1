@@ -35,7 +35,6 @@ target_sources(comp1 PRIVATE
     CompactView.cpp
     CompFollowAttachment.cpp
     Controls.cpp
-    DetectionEqDisplay.cpp
     Display.cpp
     DisplayFades.cpp
     Footer.cpp

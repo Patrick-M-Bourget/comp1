@@ -193,7 +193,7 @@ private:
 };
 
 DetectionSection::DetectionSection (PluginProcessor& p)
-    : ControlSection ("Detection", p), processor (p), disclosureButton (std::make_unique<Disclosure> (*this)), eqDisplay (p)
+    : ControlSection ("Detection", p), processor (p), disclosureButton (std::make_unique<Disclosure> (*this))
 {
     using staple::Icon;
     // First in Tab's order, before the controls it shows and hides.
@@ -214,7 +214,13 @@ DetectionSection::DetectionSection (PluginProcessor& p)
     addKnob (parameters::detectionBandFrequencyId, knobSize::small, "Frequency", Place::underStack);
     addKnob (parameters::detectionBandGainId, knobSize::small, "Gain");
     addKnob (parameters::detectionBandQId, knobSize::small, "Q");
-    addSelfPlaced (eqDisplay);
+    audition.setTitle ("Detection Audition");
+    audition.setTooltip ("Detection Audition: hold to hear what the detector hears");
+    audition.setLitColour (staple::tokens::colour::anSc);
+    audition.setClickingTogglesState (false);
+    audition.setWantsKeyboardFocus (true);
+    audition.onStateChange = [this] { auditionStateChanged(); };
+    addSelfPlaced (audition);
 
     slide.apply = [this] (float) {
         // Hidden once closed, so Tab skips them.
@@ -230,9 +236,30 @@ DetectionSection::DetectionSection (PluginProcessor& p)
     show (processor.detectionOpen(), false);
 }
 
-DetectionSection::~DetectionSection() = default;
+DetectionSection::~DetectionSection()
+{
+    audition.onStateChange = nullptr;
+    if (holdingAudition)
+        processor.setDetectionAudition (false);
+}
 
 juce::Button& DetectionSection::disclosure() { return *disclosureButton; }
+
+void DetectionSection::auditionStateChanged()
+{
+    const bool down = audition.getState() == juce::Button::buttonDown;
+    if (down == holdingAudition)
+        return;
+    holdingAudition = down;
+    audition.setToggleState (down, juce::dontSendNotification);
+    processor.setDetectionAudition (down);
+}
+
+void DetectionSection::letGoOfDetectionAudition()
+{
+    if (holdingAudition)
+        audition.setState (juce::Button::buttonNormal);
+}
 
 std::vector<juce::Component*> DetectionSection::body()
 {
@@ -249,7 +276,7 @@ void DetectionSection::show (bool open, bool animate)
         for (auto* c : body())
             c->setVisible (true);
     else
-        eqDisplay.letGoOfDetectionAudition();
+        letGoOfDetectionAudition();
     if (animate)
         slide.towards (open ? 1.0f : 0.0f);
     else
@@ -260,6 +287,9 @@ void DetectionSection::follow()
 {
     if (processor.detectionOpen() != isOpen())
         show (processor.detectionOpen(), false);
+    // A restored session lets go of Detection Audition behind the button's back.
+    if (holdingAudition && ! processor.detectionAudition())
+        letGoOfDetectionAudition();
     if (auto now = summaryOfParameters(); now != shownSummary)
     {
         shownSummary = std::move (now);
@@ -286,7 +316,7 @@ juce::String DetectionSection::summaryOfParameters()
                   : juce::String ("Free band off"));
 }
 
-int DetectionSection::idealWidth() const { return ControlSection::idealWidth() + displayGap + displayWidth; }
+int DetectionSection::idealWidth() const { return ControlSection::idealWidth() + columnGap + auditionSize; }
 
 int DetectionSection::idealHeight() const
 {
@@ -309,8 +339,8 @@ void DetectionSection::resized()
 {
     // The controls where they sit open, whatever the height: the slide uncovers them.
     ControlSection::resized();
-    const auto controls = getLocalBounds().withHeight (ControlSection::idealHeight()).withTrimmedTop (titleHeight + dividerGap);
-    eqDisplay.setBounds (controls.withTrimmedLeft (ControlSection::idealWidth() + displayGap));
+    // Detection Audition in a column of its own after the controls, at their top.
+    audition.setBounds (ControlSection::idealWidth() + columnGap, titleHeight + dividerGap, auditionSize, auditionSize);
     disclosureButton->setBounds (0, 0, titleWidth() + chevronGap + chevronSize, titleHeight);
 }
 

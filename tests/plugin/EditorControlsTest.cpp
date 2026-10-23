@@ -250,7 +250,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     CHECK (names.count ("Detection") == 1);
     CHECK (names.count ("Detection Source") == 0);
     CHECK (names.count ("Detection Audition") == 0);
-    // Open, its controls too, and its Detection EQ display's handles and Detection Audition.
+    // Open, its controls too, Detection Audition among them.
     openDetection (host);
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
@@ -312,7 +312,6 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Drive");
     expected.push_back ("Dry");
     expected.push_back ("Factory");
-    expected.push_back ("Free band handle");
     expected.push_back ("Gain Reduction");
     expected.push_back ("Gate");
     expected.push_back ("Gate Attack");
@@ -323,7 +322,6 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Gate Release");
     expected.push_back ("Gate Threshold");
     expected.push_back ("Global Bypass");
-    expected.push_back ("High-pass handle");
     expected.push_back ("Hold");
     expected.push_back ("Knee");
     expected.push_back ("Level");
@@ -332,7 +330,6 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Limiter Gain Reduction");
     expected.push_back (juce::String (juce::CharPointer_UTF8 ("Load Preset File" "\xe2\x80\xa6")));
     expected.push_back ("Lookahead");
-    expected.push_back ("Low-pass handle");
     expected.push_back ("Next Preset");
     expected.push_back ("Output");
     expected.push_back ("Output Gain");
@@ -401,7 +398,7 @@ TEST_CASE ("Tab walks the header, the display's tabs and the Transfer Curve inse
 {
     host::EditorHost host;
     everythingAvailable (host);
-    // With the Detection section open, so its controls, handles and Detection Audition are reached too; and collapsed,
+    // With the Detection section open, so its controls and Detection Audition are reached too; and collapsed,
     // so only its disclosure is.
     const bool open = GENERATE (true, false);
     CAPTURE (open);
@@ -436,7 +433,7 @@ TEST_CASE ("Tab walks the header, the display's tabs and the Transfer Curve inse
     // In order: the header's first, then these.
     juce::StringArray order { "Presets", "Level", "Transfer Curve", "Transfer Curve inset", "Output Meter", "Gate", "Gate Position", "Gate Hold",
                               "Comp Follow", "Comp", "Threshold", "Range", "Colour", "Saturation Position", "Detection" };
-    const juce::StringArray detection { "Detection Source", "Detection Free Band Q", "High-pass handle", "Free band handle", "Low-pass handle", "Detection Audition" };
+    const juce::StringArray detection { "Detection Source", "Detection Free Band Q", "Detection Audition" };
     if (open)
         order.addArray (detection);
     else

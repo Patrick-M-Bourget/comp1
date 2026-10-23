@@ -144,7 +144,7 @@ The signal the compressor and Gate listen to: Internal (the main input, or for t
 _Avoid_: Trigger, key
 
 **Detection EQ**:
-The high-pass, low-pass and one free band that shape what the detector hears, without changing the processed sound.
+The high-pass, low-pass and one free band that shape what the detector hears, without changing the processed sound. Set with the Expanded View's Detection section's controls, beside Detection Audition.
 _Avoid_: Sidechain EQ, key filter, SC EQ
 
 **High-pass**:
@@ -194,7 +194,7 @@ The editor showing only Gate, Comp and a Gain Reduction meter, with Style in the
 _Avoid_: Simple view, mini view, basic mode
 
 **Expanded View**:
-The editor showing every control, the Level and Gain Reduction Graph, the Detection EQ, the Transfer Curve Graph and the Spectrum display.
+The editor showing every control, the Detection EQ's among them in the Detection section, the Level and Gain Reduction Graph, the Transfer Curve Graph and the Spectrum display.
 _Avoid_: Advanced view, full view, pro mode
 
 **Level and Gain Reduction Graph**:

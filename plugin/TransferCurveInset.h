@@ -32,7 +32,7 @@ enum class InsetHandle
 // - **Handles:** the Threshold handle sits on the curve at the knee (input = Threshold), the Ratio handle at the curve's
 //   right end (input 0 dB), both where the Transfer Curve the Engine plays puts them (PluginProcessor::playedCurve),
 //   laid out again on the editor's tick and at once after an edit, so they follow Threshold, Ratio and Knee from any
-//   route. Each is drawn as the Detection EQ's handles are (handles::paint) at handleRadius, lit while the pointer is
+//   route. Each is drawn by the editor's handle look (handles::paint) at handleRadius, lit while the pointer is
 //   over it, with a resize cursor of its direction, and the selected ring and a readout card ("Threshold −18.00 dB",
 //   "Ratio 4:1") while dragged. The Threshold handle is drawn over the Ratio handle, so at 0 dB Threshold, where they
 //   meet, the one that changes the curve is the one grabbed.

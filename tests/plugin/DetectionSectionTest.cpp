@@ -1,7 +1,9 @@
-// The Expanded View's Detection section: whether it is open, saved per instance as view state, and in no Preset.
+// The Expanded View's Detection section: whether it is open, saved per instance as view state, and in no Preset; its
+// controls; and Detection Audition.
 
-#include "EditorHost.h"
+#include "Playing.h"
 
+#include <cmath>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -230,4 +232,175 @@ TEST_CASE ("Tab reaches the disclosure after the Character and Saturation sectio
     auto* before = juce::Component::getCurrentlyFocusedComponent();
     REQUIRE (before != nullptr);
     CHECK (before->getTitle() == "Drive");
+}
+
+TEST_CASE ("Open, the Detection section shows its controls and Detection Audition after them, and no Detection EQ display: Tab reaches Detection Audition after Detection Free Band Q, then the Stereo section")
+{
+    host::EditorHost host;
+    host.processor.setDetectionOpen (true);
+    REQUIRE (host.settleUntil ([&] { return section (host).isOpen(); }));
+    host.settleAnimations();
+    CHECK (host.findAll<juce::Component> ([] (juce::Component& c) { return c.getTitle() == "Detection EQ" || c.getName() == "Detection EQ display"; }).empty());
+
+    auto& audition = section (host).detectionAudition();
+    CHECK (audition.isShowing());
+    CHECK (audition.getParentComponent() == &section (host));
+    auto* handler = audition.getAccessibilityHandler();
+    REQUIRE (handler != nullptr);
+    CHECK (handler->getTitle() == "Detection Audition");
+    CHECK (handler->getRole() == juce::AccessibilityRole::button);
+
+    // Right of the last control, inside the section, which is only as wide as the controls and the button need.
+    const auto qs = host.findAll<juce::Component> ([] (juce::Component& c) { return c.getTitle() == "Detection Free Band Q"; });
+    REQUIRE (qs.size() == 1);
+    CHECK (audition.getX() > qs.front()->getRight());
+    CHECK (section (host).getLocalBounds().contains (audition.getBounds()));
+    CHECK (section (host).idealWidth() == audition.getRight());
+
+    juce::Component::unfocusAllComponents();
+    section (host).disclosure().grabKeyboardFocus();
+    juce::StringArray titles;
+    for (int i = 0; i < 40; ++i)
+    {
+        REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
+        auto* focused = juce::Component::getCurrentlyFocusedComponent();
+        REQUIRE (focused != nullptr);
+        titles.add (focused->getTitle());
+        if (focused->getTitle() == "Stereo Placement")
+            break;
+    }
+    CAPTURE (titles.joinIntoString (", "));
+    const int last = titles.indexOf ("Detection Free Band Q");
+    REQUIRE (last >= 0);
+    CHECK (titles[last + 1] == "Detection Audition");
+    CHECK (titles[last + 2] == "Stereo Placement");
+}
+
+namespace
+{
+
+constexpr double testRate = 48000.0;
+
+// A sine at frequency, at amplitude, at 48 kHz: sample n.
+double sine (double frequency, double amplitude, int n)
+{
+    return amplitude * std::sin (2.0 * juce::MathConstants<double>::pi * frequency * n / testRate);
+}
+
+// The editor playing (Playing.h) on a stereo track with a stereo Sidechain, the Detection section open.
+struct OpenDetectionHost : host::Playing
+{
+    OpenDetectionHost() : host::Playing (testRate, juce::AudioChannelSet::stereo()) { openDetection (true); }
+
+    // Opens or collapses the Detection section, as a click on its disclosure does, and waits for the slide's end.
+    void openDetection (bool open)
+    {
+        auto& detection = expandedView().detectionSection();
+        if (detection.isOpen() != open)
+            click (detection.disclosure());
+        REQUIRE (detection.isOpen() == open);
+        settleAnimations();
+    }
+
+    staple::IconButton& audition() { return expandedView().detectionSection().detectionAudition(); }
+};
+
+// The loudest sample of a block.
+float peakOf (const juce::AudioBuffer<float>& block)
+{
+    float peak = 0.0f;
+    for (int ch = 0; ch < block.getNumChannels(); ++ch)
+        peak = std::max (peak, block.getMagnitude (ch, 0, block.getNumSamples()));
+    return peak;
+}
+
+void press (staple::IconButton& button)
+{
+    button.mouseDown (harness::mouseEvent (button, button.getLocalBounds().toFloat().getCentre(), juce::ModifierKeys::leftButtonModifier));
+}
+
+void release (staple::IconButton& button)
+{
+    const auto centre = button.getLocalBounds().toFloat().getCentre();
+    button.mouseUp (harness::mouseEvent (button, centre, {}, centre));
+}
+
+} // namespace
+
+TEST_CASE ("Detection Audition, held by the mouse or Space, plays the detection signal, and lets go on release, as the Detection section collapses, as the editor closes and on a restore")
+{
+    OpenDetectionHost host;
+    auto& session = host.processor.session();
+    // External, the Sidechain carrying a 100 Hz sine and the main input silence: only Detection Audition plays it.
+    host.edit (comp1::parameters::detectionSourceId, 1.0f);
+    REQUIRE (session.loadPreset (session.presetState(), "External"));
+    const int steps = session.editHistory().undoSteps();
+    const auto silence = [] (int) { return 0.0; };
+    const auto tone = [] (int n) { return sine (100.0, 0.5, n); };
+    CHECK (peakOf (host.play (20, 512, silence, tone)) < 1.0e-4f);
+
+    auto& audition = host.audition();
+    press (audition);
+    CHECK (host.processor.detectionAudition());
+    CHECK (audition.isLit());
+    CHECK (peakOf (host.play (20, 512, silence, tone)) > 0.4f);
+    release (audition);
+    CHECK_FALSE (host.processor.detectionAudition());
+    CHECK_FALSE (audition.isLit());
+
+    // Space, while focused: held while the key is.
+    audition.grabKeyboardFocus();
+    REQUIRE (audition.hasKeyboardFocus (false));
+    REQUIRE (host.hold (juce::KeyPress (juce::KeyPress::spaceKey)));
+    CHECK (host.processor.detectionAudition());
+    CHECK (audition.isLit());
+    host.release();
+    CHECK_FALSE (host.processor.detectionAudition());
+
+    // Not an undo step, nothing Modified, and not saved.
+    press (audition);
+    CHECK (session.editHistory().undoSteps() == steps);
+    CHECK_FALSE (session.isLoadedPresetModified());
+    const auto saved = host::saved (host.processor);
+    CHECK (harness::savedNamesContaining (harness::savedState (saved), "audition").isEmpty());
+
+    // Collapsing lets go, as the slide starts.
+    host::EditorHost::click (host.expandedView().detectionSection().disclosure());
+    CHECK_FALSE (host.processor.detectionAudition());
+    host.settleAnimations();
+    host.openDetection (true);
+
+    // A restore lets go, and the button follows.
+    press (audition);
+    REQUIRE (host.processor.detectionAudition());
+    host::restore (host.processor, saved);
+    CHECK_FALSE (host.processor.detectionAudition());
+    REQUIRE (host.settleUntil ([&] { return ! audition.isLit(); }));
+
+    // Closing the editor lets go.
+    press (host.audition());
+    REQUIRE (host.processor.detectionAudition());
+    host.editor.reset();
+    CHECK_FALSE (host.processor.detectionAudition());
+}
+
+TEST_CASE ("Expanded View snapshots of the Detection section: collapsed, open with bands on, and open with Detection Audition held", "[.screens]")
+{
+    {
+        host::EditorHost host;
+        host.settleAnimations();
+        harness::writeSnapshot (*host.editor, "expanded-detection-collapsed", {}, 1.0f);
+    }
+    OpenDetectionHost host;
+    host.edit (comp1::parameters::detectionHighPassOnId, 1.0f);
+    host.edit (comp1::parameters::detectionHighPassFrequencyId, 120.0f);
+    host.edit (comp1::parameters::detectionBandOnId, 1.0f);
+    host.edit (comp1::parameters::detectionBandGainId, 6.0f);
+    host.settleAnimations();
+    harness::writeSnapshot (*host.editor, "expanded-detection-open", {}, 1.0f);
+    press (host.audition());
+    REQUIRE (host.processor.detectionAudition());
+    host.settleAnimations();
+    harness::writeSnapshot (*host.editor, "expanded-detection-audition", {}, 1.0f);
+    release (host.audition());
 }

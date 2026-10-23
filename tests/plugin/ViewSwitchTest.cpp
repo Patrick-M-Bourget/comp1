@@ -106,12 +106,12 @@ TEST_CASE ("Switching back shows the Expanded View as it was, on the same displa
     CHECK (host.processor.detectionOpen());
     for (auto* part : expandedParts (host))
         CHECK_FALSE (part->isShowing());
-    CHECK_FALSE (host.expandedView().detectionSection().detectionEqDisplay().isShowing());
+    CHECK_FALSE (host.expandedView().detectionSection().detectionAudition().isShowing());
     clickSwitch (host);
     checkShows (host, View::expanded);
     CHECK (host.expandedView().display().shownTab() == comp1::DisplayTab::transferCurve);
     CHECK (host.expandedView().display().tabContent (comp1::DisplayTab::transferCurve).isShowing());
-    CHECK (host.expandedView().detectionSection().detectionEqDisplay().isShowing());
+    CHECK (host.expandedView().detectionSection().detectionAudition().isShowing());
 }
 
 namespace
@@ -377,7 +377,7 @@ TEST_CASE ("Switching to the Compact View lets go of Detection Audition")
     host.processor.setDetectionOpen (true);
     REQUIRE (host.settleUntil ([&] { return host.expandedView().detectionSection().isOpen(); }));
     host.settleAnimations();
-    auto& audition = host.expandedView().detectionSection().detectionEqDisplay().detectionAudition();
+    auto& audition = host.expandedView().detectionSection().detectionAudition();
     const auto centre = audition.getLocalBounds().toFloat().getCentre();
     audition.mouseDown (harness::mouseEvent (audition, centre, juce::ModifierKeys::leftButtonModifier));
     REQUIRE (host.processor.detectionAudition());

@@ -98,7 +98,6 @@ if(COMP1_BUILD_PLUGIN)
         plugin/CompactViewTest.cpp
         plugin/CompFollowEditorTest.cpp
         plugin/CompParameterTest.cpp
-        plugin/DetectionEqDisplayTest.cpp
         plugin/DetectionSectionTest.cpp
         plugin/DisplayTabTest.cpp
         plugin/DryWetParameterTest.cpp
