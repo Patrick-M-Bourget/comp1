@@ -92,6 +92,7 @@ Settings everythingMoved()
 {
     Settings s;
     s.gate = { .on = true, .thresholdDb = -25.0, .rangeDb = 30.0, .attackMs = 5.0, .releaseMs = 250.0, .holdMs = 50.0 };
+    s.gatePosition = GatePosition::Post;
     s.character = Character::Opto;
     s.comp = 80.0;
     s.compFollow = false;
@@ -250,6 +251,7 @@ TEST_CASE ("Every Style writes only the settings ADR 0002 lists, and its Charact
     const auto moved = everythingMoved();
     auto expected = styled (style);
     // Everything a Style never touches keeps its value: the routing, the levels and the whole plugin's.
+    expected.gatePosition = moved.gatePosition;
     expected.autoGain = moved.autoGain;
     expected.saturation = moved.saturation;
     expected.driveDb = moved.driveDb;

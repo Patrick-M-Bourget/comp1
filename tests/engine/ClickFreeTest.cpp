@@ -301,7 +301,8 @@ const std::vector<Jump>& jumps()
 {
     static const std::vector<Jump> all {
         // The Gate's, first: on and off while it closes on the tone; its Gate Threshold across the tone and its Gate
-        // Range from none to the most while it is closed; its times while it opens and closes on the tone.
+        // Range from none to the most while it is closed; its times while it opens and closes on the tone; and its
+        // Gate Position.
         { "Gate", [] (Settings& s, bool b) {
              gateClosed (s);
              s.gate.on = b;
@@ -323,6 +324,12 @@ const std::vector<Jump>& jumps()
         gateTimeJump ("Gate Attack", [] (Settings& s, bool b) { s.gate.attackMs = b ? 50.0 : 1.0; }),
         gateTimeJump ("Gate Release", [] (Settings& s, bool b) { s.gate.releaseMs = b ? 2000.0 : 20.0; }),
         gateTimeJump ("Gate Hold", [] (Settings& s, bool b) { s.gate.holdMs = b ? 500.0 : 0.0; }),
+        // Gate Position Pre and Post while the Gate is closed on the tone at both: at Pre the compressor hears the
+        // tone Gate Range down and leaves it, at Post it compresses the tone before the Gate lowers it.
+        { "Gate Position", [] (Settings& s, bool b) {
+             gateClosed (s);
+             s.gatePosition = b ? GatePosition::Post : GatePosition::Pre;
+         } },
         { "Threshold", [] (Settings& s, bool b) { s.thresholdDb = b ? -40.0 : 0.0; } },
         { "Ratio", [] (Settings& s, bool b) { s.ratio = b ? infinity : 1.0; } },
         { "Knee", [] (Settings& s, bool b) { s.kneeDb = b ? 72.0 : 0.0; } },

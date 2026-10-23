@@ -73,6 +73,14 @@ enum class SaturationPosition
     After,  // after the compressor, before Auto Gain: the compressor reacts to the unsaturated signal
 };
 
+// Where the Gate sits. Hosts store it as a choice by index, so the order is frozen (ADR 0003): a new position goes at
+// the end.
+enum class GatePosition
+{
+    Pre,  // on the main input, ahead of the Dry/Wet split: it lowers the Dry and the Wet path alike
+    Post, // on the Wet path directly after the compressor: the Dry path is never gated
+};
+
 // What the compressor's detection listens to: the main input (Internal), or the Sidechain (External). Saved by index,
 // so the order is frozen.
 enum class DetectionSource
@@ -169,9 +177,10 @@ enum class StereoPlacement
 // whole (Engine::setSettings). A default Settings holds every host parameter's default.
 struct Settings
 {
-    // The Gate, first in the chain, on the main input before the Dry/Wet split: on or off, Gate Threshold and Gate
-    // Range in dB, Gate Attack, Gate Release and Gate Hold in ms, in the compressor's ranges of the same names
-    // (parameterRanges), with dyn-lab's defaults (its Gate). It listens to the Detection Source after the Detection EQ.
+    // The Gate: on or off, Gate Threshold and Gate Range in dB, Gate Attack, Gate Release and Gate Hold in ms, in the
+    // compressor's ranges of the same names (parameterRanges), with dyn-lab's defaults (its Gate). It listens to the
+    // Detection Source after the Detection EQ. Where it sits is gatePosition, beside it, so a Style, which writes the
+    // Gate whole, never moves it.
     struct Gate
     {
         bool on = false;
@@ -191,6 +200,10 @@ struct Settings
 #endif
     };
     Gate gate;
+    // Gate Position: Pre, first in the chain on the main input before the Dry/Wet split, listening to the input; or
+    // Post, on the Wet path directly after the compressor, listening with Internal to the compressed signal. With
+    // External it listens to the Sidechain at either.
+    GatePosition gatePosition = GatePosition::Pre;
 
     // The compressor's Character: how it detects, and its Colour. Not a host parameter: the Style host parameter sets
     // it (comp1/Style.h).
