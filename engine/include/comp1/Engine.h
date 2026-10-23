@@ -143,9 +143,9 @@ public:
     // The input tap carries the main input as process() receives it, before any stage: non-finite samples silenced, as
     // they play, and not delayed in either Processing Mode.
     //
-    // The output tap carries the Wet path directly after the compressor: after the Gate, Saturation Before and the
-    // compressor, before Colour, Saturation After, Auto Gain, the Dry/Wet sum, Detection Audition, Output Gain and the
-    // Limiter. In High Quality it is delayed by the Before section and the Lookahead budget (comp1/Latency.h), as the
+    // The output tap carries the Wet path directly after the compressor: after the Gate (at either Gate Position),
+    // Saturation Before and the compressor, before Colour, Saturation After, Auto Gain, the Dry/Wet sum, Detection
+    // Audition, Output Gain and the Limiter. In High Quality it is delayed by the Before section and the Lookahead budget (comp1/Latency.h), as the
     // compressor's output is. With no Gain Reduction, the Gate open and Saturation Before not heard, it is the input
     // tap delayed so, bit for bit in Zero Latency. A Processing Mode switch's fade adds none to either tap, as only one
     // path plays at a time.
