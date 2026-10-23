@@ -6,7 +6,9 @@
 #include "plugkit/ui/Accessibility.h"
 #include "plugkit/ui/AssumedSampleRate.h"
 #include "plugkit/ui/ShowMenu.h"
+#include "plugkit/ui/ValueText.h"
 #include "plugkit/ui/staple/LookAndFeel.h"
+#include "plugkit/ui/staple/Tokens.h"
 
 #include <algorithm>
 #include <cmath>
@@ -168,6 +170,18 @@ void ChoiceChip::show()
         setEnabled (available);
 }
 
+AutoGainDot::AutoGainDot()
+{
+    setWantsKeyboardFocus (false);
+    setAccessible (false);
+}
+
+void AutoGainDot::paint (juce::Graphics& g)
+{
+    g.setColour (staple::tokens::colour::text1);
+    g.fillEllipse (getLocalBounds().toFloat().withSizeKeepingCentre (diameter, diameter));
+}
+
 Footer::Footer (PluginProcessor& p, LevelHistory& history)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),
       globalBypassAttachment (p.parameterState(), parameters::globalBypassId, globalBypass),
@@ -235,6 +249,7 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
         addChildComponent (popover);
     };
     addChildComponent (popover);
+    addChildComponent (dot);
     showOutput();
 }
 
@@ -247,18 +262,33 @@ Footer::~Footer()
 void Footer::showOutput()
 {
     auto& state = processor.parameterState();
-    const double db = state.getRawParameterValue (parameters::outputGainId)->load (std::memory_order_relaxed) + processor.appliedAutoGainDb();
+    const double autoGainDb = processor.appliedAutoGainDb();
+    const double db = state.getRawParameterValue (parameters::outputGainId)->load (std::memory_order_relaxed) + autoGainDb;
     const bool parallel = ! std::isinf (state.getRawParameterValue (parameters::dryId)->load (std::memory_order_relaxed));
     // Two bars, as Manrope, the readout's font, has no U+2225 (parallel to).
     static const juce::String mark = "|| ";
     if (const auto text = (parallel ? mark : juce::String()) + plugkit::ui::outputReadoutText (db); text != output.getButtonText())
     {
         output.setButtonText (text);
-        output.setDescription (parallel ? "Parallel compression on: Dry is mixed in" : "");
         resized();
     }
+    // Auto Gain counts as included once its amount reads other than zero, as the readout writes it.
+    const auto amount = plugkit::ui::valueText::signedDb (autoGainDb);
+    const bool includesAutoGain = amount != plugkit::ui::valueText::signedDb (0.0);
+    juce::StringArray description;
+    if (parallel)
+        description.add ("Parallel compression on: Dry is mixed in");
+    if (includesAutoGain)
+        description.add ("Includes Auto Gain: " + amount);
+    if (const auto said = description.joinIntoString (". "); said != output.getDescription())
+        output.setDescription (said);
     if (const bool bypassed = globalBypass.getToggleState(); bypassed != output.isNotApplied())
         output.setNotApplied (bypassed);
+
+    if (const auto tooltip = "Auto Gain: " + amount; tooltip != dot.getTooltip())
+        dot.setTooltip (tooltip);
+    if (const bool shown = includesAutoGain && ! output.isNotApplied(); shown != dot.isVisible())
+        dot.setVisible (shown);
 }
 
 void Footer::showSwitchFor (View shown)
@@ -285,7 +315,8 @@ void Footer::resized()
     toExpanded.setBounds (switchArea);
     row.removeFromRight (chipGap);
     uiScale.setBounds (row.removeFromRight (buttonSize));
-    row.removeFromRight (chipGap);
+    // The gap left of the UI Scale menu holds the Auto Gain dot, so the readout doesn't move as it shows.
+    dot.setBounds (row.removeFromRight (chipGap));
     output.setBounds (row.removeFromRight (std::max (outputWidth, output.getIdealWidth())));
     for (auto* chip : { &style, &processingMode, &oversampling })
     {
