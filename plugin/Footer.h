@@ -107,9 +107,9 @@ public:
 // (PluginProcessor::appliedAutoGainDb), signed to one decimal; Output Gain's range
 // has no silent bottom, so it always reads as a level. While Dry is above Off (parallel compression) a "||" mark leads
 // it, in its ink, and a screen reader is told so by its description. It is drawn in text4, not applied, while Global
-// Bypass is on. While it includes Auto Gain (an amount that reads other than zero), its description says so, "Includes
-// Auto Gain: -4.2 dB", after the parallel mark's, and the Auto Gain dot (AutoGainDot) shows in the gap right of it,
-// unless Global Bypass leaves it not applied; the dot's place is kept while it is hidden, so nothing moves.
+// Bypass is on. While there is an Auto Gain amount to show (shownAutoGain: one that reads other than zero, with Global
+// Bypass off), its description says so, "Includes Auto Gain: -4.2 dB", after the parallel mark's, and the Auto Gain dot
+// (AutoGainDot) shows in the gap right of it; the dot's place is kept while it is hidden, so nothing moves.
 // A click on it, or Space or Return, opens and closes the output popover (OutputPopover), fill2 behind the readout
 // while it is open. It follows the processor on the editor's tick.
 //

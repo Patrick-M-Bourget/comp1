@@ -1,12 +1,12 @@
 #include "Footer.h"
 
 #include "Parameters.h"
+#include "ShownAutoGain.h"
 #include "comp1/Latency.h"
 #include "comp1/Style.h"
 #include "plugkit/ui/Accessibility.h"
 #include "plugkit/ui/AssumedSampleRate.h"
 #include "plugkit/ui/ShowMenu.h"
-#include "plugkit/ui/ValueText.h"
 #include "plugkit/ui/staple/LookAndFeel.h"
 #include "plugkit/ui/staple/Tokens.h"
 
@@ -272,22 +272,21 @@ void Footer::showOutput()
         output.setButtonText (text);
         resized();
     }
-    // Auto Gain counts as included once its amount reads other than zero, as the readout writes it.
-    const auto amount = plugkit::ui::valueText::signedDb (autoGainDb);
-    const bool includesAutoGain = amount != plugkit::ui::valueText::signedDb (0.0);
+    const auto amount = shownAutoGain (processor);
     juce::StringArray description;
     if (parallel)
         description.add ("Parallel compression on: Dry is mixed in");
-    if (includesAutoGain)
-        description.add ("Includes Auto Gain: " + amount);
+    if (amount.has_value())
+        description.add ("Includes Auto Gain: " + *amount);
     if (const auto said = description.joinIntoString (". "); said != output.getDescription())
         output.setDescription (said);
     if (const bool bypassed = globalBypass.getToggleState(); bypassed != output.isNotApplied())
         output.setNotApplied (bypassed);
 
-    if (const auto tooltip = "Auto Gain: " + amount; tooltip != dot.getTooltip())
-        dot.setTooltip (tooltip);
-    if (const bool shown = includesAutoGain && ! output.isNotApplied(); shown != dot.isVisible())
+    if (amount.has_value())
+        if (const auto tooltip = "Auto Gain: " + *amount; tooltip != dot.getTooltip())
+            dot.setTooltip (tooltip);
+    if (const bool shown = amount.has_value(); shown != dot.isVisible())
         dot.setVisible (shown);
 }
 

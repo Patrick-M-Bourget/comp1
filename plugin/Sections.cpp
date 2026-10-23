@@ -1,6 +1,7 @@
 #include "Sections.h"
 
 #include "Parameters.h"
+#include "ShownAutoGain.h"
 #include "plugkit/ui/Accessibility.h"
 #include "plugkit/ui/ValueText.h"
 #include "plugkit/ui/staple/Fonts.h"
@@ -143,9 +144,10 @@ OutputSection::OutputSection (PluginProcessor& p, LevelHistory& history)
 
 void OutputSection::follow()
 {
+    // The amount only while the Auto Gain dot shows it.
     auto tooltip = autoGainDescription;
-    if (autoGain.getToggleState())
-        tooltip << ". Now " << plugkit::ui::valueText::signedDb (processor.appliedAutoGainDb());
+    if (const auto amount = shownAutoGain (processor))
+        tooltip << ". Now " << *amount;
     if (tooltip != autoGain.getTooltip())
         autoGain.setTooltip (tooltip);
 }
