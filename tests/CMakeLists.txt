@@ -47,6 +47,7 @@ add_executable(comp1_engine_tests
     engine/RenderScenesTest.cpp
     engine/SaturationTest.cpp
     engine/SettingsHandoffTest.cpp
+    engine/SpectrumTapsTest.cpp
     engine/StepResponseTest.cpp
     engine/StereoLinkTest.cpp
     engine/StereoPlacementTest.cpp

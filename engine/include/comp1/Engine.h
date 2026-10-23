@@ -52,7 +52,7 @@ struct LevelRecord
 // whatever the other settings; what is said of the output below holds of it delayed so. Zero Latency has none.
 //
 // The level taps: the Output Level is read with readOutputLevel(), the level history with readLevels() and
-// skipLevels(), and the detection source tap with readDetectionSourceSamples() and skipDetectionSourceSamples(), each
+// skipLevels(), and the sample taps (the detection source tap, the input tap and the output tap) with their read and skip, each
 // from one reader thread while process() runs on the audio thread. Reading never allocates, locks or does I/O, and
 // stays safe through any prepare(), at any sample rate or channel count: nothing a reader touches is freed or moved
 // while the Engine lives. In the levels, silence, anything quieter than plugkit::levelFloorDb, and NaN read the floor.
@@ -134,6 +134,27 @@ public:
     // How many samples the tap holds between reads, at least 150 ms of them: the reader's buffer is this big. Safe to
     // call from any thread.
     int detectionSourceSampleCapacity() const;
+
+    // The input tap and the output tap, for the Spectrum display: what the compressor takes away is the gap between
+    // the two. Each is one mono signal, the mean of the channels, a sample per input sample at the prepared rate, the
+    // same sample for sample however the host cuts the audio into blocks, read, skipped and sized as the detection
+    // source tap is.
+    //
+    // The input tap carries the main input as process() receives it, before any stage: non-finite samples silenced, as
+    // they play, and not delayed in either Processing Mode.
+    //
+    // The output tap carries the Wet path directly after the compressor: after the Gate, Saturation Before and the
+    // compressor, before Colour, Saturation After, Auto Gain, the Dry/Wet sum, Detection Audition, Output Gain and the
+    // Limiter. In High Quality it is delayed by the Before section and the Lookahead budget (comp1/Latency.h), as the
+    // compressor's output is. With no Gain Reduction, the Gate open and Saturation Before not heard, it is the input
+    // tap delayed so, bit for bit in Zero Latency. A Processing Mode switch's fade adds none to either tap, as only one
+    // path plays at a time.
+    int readInputTapSamples (float* destination, int maxSamples);
+    void skipInputTapSamples();
+    int inputTapSampleCapacity() const;
+    int readOutputTapSamples (float* destination, int maxSamples);
+    void skipOutputTapSamples();
+    int outputTapSampleCapacity() const;
 
 private:
     struct Impl;
