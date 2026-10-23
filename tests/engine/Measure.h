@@ -11,7 +11,6 @@
 #include <numbers>
 #include <optional>
 #include <random>
-#include <utility>
 #include <vector>
 
 namespace comp1::test
