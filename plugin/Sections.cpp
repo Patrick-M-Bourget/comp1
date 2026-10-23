@@ -299,8 +299,9 @@ void DetectionSection::follow()
 {
     if (processor.detectionOpen() != isOpen())
         show (processor.detectionOpen(), false);
-    // A restored session lets go of Detection Audition behind the button's back.
-    if (holdingAudition && ! processor.detectionAudition())
+    // A restored session lets go of Detection Audition behind the button's back, and a button that isn't showing
+    // (the editor's window hidden but not closed) can't be released, so it lets go too.
+    if (holdingAudition && (! processor.detectionAudition() || ! audition.isShowing()))
         letGoOfDetectionAudition();
     if (auto now = summaryOfParameters(); now != shownSummary)
     {

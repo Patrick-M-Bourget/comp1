@@ -326,7 +326,7 @@ void release (staple::IconButton& button)
 
 } // namespace
 
-TEST_CASE ("Detection Audition, held by the mouse or Space, plays the detection signal, and lets go on release, as the Detection section collapses, as the editor closes and on a restore")
+TEST_CASE ("Detection Audition, held by the mouse or Space, plays the detection signal, and lets go on release, as the Detection section collapses, as the editor's window hides or the editor closes, and on a restore")
 {
     OpenDetectionHost host;
     auto& session = host.processor.session();
@@ -375,6 +375,14 @@ TEST_CASE ("Detection Audition, held by the mouse or Space, plays the detection 
     host::restore (host.processor, saved);
     CHECK_FALSE (host.processor.detectionAudition());
     REQUIRE (host.settleUntil ([&] { return ! audition.isLit(); }));
+
+    // Hiding the editor's window, without closing the editor, lets go.
+    press (audition);
+    REQUIRE (host.processor.detectionAudition());
+    host.editor->setVisible (false);
+    CHECK (host.settleUntil ([&] { return ! host.processor.detectionAudition(); }));
+    CHECK_FALSE (audition.isLit());
+    host.editor->setVisible (true);
 
     // Closing the editor lets go.
     press (host.audition());
