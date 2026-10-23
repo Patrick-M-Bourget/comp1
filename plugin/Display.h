@@ -1,6 +1,5 @@
 #pragma once
 
-#include "DetectionEqDisplay.h"
 #include "LevelGraph.h"
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
@@ -14,10 +13,9 @@
 namespace comp1
 {
 
-// The Expanded View's display: its three tabs, Level, Detection EQ and Transfer Curve, as text chips along its top, and
-// under them the chosen tab's content: on Level, the Level and Gain Reduction Graph (LevelGraph), fed from the editor's
-// level history; on Detection EQ, the Detection EQ display (DetectionEqDisplay); on Transfer Curve, the Transfer Curve
-// Graph (TransferCurveGraph), fed from the level history too. The Transfer Curve tab's place is provisional (#94).
+// The Expanded View's display: its two tabs, Level and Transfer Curve, as text chips along its top, and under them the
+// chosen tab's content: on Level, the Level and Gain Reduction Graph (LevelGraph), fed from the editor's level history;
+// on Transfer Curve, the Transfer Curve Graph (TransferCurveGraph), fed from the level history too. The Transfer Curve tab's place is provisional (#94).
 // While the Level tab shows, the Transfer Curve inset (TransferCurveInset) sits over the Level graph's top-left corner,
 // insetGap in from it, over its oldest audio: a Tab stop after the tabs, whose Threshold and Ratio handles take the mouse.
 // Named "Display", and each content by its tab, as a test finds them.
@@ -35,8 +33,6 @@ public:
     juce::Component& tabContent (DisplayTab tab);
     DisplayTab shownTab() const { return shown; }
     LevelGraph& levelGraph() { return level; }
-    // What fills the Detection EQ tab's content.
-    DetectionEqDisplay& detectionEqDisplay() { return eqDisplay; }
     // What fills the Transfer Curve tab's content.
     TransferCurveGraph& transferCurveGraph() { return transferCurve; }
     // Over the Level tab's content, shown with it.
@@ -51,15 +47,12 @@ private:
     staple::TextChip& chipOf (DisplayTab tab);
 
     // The tabs, left to right.
-    static constexpr DisplayTab allTabs[] { DisplayTab::level, DisplayTab::detectionEq, DisplayTab::transferCurve };
+    static constexpr DisplayTab allTabs[] { DisplayTab::level, DisplayTab::transferCurve };
 
-    staple::TextChip levelChip { "Level", staple::TextChip::Look::plain }, detectionEqChip { "Detection EQ", staple::TextChip::Look::plain };
-    staple::TextChip transferCurveChip { "Transfer Curve", staple::TextChip::Look::plain };
+    staple::TextChip levelChip { "Level", staple::TextChip::Look::plain }, transferCurveChip { "Transfer Curve", staple::TextChip::Look::plain };
     PluginProcessor& processor;
     LevelGraph level;
-    juce::Component detectionEq;
     DisplayTab shown = DisplayTab::level;
-    DetectionEqDisplay eqDisplay { processor };
     TransferCurveGraph transferCurve;
     TransferCurveInset inset;
 };

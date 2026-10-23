@@ -426,7 +426,7 @@ void DetectionEqDisplay::tick (double seconds)
         detectionSpectrum.prepare (sampleRate, analyzer.resolution);
         settingsChanged();
     }
-    // Drained whichever tab shows, so the tap never fills.
+    // Drained whether it shows or not, so the tap never fills.
     readTap();
     if (readSettings())
         settingsChanged();

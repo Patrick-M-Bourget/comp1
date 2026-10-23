@@ -30,15 +30,16 @@ enum class DetectionEqBand
     lowPass,
 };
 
-// The Expanded View's Detection EQ tab: the Detection EQ drawn over a spectrum of what the detector listens to, with a
+// The Expanded View's Detection EQ display, in the Detection section (DetectionSection): the Detection EQ drawn over a spectrum of what the detector listens to, with a
 // handle for each band and a held Detection Audition button. It paints no background of its own, and its edges fade into
-// the window's over the design system's display fades (DisplayFades). A screen reader finds it as a group titled "Detection EQ".
+// the window's over the design system's display fades, a third of their size as it is drawn small (DisplayFades). A
+// screen reader finds it as a group titled "Detection EQ".
 //
 // - **Spectrum:** the Engine's detection source tap (PluginProcessor::readDetectionSourceSamples), the Detection Source
 //   before the Detection EQ, as one line in the Detection EQ's colour (the Analyzer's Sidechain line). The tap is
-//   skipped as the display opens, and drained every tick even while the Level tab is shown, so the reader never falls
-//   behind; it is analysed and repainted only while this tab is shown and samples arrive, so with no audio the tab
-//   holds still and asks for no repaint.
+//   skipped as the display opens, and drained every tick even while the display is hidden, so the reader never falls
+//   behind; it is analysed and repainted only while the display shows and samples arrive, so with no audio it holds
+//   still and asks for no repaint.
 // - **Curve:** the Detection EQ's combined magnitude response, worked out from the Settings the Engine gets
 //   (parameters::SettingsReader) with plugkit's designBand and responseAt at the sample rate the Engine plays at, so the
 //   two agree; an Off band contributes nothing. Redrawn only when the settings or the size change.
@@ -49,7 +50,7 @@ enum class DetectionEqBand
 //   repeats is one undo step, inside gestures the host sees, and grabbing or moving an Off band turns it on in it.
 //   While dragged, a readout card shows the band's name and values.
 // - **Detection Audition:** held by mouse, or by Space through the editor's keys, it holds
-//   PluginProcessor::setDetectionAudition; it lets go on release, when this tab is hidden and when the editor closes.
+//   PluginProcessor::setDetectionAudition; it lets go on release, when the display is hidden and when the editor closes.
 //
 // Everything follows the parameters on the editor's tick, so Host Automation, undo, A/B Compare and Presets move it.
 class DetectionEqDisplay final : public juce::Component, private plugkit::ui::EditorTick::Client
@@ -108,7 +109,7 @@ private:
     std::vector<plugkit::Cascade> onCascades; // the bands that are on, designed as the Engine designs them
     juce::Path curve;
     plugkit::ui::display::CachedLabels gridLabelImages;
-    DisplayFades fades;
+    DisplayFades fades { DisplayFades::Size::small };
     std::array<std::unique_ptr<Handle>, 3> handles;
     staple::IconButton audition { "Detection Audition", staple::Icon::headphones };
     bool holdingAudition = false;

@@ -18,16 +18,15 @@ const juce::Identifier versionProperty { "version" };
 // The display tab, a view property the session saves and restore takes off. Its name and values are permanent once
 // released: sessions keep them.
 const juce::Identifier displayTabProperty { "display_tab" };
-const juce::String levelTab { "level" }, detectionEqTab { "detection_eq" };
-const juce::String transferCurveTab { "transfer_curve" }; // permanent once released, as the others
+const juce::String levelTab { "level" }, transferCurveTab { "transfer_curve" };
 
-// A display tab as the session saves it, and back: anything else, a session saved without one included, is Level.
+// A display tab as the session saves it, and back: anything else, a session saved without one included, is Level. So
+// is "detection_eq", a tab older sessions hold that the display no longer has.
 const juce::String& savedTab (DisplayTab tab)
 {
     switch (tab)
     {
         case DisplayTab::level: return levelTab;
-        case DisplayTab::detectionEq: return detectionEqTab;
         case DisplayTab::transferCurve: return transferCurveTab;
     }
     return levelTab;
@@ -35,8 +34,6 @@ const juce::String& savedTab (DisplayTab tab)
 
 DisplayTab tabSaved (const juce::String& saved)
 {
-    if (saved == detectionEqTab)
-        return DisplayTab::detectionEq;
     if (saved == transferCurveTab)
         return DisplayTab::transferCurve;
     return DisplayTab::level;
@@ -46,6 +43,11 @@ DisplayTab tabSaved (const juce::String& saved)
 // Their names and values are permanent once released: sessions keep them.
 const juce::Identifier viewProperty { "view" }, hiddenViewWidthProperty { "hidden_view_width" }, hiddenViewHeightProperty { "hidden_view_height" };
 const juce::String expandedView { "expanded" }, compactView { "compact" };
+
+// Whether the Detection section is open: a view property the session saves and restore takes off. Its name and values
+// are permanent once released: sessions keep them.
+const juce::Identifier detectionOpenProperty { "detection_open" };
+const juce::String openDetectionSection { "open" }, collapsedDetectionSection { "collapsed" };
 
 View otherThan (View view) { return view == View::compact ? View::expanded : View::compact; }
 
@@ -353,6 +355,7 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
     const auto hidden = hiddenViewSize();
     state.setProperty (hiddenViewWidthProperty, hidden.x, nullptr);
     state.setProperty (hiddenViewHeightProperty, hidden.y, nullptr);
+    state.setProperty (detectionOpenProperty, detectionOpen() ? openDetectionSection : collapsedDetectionSection, nullptr);
     if (const auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -374,7 +377,9 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
         const auto& hidden = windowOf (otherThan (shown));
         hiddenWidth = restoredSide (state.getProperty (hiddenViewWidthProperty), hidden.minimum.x, hidden.maximum.x);
         hiddenHeight = restoredSide (state.getProperty (hiddenViewHeightProperty), hidden.minimum.y, hidden.maximum.y);
-        for (const auto& property : { viewProperty, hiddenViewWidthProperty, hiddenViewHeightProperty })
+        // Anything but open, a session saved without it included, is collapsed.
+        setDetectionOpen (state.getProperty (detectionOpenProperty).toString() == openDetectionSection);
+        for (const auto& property : { viewProperty, hiddenViewWidthProperty, hiddenViewHeightProperty, detectionOpenProperty })
             state.removeProperty (property, nullptr);
     });
     reportLatency();

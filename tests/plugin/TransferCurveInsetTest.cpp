@@ -52,11 +52,8 @@ TEST_CASE ("The Transfer Curve inset shows in the Level graph's top-left corner 
     CHECK (inGraph.getX() < graph.getWidth() / 4);
     CHECK (inGraph.getY() < graph.getHeight() / 4);
 
-    for (const auto tab : { DisplayTab::detectionEq, DisplayTab::transferCurve })
-    {
-        host.showTab (tab);
-        CHECK_FALSE (inset.isShowing());
-    }
+    host.showTab (DisplayTab::transferCurve);
+    CHECK_FALSE (inset.isShowing());
     host.showTab (DisplayTab::level);
     CHECK (inset.isShowing());
 

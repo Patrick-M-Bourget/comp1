@@ -9,7 +9,6 @@ Display::Display (PluginProcessor& p, LevelHistory& history)
 {
     setName ("Display");
     level.setName ("Level");
-    detectionEq.setName ("Detection EQ");
     int order = 0;
     for (const auto tab : allTabs)
     {
@@ -25,7 +24,6 @@ Display::Display (PluginProcessor& p, LevelHistory& history)
         addAndMakeVisible (chip);
         addChildComponent (tabContent (tab));
     }
-    detectionEq.addAndMakeVisible (eqDisplay);
     // After the tabs.
     inset.setExplicitFocusOrder (++order);
     addChildComponent (inset);
@@ -37,7 +35,6 @@ juce::Component& Display::tabContent (DisplayTab tab)
     switch (tab)
     {
         case DisplayTab::level: return level;
-        case DisplayTab::detectionEq: return detectionEq;
         case DisplayTab::transferCurve: return transferCurve;
     }
     return level;
@@ -48,7 +45,6 @@ staple::TextChip& Display::chipOf (DisplayTab tab)
     switch (tab)
     {
         case DisplayTab::level: return levelChip;
-        case DisplayTab::detectionEq: return detectionEqChip;
         case DisplayTab::transferCurve: return transferCurveChip;
     }
     return levelChip;
@@ -69,9 +65,6 @@ void Display::show (DisplayTab tab)
         tabContent (each).setVisible (each == tab);
     }
     inset.setVisible (tab == DisplayTab::level);
-    // Detection Audition is held only while its tab shows.
-    if (tab != DisplayTab::detectionEq)
-        eqDisplay.letGoOfDetectionAudition();
 }
 
 void Display::resized()
@@ -86,7 +79,6 @@ void Display::resized()
         tabs.removeFromLeft (tabGap);
         tabContent (tab).setBounds (area);
     }
-    eqDisplay.setBounds (detectionEq.getLocalBounds());
     inset.setTopLeftPosition (level.getPosition().translated (insetGap, insetGap));
 }
 

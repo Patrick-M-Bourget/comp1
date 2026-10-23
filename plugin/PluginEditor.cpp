@@ -35,6 +35,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         content().addAndMakeVisible (*child);
         child->setExplicitFocusOrder (order++);
     }
+    // The Detection section's slide gives the display what it takes, or takes it back, the window keeping its size.
+    detection.onHeightChange = [this] {
+        if (! bodyArea.isEmpty())
+            layOutBody (bodyArea);
+    };
     footer.uiScaleMenu().onPicked = [this] (int) {
         applyUiScale();
         applyViewWindow();
@@ -68,7 +73,7 @@ void PluginEditor::show (View view)
     compactBody.setVisible (! expanded);
     footer.showSwitchFor (view);
     if (! expanded)
-        displaySlot.detectionEqDisplay().letGoOfDetectionAudition();
+        detection.detectionEqDisplay().letGoOfDetectionAudition();
 }
 
 void PluginEditor::applyViewWindow()
@@ -106,6 +111,7 @@ int PluginEditor::sectionRowsHeight()
 
 void PluginEditor::layOutBody (juce::Rectangle<int> area)
 {
+    bodyArea = area;
     compactBody.setBounds (area);
     sections.setBounds (area.removeFromBottom (sectionRowsHeight()));
     area.removeFromBottom (layout::gap);
@@ -126,7 +132,8 @@ void PluginEditor::layOutBody (juce::Rectangle<int> area)
         rows.removeFromTop (sectionGap);
         for (auto* section : row)
         {
-            section->setBounds (line.removeFromLeft (section->idealWidth()));
+            // Its own height, from the row's top: the Detection section collapsed is a strip.
+            section->setBounds (line.removeFromLeft (section->idealWidth()).withHeight (section->idealHeight()));
             line.removeFromLeft (sectionGap);
         }
     }

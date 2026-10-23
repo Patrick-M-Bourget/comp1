@@ -2,14 +2,18 @@
 
 #include "CompFollowAttachment.h"
 #include "Controls.h"
+#include "DetectionEqDisplay.h"
 #include "LevelHistory.h"
 #include "LevelRing.h"
 #include "PluginProcessor.h"
 #include "plugkit/ui/OutputPopoverFrame.h"
 #include "plugkit/ui/PopoverSlider.h"
+#include "plugkit/ui/staple/controls/Tween.h"
 
+#include <functional>
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace comp1
 {
@@ -106,10 +110,61 @@ private:
 };
 
 // Detection: Detection Source and the High-pass's on/off over its Frequency, then its Slope; the Low-pass's on/off over
-// its Frequency, then its Slope; the Free band's on/off and Shape over its Frequency, then its Gain and Q.
-struct DetectionSection final : ControlSection
+// its Frequency, then its Slope; the Free band's on/off and Shape over its Frequency, then its Gain and Q; and to their
+// right, after them in Tab's order, the Detection EQ display (DetectionEqDisplay), sized down to the controls' height.
+//
+// It opens and closes. Its title is a disclosure button titled "Detection" (disclosure()), drawn as the title with a
+// chevron after it, pointing right while collapsed and down while open, whose value a screen reader reads as
+// "collapsed" or "open"; a click, Return or Space on it toggles PluginProcessor::detectionOpen, which the section
+// follows on the editor's tick, so a restore moves it too. A click slides it open or closed (a staple::Tween); a
+// restore, or the editor opening, shows it at once. Collapsed, it is one strip: its title and, after the chevron, a
+// summary of the Detection EQ (summary()); its controls and display are hidden, so Tab skips them and the display
+// analyses nothing. Closing lets go of Detection Audition, as the slide starts. Its width is the same either
+// way, and its height (idealHeight) follows the slide: onHeightChange asks the editor to lay the rows out again, so the
+// display takes what it gives up.
+class DetectionSection final : public ControlSection
 {
+public:
     explicit DetectionSection (PluginProcessor& processor);
+    ~DetectionSection() override;
+
+    juce::Button& disclosure();
+    DetectionEqDisplay& detectionEqDisplay() { return eqDisplay; }
+    // Open, or sliding open.
+    bool isOpen() const { return slide.target() > 0.0f; }
+    // "Internal · HP 80 Hz · LP off · Bell 2.0 kHz": the Detection Source, then the High-pass's, the Low-pass's and the
+    // Free band's Frequency (the Free band's after its Shape), "off" for a band that is. Follows the parameters on the
+    // editor's tick.
+    const juce::String& summary() const { return shownSummary; }
+
+    // Called as the height changes, each frame of the slide.
+    std::function<void()> onHeightChange;
+
+    int idealWidth() const override;
+    int idealHeight() const override;
+    void paint (juce::Graphics& g) override;
+    void resized() override;
+
+    // The disclosure's chevron: its side, and its gap after the title; the summary's gap after it.
+    static constexpr int chevronSize = 10, chevronGap = 6, summaryGap = 12;
+    // The Detection EQ display's width, and its gap after the controls.
+    static constexpr int displayWidth = 400, displayGap = 16;
+
+private:
+    class Disclosure;
+
+    void follow() override;
+    // Shows the section open or collapsed, sliding there if animate.
+    void show (bool open, bool animate);
+    // The controls under the title, which collapse hides.
+    std::vector<juce::Component*> body();
+    juce::String summaryOfParameters();
+
+    PluginProcessor& processor;
+    std::unique_ptr<Disclosure> disclosureButton;
+    DetectionEqDisplay eqDisplay;
+    staple::Tween slide { staple::tokens::motion::dur3Ms, 0.0f };
+    juce::String shownSummary;
 };
 
 // Stereo: Stereo Placement and Stereo Link, available only on a stereo track: on a mono one both are disabled, their

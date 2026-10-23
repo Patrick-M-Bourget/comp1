@@ -1,7 +1,11 @@
 #include "Sections.h"
 
 #include "Parameters.h"
+#include "plugkit/ui/Accessibility.h"
 #include "plugkit/ui/ValueText.h"
+#include "plugkit/ui/staple/Fonts.h"
+#include "plugkit/ui/staple/Icons.h"
+#include "plugkit/ui/staple/Tokens.h"
 
 #include <cmath>
 
@@ -182,9 +186,45 @@ bool OutputSection::isControlEnabled (juce::Component& control) const
     return &control != &autoGain || ! following();
 }
 
-DetectionSection::DetectionSection (PluginProcessor& p) : ControlSection ("Detection", p)
+// The Detection section's title as a button: the chevron drawn after the title the section paints, text2, text1 while
+// hovered or pressed, over the title and the chevron's area.
+class DetectionSection::Disclosure final : public juce::Button
+{
+public:
+    explicit Disclosure (DetectionSection& s) : juce::Button ("Detection"), section (s)
+    {
+        setTitle ("Detection");
+        setWantsKeyboardFocus (true);
+    }
+
+    void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+    {
+        const auto area = getLocalBounds().toFloat().removeFromRight (static_cast<float> (chevronSize));
+        staple::drawIcon (g, section.isOpen() ? staple::Icon::dropdown : staple::Icon::submenu,
+                          area.withSizeKeepingCentre (static_cast<float> (chevronSize), static_cast<float> (chevronSize)),
+                          highlighted || down ? staple::tokens::colour::text1 : staple::tokens::colour::text2);
+    }
+
+private:
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return plugkit::ui::accessibility::handler (
+            *this, juce::AccessibilityRole::button, [this] { return juce::String (section.isOpen() ? "open" : "collapsed"); }, [this] { juce::NullCheckedInvocation::invoke (onClick); });
+    }
+
+    DetectionSection& section;
+};
+
+DetectionSection::DetectionSection (PluginProcessor& p)
+    : ControlSection ("Detection", p), processor (p), disclosureButton (std::make_unique<Disclosure> (*this)), eqDisplay (p)
 {
     using staple::Icon;
+    // First in Tab's order, before the controls it shows and hides.
+    addSelfPlaced (*disclosureButton);
+    disclosureButton->onClick = [this] {
+        processor.setDetectionOpen (! processor.detectionOpen());
+        show (processor.detectionOpen(), true);
+    };
     addChoice (parameters::detectionSourceId, 96, true);
     addToggle (parameters::detectionHighPassOnId, "High-Pass", false);
     addKnob (parameters::detectionHighPassFrequencyId, knobSize::small, "Frequency", Place::underStack);
@@ -197,6 +237,104 @@ DetectionSection::DetectionSection (PluginProcessor& p) : ControlSection ("Detec
     addKnob (parameters::detectionBandFrequencyId, knobSize::small, "Frequency", Place::underStack);
     addKnob (parameters::detectionBandGainId, knobSize::small, "Gain");
     addKnob (parameters::detectionBandQId, knobSize::small, "Q");
+    addSelfPlaced (eqDisplay);
+
+    slide.apply = [this] (float) {
+        // Hidden once closed, so Tab skips them.
+        if (slide.value() <= 0.0f && slide.target() <= 0.0f)
+            for (auto* c : body())
+                c->setVisible (false);
+        disclosureButton->repaint();
+        repaint();
+        if (onHeightChange != nullptr)
+            onHeightChange();
+    };
+    shownSummary = summaryOfParameters();
+    show (processor.detectionOpen(), false);
+}
+
+DetectionSection::~DetectionSection() = default;
+
+juce::Button& DetectionSection::disclosure() { return *disclosureButton; }
+
+std::vector<juce::Component*> DetectionSection::body()
+{
+    std::vector<juce::Component*> controls;
+    for (auto* c : getChildren())
+        if (c != disclosureButton.get())
+            controls.push_back (c);
+    return controls;
+}
+
+void DetectionSection::show (bool open, bool animate)
+{
+    if (open)
+        for (auto* c : body())
+            c->setVisible (true);
+    else
+        eqDisplay.letGoOfDetectionAudition();
+    if (animate)
+        slide.towards (open ? 1.0f : 0.0f);
+    else
+        slide.jump (open ? 1.0f : 0.0f);
+}
+
+void DetectionSection::follow()
+{
+    if (processor.detectionOpen() != isOpen())
+        show (processor.detectionOpen(), false);
+    if (auto now = summaryOfParameters(); now != shownSummary)
+    {
+        shownSummary = std::move (now);
+        repaint();
+    }
+}
+
+juce::String DetectionSection::summaryOfParameters()
+{
+    // Frequency to one decimal in kHz: "80 Hz", "2.0 kHz".
+    const auto frequency = [this] (const juce::String& id) {
+        auto& p = parameter (id);
+        return plugkit::ui::valueText::frequency (p.convertFrom0to1 (p.getValue()), { .kHz = 1 });
+    };
+    const auto band = [&] (const juce::String& onId, const juce::String& name, const juce::String& frequencyId) {
+        return name + " " + (isOn (processor, onId) ? frequency (frequencyId) : juce::String ("off"));
+    };
+    const juce::String dot { juce::CharPointer_UTF8 (" \xc2\xb7 ") };
+    return parameter (parameters::detectionSourceId).getCurrentValueAsText() + dot
+           + band (parameters::detectionHighPassOnId, "HP", parameters::detectionHighPassFrequencyId) + dot
+           + band (parameters::detectionLowPassOnId, "LP", parameters::detectionLowPassFrequencyId) + dot
+           + (isOn (processor, parameters::detectionBandOnId)
+                  ? band (parameters::detectionBandOnId, parameter (parameters::detectionBandShapeId).getCurrentValueAsText(), parameters::detectionBandFrequencyId)
+                  : juce::String ("Free band off"));
+}
+
+int DetectionSection::idealWidth() const { return ControlSection::idealWidth() + displayGap + displayWidth; }
+
+int DetectionSection::idealHeight() const
+{
+    const int open = ControlSection::idealHeight();
+    return titleHeight + juce::roundToInt (slide.value() * static_cast<float> (open - titleHeight));
+}
+
+void DetectionSection::paint (juce::Graphics& g)
+{
+    ControlSection::paint (g);
+    if (isOpen())
+        return;
+    g.setFont (staple::font (staple::tokens::size::fs2));
+    g.setColour (staple::tokens::colour::text3);
+    const int x = disclosureButton->getRight() + summaryGap;
+    g.drawText (shownSummary, juce::Rectangle<int> (x, 0, getWidth() - x, titleHeight), juce::Justification::centredLeft, true);
+}
+
+void DetectionSection::resized()
+{
+    // The controls where they sit open, whatever the height: the slide uncovers them.
+    ControlSection::resized();
+    const auto controls = getLocalBounds().withHeight (ControlSection::idealHeight()).withTrimmedTop (titleHeight + dividerGap);
+    eqDisplay.setBounds (controls.withTrimmedLeft (ControlSection::idealWidth() + displayGap));
+    disclosureButton->setBounds (0, 0, titleWidth() + chevronGap + chevronSize, titleHeight);
 }
 
 StereoSection::StereoSection (PluginProcessor& p) : ControlSection ("Stereo", p)

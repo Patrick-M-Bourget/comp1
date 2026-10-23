@@ -230,13 +230,13 @@ TEST_CASE ("With no audio the Level and Gain Reduction Graph holds still and ask
     host.graph().setCachedComponentImage (nullptr);
 }
 
-TEST_CASE ("Records played while the Detection EQ tab is shown are in the Level and Gain Reduction Graph when Level is chosen again")
+TEST_CASE ("Records played while the Transfer Curve tab is shown are in the Level and Gain Reduction Graph when Level is chosen again")
 {
     Graphing host;
     auto& display = host.expandedView().display();
-    auto& detectionEq = host.showing<juce::Button> ("Detection EQ");
-    REQUIRE (detectionEq.onClick != nullptr);
-    detectionEq.onClick();
+    auto& transferCurve = host.showing<juce::Button> ("Transfer Curve");
+    REQUIRE (transferCurve.onClick != nullptr);
+    transferCurve.onClick();
     REQUIRE_FALSE (host.graph().isShowing());
 
     playMarker (host, 1.0);

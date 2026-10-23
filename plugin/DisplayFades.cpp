@@ -13,6 +13,10 @@ namespace display = plugkit::ui::display;
 
 // The display's edge fades, as plugkit's Staple design system gives them (its design-system README.md, "The display").
 constexpr display::EdgeFades edgeFades { .top = 18.0f, .bottom = 84.0f, .left = 36.0f, .right = 56.0f };
+constexpr display::EdgeFades smallEdgeFades { .top = edgeFades.top / 3.0f,
+                                              .bottom = edgeFades.bottom / 3.0f,
+                                              .left = edgeFades.left / 3.0f,
+                                              .right = edgeFades.right / 3.0f };
 
 // The component the editor shell draws the window's background over, which holds everything the editor shows.
 const juce::Component* windowOf (const juce::Component& component)
@@ -42,7 +46,7 @@ void DisplayFades::paint (juce::Graphics& g, const juce::Component& graph)
     {
         madeFor = area;
         const auto windowArea = window->getLocalBounds().toFloat();
-        fades = display::edgeFadeOverlay ({ .width = graph.getWidth(), .height = graph.getHeight() }, edgeFades, scale, [&] (juce::Graphics& behind) {
+        fades = display::edgeFadeOverlay ({ .width = graph.getWidth(), .height = graph.getHeight() }, size == Size::small ? smallEdgeFades : edgeFades, scale, [&] (juce::Graphics& behind) {
             behind.addTransform (juce::AffineTransform::translation (-at.x, -at.y));
             staple::paintWindowBackground (behind, windowArea);
         });

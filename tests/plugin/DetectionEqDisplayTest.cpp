@@ -1,4 +1,4 @@
-// The Expanded View's Detection EQ tab: its spectrum, curve, handles and Detection Audition.
+// The Expanded View's Detection EQ display, in the Detection section: its spectrum, curve, handles and Detection Audition.
 
 #include "DetectionEqDisplay.h"
 #include "Playing.h"
@@ -31,22 +31,28 @@ double sine (double frequency, double amplitude, int n)
     return amplitude * std::sin (2.0 * juce::MathConstants<double>::pi * frequency * n / testRate);
 }
 
-// The editor playing (Playing.h) on a stereo track with the Sidechain given, showing the Detection EQ tab.
+// The editor playing (Playing.h) on a stereo track with the Sidechain given, the Detection section open so its
+// Detection EQ display shows.
 struct DetectionEqHost : host::Playing
 {
     explicit DetectionEqHost (const juce::AudioChannelSet& sidechain = juce::AudioChannelSet::stereo())
         : host::Playing (testRate, sidechain)
     {
-        showTab (comp1::DisplayTab::detectionEq);
+        openDetection (true);
     }
 
-    void showTab (comp1::DisplayTab tab)
+    // Opens or collapses the Detection section, as a click on its disclosure does, and waits for the slide's end.
+    void openDetection (bool open)
     {
-        processor.setDisplayTab (tab);
-        REQUIRE (settleUntil ([&] { return expandedView().display().shownTab() == tab; }));
+        auto& section = expandedView().detectionSection();
+        if (section.isOpen() != open)
+            click (section.disclosure());
+        REQUIRE (section.isOpen() == open);
+        settleAnimations();
+        REQUIRE (eqDisplay().isShowing() == open);
     }
 
-    comp1::DetectionEqDisplay& eqDisplay() { return expandedView().display().detectionEqDisplay(); }
+    comp1::DetectionEqDisplay& eqDisplay() { return expandedView().detectionSection().detectionEqDisplay(); }
 
     // Plays a second of main and sidechain, a tick's worth of samples between ticks, as a host plays while the editor
     // shows it.
@@ -82,7 +88,7 @@ double binWidth (const plugkit::ui::AnalyzerSpectrum& spectrum)
 
 } // namespace
 
-TEST_CASE ("The Detection EQ tab shows a spectrum of the Detection Source: the main input with Internal, the Sidechain with External, and the floor with none")
+TEST_CASE ("The Detection EQ display shows a spectrum of the Detection Source: the main input with Internal, the Sidechain with External, and the floor with none")
 {
     const auto silence = [] (int) { return 0.0; };
     const auto main1kHz = [] (int n) { return sine (1000.0, 0.5, n); };
@@ -119,7 +125,7 @@ TEST_CASE ("The Detection EQ tab shows a spectrum of the Detection Source: the m
     }
 }
 
-TEST_CASE ("The tap is skipped as the editor opens, and drained on every tick on the Level tab too, while the spectrum moves only on its own tab")
+TEST_CASE ("The tap is skipped as the editor opens, and drained on every tick with the Detection section collapsed too, while the spectrum moves only while it shows")
 {
     const auto main1kHz = [] (int n) { return sine (1000.0, 0.5, n); };
     const auto silence = [] (int) { return 0.0; };
@@ -131,9 +137,9 @@ TEST_CASE ("The tap is skipped as the editor opens, and drained on every tick on
     host.settle (200);
     CHECK (host.eqDisplay().spectrum().levelDb (1000.0, 0.0) < -100.0);
 
-    // On the Level tab the tap is drained each tick, so it holds nothing a tick after playing, and the spectrum stays
-    // where it was.
-    host.showTab (comp1::DisplayTab::level);
+    // Collapsed, the tap is drained each tick, so it holds nothing a tick after playing, and the spectrum stays where it
+    // was.
+    host.openDetection (false);
     for (int i = 0; i < 10; ++i)
     {
         host.play (2, 512, main1kHz, silence);
@@ -199,16 +205,21 @@ TEST_CASE ("The curve is the Detection EQ's response the Engine plays, an Off ba
     REQUIRE (host.settleUntil ([&] { return curveFollows (host); }));
     CHECK (eq.curveDbAt (20.0) < -20.0);
     CHECK_THAT (eq.curveDbAt (1000.0), WithinAbs (6.0, 0.5));
-    // Drawn there in curveMain, away from the handles.
+    // Drawn there in curveMain, away from the handles: within a pixel of it up or down, as the display drawn small
+    // makes the curve steep.
     const auto image = eq.createComponentSnapshot (eq.getLocalBounds(), true, 1.0f);
     for (const double f : { 300.0, 2500.0 })
     {
         CAPTURE (f);
         const auto shape = eq.geometry();
-        const auto pixel = image.getPixelAt (juce::roundToInt (shape.xOf (f)), juce::roundToInt (shape.yOf (eq.curveDbAt (f))));
-        CHECK (pixel.getRed() > 200);
-        CHECK (pixel.getGreen() > 150);
-        CHECK (pixel.getBlue() < 100);
+        const int x = juce::roundToInt (shape.xOf (f)), y = juce::roundToInt (shape.yOf (eq.curveDbAt (f)));
+        bool drawn = false;
+        for (int dy = -1; dy <= 1; ++dy)
+        {
+            const auto pixel = image.getPixelAt (x, y + dy);
+            drawn = drawn || (pixel.getRed() > 200 && pixel.getGreen() > 150 && pixel.getBlue() < 100);
+        }
+        CHECK (drawn);
     }
 
     // Each band off in turn leaves the curve as the others make it.
@@ -440,7 +451,7 @@ TEST_CASE ("Arrows move a focused handle: Frequency by a semitone, Gain by 0.5 d
     CHECK_THAT (host.value (parameters::detectionBandGainId), WithinAbs (gain, 1.0e-5f));
 }
 
-TEST_CASE ("Tab reaches the High-pass, Free band and Low-pass handles, then Detection Audition, after the display's tabs and before the Output Meter")
+TEST_CASE ("Tab reaches the High-pass, Free band and Low-pass handles, then Detection Audition, after the Detection section's controls and before the Stereo section")
 {
     DetectionEqHost host;
     juce::Component::unfocusAllComponents();
@@ -455,16 +466,14 @@ TEST_CASE ("Tab reaches the High-pass, Free band and Low-pass handles, then Dete
         titles.add (focused->getTitle());
     }
     CAPTURE (titles.joinIntoString (", "));
-    // After the last of the display's tabs.
-    const int tabs = titles.indexOf ("Transfer Curve");
-    REQUIRE (tabs >= 2);
-    CHECK (titles[tabs - 2] == "Level");
-    CHECK (titles[tabs - 1] == "Detection EQ");
-    CHECK (titles[tabs + 1] == "High-pass handle");
-    CHECK (titles[tabs + 2] == "Free band handle");
-    CHECK (titles[tabs + 3] == "Low-pass handle");
-    CHECK (titles[tabs + 4] == "Detection Audition");
-    CHECK (titles[tabs + 5] == "Output Meter");
+    // After the last of the section's controls.
+    const int last = titles.indexOf ("Detection Free Band Q");
+    REQUIRE (last >= 0);
+    CHECK (titles[last + 1] == "High-pass handle");
+    CHECK (titles[last + 2] == "Free band handle");
+    CHECK (titles[last + 3] == "Low-pass handle");
+    CHECK (titles[last + 4] == "Detection Audition");
+    CHECK (titles[last + 5] == "Stereo Placement");
 }
 
 TEST_CASE ("A screen reader finds the group Detection EQ, each handle by its own title with the band's settings, and Detection Audition")
@@ -535,7 +544,7 @@ void release (staple::IconButton& button)
 
 } // namespace
 
-TEST_CASE ("Detection Audition, held by the mouse or Space, plays the detection signal, and lets go on release, on the Level tab, as the editor closes and on a restore")
+TEST_CASE ("Detection Audition, held by the mouse or Space, plays the detection signal, and lets go on release, as the Detection section collapses, as the editor closes and on a restore")
 {
     DetectionEqHost host;
     auto& session = host.processor.session();
@@ -572,10 +581,11 @@ TEST_CASE ("Detection Audition, held by the mouse or Space, plays the detection 
     const auto saved = host::saved (host.processor);
     CHECK (harness::savedNamesContaining (harness::savedState (saved), "audition").isEmpty());
 
-    // The Level tab shown lets go.
-    host.showTab (comp1::DisplayTab::level);
+    // Collapsing lets go, as the slide starts.
+    host::EditorHost::click (host.expandedView().detectionSection().disclosure());
     CHECK_FALSE (host.processor.detectionAudition());
-    host.showTab (comp1::DisplayTab::detectionEq);
+    host.settleAnimations();
+    host.openDetection (true);
 
     // A restore lets go, and the button follows.
     press (audition);
@@ -591,7 +601,7 @@ TEST_CASE ("Detection Audition, held by the mouse or Space, plays the detection 
     CHECK_FALSE (host.processor.detectionAudition());
 }
 
-TEST_CASE ("Expanded View snapshots on the Detection EQ tab: signal playing with every band on, External with a Sidechain, and Detection Audition held", "[.screens]")
+TEST_CASE ("Expanded View snapshots with the Detection section open: signal playing with every band on, External with a Sidechain, and Detection Audition held", "[.screens]")
 {
     const auto playFor = [] (DetectionEqHost& host, auto main, auto sidechain) {
         host.playForASecond (main, sidechain);
@@ -625,7 +635,7 @@ TEST_CASE ("Expanded View snapshots on the Detection EQ tab: signal playing with
     }
 }
 
-TEST_CASE ("With no audio the Detection EQ tab asks for no repaint; samples arriving, or a setting changing, repaint it")
+TEST_CASE ("With no audio the Detection EQ display asks for no repaint; samples arriving, or a setting changing, repaint it")
 {
     DetectionEqHost host;
     const auto tone = [] (int n) { return sine (1000.0, 0.5, n); };
