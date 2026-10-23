@@ -99,24 +99,33 @@ TEST_CASE ("While Comp Follow is on, Threshold and Ratio show and read the follo
     CHECK (juce::exactlyEqual (ratio.getValue(), shownRatio));
 }
 
-TEST_CASE ("While Comp Follow is on, the output popover's Auto Gain shows on and is disabled, its tooltip saying Comp Follow holds it on; off, it shows and sets its own")
+TEST_CASE ("With Comp Follow on or off, the output popover's Auto Gain is enabled, shows its own parameter with its usual tooltip, and turns it on and off")
 {
     host::EditorHost host;
     followingOffTheCurve (host);
+    const bool following = GENERATE (true, false);
+    CAPTURE (following);
+    if (! following)
+        host.edit (parameters::compFollowId, 0.0f);
     host.openOutputPopover();
     auto& autoGain = host.showing<plugkit::ui::OutputToggle> ("Auto Gain");
-    REQUIRE (host.settleUntil ([&] { return ! autoGain.isEnabled(); }));
-    CHECK (autoGain.getToggleState());
-    CHECK (host.value (parameters::autoGainId) == 0.0f);
-    CHECK (autoGain.getTooltip() == "Auto Gain: Comp Follow holds it on");
+    const auto shows = [&] (bool on) { return host.settleUntil ([&] { return autoGain.getToggleState() == on; }); };
+    host.settle();
+    CHECK (autoGain.isEnabled());
+    CHECK (shows (false));
+    CHECK (autoGain.getTooltip().startsWith ("Auto Gain: compensates the output level"));
 
-    host.edit (parameters::compFollowId, 0.0f);
-    REQUIRE (host.settleUntil ([&] { return autoGain.isEnabled(); }));
-    CHECK_FALSE (autoGain.getToggleState());
-    CHECK (autoGain.getTooltip().startsWith ("Auto Gain: "));
-    CHECK (autoGain.getTooltip() != "Auto Gain: Comp Follow holds it on");
     host::EditorHost::click (autoGain);
     CHECK (host.value (parameters::autoGainId) == 1.0f);
+    CHECK (shows (true));
+    host::EditorHost::click (autoGain);
+    CHECK (host.value (parameters::autoGainId) == 0.0f);
+    CHECK (shows (false));
+    // Comp Follow switched under it leaves it showing its own.
+    host.edit (parameters::compFollowId, following ? 0.0f : 1.0f);
+    host.settle();
+    CHECK (autoGain.isEnabled());
+    CHECK (shows (false));
 }
 
 TEST_CASE ("Grabbing Threshold or Ratio while following turns Comp Follow off: the followed values, then the edit, Auto Gain left as it is, as one undo step inside gestures, and undo follows again")

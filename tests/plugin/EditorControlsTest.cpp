@@ -46,8 +46,8 @@ void openDetection (host::EditorHost& host)
 }
 
 // Every control can be: the output popover open (so Output Gain, Auto Gain, the Limiter and Ceiling show), the
-// Detection section open (so its controls show), Comp Follow off (so Auto Gain is enabled), High Quality (so Lookahead
-// and Oversampling are), on a stereo track (so Stereo Placement and Stereo Link are).
+// Detection section open (so its controls show), Comp Follow off (so Threshold and Ratio are set directly), High
+// Quality (so Lookahead and Oversampling are), on a stereo track (so Stereo Placement and Stereo Link are).
 void everythingAvailable (host::EditorHost& host)
 {
     openDetection (host);
@@ -639,7 +639,7 @@ TEST_CASE ("In the Compact View, Gate, Gate Threshold, Comp, the footer's four a
         const float byMouse = parameter.getValue();
         if (changeByKeys (host, control, parameter))
             CHECK_FALSE (juce::exactlyEqual (parameter.getValue(), byMouse));
-        // Back where it was for the next, in High Quality with Comp Follow off, so Auto Gain is enabled.
+        // Back where it was for the next, in High Quality with Comp Follow off.
         host.edit (parameter.getParameterID(), parameter.convertFrom0to1 (before));
         host.edit (parameters::processingModeId, 1.0f);
         host.edit (parameters::compFollowId, 0.0f);
