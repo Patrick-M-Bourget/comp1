@@ -47,6 +47,7 @@ const std::vector<Covered>& hostParameters()
         { "gate_attack", [] (const Settings& s) { return s.gate.on && s.gate.attackMs != defaults.gate.attackMs; } },
         { "gate_release", [] (const Settings& s) { return s.gate.on && s.gate.releaseMs != defaults.gate.releaseMs; } },
         { "gate_hold", [] (const Settings& s) { return s.gate.on && s.gate.holdMs != defaults.gate.holdMs; } },
+        { "gate_position", [] (const Settings& s) { return s.gate.on && s.gatePosition != defaults.gatePosition; } },
         { "comp", [] (const Settings& s) { return s.compFollow && s.comp != defaults.comp; } },
         { "comp_follow", [] (const Settings& s) { return s.compFollow != defaults.compFollow; } },
         { "threshold", [] (const Settings& s) { return s.thresholdDb != defaults.thresholdDb; } },
@@ -116,6 +117,18 @@ TEST_CASE ("Render scenes play every host parameter off its default, where it is
         CAPTURE (covered.parameter);
         CHECK (someScenePlays (covered.offDefault));
     }
+}
+
+TEST_CASE ("Render scenes play the Gate at Post in both Processing Modes, and on the Sidechain in High Quality", "[render]")
+{
+    const auto post = [] (const Settings& s) { return s.gate.on && s.gatePosition == GatePosition::Post; };
+    for (const auto mode : { ProcessingMode::ZeroLatency, ProcessingMode::HighQuality })
+        CHECK (someScenePlays ([&] (const Settings& s) { return post (s) && s.processingMode == mode; }));
+    const auto scenes = test::renderScenes();
+    CHECK (std::any_of (scenes.begin(), scenes.end(), [&post] (const test::RenderScene& scene) {
+        return scene.sidechain && post (scene.settings) && scene.settings.detectionSource == DetectionSource::External
+               && scene.settings.processingMode == ProcessingMode::HighQuality;
+    }));
 }
 
 TEST_CASE ("Render scenes play every Character, each at a Colour off its default too, and every Stereo Placement", "[render]")

@@ -318,6 +318,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Gate Attack");
     expected.push_back ("Gate Gain Reduction");
     expected.push_back ("Gate Hold");
+    expected.push_back ("Gate Position");
     expected.push_back ("Gate Range");
     expected.push_back ("Gate Release");
     expected.push_back ("Gate Threshold");
@@ -433,7 +434,7 @@ TEST_CASE ("Tab walks the header, the display's tabs and the Transfer Curve inse
         CHECK (std::count (walked.begin(), walked.end(), control) == 1);
     }
     // In order: the header's first, then these.
-    juce::StringArray order { "Presets", "Level", "Transfer Curve", "Transfer Curve inset", "Output Meter", "Gate", "Gate Hold",
+    juce::StringArray order { "Presets", "Level", "Transfer Curve", "Transfer Curve inset", "Output Meter", "Gate", "Gate Position", "Gate Hold",
                               "Comp Follow", "Comp", "Threshold", "Range", "Colour", "Saturation Position", "Detection" };
     const juce::StringArray detection { "Detection Source", "Detection Free Band Q", "High-pass handle", "Free band handle", "Low-pass handle", "Detection Audition" };
     if (open)
@@ -533,10 +534,11 @@ TEST_CASE ("Space and Return toggle a toggle, and up and down step a choice, one
     CHECK (history.undoSteps() == steps + 2);
 
     // Processing Mode last: its step back up is Zero Latency, where Oversampling is disabled.
-    for (const juce::String choice : { "Saturation Position", "Detection Source", "Detection Free Band Shape", "Stereo Placement", "Oversampling", "Processing Mode" })
+    for (const juce::String choice : { "Gate Position", "Saturation Position", "Detection Source", "Detection Free Band Shape", "Stereo Placement", "Oversampling", "Processing Mode" })
     {
         CAPTURE (choice);
-        auto& id = choice == "Detection Free Band Shape" ? parameters::detectionBandShapeId
+        auto& id = choice == "Gate Position"             ? parameters::gatePositionId
+                   : choice == "Detection Free Band Shape" ? parameters::detectionBandShapeId
                    : choice == "Stereo Placement"        ? parameters::stereoPlacementId
                    : choice == "Saturation Position"     ? parameters::saturationPositionId
                    : choice == "Detection Source"        ? parameters::detectionSourceId

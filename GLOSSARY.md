@@ -85,8 +85,12 @@ _Avoid_: Linked, Link, Comp Link
 ## Gate, Saturation and Limiter
 
 **Gate**:
-The downward expander before the compressor, which lowers the signal once its Held Level has fallen well below Gate Threshold, and passes it again when the Held Level reaches Gate Threshold. Its controls are Gate Threshold, Gate Range, Gate Attack, Gate Release and Gate Hold.
+The downward expander, placed by Gate Position, which lowers the signal once its Held Level has fallen well below Gate Threshold, and passes it again when the Held Level reaches Gate Threshold. Its controls are Gate Threshold, Gate Range, Gate Attack, Gate Release, Gate Hold and Gate Position.
 _Avoid_: Expander, noise gate; Threshold, Range, Attack, Release or Hold (unqualified) for the Gate's
+
+**Gate Position**:
+Where the Gate sits: Pre, on the input before Dry and Wet split, so it lowers both; or Post, on the Wet path directly after the compressor, so Dry is never gated, and with an Internal Detection Source it listens to the compressed signal.
+_Avoid_: Gate order, gate mode
 
 **Gate Threshold**:
 The Held Level at which the Gate opens. The Gate closes only once the Held Level falls a fixed hysteresis under it, so a level wavering about Gate Threshold doesn't flip it to and fro.
@@ -136,7 +140,7 @@ The plugin's separate audio input, used as an external signal for detection rath
 _Avoid_: Key input, SC
 
 **Detection Source**:
-The signal the compressor and Gate listen to: Internal (the main input) or External (the Sidechain).
+The signal the compressor and Gate listen to: Internal (the main input, or for the Gate at Post the compressed signal) or External (the Sidechain).
 _Avoid_: Trigger, key
 
 **Detection EQ**:

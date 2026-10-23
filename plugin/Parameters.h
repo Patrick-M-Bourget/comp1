@@ -53,6 +53,7 @@ inline const juce::String gateRangeId { "gate_range" };
 inline const juce::String gateAttackId { "gate_attack" };
 inline const juce::String gateReleaseId { "gate_release" };
 inline const juce::String gateHoldId { "gate_hold" };
+inline const juce::String gatePositionId { "gate_position" };
 inline const juce::String oversamplingId { "oversampling" };
 inline const juce::String globalBypassId { "global_bypass" };
 
@@ -84,6 +85,7 @@ private:
     std::atomic<float>* gateAttack;
     std::atomic<float>* gateRelease;
     std::atomic<float>* gateHold;
+    std::atomic<float>* gatePosition;
     std::atomic<float>* comp;
     std::atomic<float>* compFollow;
     std::atomic<float>* threshold;

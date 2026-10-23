@@ -1,12 +1,15 @@
 #pragma once
 
-// The Gate: a hard gate on the main input, ahead of the Dry/Wet split, so it lowers the Dry and the Wet path alike, as
-// dyn-lab models it (tools/dyn-lab/USAGE.md, "Gate"), with its figures (python3 tools/dyn-lab/dynlab.py gate).
+// The Gate: a hard gate, as dyn-lab models it (tools/dyn-lab/USAGE.md, "Gate"), with its figures (python3
+// tools/dyn-lab/dynlab.py gate), at its Gate Position: Pre, on the main input ahead of the Dry/Wet split, so it lowers
+// the Dry and the Wet path alike; or Post, on the Wet path directly after the compressor, so the Dry path is never
+// gated.
 //
-// It listens to the Detection Source after the Detection EQ, from a detection stage of its own, fed the main input as
-// the Internal signal and the Sidechain, with the compressor's Detection Source and Detection EQ settings. So it never
-// listens to its own output, the compressor, or any feedback path. One Gate gain goes on every main channel, from the
-// louder channel's Detection Level, whatever Stereo Placement and Stereo Link are.
+// It listens to the Detection Source after the Detection EQ, from a detection stage of its own, fed the audio it gates
+// as the Internal signal (the main input at Pre, the compressed signal at Post) and the Sidechain, with the
+// compressor's Detection Source and Detection EQ settings. So it never listens to its own output or any feedback
+// path. One Gate gain goes on every main channel, from the louder channel's Detection Level, whatever Stereo Placement
+// and Stereo Link are.
 //
 // The held level is the loudest Detection Level over the sample and the level hold before it. The Gate opens
 // when the held level reaches Gate Threshold and closes once it is the hysteresis under it. Gate Hold keeps it open for
@@ -86,6 +89,10 @@ private:
 // Automation included, is click-free and lands the same at every host block size. Switching it on or off glides its
 // Gain Reduction in or out over the glide time, a sample at a time; its detector runs either way. Settled off, or open
 // with no Gain Reduction, it leaves the audio as it is, bit for bit.
+//
+// A Gate Position change fades its Gain Reduction out as switching it off does, moves the stage at the start of a run
+// once it is faded out exactly, and fades it back in: the move is click-free by construction. Its detector hears the
+// audio at the new position from the move on, while it is still silent.
 class GateStage
 {
 public:
@@ -116,19 +123,26 @@ public:
         detection.setDetectionEq (settings.detectionEq, snap);
         source = settings.detectionSource;
         const auto& gate = settings.gate;
+        gateOn = gate.on;
+        wantedPosition = settings.gatePosition;
+        if (snap)
+            position = wantedPosition;
         glideTo (glides[threshold], gate.thresholdDb, snap);
         glideTo (glides[range], gate.rangeDb, snap);
         glideTo (glides[hold], gate.holdMs, snap);
         glideTo (glides[logAttack], std::log (gate.attackMs), snap);
         glideTo (glides[logRelease], std::log (gate.releaseMs), snap);
-        glideTo (share, gate.on ? 1.0 : 0.0, snap);
+        glideTo (share, aimedShare(), snap);
         if (snap)
             update();
     }
 
-    // At the start of each run: the settings move on by a run.
+    // At the start of each run: a stage faded out moves to its new position, and the settings move on by a run.
     void startRun()
     {
+        if (position != wantedPosition && share.isSettled() && share.value() == 0.0)
+            position = wantedPosition;
+        share.setTarget (aimedShare());
         bool moving = false;
         for (auto& setting : glides)
             if (! setting.isSettled())
@@ -140,11 +154,14 @@ public:
             update();
     }
 
-    // Gates main, a piece of the scrubbed input of at most a run, in place, listening to it and the Sidechain's piece
-    // (or none). It is fed every piece in order, on or off, so its Detection EQ stays on the run grid. It notes the
-    // gain it applies at each sample, its on/off share included, in levels.
-    void process (AudioBlock main, const ConstAudioBlock* sidechain, RunLevels& levels)
+    // Gates main, a piece of at most a run, in place, when the stage is at, listening to it and the Sidechain's piece
+    // (or none), which meets main as the input meets the Sidechain; and otherwise leaves it alone. It is fed every
+    // piece in order at one position, on or off, so its Detection EQ stays on the run grid. It notes the gain it
+    // applies at each sample, its on/off share included, in levels.
+    void process (GatePosition at, AudioBlock main, const ConstAudioBlock* sidechain, RunLevels& levels)
     {
+        if (at != position)
+            return;
         const auto detected = detection.process ({ main.channels, main.numChannels, main.numSamples }, sidechain);
         const bool noSidechain = source == DetectionSource::External && sidechain == nullptr;
         for (int i = 0; i < main.numSamples; ++i)
@@ -165,6 +182,9 @@ public:
     }
 
 private:
+    // The share of the Gain Reduction to glide to: all of it while on and where it is wanted, none otherwise.
+    double aimedShare() const { return gateOn && position == wantedPosition ? 1.0 : 0.0; }
+
     // One sample of the Gate, from its Detection Level in dB (or none, with no Sidechain to listen to): its Gain
     // Reduction in dB.
     double step (bool noSidechain, double levelDb)
@@ -211,6 +231,8 @@ private:
     LevelHold levelHold;
     plugkit::Smoother glides[count];
     plugkit::Smoother share; // 0 off, 1 on: the share of the Gain Reduction applied
+    bool gateOn = false;
+    GatePosition position = GatePosition::Pre, wantedPosition = GatePosition::Pre;
     double thresholdDb = 0.0, rangeDb = 0.0;
     clean::Timing timing; // Gate Attack's pole for opening, Gate Release's for closing, and Gate Hold
     double gainReductionDb = 0.0;

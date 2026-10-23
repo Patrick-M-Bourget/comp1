@@ -141,7 +141,7 @@ TEST_CASE ("Auto Gain, Output Gain, Dry, Saturation After, Detection Audition an
     }
 }
 
-TEST_CASE ("The output tap follows the Gate and Saturation Before, which come ahead of the compressor")
+TEST_CASE ("The output tap follows the Gate, at either Gate Position, and Saturation Before")
 {
     // With the compressor idle and nothing after it adding anything, in Zero Latency the Engine's output is the
     // compressor's: the tap carries its mean.
@@ -149,11 +149,13 @@ TEST_CASE ("The output tap follows the Gate and Saturation Before, which come ah
     const Settings idle { .ratio = 1.0 };
     auto gated = idle;
     gated.gate = { .on = true, .thresholdDb = 0.0, .rangeDb = 20.0 };
+    auto gatedAtPost = gated;
+    gatedAtPost.gatePosition = GatePosition::Post;
     auto saturated = idle;
     saturated.saturation = true;
     saturated.driveDb = 24.0;
     saturated.saturationPosition = SaturationPosition::Before;
-    for (const auto& settings : { gated, saturated })
+    for (const auto& settings : { gated, gatedAtPost, saturated })
     {
         const auto output = test::played (settings, 48000.0, input);
         REQUIRE (output != input);

@@ -49,6 +49,7 @@ TEST_CASE ("Engine does not allocate while processing or taking new settings")
                                         .attackMs = 0.005 + 25.0 * (block % 10),
                                         .releaseMs = 5.0 + 500.0 * (block % 10),
                                         .holdMs = 50.0 * (block % 10) },
+                              .gatePosition = block % 8 < 4 ? GatePosition::Pre : GatePosition::Post,
                               .character = static_cast<Character> ((block / 3) % 4),
                               .comp = 12.5 * (block % 9),
                               .compFollow = block % 4 < 2,

@@ -142,6 +142,26 @@ inline std::vector<RenderScene> renderScenes()
         { .name = "gate-settings", .settings = with ([] (Settings& s) {
               s.gate = { .on = true, .thresholdDb = -20.0, .rangeDb = 40.0, .attackMs = 0.2, .releaseMs = 50.0, .holdMs = 5.0 };
           }) },
+        // The Gate at Post, after the compressor, with Dry in so the ungated Dry path is heard: in Zero Latency, in High
+        // Quality with Lookahead, moved there from Pre a quarter of a second in, and in High Quality on the Sidechain,
+        // which meets the audio there delayed.
+        { .name = "gate-post", .settings = with ([] (Settings& s) { s.gate.on = true; s.gatePosition = GatePosition::Post; s.dryDb = -12.0; }) },
+        { .name = "high-quality-gate-post", .settings = with ([] (Settings& s) {
+              s.gate = { .on = true, .thresholdDb = -24.0 };
+              s.gatePosition = GatePosition::Post;
+              s.processingMode = ProcessingMode::HighQuality;
+              s.lookaheadMs = 2.0;
+          }) },
+        { .name = "gate-position-switch", .settings = with ([] (Settings& s) { s.gate.on = true; }), .change = with ([] (Settings& s) {
+              s.gate.on = true;
+              s.gatePosition = GatePosition::Post;
+          }) },
+        { .name = "high-quality-gate-post-external", .settings = with ([] (Settings& s) {
+              s.gate.on = true;
+              s.gatePosition = GatePosition::Post;
+              s.detectionSource = DetectionSource::External;
+              s.processingMode = ProcessingMode::HighQuality;
+          }), .sidechain = true },
         // The Limiter, driven over its Ceiling: the sample peak in Zero Latency, the true peak in High Quality.
         { .name = "limiter", .settings = with ([] (Settings& s) { s.limiter = true; s.outputGainDb = 6.0; }) },
         { .name = "limiter-ceiling-6", .settings = with ([] (Settings& s) { s.limiter = true; s.ceilingDb = -6.0; }) },

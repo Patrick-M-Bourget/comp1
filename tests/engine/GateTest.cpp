@@ -268,11 +268,14 @@ TEST_CASE ("On a stereo track the Gate puts one gain on both channels, from the 
         CHECK (std::abs (closedDb[ch] - (quietDb[ch] - gate.rangeDb)) <= 0.001);
 }
 
-TEST_CASE ("The reported latency is unchanged with the Gate on")
+TEST_CASE ("The reported latency is unchanged with the Gate on, at either Gate Position")
 {
     const auto mode = GENERATE (zeroLatency, highQuality);
-    CAPTURE (static_cast<int> (mode));
-    CHECK (test::impulseDelaySamples (gated ({}, mode), 48000.0) == latencySamples (mode, 48000.0));
+    const auto position = GENERATE (GatePosition::Pre, GatePosition::Post);
+    CAPTURE (static_cast<int> (mode), static_cast<int> (position));
+    auto settings = gated ({}, mode);
+    settings.gatePosition = position;
+    CHECK (test::impulseDelaySamples (settings, 48000.0) == latencySamples (mode, 48000.0));
 }
 
 TEST_CASE ("With its Detection Level 20 dB under Gate Threshold the Gate lowers the input by Gate Range; above it, it passes bit for bit")
@@ -285,4 +288,94 @@ TEST_CASE ("With its Detection Level 20 dB under Gate Threshold the Gate lowers 
     CHECK (std::abs (test::steadyOutputDb (gated (gate), quietDb, 48000.0, 2, 1.5) - (quietDb - rangeDb)) <= 0.001);
     const auto loud = test::steadyLevel (2, 4800, gate.thresholdDb + 20.0);
     CHECK (test::played (gated (gate), 48000.0, loud) == loud);
+}
+
+TEST_CASE ("With Gate Position Post the Dry path isn't gated: at Dry 0 dB and Wet Off, the Gate closed, the output is the delayed input")
+{
+    const auto mode = GENERATE (zeroLatency, highQuality);
+    CAPTURE (static_cast<int> (mode));
+    const Settings::Gate gate {};
+    auto settings = gated (gate, mode);
+    settings.gatePosition = GatePosition::Post;
+    settings.dryDb = 0.0;
+    settings.wetDb = off;
+    const auto input = test::steadyLevel (2, 72000, gate.thresholdDb - stepDb);
+    const auto outputDb = tailLevelsDb (test::played (settings, 48000.0, input), 480);
+    const auto expectedDb = tailLevelsDb (test::delayed (input, latencySamples (mode, 48000.0)), 480);
+    for (std::size_t ch = 0; ch < 2; ++ch)
+        CHECK (std::abs (outputDb[ch] - expectedDb[ch]) <= 0.001);
+    // On the Wet path alone, the same input is lowered by Gate Range: the Gate is on, and closed.
+    settings.dryDb = off;
+    settings.wetDb = 0.0;
+    const auto wetDb = tailLevelsDb (test::played (settings, 48000.0, input), 480);
+    for (std::size_t ch = 0; ch < 2; ++ch)
+        CHECK (std::abs (wetDb[ch] - (expectedDb[ch] - gate.rangeDb)) <= 0.001);
+}
+
+TEST_CASE ("With Gate Position Post and Internal the Gate hears the compressed signal: a level the compressor pulls under Gate Threshold closes it")
+{
+    const auto mode = GENERATE (zeroLatency, highQuality);
+    CAPTURE (static_cast<int> (mode));
+    // A steady -10 dB, 10 dB over Gate Threshold, held at Threshold -30 dB by Ratio ∞:1 with a hard Knee.
+    const Settings::Gate gate { .on = true, .thresholdDb = -20.0 };
+    Settings settings { .gate = gate, .thresholdDb = -30.0, .ratio = parameterRanges::inf, .kneeDb = 0.0, .processingMode = mode };
+    const auto input = test::steadyLevel (2, 96000, -10.0);
+    // At Pre it hears the input, and stays open: the output is the compressor's alone.
+    const auto preDb = tailLevelsDb (test::played (settings, 48000.0, input), 480);
+    // At Post it hears -30 dB, 10 dB under Gate Threshold, past the closing level, and closes by Gate Range.
+    settings.gatePosition = GatePosition::Post;
+    const auto postDb = tailLevelsDb (test::played (settings, 48000.0, input), 480);
+    for (std::size_t ch = 0; ch < 2; ++ch)
+    {
+        CHECK (std::abs (preDb[ch] - -30.0) <= 0.01);
+        CHECK (std::abs (postDb[ch] - (-30.0 - gate.rangeDb)) <= 0.01);
+    }
+}
+
+TEST_CASE ("With Gate Position Post and External, the Sidechain opens and closes the Gate whatever the main's level")
+{
+    const auto mode = GENERATE (zeroLatency, highQuality);
+    CAPTURE (static_cast<int> (mode));
+    const Settings::Gate gate {};
+    auto settings = gated (gate, mode);
+    settings.gatePosition = GatePosition::Post;
+    settings.detectionSource = DetectionSource::External;
+    auto gateOff = settings;
+    gateOff.gate.on = false;
+    const auto quiet = test::steadyLevel (2, 72000, gate.thresholdDb - stepDb);
+    const auto loud = test::steadyLevel (2, 72000, gate.thresholdDb + stepDb);
+    // A quiet main under a loud Sidechain stays open, bit for bit.
+    CHECK (test::played (settings, 48000.0, quiet, { 512 }, &loud) == test::played (gateOff, 48000.0, quiet, { 512 }, &loud));
+    // A loud main under a quiet Sidechain is closed by Gate Range.
+    for (const double levelDb : tailLevelsDb (test::played (settings, 48000.0, loud, { 512 }, &quiet), 480))
+        CHECK (std::abs (levelDb - (gate.thresholdDb + stepDb - gate.rangeDb)) <= 0.001);
+}
+
+TEST_CASE ("In High Quality the Gate stays aligned with the audio it gates: its output is Zero Latency's, delayed, at each Gate Position and Detection Source, with Lookahead")
+{
+    const auto position = GENERATE (GatePosition::Pre, GatePosition::Post);
+    const auto source = GENERATE (DetectionSource::Internal, DetectionSource::External);
+    CAPTURE (static_cast<int> (position), static_cast<int> (source));
+    // Bursts on the main and, half a period out, on the Sidechain, which the Gate opens and closes on, with quick
+    // times, so a Gate a few samples early or late opens and closes on other samples.
+    const double sampleRate = 48000.0;
+    const auto input = test::bursts (2, 48000, sampleRate);
+    const auto sidechain = test::bursts (2, 48000, sampleRate, 2, test::burstPeriodSeconds / 2.0);
+    auto settings = gated ({ .thresholdDb = -20.0, .rangeDb = 40.0, .attackMs = 0.05, .releaseMs = 5.0, .holdMs = 0.0 });
+    settings.gatePosition = position;
+    settings.detectionSource = source;
+    settings.lookaheadMs = 5.0;
+    const auto zeroLatencyOutput = test::played (settings, sampleRate, input, { 512 }, &sidechain);
+    settings.processingMode = highQuality;
+    const auto highQualityOutput = test::played (settings, sampleRate, input, { 512 }, &sidechain);
+    const int extra = latencySamples (highQuality, sampleRate) - latencySamples (zeroLatency, sampleRate);
+    const auto expected = test::delayed (zeroLatencyOutput, extra);
+    // From the second burst period on: at Post in High Quality the Gate first hears the delays' silence and closes,
+    // where in Zero Latency it starts open on the first burst; the quiet part after it closes both alike.
+    const auto from = static_cast<std::size_t> (test::burstPeriodSeconds * sampleRate) + static_cast<std::size_t> (extra);
+    double worst = 0.0;
+    for (std::size_t ch = 0; ch < 2; ++ch)
+        for (std::size_t i = from; i < expected[ch].size(); ++i)
+            worst = std::max (worst, static_cast<double> (std::abs (highQualityOutput[ch][i] - expected[ch][i])));
+    CHECK (worst <= 1.0e-6);
 }
