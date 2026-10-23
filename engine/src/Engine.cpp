@@ -8,6 +8,7 @@
 #include "DryWet.h"
 #include "Gate.h"
 #include "Glide.h"
+#include "GlidingGain.h"
 #include "LevelTaps.h"
 #include "Limiter.h"
 #include "Lookahead.h"
@@ -23,7 +24,6 @@
 #include <plugkit/Placement.h>
 #include <plugkit/RunGrid.h>
 #include <plugkit/Smoother.h>
-#include <plugkit/Units.h>
 
 #include <algorithm>
 #include <array>
@@ -37,47 +37,6 @@ namespace comp1
 
 namespace
 {
-
-// A gain applied to every channel, in dB: Auto Gain, and Output Gain. It glides to each new target with plugkit's
-// Smoother, so a change, Host Automation included, is click-free.
-class GlidingGain
-{
-public:
-    void prepare (double sampleRate)
-    {
-        gain.configure (plugkit::glideTimeConstantSeconds * sampleRate, 1.0e-6);
-        gain.reset (1.0);
-    }
-
-    // With snap, the new gain takes effect at once instead of gliding.
-    void setTargetDb (double db, bool snap)
-    {
-        glideTo (gain, plugkit::decibelsToGain (db), snap);
-    }
-
-    void process (AudioBlock block)
-    {
-        // Settled on exactly 1 at 0 dB, so the output is the input, bit for bit, with no work.
-        if (gain.isSettled() && gain.value() == 1.0)
-            return;
-        // The gain glides a sample at a time; once it has settled, next() would return its goal exactly, so the rest
-        // is scaled by that as a constant, sample for sample the same.
-        int i = 0;
-        for (; i < block.numSamples && ! gain.isSettled(); ++i)
-        {
-            const double g = gain.next();
-            for (int ch = 0; ch < block.numChannels; ++ch)
-                block.channels[ch][i] = static_cast<float> (g * block.channels[ch][i]);
-        }
-        const double g = gain.value();
-        for (int ch = 0; ch < block.numChannels; ++ch)
-            for (int n = i; n < block.numSamples; ++n)
-                block.channels[ch][n] = static_cast<float> (g * block.channels[ch][n]);
-    }
-
-private:
-    plugkit::Smoother gain;
-};
 
 // Detection Audition: plays the detection signal in place of the Wet path, fading between the two over the Smoother's
 // glide time, so holding it and letting go never jump. It plays the part Stereo Placement compresses, as the
