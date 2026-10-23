@@ -1,6 +1,6 @@
 // Comp and Comp Follow in the Engine (ADR 0004): while Comp Follow is on, the compressor takes Threshold and Ratio from
-// the Comp Curve at Comp, with Auto Gain on, and ignores the stored Threshold, Ratio and Auto Gain; turning it on or
-// off glides over dyn-lab's fixed time.
+// the Comp Curve at Comp, and ignores the stored Threshold and Ratio; Auto Gain plays as stored, on or off; turning
+// Comp Follow on or off glides over dyn-lab's fixed time.
 
 #include "Measure.h"
 #include "comp1/Style.h"
@@ -24,8 +24,8 @@ namespace
 
 // A Style's settings following its Comp Curve at comp, through the compressor alone: Colour 0% and the Gate and the
 // Limiter off (Vocal's are on), so the output's gain is the compressor's and Auto Gain's alone, as dyn-lab's compcurve
-// measures it. The stored Threshold, Ratio and Auto Gain are moved well off the Comp Curve, so a test that reads the
-// Comp Curve's values can't be reading theirs.
+// measures it, with Auto Gain on, as the Style writes it. The stored Threshold and Ratio are moved well off the Comp
+// Curve, so a test that reads the Comp Curve's values can't be reading theirs.
 Settings following (Style style, double comp)
 {
     auto settings = styled (style);
@@ -35,7 +35,6 @@ Settings following (Style style, double comp)
     settings.limiter = false;
     settings.thresholdDb = -50.0;
     settings.ratio = 1.5;
-    settings.autoGain = false;
     return settings;
 }
 
@@ -129,7 +128,7 @@ constexpr double settleSeconds = 0.1;
 
 } // namespace
 
-TEST_CASE ("Following, each Style's steady Transfer Curve is dyn-lab's at the Comp Curve's Threshold and Ratio, with Auto Gain on", "[sweep]")
+TEST_CASE ("Following with Auto Gain on, each Style's steady Transfer Curve is dyn-lab's at the Comp Curve's Threshold and Ratio, plus Auto Gain's estimate", "[sweep]")
 {
     const auto& point = GENERATE (from_range (curvePoints()));
     CAPTURE (point.command);
@@ -144,7 +143,22 @@ TEST_CASE ("Following, each Style's steady Transfer Curve is dyn-lab's at the Co
     }
 }
 
-TEST_CASE ("Following, moving the stored Threshold, Ratio and Auto Gain leaves the output bit for bit as it was")
+TEST_CASE ("Following with Auto Gain off, each Style's steady Transfer Curve is dyn-lab's at the Comp Curve's Threshold and Ratio, with no Auto Gain", "[sweep]")
+{
+    const auto& point = GENERATE (from_range (curvePoints()));
+    CAPTURE (point.command);
+    auto settings = following (point.style, point.comp);
+    settings.autoGain = false;
+    for (const auto& row : point.transfer)
+    {
+        CAPTURE (row.inputDb);
+        const double offsetDb = test::steadyLevelOffsetDb (characterOf (point.style));
+        const double outputDb = test::steadyOutputDb (settings, row.inputDb + offsetDb, 48000.0) - offsetDb;
+        CHECK (std::abs (outputDb - row.outputDb) <= 0.01);
+    }
+}
+
+TEST_CASE ("Following, moving the stored Threshold and Ratio leaves the output bit for bit as it was")
 {
     const auto style = GENERATE (from_range (test::everyStyle()));
     CAPTURE (static_cast<int> (style));
@@ -153,7 +167,6 @@ TEST_CASE ("Following, moving the stored Threshold, Ratio and Auto Gain leaves t
     auto moved = settings;
     moved.thresholdDb = -5.0;
     moved.ratio = parameterRanges::ratio.high;
-    moved.autoGain = true;
     const auto played = test::played (settings, 48000.0, input);
     CHECK (test::played (moved, 48000.0, input) == played);
     // Moved part-way through, mid-compression.

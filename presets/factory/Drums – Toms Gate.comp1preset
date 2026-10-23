@@ -9,4 +9,5 @@
   <PARAM id="gate_hold" value="60.0"/>
   <PARAM id="comp" value="60.0"/>
   <PARAM id="comp_follow" value="1.0"/>
+  <PARAM id="auto_gain" value="1.0"/>
 </comp1>

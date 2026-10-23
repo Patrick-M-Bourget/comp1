@@ -3,6 +3,7 @@
 <comp1 version="2">
   <PARAM id="style" value="1.0"/>
   <PARAM id="comp_follow" value="1.0"/>
+  <PARAM id="auto_gain" value="1.0"/>
   <PARAM id="knee" value="3.0"/>
   <PARAM id="attack" value="20.0"/>
   <PARAM id="comp" value="40.0"/>

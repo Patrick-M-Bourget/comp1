@@ -96,9 +96,6 @@ CharacterSection::CharacterSection (PluginProcessor& p) : ControlSection ("Chara
 
 namespace
 {
-constexpr auto autoGainTooltip = "Auto Gain: compensates the output level, estimated from the settings, so compression is heard without a loudness bias";
-constexpr auto followedAutoGainTooltip = "Auto Gain: Comp Follow holds it on";
-
 // Sets a Dry or Wet slider up for its parameter: attached, so a double-click sets its default as a knob's does; titled
 // and read as a knob is (controls::describe); its readout its name and its level, "Off" at the bottom, else signed to
 // 0.1 dB.
@@ -117,7 +114,7 @@ std::unique_ptr<juce::SliderParameterAttachment> attachLevel (plugkit::ui::Popov
 } // namespace
 
 OutputSection::OutputSection (PluginProcessor& p, LevelHistory& history)
-    : ControlSection ("Output", p), processor (p), dry (plugkit::ui::PopoverSlider::Fill::fromLeft), wet (plugkit::ui::PopoverSlider::Fill::fromLeft),
+    : ControlSection ("Output", p), dry (plugkit::ui::PopoverSlider::Fill::fromLeft), wet (plugkit::ui::PopoverSlider::Fill::fromLeft),
       autoGain ("Auto Gain", std::nullopt, "A"), limiter ("Limiter", std::nullopt, "L")
 {
     addKnob (parameters::outputGainId, knobSize::medium, "Output Gain");
@@ -131,12 +128,13 @@ OutputSection::OutputSection (PluginProcessor& p, LevelHistory& history)
     addSelfPlaced (wet);
 
     autoGain.setTitle (parameter (parameters::autoGainId).getName (100));
+    autoGain.setTooltip ("Auto Gain: compensates the output level, estimated from the settings, so compression is heard without a loudness bias");
+    autoGainAttachment = std::make_unique<juce::ButtonParameterAttachment> (parameter (parameters::autoGainId), autoGain);
     limiter.setTitle (parameter (parameters::limiterId).getName (100));
     limiter.setTooltip ("Limiter: keeps the output from passing the Ceiling");
     limiterAttachment = std::make_unique<juce::ButtonParameterAttachment> (parameter (parameters::limiterId), limiter);
     addSelfPlaced (autoGain);
     addSelfPlaced (limiter);
-    follow();
 }
 
 int OutputSection::idealHeight() const
@@ -162,28 +160,6 @@ OutputSection::~OutputSection()
 {
     // Before the knob the ring is drawn in goes.
     ceiling->knob.setRing (nullptr);
-}
-
-bool OutputSection::following() const { return isOn (processor, parameters::compFollowId); }
-
-void OutputSection::follow()
-{
-    if (following())
-    {
-        autoGainAttachment.reset();
-        autoGain.setToggleState (true, juce::dontSendNotification);
-        autoGain.setTooltip (followedAutoGainTooltip);
-    }
-    else if (autoGainAttachment == nullptr)
-    {
-        autoGainAttachment = std::make_unique<juce::ButtonParameterAttachment> (parameter (parameters::autoGainId), autoGain);
-        autoGain.setTooltip (autoGainTooltip);
-    }
-}
-
-bool OutputSection::isControlEnabled (juce::Component& control) const
-{
-    return &control != &autoGain || ! following();
 }
 
 // The Detection section's title as a button: the chevron drawn after the title the section paints, text2, text1 while

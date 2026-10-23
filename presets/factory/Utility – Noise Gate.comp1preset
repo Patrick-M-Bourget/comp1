@@ -2,6 +2,7 @@
 
 <comp1 version="2">
   <PARAM id="comp_follow" value="1.0"/>
+  <PARAM id="auto_gain" value="1.0"/>
   <PARAM id="comp" value="0.0"/>
   <PARAM id="gate" value="1.0"/>
   <PARAM id="gate_threshold" value="-50.0"/>

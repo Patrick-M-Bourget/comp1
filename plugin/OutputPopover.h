@@ -16,8 +16,8 @@ namespace comp1
 // and Presets, and each edit is one undo step. Opened from the keys, focus moves to Output Gain, and Tab walks the six
 // in that order; closed, focus inside it goes back to the readout.
 //
-// While open it follows the processor on the editor's tick, Auto Gain showing whether Comp Follow holds it on. Its card
-// holds the section, padded; the layout is provisional (#94).
+// While open it follows the processor on the editor's tick. Its card holds the section, padded; the layout is
+// provisional (#94).
 class OutputPopover final : public plugkit::ui::OutputPopoverFrame
 {
 public:

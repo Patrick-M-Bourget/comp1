@@ -3,6 +3,7 @@
 <comp1 version="2">
   <PARAM id="style" value="5.0"/>
   <PARAM id="comp_follow" value="1.0"/>
+  <PARAM id="auto_gain" value="1.0"/>
   <PARAM id="saturation" value="1.0"/>
   <PARAM id="drive" value="4.0"/>
 </comp1>

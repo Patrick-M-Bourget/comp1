@@ -46,7 +46,7 @@ TEST_CASE ("Expanded View snapshots: default at 100% and 200%, on mono, with Com
     snapshot (host, "expanded-mono");
 
     openOn (host, juce::AudioChannelSet::stereo());
-    // Comp Follow on (Opto, Comp at 80%), Threshold and Ratio showing the Comp Curve's and Auto Gain held on; then off,
+    // Comp Follow on (Opto, Comp at 80%), Threshold and Ratio showing the Comp Curve's and Auto Gain on; then off,
     // as the toggle turns it off.
     REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
     host.edit (comp1::parameters::compId, 80.0f);
@@ -209,7 +209,7 @@ TEST_CASE ("Compact View snapshots: default at 100% and 200%, with Comp Follow o
     snapshot (host, "compact-preset-browser");
 }
 
-TEST_CASE ("Output popover snapshots: open in the Expanded View and the Compact View, with Auto Gain on, with Comp Follow holding it on, and with Dry mixed in", "[.screens]")
+TEST_CASE ("Output popover snapshots: open in the Expanded View and the Compact View, with Auto Gain on, with Comp Follow on, and with Dry mixed in", "[.screens]")
 {
     host::EditorHost host;
     openOn (host, juce::AudioChannelSet::stereo());
@@ -223,7 +223,7 @@ TEST_CASE ("Output popover snapshots: open in the Expanded View and the Compact 
     host.openOutputPopover();
     snapshot (host, "expanded-output-popover");
 
-    // Comp Follow on (Opto, Comp at 80%): Auto Gain held on, disabled.
+    // Comp Follow on (Opto, Comp at 80%), Auto Gain on as choosing the Style writes it.
     REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
     host.edit (comp1::parameters::compId, 80.0f);
     snapshot (host, "expanded-output-popover-comp-follow");
