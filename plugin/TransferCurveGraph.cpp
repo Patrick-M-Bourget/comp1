@@ -90,8 +90,8 @@ juce::String TransferCurveGraph::settingsText() const
 
 juce::String TransferCurveGraph::valueText() const
 {
-    const double readout = shown <= -scaleDb ? -std::numeric_limits<double>::infinity() : shown;
-    return settingsText() + ", Detection Level " + plugkit::ui::valueText::signedDb (readout, { .decimals = 1, .unit = false }) + " dB";
+    const double shownDb = shown <= -scaleDb ? -std::numeric_limits<double>::infinity() : shown;
+    return settingsText() + ", Detection Level " + plugkit::ui::valueText::signedDb (shownDb,{ .decimals = 1, .unit = false }) + " dB";
 }
 
 std::unique_ptr<juce::AccessibilityHandler> TransferCurveGraph::createAccessibilityHandler()
