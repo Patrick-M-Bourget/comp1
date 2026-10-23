@@ -33,8 +33,8 @@ std::map<juce::String, float> allValues (host::EditorHost& host)
 // What a screen reader reads as the knob's value.
 juce::String spoken (staple::Knob& knob) { return knob.getAccessibilityHandler()->getValueInterface()->getCurrentValueAsString(); }
 
-// Opto chosen (Comp Follow on, Comp 50%), Comp moved to 80% (the Comp Curve's -32.4 dB and 4.29:1), and the stored
-// Threshold, Ratio and Auto Gain moved well off the curve by Host Automation, which following ignores.
+// Opto chosen (Comp Follow on, Comp 50%), Comp moved to 80% (the Comp Curve's -32.4 dB and 4.29:1), the stored
+// Threshold and Ratio moved well off the curve by Host Automation, which following ignores, and Auto Gain turned off.
 void followingOffTheCurve (host::EditorHost& host)
 {
     REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
@@ -119,7 +119,7 @@ TEST_CASE ("While Comp Follow is on, the output popover's Auto Gain shows on and
     CHECK (host.value (parameters::autoGainId) == 1.0f);
 }
 
-TEST_CASE ("Grabbing Threshold or Ratio while following turns Comp Follow off: the followed values and Auto Gain on, then the edit, as one undo step inside gestures, and undo follows again")
+TEST_CASE ("Grabbing Threshold or Ratio while following turns Comp Follow off: the followed values, then the edit, Auto Gain left as it is, as one undo step inside gestures, and undo follows again")
 {
     host::EditorHost host;
     followingOffTheCurve (host);
@@ -147,7 +147,7 @@ TEST_CASE ("Grabbing Threshold or Ratio while following turns Comp Follow off: t
     host.processor.removeListener (&recorder);
 
     CHECK (host.value (parameters::compFollowId) == 0.0f);
-    CHECK (host.value (parameters::autoGainId) == 1.0f);
+    CHECK (host.value (parameters::autoGainId) == 0.0f);
     // The edit carried on from the followed value: the other of the two is the followed one, the edited one moved from
     // it the way the edit went.
     const bool thresholdEdited = how.startsWith ("Threshold");
@@ -307,14 +307,14 @@ TEST_CASE ("The Comp Follow toggle turns it on through followComp() and off thro
     CHECK (history.undoSteps() == steps + 1);
     REQUIRE (host.settleUntil ([&] { return toggle.getToggleState(); }));
 
-    // Off: the followed values written, and Auto Gain on, so the sound doesn't change.
+    // Off: the followed values written, so the sound doesn't change, and Auto Gain left off.
     host.edit (parameters::compId, 60.0f);
     const double followedThreshold = host.processor.followedThresholdDb();
     const int stepsOn = history.undoSteps();
     press();
     CHECK (host.value (parameters::compFollowId) == 0.0f);
     CHECK (host.value (parameters::thresholdId) == asStored (host, parameters::thresholdId, followedThreshold));
-    CHECK (host.value (parameters::autoGainId) == 1.0f);
+    CHECK (host.value (parameters::autoGainId) == 0.0f);
     CHECK (history.undoSteps() == stepsOn + 1);
     REQUIRE (host.settleUntil ([&] { return ! toggle.getToggleState(); }));
 }

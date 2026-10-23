@@ -391,10 +391,11 @@ TEST_CASE ("A Transfer Curve inset handle lights while hovered, shows its direct
     }
 }
 
-TEST_CASE ("Grabbing a Transfer Curve inset handle while Comp Follow is on turns it off at the followed values, then the edit, as one undo step, and undo follows again")
+TEST_CASE ("Grabbing a Transfer Curve inset handle while Comp Follow is on turns it off at the followed values, then the edit, Auto Gain left as it is, as one undo step, and undo follows again")
 {
     InsetHost host;
-    // Opto at Comp 80%, the stored Threshold, Ratio and Auto Gain moved well off the Comp Curve by Host Automation.
+    // Opto at Comp 80%, the stored Threshold and Ratio moved well off the Comp Curve by Host Automation, and Auto Gain
+    // off.
     REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
     host.edit (parameters::compId, 80.0f);
     host.set (parameters::thresholdId, -6.0f);
@@ -428,7 +429,7 @@ TEST_CASE ("Grabbing a Transfer Curve inset handle while Comp Follow is on turns
     host.processor.removeListener (&recorder);
 
     CHECK (host.value (parameters::compFollowId) == 0.0f);
-    CHECK (host.value (parameters::autoGainId) == 1.0f);
+    CHECK (host.value (parameters::autoGainId) == 0.0f);
     // The edit carried on from the followed values.
     if (how == "press")
     {

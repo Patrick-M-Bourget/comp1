@@ -286,7 +286,7 @@ clean::Curve PluginProcessor::playedCurve() const
 double PluginProcessor::appliedAutoGainDb() const
 {
     const auto settings = reader.read();
-    if (! settings.autoGain && ! settings.compFollow)
+    if (! settings.autoGain)
         return 0.0;
     return autogain::estimateDb (playedCurve(),
                                  { .attackMs = settings.attackMs,
@@ -306,7 +306,6 @@ bool PluginProcessor::stopFollowingComp()
                   sessionState.editHistory(),
                   { { parameters::thresholdId, static_cast<float> (compThresholdDb (settings.compCurve, settings.comp)) },
                     { parameters::ratioId, static_cast<float> (compRatio (settings.compCurve, settings.comp)) },
-                    { parameters::autoGainId, 1.0f },
                     { parameters::compFollowId, 0.0f } });
     return true;
 }

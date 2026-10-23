@@ -40,7 +40,7 @@ void dynLabDefaults (host::EditorHost& host)
 
 } // namespace
 
-TEST_CASE ("The Output readout reads Output Gain, plus Auto Gain's estimate while Auto Gain is on or Comp Follow holds it on, signed to one decimal, in both views")
+TEST_CASE ("The Output readout reads Output Gain, plus Auto Gain's estimate while Auto Gain is on, with Comp Follow on or off, signed to one decimal, in both views")
 {
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
@@ -69,16 +69,16 @@ TEST_CASE ("The Output readout reads Output Gain, plus Auto Gain's estimate whil
     host.edit (parameters::autoGainId, 1.0f);
     CHECK (reads ("+8.9 dB"));
 
-    // Comp Follow holding Auto Gain on, Auto Gain itself off: VCA at Comp 50%, the estimate dyn-lab's compcurve prints
-    // for it, 3.5473 dB (`python3 tools/dyn-lab/dynlab.py compcurve --style vca`), plus Output Gain's -2 dB.
+    // Comp Follow on with Auto Gain on: VCA at Comp 50%, the estimate dyn-lab's compcurve prints for it, 3.5473 dB
+    // (`python3 tools/dyn-lab/dynlab.py compcurve --style vca`), plus Output Gain's -2 dB.
     REQUIRE (host.processor.chooseStyle (comp1::Style::VCA));
     host.edit (parameters::compId, 50.0f);
-    host.edit (parameters::autoGainId, 0.0f);
     host.edit (parameters::outputGainId, -2.0f);
     REQUIRE (host.value (parameters::compFollowId) == 1.0f);
+    REQUIRE (host.value (parameters::autoGainId) == 1.0f);
     CHECK (reads ("+1.5 dB"));
-    // Comp Follow off, Auto Gain off: Output Gain alone again.
-    host.edit (parameters::compFollowId, 0.0f);
+    // Comp Follow on, Auto Gain off: Output Gain alone, as Comp Follow doesn't hold Auto Gain on.
+    host.edit (parameters::autoGainId, 0.0f);
     CHECK (reads (minus + "2.0 dB"));
 }
 

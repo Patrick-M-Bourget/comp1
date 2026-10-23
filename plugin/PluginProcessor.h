@@ -122,7 +122,7 @@ public:
     // editor holds, as part of its step, so the switch and the drag that follows are one undo step.
     //
     // stopFollowingComp(), as the editor turns Comp Follow off by editing Threshold or Ratio: while Comp Follow is on,
-    // writes it off, the Comp Curve's Threshold and Ratio at Comp, and Auto Gain on, so the output doesn't change, and
+    // writes it off and the Comp Curve's Threshold and Ratio at Comp, so the output doesn't change, and
     // returns true. With Comp Follow off it changes nothing and returns false.
     bool stopFollowingComp();
     // followComp(), as the editor turns Comp Follow on by grabbing Comp: while Comp Follow is off, writes Comp at the
@@ -138,8 +138,8 @@ public:
     // Any thread.
     clean::Curve playedCurve() const;
     // Auto Gain's estimate in dB (comp1/AutoGain.h, ADR 0010) for the settings the host parameters hold, from the
-    // played Transfer Curve, the timing and the Character, while Auto Gain is in effect: on, or held on by Comp
-    // Follow; else 0. What the Engine glides its Auto Gain to. Any thread.
+    // played Transfer Curve, the timing and the Character, while Auto Gain is on, with Comp Follow on or off; else 0.
+    // What the Engine glides its Auto Gain to. Any thread.
     double appliedAutoGainDb() const;
 
     // Whether the editor offers Stereo Placement and Stereo Link: only on a stereo track. On a mono one both keep
