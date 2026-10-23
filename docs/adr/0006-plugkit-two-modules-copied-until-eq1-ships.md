@@ -13,6 +13,10 @@ eq1 does not change until it ships. Until then, everything in `plugkit` is a cop
 
 EqDisplay is not shared. It and its layers (curves, handles, ghost) carry eq1's 24-slot Band model and its engine response maths, about 3,800 lines that no other plugin uses. `plugkit-ui` holds the generic layers instead (grid, spectrum, edge fades, display geometry), and comp1 builds its Detection EQ display on them (#29). `plugkit-ui` also takes the Plugin Shell's UI Scale state, with the Presets, A/B Compare and edit history, because it follows the same session rules. Each plugin pins JUCE: `plugkit-ui` links the JUCE that its consumer has already fetched.
 
+## Amended 2026-10-23: comp1's Detection EQ display is gone
+
+Superseded in part: comp1 no longer has a Detection EQ display. Its Detection EQ is set with the Detection section's controls, so the sentence above about building that display on `plugkit-ui`'s layers no longer applies. EqDisplay still stays in eq1, and the Spectrum display and the other graphs still build on the generic layers.
+
 ## Considered Options
 
 - **Wrapping eq1's components behind an interface instead of copying them** (the spec's first draft). Rejected: impossible without changing eq1 before it ships.
