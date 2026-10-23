@@ -6,27 +6,28 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <limits>
 
 namespace
 {
 
 // The Gate's host parameters, in the order hosts list them.
-constexpr const char* gateIds[] = { "gate", "gate_threshold", "gate_range", "gate_attack", "gate_release", "gate_hold" };
+constexpr const char* gateIds[] = { "gate", "gate_threshold", "gate_range", "gate_attack", "gate_release", "gate_hold", "gate_position" };
 
 } // namespace
 
-TEST_CASE ("The Gate's six host parameters are listed after Stereo Link and before the compressor's, Comp first, with the compressor's ranges")
+TEST_CASE ("The Gate's seven host parameters are listed after Stereo Link and before the compressor's, Comp first, with the compressor's ranges")
 {
     juce::ScopedJuceInitialiser_GUI juce;
     comp1::PluginProcessor processor;
     const int stereoLink = host::parameter (processor, "stereo_link").getParameterIndex();
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < 7; ++i)
     {
         CAPTURE (gateIds[i]);
         CHECK (host::parameter (processor, gateIds[i]).getParameterIndex() == stereoLink + 1 + i);
         CHECK (host::parameter (processor, gateIds[i]).isAutomatable());
     }
-    CHECK (host::parameter (processor, "comp").getParameterIndex() == stereoLink + 7);
+    CHECK (host::parameter (processor, "comp").getParameterIndex() == stereoLink + 8);
 
     auto& gate = host::parameter (processor, "gate");
     CHECK (gate.getName (100) == "Gate");
@@ -76,6 +77,14 @@ TEST_CASE ("The Gate's six host parameters are listed after Stereo Link and befo
     CHECK (hold.convertFrom0to1 (hold.getDefaultValue()) == Catch::Approx (20.0f).epsilon (1.0e-5));
     CHECK (hold.convertFrom0to1 (0.5f) == Catch::Approx (50.0f).epsilon (1.0e-5));
     CHECK (hold.convertFrom0to1 (0.5f) == Catch::Approx (host::parameter (processor, "hold").convertFrom0to1 (0.5f)));
+
+    // Pre, then Post, frozen in that order (ADR 0003); Pre by default.
+    auto& position = host::parameter (processor, "gate_position");
+    CHECK (position.getName (100) == "Gate Position");
+    CHECK (position.getNumSteps() == 2);
+    CHECK (position.getText (0.0f, 100) == "Pre");
+    CHECK (position.getText (1.0f, 100) == "Post");
+    CHECK (position.getDefaultValue() == 0.0f);
 }
 
 TEST_CASE ("The Gate's settings survive save and load, and a session saved without them restores the defaults")
@@ -88,6 +97,7 @@ TEST_CASE ("The Gate's settings survive save and load, and a session saved witho
     host::set (saved, "gate_attack", 4.0f);
     host::set (saved, "gate_release", 640.0f);
     host::set (saved, "gate_hold", 125.0f);
+    host::set (saved, "gate_position", 1.0f);
     const auto first = host::saved (saved);
     comp1::PluginProcessor restored;
     host::restore (restored, first);
@@ -99,7 +109,7 @@ TEST_CASE ("The Gate's settings survive save and load, and a session saved witho
     CHECK (host::value (restored, "gate_threshold") == -52.5f);
     CHECK (host::saved (restored) == first);
 
-    // A session from before the Gate: everything else, but none of its six.
+    // A session from before the Gate: everything else, but none of its seven.
     auto xml = host::savedXml (saved);
     REQUIRE (xml != nullptr);
     for (const auto* id : gateIds)
@@ -116,6 +126,7 @@ TEST_CASE ("The Gate's settings survive save and load, and a session saved witho
     CHECK (host::value (restored, "gate_attack") == Catch::Approx (defaults.attackMs).epsilon (1.0e-6));
     CHECK (host::value (restored, "gate_release") == Catch::Approx (defaults.releaseMs).epsilon (1.0e-6));
     CHECK (host::value (restored, "gate_hold") == Catch::Approx (defaults.holdMs).epsilon (1.0e-5));
+    CHECK (host::value (restored, "gate_position") == 0.0f);
 }
 
 TEST_CASE ("The Gate set by the host reaches the Engine")
@@ -148,4 +159,37 @@ TEST_CASE ("The Gate set by the host reaches the Engine")
     };
     CHECK (std::abs (outputDb (0.0f) - -40.0) <= 0.001);
     CHECK (std::abs (outputDb (1.0f) - -70.0) <= 0.001);
+}
+
+TEST_CASE ("Gate Position set by the host reaches the Engine: at Post the Gate leaves the Dry path alone")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    // A steady -40 dB at Dry 0 dB and Wet Off, the Gate on at Gate Threshold -20 dB and Gate Range 30 dB: at Pre it
+    // closes on the Dry path too, 30 dB down; at Post the Dry path passes as it came in.
+    const auto outputDb = [] (float position) {
+        comp1::PluginProcessor processor;
+        REQUIRE (processor.setBusesLayout (host::layout (juce::AudioChannelSet::stereo(), juce::AudioChannelSet::disabled())));
+        host::set (processor, "gate", 1.0f);
+        host::set (processor, "gate_threshold", -20.0f);
+        host::set (processor, "gate_range", 30.0f);
+        host::set (processor, "gate_release", 5.0f);
+        host::set (processor, "gate_hold", 0.0f);
+        host::set (processor, "gate_position", position);
+        host::set (processor, "dry", 0.0f);
+        host::set (processor, "wet", -std::numeric_limits<float>::infinity());
+        constexpr int blockSize = 480;
+        processor.prepareToPlay (48000.0, blockSize);
+        const auto level = comp1::test::steadyLevel (2, blockSize, -40.0);
+        juce::AudioBuffer<float> buffer (2, blockSize);
+        juce::MidiBuffer midi;
+        for (int b = 0; b < 20; ++b)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+                buffer.copyFrom (ch, 0, level[static_cast<std::size_t> (ch)].data(), blockSize);
+            processor.processBlock (buffer, midi);
+        }
+        return 20.0 * std::log10 (std::abs (static_cast<double> (buffer.getSample (1, blockSize - 1))));
+    };
+    CHECK (std::abs (outputDb (0.0f) - -70.0) <= 0.001);
+    CHECK (std::abs (outputDb (1.0f) - -40.0) <= 0.001);
 }

@@ -211,14 +211,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                                               juce::StringArray { "Stereo", "Mid", "Side" },
                                                               static_cast<int> (defaults.stereoPlacement)),
                 floatParameter (stereoLinkId, "Stereo Link", linearRange (parameterRanges::stereoLink), defaults.stereoLink, withText (1, "%")));
-    // The Gate, first in the chain: its ranges and travel are the compressor's controls of the same names'.
+    // The Gate: its ranges and travel are the compressor's controls of the same names'. Gate Position's choices are
+    // GatePosition's, stored in sessions by index, so their order never changes (ADR 0003).
     const auto& gate = defaults.gate;
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { gateId, 1 }, "Gate", gate.on),
                 floatParameter (gateThresholdId, "Gate Threshold", linearRange (parameterRanges::threshold), gate.thresholdDb, withText (2, "dB")),
                 floatParameter (gateRangeId, "Gate Range", linearRange (parameterRanges::range), gate.rangeDb, withText (2, "dB")),
                 floatParameter (gateAttackId, "Gate Attack", logRange (parameterRanges::attack), gate.attackMs, withText (3, "ms")),
                 floatParameter (gateReleaseId, "Gate Release", logRange (parameterRanges::release), gate.releaseMs, withText (1, "ms")),
-                floatParameter (gateHoldId, "Gate Hold", skewedRange (parameterRanges::hold, 50.0f), gate.holdMs, withText (1, "ms")));
+                floatParameter (gateHoldId, "Gate Hold", skewedRange (parameterRanges::hold, 50.0f), gate.holdMs, withText (1, "ms")),
+                std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { gatePositionId, 1 },
+                                                              "Gate Position",
+                                                              juce::StringArray { "Pre", "Post" },
+                                                              static_cast<int> (defaults.gatePosition)));
     // Comp and Comp Follow first (ADR 0004): while Comp Follow is on, Comp sets Threshold and Ratio along the Style's
     // Comp Curve, and the stored Threshold, Ratio and Auto Gain below it are ignored. Both are automatable, so a session
     // that switches Comp Follow mid-song plays back the same way every time.
@@ -283,6 +288,7 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
       gateAttack (parameters.getRawParameterValue (gateAttackId)),
       gateRelease (parameters.getRawParameterValue (gateReleaseId)),
       gateHold (parameters.getRawParameterValue (gateHoldId)),
+      gatePosition (parameters.getRawParameterValue (gatePositionId)),
       comp (parameters.getRawParameterValue (compId)),
       compFollow (parameters.getRawParameterValue (compFollowId)),
       threshold (parameters.getRawParameterValue (thresholdId)),
@@ -353,6 +359,7 @@ Settings SettingsReader::read() const
                        .attackMs = plain (gateAttack),
                        .releaseMs = plain (gateRelease),
                        .holdMs = plain (gateHold) },
+             .gatePosition = choice (gatePosition, GatePosition::Post),
              // Style alone decides the Character, and the Comp Curve.
              .character = characterOf (chosen),
              .comp = plain (comp),

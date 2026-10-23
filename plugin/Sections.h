@@ -33,7 +33,7 @@ ControlSection::KnobControl& addCompKnob (ControlSection& section,
                                           std::optional<CompFollowAttachment>& attachment,
                                           ControlSection::Place place = ControlSection::Place::ownColumn);
 
-// Gate: on/off, Gate Threshold, Gate Range, Gate Attack, Gate Release and Gate Hold.
+// Gate: on/off, Gate Position, Gate Threshold, Gate Range, Gate Attack, Gate Release and Gate Hold.
 struct GateSection final : ControlSection
 {
     explicit GateSection (PluginProcessor& processor);

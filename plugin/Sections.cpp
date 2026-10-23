@@ -34,6 +34,7 @@ ControlSection::KnobControl& addCompKnob (ControlSection& section, PluginProcess
 GateSection::GateSection (PluginProcessor& p) : ControlSection ("Gate", p)
 {
     addToggle (parameters::gateId, "Gate", true);
+    addChoice (parameters::gatePositionId, 64, false);
     addKnob (parameters::gateThresholdId, knobSize::medium, "Threshold", Place::underStack);
     addKnob (parameters::gateRangeId, knobSize::small, "Range");
     addKnob (parameters::gateAttackId, knobSize::small, "Attack");
