@@ -189,6 +189,12 @@ public:
     // The hidden view's logical size (as at 100% UI Scale), within its limits: its default until it has been shown.
     juce::Point<int> hiddenViewSize() const;
 
+    // Whether the Expanded View's Detection section is open: collapsed for a new instance; saved with the session,
+    // read back on restore (collapsed for a session saved without it), and in no Preset; not an undo step, and it makes
+    // no side Modified. Any thread.
+    bool detectionOpen() const { return openDetection.load (std::memory_order_relaxed); }
+    void setDetectionOpen (bool open) { openDetection.store (open, std::memory_order_relaxed); }
+
     // Detection Audition, while the editor holds it: not a host parameter, and never saved. Any thread.
     void setDetectionAudition (bool held) { heldDetectionAudition.store (held, std::memory_order_relaxed); }
     bool detectionAudition() const { return heldDetectionAudition.load (std::memory_order_relaxed); }
@@ -211,6 +217,7 @@ private:
     std::atomic<View> chosenView { View::expanded };
     // The hidden view's size in logical pixels, 0 by 0 until it has one.
     std::atomic<int> hiddenWidth { 0 }, hiddenHeight { 0 };
+    std::atomic<bool> openDetection { false };
 
     // Reports to the host the latency of the Processing Mode the host parameter holds (comp1/Latency.h), at the
     // sample rate last prepared: at prepareToPlay(), whenever Processing Mode changes (from the editor, or a host that
