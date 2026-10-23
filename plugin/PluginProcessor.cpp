@@ -82,8 +82,8 @@ void migrate (juce::ValueTree& state)
 }
 
 // The host parameters choosing a Style writes, as plain values from settings: Style itself, then the settings ADR 0002
-// lists (the Character and the Comp Curve are Style's). Every other parameter is Auto Gain, routing or a level, which
-// a Style never touches.
+// lists (the Character and the Comp Curve are Style's). Every other parameter is routing or a level, which a Style
+// never touches.
 std::vector<std::pair<juce::String, float>> styleWrites (Style style, const Settings& s)
 {
     const auto plain = [] (double value) { return static_cast<float> (value); };
@@ -92,6 +92,7 @@ std::vector<std::pair<juce::String, float>> styleWrites (Style style, const Sett
         { parameters::styleId, static_cast<float> (style) },
         { parameters::compId, plain (s.comp) },
         { parameters::compFollowId, onOff (s.compFollow) },
+        { parameters::autoGainId, onOff (s.autoGain) },
         { parameters::colourId, plain (s.colour) },
         { parameters::thresholdId, plain (s.thresholdDb) },
         { parameters::ratioId, plain (s.ratio) },
