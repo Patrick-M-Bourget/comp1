@@ -249,13 +249,9 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     auto names = accessibleNames (*host.editor);
     CHECK (names.count ("Detection") == 1);
     CHECK (names.count ("Detection Source") == 0);
-    // Open, its controls too.
+    CHECK (names.count ("Detection Audition") == 0);
+    // Open, its controls too, and its Detection EQ display's handles and Detection Audition.
     openDetection (host);
-    for (const auto& [name, components] : accessibleNames (*host.editor))
-        names[name] = components;
-    // The Detection EQ tab's too: its handles and Detection Audition.
-    host.processor.setDisplayTab (comp1::DisplayTab::detectionEq);
-    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::detectionEq; }));
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
     // And the Transfer Curve tab's: its graph.
@@ -301,7 +297,6 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Copy A to B");
     expected.push_back ("Detection");
     expected.push_back ("Detection Audition");
-    expected.push_back ("Detection EQ");
     expected.push_back ("Detection Free Band");
     expected.push_back ("Detection Free Band Frequency");
     expected.push_back ("Detection Free Band Gain");
@@ -400,16 +395,17 @@ TEST_CASE ("Each knob reads its value with its unit as its tooltip shows it: Rat
     CHECK_THAT (host.value (parameters::ceilingId), Catch::Matchers::WithinAbs (-6.0f, 1.0e-4));
 }
 
-TEST_CASE ("Tab walks the header, the display's tabs and the shown tab's controls, the Output Meter, the sections in signal order and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
+TEST_CASE ("Tab walks the header, the display's tabs and the Transfer Curve inset, the Output Meter, the sections in signal order and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
 {
     host::EditorHost host;
     everythingAvailable (host);
-    // On the Detection EQ tab, so its handles and Detection Audition are reached too; and on the Level tab, the
-    // Transfer Curve inset.
-    const auto tab = GENERATE (comp1::DisplayTab::detectionEq, comp1::DisplayTab::level);
-    CAPTURE (static_cast<int> (tab));
-    host.processor.setDisplayTab (tab);
-    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == tab; }));
+    // With the Detection section open, so its controls, handles and Detection Audition are reached too; and collapsed,
+    // so only its disclosure is.
+    const bool open = GENERATE (true, false);
+    CAPTURE (open);
+    host.processor.setDetectionOpen (open);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().detectionSection().isOpen() == open; }));
+    host.settleAnimations();
     juce::Component::unfocusAllComponents();
     std::vector<juce::Component*> walked;
     for (int i = 0; i < 200; ++i)
@@ -436,15 +432,16 @@ TEST_CASE ("Tab walks the header, the display's tabs and the shown tab's control
         CHECK (std::count (walked.begin(), walked.end(), control) == 1);
     }
     // In order: the header's first, then these.
-    const juce::StringArray tabControls = tab == comp1::DisplayTab::detectionEq
-                                              ? juce::StringArray { "High-pass handle", "Free band handle", "Low-pass handle", "Detection Audition" }
-                                              : juce::StringArray { "Transfer Curve inset" };
-    juce::StringArray order { "Presets", "Level", "Detection EQ", "Transfer Curve" };
-    order.addArray (tabControls);
-    order.addArray (juce::StringArray { "Output Meter", "Gate", "Gate Hold", "Comp Follow", "Comp", "Threshold", "Range", "Colour",
-                                        "Saturation Position", "Detection", "Detection Source", "Detection Free Band Q", "Stereo Placement",
-                                        "Stereo Link", "Lookahead", "Global Bypass", "Style", "Processing Mode", "Oversampling", "Output",
-                                        "UI Scale", "Switch to the Compact View" });
+    juce::StringArray order { "Presets", "Level", "Transfer Curve", "Transfer Curve inset", "Output Meter", "Gate", "Gate Hold",
+                              "Comp Follow", "Comp", "Threshold", "Range", "Colour", "Saturation Position", "Detection" };
+    const juce::StringArray detection { "Detection Source", "Detection Free Band Q", "High-pass handle", "Free band handle", "Low-pass handle", "Detection Audition" };
+    if (open)
+        order.addArray (detection);
+    else
+        for (const auto& title : detection)
+            CHECK_FALSE (titles.contains (title));
+    order.addArray (juce::StringArray { "Stereo Placement", "Stereo Link", "Lookahead", "Global Bypass", "Style", "Processing Mode",
+                                        "Oversampling", "Output", "UI Scale", "Switch to the Compact View" });
     int last = -1;
     for (const auto& title : order)
     {

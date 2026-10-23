@@ -14,7 +14,7 @@ namespace
 // The editor's areas, in the content's logical pixels (as at 100%).
 struct Areas
 {
-    juce::Rectangle<int> header, display, levelTab, detectionEqTab, gainReduction, outputMeter, sections, character, footer;
+    juce::Rectangle<int> header, display, levelTab, gainReduction, outputMeter, sections, character, footer;
     juce::Rectangle<int> gateGainReduction, limiterGainReduction;
     juce::Rectangle<int> transferCurveTab;
 };
@@ -43,7 +43,6 @@ Areas areasOf (juce::AudioProcessorEditor& editor)
     return { in (*header),
              in (named (editor, "Display")),
              in (tabs.tabContent (comp1::DisplayTab::level)),
-             in (tabs.tabContent (comp1::DisplayTab::detectionEq)),
              in (named (editor, "Gain Reduction")),
              in (*meter),
              in (named (editor, "Sections")),
@@ -76,7 +75,6 @@ TEST_CASE ("At its default size the Expanded View is the header, the display wit
     CHECK (areas.sections == juce::Rectangle<int> (14, 524, 1372, 266));
     CHECK (areas.footer == juce::Rectangle<int> (14, 802, 1372, 44));
     // Each tab's content is the display under its tabs.
-    CHECK (areas.levelTab == areas.detectionEqTab);
     CHECK (areas.levelTab == areas.transferCurveTab);
     CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1164, 400));
 

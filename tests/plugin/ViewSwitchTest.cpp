@@ -92,19 +92,26 @@ TEST_CASE ("A click on the switch, or Space or Return on it, shows the other vie
     }
 }
 
-TEST_CASE ("Switching back shows the Expanded View as it was, on the same display tab")
+TEST_CASE ("Switching back shows the Expanded View as it was, on the same display tab and with the Detection section open")
 {
     host::EditorHost host;
-    host.processor.setDisplayTab (comp1::DisplayTab::detectionEq);
-    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::detectionEq; }));
+    host.processor.setDisplayTab (comp1::DisplayTab::transferCurve);
+    host.processor.setDetectionOpen (true);
+    REQUIRE (host.settleUntil ([&] {
+        return host.expandedView().display().shownTab() == comp1::DisplayTab::transferCurve && host.expandedView().detectionSection().isOpen();
+    }));
+    host.settleAnimations();
     clickSwitch (host);
-    CHECK (host.processor.displayTab() == comp1::DisplayTab::detectionEq);
+    CHECK (host.processor.displayTab() == comp1::DisplayTab::transferCurve);
+    CHECK (host.processor.detectionOpen());
     for (auto* part : expandedParts (host))
         CHECK_FALSE (part->isShowing());
+    CHECK_FALSE (host.expandedView().detectionSection().detectionEqDisplay().isShowing());
     clickSwitch (host);
     checkShows (host, View::expanded);
-    CHECK (host.expandedView().display().shownTab() == comp1::DisplayTab::detectionEq);
-    CHECK (host.expandedView().display().tabContent (comp1::DisplayTab::detectionEq).isShowing());
+    CHECK (host.expandedView().display().shownTab() == comp1::DisplayTab::transferCurve);
+    CHECK (host.expandedView().display().tabContent (comp1::DisplayTab::transferCurve).isShowing());
+    CHECK (host.expandedView().detectionSection().detectionEqDisplay().isShowing());
 }
 
 namespace
@@ -367,9 +374,10 @@ TEST_CASE ("A switch writes no host parameter and starts no gesture, and the aud
 TEST_CASE ("Switching to the Compact View lets go of Detection Audition")
 {
     host::EditorHost host;
-    host.processor.setDisplayTab (comp1::DisplayTab::detectionEq);
-    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::detectionEq; }));
-    auto& audition = host.expandedView().display().detectionEqDisplay().detectionAudition();
+    host.processor.setDetectionOpen (true);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().detectionSection().isOpen(); }));
+    host.settleAnimations();
+    auto& audition = host.expandedView().detectionSection().detectionEqDisplay().detectionAudition();
     const auto centre = audition.getLocalBounds().toFloat().getCentre();
     audition.mouseDown (harness::mouseEvent (audition, centre, juce::ModifierKeys::leftButtonModifier));
     REQUIRE (host.processor.detectionAudition());

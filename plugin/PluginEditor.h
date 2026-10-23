@@ -21,7 +21,7 @@ namespace comp1
 // shows either view, the one the processor holds, each between the same header and footer (Footer), and each with its
 // own window limits and size (PluginProcessor::windowOf, setView).
 //
-// The Expanded View's body, under the header: the display, its three tabs over its full width (Display), with three
+// The Expanded View's body, under the header: the display, its two tabs over its full width (Display), with three
 // Gain Reduction meters and the Output Meter's rail at its right edge; under that the sections in signal order, in two
 // rows. The display takes whatever the window grows by, and the section rows its width; each section keeps its own
 // size, the Detection section's height following its slide open or closed (DetectionSection), the display taking up
@@ -63,8 +63,8 @@ private:
     // The area last laid out, for laying it out again as the Detection section slides.
     juce::Rectangle<int> bodyArea;
 
-    // Shows view, hiding the other's components: leaving the Expanded View lets go of Detection Audition, as leaving
-    // the Detection EQ tab does.
+    // Shows view, hiding the other's components: leaving the Expanded View lets go of Detection Audition, as collapsing
+    // the Detection section does.
     void show (View view);
     // Holds the window to the shown view's limits at the UI Scale, and its size within them: after the shell applies
     // the Session's (the envelope of both views'), at open, after a UI Scale pick and on the tick.

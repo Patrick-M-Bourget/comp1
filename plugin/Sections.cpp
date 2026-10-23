@@ -216,7 +216,7 @@ private:
 };
 
 DetectionSection::DetectionSection (PluginProcessor& p)
-    : ControlSection ("Detection", p), processor (p), disclosureButton (std::make_unique<Disclosure> (*this))
+    : ControlSection ("Detection", p), processor (p), disclosureButton (std::make_unique<Disclosure> (*this)), eqDisplay (p)
 {
     using staple::Icon;
     // First in Tab's order, before the controls it shows and hides.
@@ -237,6 +237,7 @@ DetectionSection::DetectionSection (PluginProcessor& p)
     addKnob (parameters::detectionBandFrequencyId, knobSize::small, "Frequency", Place::underStack);
     addKnob (parameters::detectionBandGainId, knobSize::small, "Gain");
     addKnob (parameters::detectionBandQId, knobSize::small, "Q");
+    addSelfPlaced (eqDisplay);
 
     slide.apply = [this] (float) {
         // Hidden once closed, so Tab skips them.
@@ -270,6 +271,8 @@ void DetectionSection::show (bool open, bool animate)
     if (open)
         for (auto* c : body())
             c->setVisible (true);
+    else
+        eqDisplay.letGoOfDetectionAudition();
     if (animate)
         slide.towards (open ? 1.0f : 0.0f);
     else
@@ -306,6 +309,8 @@ juce::String DetectionSection::summaryOfParameters()
                   : juce::String ("Free band off"));
 }
 
+int DetectionSection::idealWidth() const { return ControlSection::idealWidth() + displayGap + displayWidth; }
+
 int DetectionSection::idealHeight() const
 {
     const int open = ControlSection::idealHeight();
@@ -327,6 +332,8 @@ void DetectionSection::resized()
 {
     // The controls where they sit open, whatever the height: the slide uncovers them.
     ControlSection::resized();
+    const auto controls = getLocalBounds().withHeight (ControlSection::idealHeight()).withTrimmedTop (titleHeight + dividerGap);
+    eqDisplay.setBounds (controls.withTrimmedLeft (ControlSection::idealWidth() + displayGap));
     disclosureButton->setBounds (0, 0, titleWidth() + chevronGap + chevronSize, titleHeight);
 }
 

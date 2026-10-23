@@ -73,7 +73,7 @@ void PluginEditor::show (View view)
     compactBody.setVisible (! expanded);
     footer.showSwitchFor (view);
     if (! expanded)
-        displaySlot.detectionEqDisplay().letGoOfDetectionAudition();
+        detection.detectionEqDisplay().letGoOfDetectionAudition();
 }
 
 void PluginEditor::applyViewWindow()

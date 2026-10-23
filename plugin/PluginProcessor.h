@@ -17,12 +17,10 @@
 namespace comp1
 {
 
-// The Expanded View's three display tabs: the scrolling level and Gain Reduction graph, the Detection EQ, and the
-// Transfer Curve.
+// The Expanded View's two display tabs: the scrolling level and Gain Reduction graph, and the Transfer Curve.
 enum class DisplayTab
 {
     level,
-    detectionEq,
     transferCurve,
 };
 
@@ -175,7 +173,7 @@ public:
     int detectionSourceSampleCapacity() const { return engine.detectionSourceSampleCapacity(); }
 
     // The display tab the Expanded View shows: saved with the session, read back on restore (Level for a session saved
-    // without it), and in no Preset; not an undo step, and it makes no side Modified. Any thread.
+    // without it, or with a tab there no longer is), and in no Preset; not an undo step, and it makes no side Modified. Any thread.
     DisplayTab displayTab() const { return chosenDisplayTab.load (std::memory_order_relaxed); }
     void setDisplayTab (DisplayTab tab) { chosenDisplayTab.store (tab, std::memory_order_relaxed); }
 
