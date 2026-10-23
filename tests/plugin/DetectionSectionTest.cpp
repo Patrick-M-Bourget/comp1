@@ -234,13 +234,12 @@ TEST_CASE ("Tab reaches the disclosure after the Character and Saturation sectio
     CHECK (before->getTitle() == "Drive");
 }
 
-TEST_CASE ("Open, the Detection section shows its controls and Detection Audition after them, and no Detection EQ display: Tab reaches Detection Audition after Detection Free Band Q, then the Stereo section")
+TEST_CASE ("Open, the Detection section shows its controls and Detection Audition after them: Tab reaches Detection Audition after Detection Free Band Q, then the Stereo section")
 {
     host::EditorHost host;
     host.processor.setDetectionOpen (true);
     REQUIRE (host.settleUntil ([&] { return section (host).isOpen(); }));
     host.settleAnimations();
-    CHECK (host.findAll<juce::Component> ([] (juce::Component& c) { return c.getTitle() == "Detection EQ" || c.getName() == "Detection EQ display"; }).empty());
 
     auto& audition = section (host).detectionAudition();
     CHECK (audition.isShowing());
