@@ -144,6 +144,7 @@ inline Channels played (const Settings& settings,
 // Runs audio through engine, already prepared and set up, in place, cut into blocks of the sizes given, in turn and
 // repeating; from change's sample on with its settings when there is one, the block before it cut short there. Reads
 // the level history after each block, as the editor reads it while the host plays, and returns every record read.
+// The block cut short at the change takes one turn of the sizes given, as a whole block would.
 inline std::vector<LevelRecord> playAndReadLevels (Engine& engine,
                                                    Channels& audio,
                                                    const std::vector<int>& blockSizes,
