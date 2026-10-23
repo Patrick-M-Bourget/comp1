@@ -3,7 +3,6 @@
 #include "Audition.h"
 #include "Colour.h"
 #include "Compressor.h"
-#include "DelayLine.h"
 #include "Detection.h"
 #include "DryWet.h"
 #include "Gate.h"
@@ -16,6 +15,7 @@
 #include "ModeFade.h"
 #include "OversampledSection.h"
 #include "SaturationStage.h"
+#include "SidechainDelay.h"
 #include "comp1/Latency.h"
 
 #include <plugkit/LatestValue.h>
@@ -61,12 +61,7 @@ struct Engine::Impl
     // Zero Latency's After section at the host rate: its input, then its residual, per channel.
     std::vector<std::vector<double>> hostRate;
     std::vector<double*> hostRatePointers;
-    DelayLine sidechainDelay;
-    std::array<std::vector<float>, 2> sidechainStorage; // the Sidechain's piece, delayed, or silence
-    std::array<float*, 2> sidechainPointers {};
-    std::array<const float*, 2> sidechainConstPointers {};
-    ConstAudioBlock heardSidechain;
-    std::vector<float> silence; // a run of it, for the Sidechain's delay when nothing is connected
+    SidechainDelay sidechainDelay; // the Before section's, for the detection stage
     LookaheadStage lookahead;
     Limiter limiter;
     ModeFade modeFade;
@@ -154,7 +149,9 @@ struct Engine::Impl
         }
         const bool highQuality = path == ProcessingMode::HighQuality;
         oversampledSaturation (beforeSection, SaturationPosition::Before, wet, highQuality);
-        const auto* sidechainHeard = delayedSidechain (sidechainPiece, wet.numSamples, highQuality);
+        // The Sidechain as the detection stage hears it: in High Quality delayed by the Before section's delay, as the
+        // audio is.
+        const auto* sidechainHeard = sidechainDelay.process (sidechainPiece, wet.numSamples, highQuality);
         const auto detected = detection.process ({ wet.channels, wet.numChannels, wet.numSamples }, sidechainHeard);
         detectionSourceTap.push (detected.sourceMean, detected.numSamples);
         if (gridPosition == 0)
@@ -251,27 +248,6 @@ struct Engine::Impl
         return true;
     }
 
-    // The Sidechain's piece as the detection stage hears it: in High Quality delayed by the Before section's delay,
-    // as the audio is, so External detection keeps Internal's timing. Its delay is fed in both Processing Modes, with
-    // silence when nothing is connected, so a switch or a connection starts from the latest of it.
-    const ConstAudioBlock* delayedSidechain (const ConstAudioBlock* sidechainPiece, int numSamples, bool highQuality)
-    {
-        std::array<const float*, 2> in {};
-        for (std::size_t ch = 0; ch < in.size(); ++ch)
-            in[ch] = sidechainPiece == nullptr ? silence.data()
-                                               : sidechainPiece->channels[std::min (static_cast<int> (ch), sidechainPiece->numChannels - 1)];
-        if (! highQuality)
-        {
-            sidechainDelay.write ({ in.data(), 2, numSamples });
-            return sidechainPiece;
-        }
-        sidechainDelay.process ({ in.data(), 2, numSamples }, { sidechainPointers.data(), 2, numSamples }, sidechainDelay.getLength());
-        if (sidechainPiece == nullptr)
-            return nullptr;
-        heardSidechain = { sidechainConstPointers.data(), sidechainPiece->numChannels, numSamples };
-        return &heardSidechain;
-    }
-
     // The Output Level of what the piece sends on, after everything.
     void noteOutputLevels (AudioBlock out)
     {
@@ -306,14 +282,7 @@ void Engine::prepare (double sampleRate, int, int numChannels)
     impl->sampleRate = sampleRate;
     impl->beforeSection.prepare (sampleRate, numChannels, plugkit::runSamples);
     impl->afterSection.prepare (sampleRate, numChannels, plugkit::runSamples);
-    impl->sidechainDelay.prepare (2, oversamplingSectionSamples);
-    impl->silence.assign (static_cast<std::size_t> (plugkit::runSamples), 0.0f);
-    for (std::size_t ch = 0; ch < impl->sidechainStorage.size(); ++ch)
-    {
-        impl->sidechainStorage[ch].assign (static_cast<std::size_t> (plugkit::runSamples), 0.0f);
-        impl->sidechainPointers[ch] = impl->sidechainStorage[ch].data();
-        impl->sidechainConstPointers[ch] = impl->sidechainStorage[ch].data();
-    }
+    impl->sidechainDelay.prepare (oversamplingSectionSamples);
     impl->limiter.prepare (sampleRate, numChannels);
     impl->modeFade.prepare (sampleRate);
     impl->audition.prepare (sampleRate, numChannels);
