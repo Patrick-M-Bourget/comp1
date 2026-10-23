@@ -177,8 +177,6 @@ struct SampleTap
     int (Engine::*capacity)() const;
 };
 
-inline const SampleTap detectionSourceTap { &Engine::readDetectionSourceSamples, &Engine::skipDetectionSourceSamples, &Engine::detectionSourceSampleCapacity };
-
 // Runs audio through engine, already prepared and set up, in place, cut into blocks of the sizes given, in turn and
 // repeating, with the samples of sidechainSamples on the Sidechain when it isn't null, reading tap after each block, as
 // the editor reads it while the host plays; from change's sample on, with its settings, when there is one, the block

@@ -39,7 +39,7 @@ TEST_CASE ("The display opens on Level, its tabs Level, Transfer Curve and Spect
     host::EditorHost host;
     CHECK (host.processor.displayTab() == DisplayTab::level);
     checkShows (host, DisplayTab::level);
-    // The Detection EQ display is in the Detection section, not a tab.
+    // No Detection EQ tab.
     CHECK (host.findAll<juce::Button> ([] (juce::Button& b) { return b.getTitle() == "Detection EQ"; }).empty());
 
     click (host, "Transfer Curve", DisplayTab::transferCurve);

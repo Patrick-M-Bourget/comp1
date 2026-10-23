@@ -13,8 +13,10 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
+#include <thread>
 #include <vector>
 
 using namespace comp1;
@@ -249,4 +251,85 @@ TEST_CASE ("Reading the input and output taps never allocates")
     CHECK (guard.allocations() == 0);
     CHECK (in == 4800);
     CHECK (out == 4800);
+}
+
+TEST_CASE ("The input tap is read on a reader thread while process() runs, in order, and reading never allocates")
+{
+    // The audio thread plays a ramp that counts the samples played, one channel, as fast as it can (up to 2^24 samples,
+    // which a float holds exactly), until the reader has read a second of it. The audio thread can run ahead of the
+    // reader, which then misses what the full tap drops; but what each read gets is in order with no gap inside it, and
+    // each read comes after the one before.
+    Engine engine;
+    engine.prepare (48000.0, 64, 1);
+    engine.setSettings ({});
+    std::atomic<bool> done { false };
+    std::thread audio ([&] {
+        std::vector<float> block (64);
+        float* main[] = { block.data() };
+        int played = 0;
+        while (played + 64 <= (1 << 24) && ! done)
+        {
+            for (auto& sample : block)
+                sample = static_cast<float> (played++);
+            engine.process ({ main, 1, 64 });
+        }
+        done = true;
+    });
+
+    std::vector<float> samples (static_cast<std::size_t> (engine.inputTapSampleCapacity()));
+    std::size_t allocations = 0;
+    int read = 0;
+    float last = -1.0f;
+    bool inOrder = true;
+    while (! done && read < 48000)
+    {
+        plugkit::test::AllocationGuard guard;
+        const int count = engine.readInputTapSamples (samples.data(), static_cast<int> (samples.size()));
+        allocations += guard.allocations();
+        for (int i = 0; i < count; ++i)
+        {
+            const float sample = samples[static_cast<std::size_t> (i)];
+            inOrder = inOrder && (i == 0 ? sample > last : static_cast<double> (sample) == static_cast<double> (last) + 1.0);
+            last = sample;
+        }
+        read += count;
+    }
+    done = true;
+    audio.join();
+
+    CHECK (read >= 48000);
+    CHECK (allocations == 0);
+    CHECK (inOrder);
+}
+
+TEST_CASE ("The input and output taps can be read while the host prepares the Engine again at another rate or channel count")
+{
+    Engine engine;
+    engine.prepare (48000.0, 256, 2);
+    std::atomic<bool> done { false };
+    std::thread reader ([&] {
+        std::vector<float> samples (1 << 16);
+        while (! done)
+            for (const auto* tap : { &inputTap, &outputTap })
+            {
+                (engine.*tap->read) (samples.data(), std::min ((engine.*tap->capacity)(), static_cast<int> (samples.size())));
+                (engine.*tap->skip)();
+            }
+    });
+
+    // The host prepares and processes on its audio thread, here this one, while the editor reads.
+    auto audio = test::noise (2, 256);
+    float* main[] = { audio[0].data(), audio[1].data() };
+    const double rates[] = { 44100.0, 96000.0, 192000.0, 48000.0 };
+    for (int round = 0; round < 60; ++round)
+    {
+        const int numChannels = 1 + round % 2;
+        engine.prepare (rates[round % 4], 256, numChannels);
+        for (int block = 0; block < 8; ++block)
+            engine.process ({ main, numChannels, 256 });
+    }
+    done = true;
+    reader.join();
+    CHECK (engine.inputTapSampleCapacity() >= 0.15 * 192000.0);
+    CHECK (engine.outputTapSampleCapacity() >= 0.15 * 192000.0);
 }
