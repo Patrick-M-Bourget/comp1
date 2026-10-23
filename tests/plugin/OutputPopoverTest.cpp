@@ -1,11 +1,12 @@
 // The footer's Output readout, in both views: what it reads, Output Gain plus Auto Gain's estimate while Auto Gain is
-// in effect, and how it is drawn under Global Bypass; and the output popover it opens: opening and closing by mouse and
+// in effect, and how it is drawn under Global Bypass; the Auto Gain dot beside it; and the output popover it opens: opening and closing by mouse and
 // keys, Tab and Escape, its layout, its controls' edits and undo steps, and what they follow while it is open.
 
 #include "EditorHost.h"
 #include "comp1/Style.h"
 #include "plugkit/ui/OutputPopoverFrame.h"
 #include "plugkit/ui/PopoverSlider.h"
+#include "plugkit/ui/ValueText.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <limits>
 #include <tuple>
+#include <vector>
 
 namespace parameters = comp1::parameters;
 
@@ -493,4 +495,129 @@ TEST_CASE ("The Output readout shows the parallel mark exactly while Dry is not 
     host.edit (parameters::dryId, off);
     CHECK (host.settleUntil ([&] { return readout.getButtonText() == minus + "1.8 dB"; }));
     CHECK (readout.getDescription().isEmpty());
+}
+
+namespace
+{
+
+// The A toggle's description, which its tooltip starts with.
+const juce::String autoGainDescription = "Auto Gain: compensates the output level, estimated from the settings, so compression is heard without a loudness bias";
+
+// The bounds of footer's children other than the Auto Gain dot, in order.
+std::vector<juce::Rectangle<int>> layoutOf (comp1::Footer& footer)
+{
+    std::vector<juce::Rectangle<int>> bounds;
+    for (auto* child : footer.getChildren())
+        if (child != &footer.autoGainDot())
+            bounds.push_back (child->getBounds());
+    return bounds;
+}
+
+} // namespace
+
+TEST_CASE ("The Auto Gain dot shows beside the Output readout exactly while the readout includes Auto Gain, and it and the A toggle's tooltip give the amount, following it on the editor's tick, in both views")
+{
+    host::EditorHost host;
+    const bool compact = GENERATE (false, true);
+    CAPTURE (compact);
+    if (compact)
+        host::EditorHost::click (host.expandedView().viewSwitch());
+    auto& dot = host.footer().autoGainDot();
+    auto& readout = host.outputReadout();
+
+    // Auto Gain off: no dot, and the A toggle's tooltip is its description alone.
+    dynLabDefaults (host);
+    host.edit (parameters::thresholdId, -30.0f);
+    host.edit (parameters::outputGainId, 1.0f);
+    REQUIRE (host.settleUntil ([&] { return readout.getButtonText() == "+1.0 dB"; }));
+    CHECK_FALSE (dot.isVisible());
+    host.openOutputPopover();
+    auto& autoGain = host.showing<plugkit::ui::OutputToggle> ("Auto Gain");
+    CHECK (autoGain.getTooltip() == autoGainDescription);
+
+    // On, at Threshold -30 dB on Clean: dyn-lab's estimate, 7.9161 dB, as the readout's test reads it.
+    host.edit (parameters::autoGainId, 1.0f);
+    CHECK (host.settleUntil ([&] { return dot.isVisible(); }));
+    CHECK (dot.getTooltip() == "Auto Gain: +7.9 dB");
+    CHECK (host.settleUntil ([&] { return autoGain.getTooltip() == autoGainDescription + ". Now +7.9 dB"; }));
+
+    // Moving Threshold moves the amount, and both tooltips follow what appliedAutoGainDb reports.
+    host.edit (parameters::thresholdId, -12.0f);
+    const auto amount = plugkit::ui::valueText::signedDb (host.processor.appliedAutoGainDb());
+    REQUIRE (amount != "+7.9 dB");
+    CHECK (host.settleUntil ([&] { return dot.getTooltip() == "Auto Gain: " + amount; }));
+    CHECK (host.settleUntil ([&] { return autoGain.getTooltip() == autoGainDescription + ". Now " + amount; }));
+
+    // Global Bypass draws the readout not applied, and hides the dot until it is off again.
+    host.edit (parameters::globalBypassId, 1.0f);
+    CHECK (host.settleUntil ([&] { return readout.isNotApplied() && ! dot.isVisible(); }));
+    host.edit (parameters::globalBypassId, 0.0f);
+    CHECK (host.settleUntil ([&] { return ! readout.isNotApplied() && dot.isVisible(); }));
+
+    // Off again: no dot, and the description alone.
+    host.edit (parameters::autoGainId, 0.0f);
+    CHECK (host.settleUntil ([&] { return ! dot.isVisible(); }));
+    CHECK (host.settleUntil ([&] { return autoGain.getTooltip() == autoGainDescription; }));
+}
+
+TEST_CASE ("The Auto Gain dot sits just right of the Output readout, centred down it, and the footer's layout doesn't move as it shows and hides, in both views")
+{
+    host::EditorHost host;
+    const bool compact = GENERATE (false, true);
+    CAPTURE (compact);
+    if (compact)
+        host::EditorHost::click (host.expandedView().viewSwitch());
+    auto& footer = host.footer();
+    auto& dot = footer.autoGainDot();
+    auto& readout = host.outputReadout();
+
+    // Output Gain +1 dB, so the readout's text keeps its width as Auto Gain's estimate is added: "+1.0 dB", "+8.9 dB".
+    dynLabDefaults (host);
+    host.edit (parameters::thresholdId, -30.0f);
+    host.edit (parameters::outputGainId, 1.0f);
+    REQUIRE (host.settleUntil ([&] { return readout.getButtonText() == "+1.0 dB"; }));
+    REQUIRE_FALSE (dot.isVisible());
+    const auto hidden = layoutOf (footer);
+
+    host.edit (parameters::autoGainId, 1.0f);
+    REQUIRE (host.settleUntil ([&] { return dot.isVisible() && readout.getButtonText() == "+8.9 dB"; }));
+    CHECK (layoutOf (footer) == hidden);
+
+    // In the gap between the readout and the UI Scale menu, centred down the readout.
+    const auto bounds = dot.getBounds();
+    CHECK (bounds.getX() >= readout.getRight());
+    CHECK (bounds.getRight() <= footer.uiScaleMenu().getX());
+    CHECK (bounds.getCentreY() == readout.getBounds().getCentreY());
+    CHECK (bounds.getWidth() >= static_cast<int> (comp1::AutoGainDot::diameter));
+    // An area for its tooltip, but no stop for the keys or a screen reader: the readout's description says it.
+    CHECK_FALSE (dot.getWantsKeyboardFocus());
+    CHECK_FALSE (dot.isAccessible());
+}
+
+TEST_CASE ("While the Output readout includes Auto Gain its description says by how much, after the parallel mark's, in both views")
+{
+    host::EditorHost host;
+    const bool compact = GENERATE (false, true);
+    CAPTURE (compact);
+    if (compact)
+        host::EditorHost::click (host.expandedView().viewSwitch());
+    auto& readout = host.outputReadout();
+    dynLabDefaults (host);
+    host.edit (parameters::thresholdId, -30.0f);
+    host.edit (parameters::outputGainId, 1.0f);
+    host.edit (parameters::dryId, off);
+    REQUIRE (host.settleUntil ([&] { return readout.getButtonText() == "+1.0 dB"; }));
+    CHECK (readout.getDescription().isEmpty());
+
+    host.edit (parameters::autoGainId, 1.0f);
+    CHECK (host.settleUntil ([&] { return readout.getDescription() == "Includes Auto Gain: +7.9 dB"; }));
+    auto* handler = readout.getAccessibilityHandler();
+    REQUIRE (handler != nullptr);
+    CHECK (handler->getDescription().contains ("Auto Gain: +7.9 dB"));
+
+    host.edit (parameters::dryId, 0.0f);
+    CHECK (host.settleUntil ([&] { return readout.getDescription() == "Parallel compression on: Dry is mixed in. Includes Auto Gain: +7.9 dB"; }));
+
+    host.edit (parameters::autoGainId, 0.0f);
+    CHECK (host.settleUntil ([&] { return readout.getDescription() == "Parallel compression on: Dry is mixed in"; }));
 }
