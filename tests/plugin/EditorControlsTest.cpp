@@ -37,11 +37,20 @@ std::vector<juce::Component*> controlsTitled (host::EditorHost& host, const juce
     return host.findAll<juce::Component> ([&title] (juce::Component& c) { return isControl (c) && c.isShowing() && c.getTitle() == title; });
 }
 
-// Every control can be: the output popover open (so Output Gain, Auto Gain, the Limiter and Ceiling show), Comp
-// Follow off (so Auto Gain is enabled), High Quality (so Lookahead and Oversampling are), on a stereo track (so Stereo
-// Placement and Stereo Link are).
+// The Detection section open, its slide over, so its controls show.
+void openDetection (host::EditorHost& host)
+{
+    host.processor.setDetectionOpen (true);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().detectionSection().isOpen(); }));
+    host.settleAnimations();
+}
+
+// Every control can be: the output popover open (so Output Gain, Auto Gain, the Limiter and Ceiling show), the
+// Detection section open (so its controls show), Comp Follow off (so Auto Gain is enabled), High Quality (so Lookahead
+// and Oversampling are), on a stereo track (so Stereo Placement and Stereo Link are).
 void everythingAvailable (host::EditorHost& host)
 {
+    openDetection (host);
     host.openOutputPopover();
     host.edit (parameters::processingModeId, 1.0f);
     host.edit (parameters::compFollowId, 0.0f);
@@ -236,7 +245,14 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     presets.onClick();
     host.settleAnimations();
 
+    // Collapsed, the Detection section shows its disclosure and none of its controls.
     auto names = accessibleNames (*host.editor);
+    CHECK (names.count ("Detection") == 1);
+    CHECK (names.count ("Detection Source") == 0);
+    // Open, its controls too.
+    openDetection (host);
+    for (const auto& [name, components] : accessibleNames (*host.editor))
+        names[name] = components;
     // The Detection EQ tab's too: its handles and Detection Audition.
     host.processor.setDisplayTab (comp1::DisplayTab::detectionEq);
     REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::detectionEq; }));
@@ -283,6 +299,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Comp");
     expected.push_back ("Comp Follow");
     expected.push_back ("Copy A to B");
+    expected.push_back ("Detection");
     expected.push_back ("Detection Audition");
     expected.push_back ("Detection EQ");
     expected.push_back ("Detection Free Band");
@@ -425,7 +442,7 @@ TEST_CASE ("Tab walks the header, the display's tabs and the shown tab's control
     juce::StringArray order { "Presets", "Level", "Detection EQ", "Transfer Curve" };
     order.addArray (tabControls);
     order.addArray (juce::StringArray { "Output Meter", "Gate", "Gate Hold", "Comp Follow", "Comp", "Threshold", "Range", "Colour",
-                                        "Saturation Position", "Detection Source", "Detection Free Band Q", "Stereo Placement",
+                                        "Saturation Position", "Detection", "Detection Source", "Detection Free Band Q", "Stereo Placement",
                                         "Stereo Link", "Lookahead", "Global Bypass", "Style", "Processing Mode", "Oversampling", "Output",
                                         "UI Scale", "Switch to the Compact View" });
     int last = -1;
