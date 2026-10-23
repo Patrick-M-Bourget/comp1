@@ -3,6 +3,7 @@
 #include "LevelGraph.h"
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
+#include "SpectrumDisplay.h"
 #include "TransferCurveGraph.h"
 #include "TransferCurveInset.h"
 #include "plugkit/ui/EditorTick.h"
@@ -13,9 +14,11 @@
 namespace comp1
 {
 
-// The Expanded View's display: its two tabs, Level and Transfer Curve, as text chips along its top, and under them the
-// chosen tab's content: on Level, the Level and Gain Reduction Graph (LevelGraph), fed from the editor's level history;
-// on Transfer Curve, the Transfer Curve Graph (TransferCurveGraph), fed from the level history too. The Transfer Curve tab's place is provisional (#94).
+// The Expanded View's display: its three tabs, Level, Transfer Curve and Spectrum, as text chips along its top, and under
+// them the chosen tab's content: on Level, the Level and Gain Reduction Graph (LevelGraph), fed from the editor's level
+// history; on Transfer Curve, the Transfer Curve Graph (TransferCurveGraph), fed from the level history too; on
+// Spectrum, the Spectrum display (SpectrumDisplay), fed from the Engine's input and output taps. The Transfer Curve
+// tab's place is provisional (#94).
 // While the Level tab shows, the Transfer Curve inset (TransferCurveInset) sits over the Level graph's top-left corner,
 // insetGap in from it, over its oldest audio: a Tab stop after the tabs, whose Threshold and Ratio handles take the mouse.
 // Named "Display", and each content by its tab, as a test finds them.
@@ -35,6 +38,8 @@ public:
     LevelGraph& levelGraph() { return level; }
     // What fills the Transfer Curve tab's content.
     TransferCurveGraph& transferCurveGraph() { return transferCurve; }
+    // What fills the Spectrum tab's content.
+    SpectrumDisplay& spectrumDisplay() { return spectrum; }
     // Over the Level tab's content, shown with it.
     TransferCurveInset& transferCurveInset() { return inset; }
 
@@ -47,14 +52,16 @@ private:
     staple::TextChip& chipOf (DisplayTab tab);
 
     // The tabs, left to right.
-    static constexpr DisplayTab allTabs[] { DisplayTab::level, DisplayTab::transferCurve };
+    static constexpr DisplayTab allTabs[] { DisplayTab::level, DisplayTab::transferCurve, DisplayTab::spectrum };
 
-    staple::TextChip levelChip { "Level", staple::TextChip::Look::plain }, transferCurveChip { "Transfer Curve", staple::TextChip::Look::plain };
+    staple::TextChip levelChip { "Level", staple::TextChip::Look::plain }, transferCurveChip { "Transfer Curve", staple::TextChip::Look::plain },
+        spectrumChip { "Spectrum", staple::TextChip::Look::plain };
     PluginProcessor& processor;
     LevelGraph level;
     DisplayTab shown = DisplayTab::level;
     TransferCurveGraph transferCurve;
     TransferCurveInset inset;
+    SpectrumDisplay spectrum;
 };
 
 } // namespace comp1

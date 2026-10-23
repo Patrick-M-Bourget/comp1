@@ -1,4 +1,5 @@
 #include "EditorHost.h"
+#include "SpectrumDisplay.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,8 +17,10 @@ void checkShows (host::EditorHost& host, DisplayTab tab)
     CHECK (display.shownTab() == tab);
     CHECK (tabChip (host, "Level").getToggleState() == (tab == DisplayTab::level));
     CHECK (tabChip (host, "Transfer Curve").getToggleState() == (tab == DisplayTab::transferCurve));
+    CHECK (tabChip (host, "Spectrum").getToggleState() == (tab == DisplayTab::spectrum));
     CHECK (display.tabContent (DisplayTab::level).isShowing() == (tab == DisplayTab::level));
     CHECK (display.tabContent (DisplayTab::transferCurve).isShowing() == (tab == DisplayTab::transferCurve));
+    CHECK (display.tabContent (DisplayTab::spectrum).isShowing() == (tab == DisplayTab::spectrum));
 }
 
 // A click on the tab titled title, which shows tab: its onClick at once, as a click runs it.
@@ -31,7 +34,7 @@ void click (host::EditorHost& host, const juce::String& title, DisplayTab tab)
 
 } // namespace
 
-TEST_CASE ("The display opens on Level, its tabs Level and Transfer Curve, and a click on a tab shows that tab")
+TEST_CASE ("The display opens on Level, its tabs Level, Transfer Curve and Spectrum, and a click on a tab shows that tab")
 {
     host::EditorHost host;
     CHECK (host.processor.displayTab() == DisplayTab::level);
@@ -164,7 +167,47 @@ TEST_CASE ("The Transfer Curve tab: a click or Space shows it, saved as transfer
     // An unknown value opens on Level.
     auto xml = harness::savedXml (saved);
     REQUIRE (xml != nullptr);
-    xml->setAttribute ("display_tab", "spectrum");
+    xml->setAttribute ("display_tab", "waveform");
     host::restore (host.processor, *xml);
     CHECK (host.processor.displayTab() == DisplayTab::level);
+}
+
+TEST_CASE ("The Spectrum tab, after Transfer Curve: a click shows it, saved as spectrum and restored, in no Preset or undo step, and not in the Compact View")
+{
+    host::EditorHost host;
+    auto& session = host.processor.session();
+    auto& history = session.editHistory();
+    const auto preset = session.presetState();
+    REQUIRE (session.loadPreset (preset, "Start"));
+    const int steps = history.undoSteps();
+
+    auto& chip = tabChip (host, "Spectrum");
+    CHECK (chip.getTooltip() == "Show the Spectrum display");
+    CHECK (chip.getX() > tabChip (host, "Transfer Curve").getRight());
+    CHECK (host.expandedView().display().tabContent (DisplayTab::spectrum).getTitle() == "Spectrum");
+
+    click (host, "Spectrum", DisplayTab::spectrum);
+    checkShows (host, DisplayTab::spectrum);
+    CHECK (harness::savedNamesContaining (session.presetState(), "display").isEmpty());
+    CHECK (history.undoSteps() == steps);
+    CHECK_FALSE (session.isLoadedPresetModified());
+
+    // Saved as spectrum, into a new instance and into an open editor.
+    const auto saved = host::saved (host.processor);
+    CHECK (harness::savedState (saved).getProperty ("display_tab") == "spectrum");
+    host::EditorHost other;
+    host::restore (other.processor, saved);
+    CHECK (other.processor.displayTab() == DisplayTab::spectrum);
+    other.reopen();
+    checkShows (other, DisplayTab::spectrum);
+    click (host, "Level", DisplayTab::level);
+    host::restore (host.processor, saved);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == DisplayTab::spectrum; }));
+    checkShows (host, DisplayTab::spectrum);
+
+    // The Compact View has no display, so no Spectrum tab.
+    host.processor.setView (comp1::View::compact);
+    host.reopen();
+    CHECK (host.findAll<juce::Button> ([] (juce::Button& b) { return b.getTitle() == "Spectrum" && b.isShowing(); }).empty());
+    CHECK (host.findAll<comp1::SpectrumDisplay> ([] (comp1::SpectrumDisplay& d) { return d.isShowing(); }).empty());
 }

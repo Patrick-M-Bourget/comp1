@@ -169,6 +169,79 @@ inline std::vector<LevelRecord> playAndReadLevels (Engine& engine,
     return all;
 }
 
+// One of the Engine's sample taps, a mono sample per input sample, as its reader reaches it.
+struct SampleTap
+{
+    int (Engine::*read) (float*, int);
+    void (Engine::*skip)();
+    int (Engine::*capacity)() const;
+};
+
+inline const SampleTap detectionSourceTap { &Engine::readDetectionSourceSamples, &Engine::skipDetectionSourceSamples, &Engine::detectionSourceSampleCapacity };
+
+// Runs audio through engine, already prepared and set up, in place, cut into blocks of the sizes given, in turn and
+// repeating, with the samples of sidechainSamples on the Sidechain when it isn't null, reading tap after each block, as
+// the editor reads it while the host plays; from change's sample on, with its settings, when there is one, the block
+// before it cut short there. Returns every sample read.
+inline std::vector<float> playAndReadTap (Engine& engine,
+                                          const SampleTap& tap,
+                                          Channels audio,
+                                          const std::vector<int>& blockSizes,
+                                          const Channels* sidechainSamples = nullptr,
+                                          const std::optional<SettingsChange>& change = std::nullopt)
+{
+    std::vector<float> all, samples (static_cast<std::size_t> ((engine.*tap.capacity)()));
+    const int numSamples = static_cast<int> (audio.front().size());
+    std::vector<float*> main (audio.size());
+    std::vector<const float*> sidechain (sidechainSamples != nullptr ? sidechainSamples->size() : 0);
+    for (int start = 0, block = 0; start < numSamples; ++block)
+    {
+        if (change && start == change->at)
+            engine.setSettings (change->settings);
+        int count = std::min (blockSizes[static_cast<std::size_t> (block) % blockSizes.size()], numSamples - start);
+        if (change && start < change->at)
+            count = std::min (count, change->at - start);
+        for (std::size_t ch = 0; ch < audio.size(); ++ch)
+            main[ch] = audio[ch].data() + start;
+        for (std::size_t ch = 0; ch < sidechain.size(); ++ch)
+            sidechain[ch] = (*sidechainSamples)[ch].data() + start;
+        const ConstAudioBlock sidechainBlock { sidechain.data(), static_cast<int> (sidechain.size()), count };
+        engine.process ({ main.data(), static_cast<int> (main.size()), count }, sidechainSamples != nullptr ? &sidechainBlock : nullptr);
+        start += count;
+        const int read = (engine.*tap.read) (samples.data(), static_cast<int> (samples.size()));
+        all.insert (all.end(), samples.begin(), samples.begin() + read);
+    }
+    return all;
+}
+
+// What tap carries for audio through a fresh Engine at sampleRate with settings, read as playAndReadTap() reads it.
+inline std::vector<float> tapOf (const SampleTap& tap,
+                                 const Settings& settings,
+                                 const Channels& audio,
+                                 const Channels* sidechainSamples = nullptr,
+                                 const std::vector<int>& blockSizes = { 512 },
+                                 double sampleRate = 48000.0)
+{
+    Engine engine;
+    engine.prepare (sampleRate, 4096, static_cast<int> (audio.size()));
+    engine.setSettings (settings);
+    return playAndReadTap (engine, tap, audio, blockSizes, sidechainSamples);
+}
+
+// The mean of audio's channels, sample for sample, worked out here: the mono signal a sample tap carries.
+inline std::vector<float> meanOf (const Channels& audio)
+{
+    std::vector<float> mean (audio.front().size());
+    for (std::size_t i = 0; i < mean.size(); ++i)
+    {
+        double sum = 0.0;
+        for (const auto& channel : audio)
+            sum += static_cast<double> (channel[i]);
+        mean[i] = static_cast<float> (sum / static_cast<double> (audio.size()));
+    }
+    return mean;
+}
+
 // The level history of audio through a fresh Engine at sampleRate, with settings from the start, and from change's
 // sample on with its settings when there is one: every record, read after each host block of up to 512 samples, as
 // the editor reads it while the host plays.

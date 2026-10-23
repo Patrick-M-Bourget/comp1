@@ -18,7 +18,7 @@ const juce::Identifier versionProperty { "version" };
 // The display tab, a view property the session saves and restore takes off. Its name and values are permanent once
 // released: sessions keep them.
 const juce::Identifier displayTabProperty { "display_tab" };
-const juce::String levelTab { "level" }, transferCurveTab { "transfer_curve" };
+const juce::String levelTab { "level" }, transferCurveTab { "transfer_curve" }, spectrumTab { "spectrum" };
 
 // A display tab as the session saves it, and back: anything else, a session saved without one included, is Level. So
 // is "detection_eq", a tab older sessions hold that the display no longer has.
@@ -28,6 +28,7 @@ const juce::String& savedTab (DisplayTab tab)
     {
         case DisplayTab::level: return levelTab;
         case DisplayTab::transferCurve: return transferCurveTab;
+        case DisplayTab::spectrum: return spectrumTab;
     }
     return levelTab;
 }
@@ -36,6 +37,8 @@ DisplayTab tabSaved (const juce::String& saved)
 {
     if (saved == transferCurveTab)
         return DisplayTab::transferCurve;
+    if (saved == spectrumTab)
+        return DisplayTab::spectrum;
     return DisplayTab::level;
 }
 

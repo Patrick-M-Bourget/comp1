@@ -17,11 +17,13 @@
 namespace comp1
 {
 
-// The Expanded View's two display tabs: the scrolling level and Gain Reduction graph, and the Transfer Curve.
+// The Expanded View's three display tabs: the scrolling level and Gain Reduction graph, the Transfer Curve, and the
+// Spectrum.
 enum class DisplayTab
 {
     level,
     transferCurve,
+    spectrum,
 };
 
 // The editor's views: the Compact View, and the Expanded View with the display and every section.
@@ -171,6 +173,16 @@ public:
     int readDetectionSourceSamples (float* destination, int maxSamples) { return engine.readDetectionSourceSamples (destination, maxSamples); }
     void skipDetectionSourceSamples() { engine.skipDetectionSourceSamples(); }
     int detectionSourceSampleCapacity() const { return engine.detectionSourceSampleCapacity(); }
+
+    // The Engine's input tap and output tap, for the Spectrum display, their one reader, from the message thread: the
+    // main input before any stage, and the Wet path directly after the compressor, each a mono sample per sample played
+    // since the last read, oldest first (Engine::readInputTapSamples, readOutputTapSamples and their skip and capacity).
+    int readInputTapSamples (float* destination, int maxSamples) { return engine.readInputTapSamples (destination, maxSamples); }
+    void skipInputTapSamples() { engine.skipInputTapSamples(); }
+    int inputTapSampleCapacity() const { return engine.inputTapSampleCapacity(); }
+    int readOutputTapSamples (float* destination, int maxSamples) { return engine.readOutputTapSamples (destination, maxSamples); }
+    void skipOutputTapSamples() { engine.skipOutputTapSamples(); }
+    int outputTapSampleCapacity() const { return engine.outputTapSampleCapacity(); }
 
     // The display tab the Expanded View shows: saved with the session, read back on restore (Level for a session saved
     // without it, or with a tab there no longer is), and in no Preset; not an undo step, and it makes no side Modified. Any thread.

@@ -1,8 +1,9 @@
 #pragma once
 
 // The taps comp1 adds to plugkit's Output Level: a run's levels (RunLevels), gathered on the audio thread; the level
-// history (LevelHistory), which carries a record of each run to one reader thread; and the detection source tap
-// (DetectionSourceTap), which carries the detection source's samples to one, both on one ring (TapRing).
+// history (LevelHistory), which carries a record of each run to one reader thread; the detection source tap
+// (DetectionSourceTap), which carries the detection source's samples to one; and the input and output taps (MeanTap),
+// which carry the mean of a block's channels to one; all on one ring (TapRing).
 
 #include "comp1/Engine.h"
 
@@ -185,5 +186,40 @@ using LevelHistory = TapRing<LevelRecord, plugkit::runSamples>;
 
 // The detection source tap: a sample per input sample.
 using DetectionSourceTap = TapRing<float, 1>;
+
+// A tap of one point on the audio path, the input or the output tap: a mono sample per input sample, the mean of the
+// channels there, on a TapRing.
+class MeanTap
+{
+public:
+    // Allocates: the ring as TapRing::prepare does, and room for the mean of a piece of up to maxPieceSamples.
+    void prepare (double sampleRate, int maxPieceSamples)
+    {
+        ring.prepare (sampleRate);
+        mean.assign (static_cast<std::size_t> (std::max (maxPieceSamples, 0)), 0.0f);
+    }
+
+    // From the audio thread: the mean of a piece's channels, at most the prepared samples; silence with no channels.
+    void push (ConstAudioBlock piece)
+    {
+        const float scale = piece.numChannels > 0 ? 1.0f / static_cast<float> (piece.numChannels) : 0.0f;
+        for (int i = 0; i < piece.numSamples; ++i)
+        {
+            float sum = 0.0f;
+            for (int ch = 0; ch < piece.numChannels; ++ch)
+                sum += piece.channels[ch][i];
+            mean[static_cast<std::size_t> (i)] = sum * scale;
+        }
+        ring.push (mean.data(), piece.numSamples);
+    }
+
+    int pop (float* destination, int maxSamples) { return ring.pop (destination, maxSamples); }
+    void skip() { ring.skip(); }
+    int capacity() const { return ring.capacity(); }
+
+private:
+    TapRing<float, 1> ring;
+    std::vector<float> mean;
+};
 
 } // namespace comp1
