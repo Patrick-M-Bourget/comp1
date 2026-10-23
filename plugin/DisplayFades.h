@@ -21,7 +21,7 @@ public:
         small,
     };
 
-    explicit DisplayFades (Size size = Size::full) : size (size) {}
+    explicit DisplayFades (Size fadeSize = Size::full) : size (fadeSize) {}
 
     // Paints the fades over graph, from the window's background behind it; nothing while it isn't in a window.
     void paint (juce::Graphics& g, const juce::Component& graph);
