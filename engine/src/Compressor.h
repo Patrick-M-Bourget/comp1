@@ -123,17 +123,12 @@ public:
         autoRelease = settings.autoRelease;
     }
 
-    // Auto Gain's estimate for the settings as they stand, in dB (comp1/AutoGain.h): from the mixed settings' Transfer Curve
-    // while Comp Follow's share is above 0 (all of it while following), and the stored settings' alone at 0, 0 dB with
-    // the stored Auto Gain off; and from the timing and the Character asked for, not the ones mid-glide, so a change of
-    // Character moves it at once while the voices crossfade. Off, its share of the estimate is Comp Follow's, so it
-    // glides in and out with the Comp Curve.
-    double autoGainDb() const
-    {
-        const double share = followShare();
-        const double estimate = autogain::estimateDb (mixed(), estimatedTiming);
-        return storedAutoGain ? estimate : share * estimate;
-    }
+    // Auto Gain's estimate for the settings as they stand, in dB (comp1/AutoGain.h), with the stored Auto Gain on, and
+    // 0 dB with it off, whatever Comp Follow (ADR 0004): from the mixed settings' Transfer Curve while Comp Follow's
+    // share is above 0 (all of it while following), so it glides with the Comp Curve, and the stored settings' alone
+    // at 0; and from the timing and the Character asked for, not the ones mid-glide, so a change of Character moves it
+    // at once while the voices crossfade.
+    double autoGainDb() const { return storedAutoGain ? autogain::estimateDb (mixed(), estimatedTiming) : 0.0; }
 
     // At the start of each run: Comp Follow's share moves on by a run, and the settings glide to the new mix; true when
     // it moved, so Auto Gain's estimate has too. Then the settings move on by a run, and the gain computer and detector

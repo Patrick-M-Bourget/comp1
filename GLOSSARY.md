@@ -79,7 +79,7 @@ The path from Comp to a Threshold and Ratio pair that each Style sets.
 _Avoid_: Curve (unqualified), Transfer Curve, macro curve
 
 **Comp Follow**:
-Whether Threshold and Ratio follow Comp. On, they come from the Comp Curve and Auto Gain is on; off, they are set directly.
+Whether Threshold and Ratio follow Comp. On, they come from the Comp Curve; off, they are set directly. Auto Gain is its own setting either way.
 _Avoid_: Linked, Link, Comp Link
 
 ## Gate, Saturation and Limiter
