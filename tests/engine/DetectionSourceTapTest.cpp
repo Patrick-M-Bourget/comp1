@@ -21,64 +21,13 @@ using namespace comp1;
 namespace
 {
 
-// The mean of audio's channels, sample for sample, worked out here: the mono signal the tap carries.
-std::vector<float> meanOf (const test::Channels& audio)
-{
-    std::vector<float> mean (audio.front().size());
-    for (std::size_t i = 0; i < mean.size(); ++i)
-    {
-        double sum = 0.0;
-        for (const auto& channel : audio)
-            sum += static_cast<double> (channel[i]);
-        mean[i] = static_cast<float> (sum / static_cast<double> (audio.size()));
-    }
-    return mean;
-}
-
-// Runs audio through engine in place, cut into blocks of the sizes given, in turn and repeating, with the samples of
-// sidechainSamples on the Sidechain when it isn't null, reading the detection source tap after each block, as the
-// editor reads it while the host plays; from change's sample on, with its settings, when there is one. Returns every
-// sample read.
-std::vector<float> playAndRead (Engine& engine,
-                                test::Channels audio,
-                                const std::vector<int>& blockSizes,
-                                const test::Channels* sidechainSamples = nullptr,
-                                const std::optional<test::SettingsChange>& change = std::nullopt)
-{
-    std::vector<float> all, samples (static_cast<std::size_t> (engine.detectionSourceSampleCapacity()));
-    const int numSamples = static_cast<int> (audio.front().size());
-    std::vector<float*> main (audio.size());
-    std::vector<const float*> sidechain (sidechainSamples != nullptr ? sidechainSamples->size() : 0);
-    for (int start = 0, block = 0; start < numSamples; ++block)
-    {
-        if (change && start == change->at)
-            engine.setSettings (change->settings);
-        int count = std::min (blockSizes[static_cast<std::size_t> (block) % blockSizes.size()], numSamples - start);
-        if (change && start < change->at)
-            count = std::min (count, change->at - start);
-        for (std::size_t ch = 0; ch < audio.size(); ++ch)
-            main[ch] = audio[ch].data() + start;
-        for (std::size_t ch = 0; ch < sidechain.size(); ++ch)
-            sidechain[ch] = (*sidechainSamples)[ch].data() + start;
-        const ConstAudioBlock sidechainBlock { sidechain.data(), static_cast<int> (sidechain.size()), count };
-        engine.process ({ main.data(), static_cast<int> (main.size()), count }, sidechainSamples != nullptr ? &sidechainBlock : nullptr);
-        start += count;
-        const int read = engine.readDetectionSourceSamples (samples.data(), static_cast<int> (samples.size()));
-        all.insert (all.end(), samples.begin(), samples.begin() + read);
-    }
-    return all;
-}
-
-// What the tap carries for audio through a fresh Engine at 48 kHz with settings, read as playAndRead() reads it.
+// What the tap carries for audio through a fresh Engine at 48 kHz with settings, read after each host block.
 std::vector<float> tapOf (const Settings& settings,
                           const test::Channels& audio,
                           const test::Channels* sidechainSamples = nullptr,
                           const std::vector<int>& blockSizes = { 512 })
 {
-    Engine engine;
-    engine.prepare (48000.0, 4096, static_cast<int> (audio.size()));
-    engine.setSettings (settings);
-    return playAndRead (engine, audio, blockSizes, sidechainSamples);
+    return test::tapOf (test::detectionSourceTap, settings, audio, sidechainSamples, blockSizes);
 }
 
 // signal delayed by samples, the start filled with silence and the end cut off.
@@ -104,12 +53,12 @@ TEST_CASE ("With Detection Source Internal the tap carries the mean of the main 
     CAPTURE (numChannels, highPassOn);
     const auto input = test::noise (numChannels, 4800, 7);
     const Settings settings = highPassOn ? withHighPassAt1kHz ({}) : Settings {};
-    CHECK (tapOf (settings, input) == meanOf (input));
+    CHECK (tapOf (settings, input) == test::meanOf (input));
 
     // In High Quality the detection stage takes the input as the Before section has delayed it.
     auto highQuality = settings;
     highQuality.processingMode = ProcessingMode::HighQuality;
-    CHECK (tapOf (highQuality, input) == delayed (meanOf (input), oversamplingSectionSamples));
+    CHECK (tapOf (highQuality, input) == delayed (test::meanOf (input), oversamplingSectionSamples));
 }
 
 TEST_CASE ("With Detection Source External the tap carries the mean of the Sidechain's channels, and silence with none")
@@ -120,11 +69,11 @@ TEST_CASE ("With Detection Source External the tap carries the mean of the Sidec
     const auto input = test::noise (numChannels, 4800, 3);
     const auto sidechain = test::noise (sidechainChannels, 4800, 11);
     Settings external = withHighPassAt1kHz ({ .detectionSource = DetectionSource::External });
-    CHECK (tapOf (external, input, &sidechain) == meanOf (sidechain));
+    CHECK (tapOf (external, input, &sidechain) == test::meanOf (sidechain));
 
     auto highQuality = external;
     highQuality.processingMode = ProcessingMode::HighQuality;
-    CHECK (tapOf (highQuality, input, &sidechain) == delayed (meanOf (sidechain), oversamplingSectionSamples));
+    CHECK (tapOf (highQuality, input, &sidechain) == delayed (test::meanOf (sidechain), oversamplingSectionSamples));
 
     // With no Sidechain connected, exact silence.
     const auto none = tapOf (external, input);
@@ -143,10 +92,10 @@ TEST_CASE ("The tap carries one sample per input sample in both Processing Modes
         engine.prepare (48000.0, 512, 2);
         engine.setSettings ({ .processingMode = from });
         // The switch at 0.1 s fades out and in again well inside the second that is played.
-        const auto read = playAndRead (engine, input, { 333 }, nullptr, test::SettingsChange { .at = 4800, .settings = { .processingMode = to } });
+        const auto read = test::playAndReadTap (engine, test::detectionSourceTap, input, { 333 }, nullptr, test::SettingsChange { .at = 4800, .settings = { .processingMode = to } });
         CHECK (read.size() == input.front().size());
         // Before the switch, the input as the detection stage takes it in the mode playing.
-        const auto mean = meanOf (input);
+        const auto mean = test::meanOf (input);
         const auto expected = from == ProcessingMode::HighQuality ? delayed (mean, oversamplingSectionSamples) : mean;
         CHECK (std::equal (read.begin(), read.begin() + 4800, expected.begin()));
     }
