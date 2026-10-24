@@ -17,7 +17,7 @@ namespace comp1
 // in that order; closed, focus inside it goes back to the readout.
 //
 // While open it follows the processor on the editor's tick. Its card holds the section, padded; the layout is
-// provisional (#94).
+// provisional.
 class OutputPopover final : public plugkit::ui::OutputPopoverFrame
 {
 public:

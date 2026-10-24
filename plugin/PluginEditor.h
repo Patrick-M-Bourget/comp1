@@ -26,7 +26,7 @@ namespace comp1
 // rows. The display takes whatever the window grows by, and the section rows its width; each section keeps its own
 // size, the Detection section's height following its slide open or closed (DetectionSection), the display taking up
 // what it gives. The meters are the Gate's, the compressor's and the Limiter's, left to right in signal order (their placement
-// is provisional, #94).
+// is provisional).
 //
 // The Compact View's body is CompactView, after the header in Tab's order.
 class PluginEditor final : public plugkit::ui::EditorShell
