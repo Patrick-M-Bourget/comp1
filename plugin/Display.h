@@ -11,6 +11,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
+#include <iterator>
+
 namespace comp1
 {
 
@@ -49,19 +52,26 @@ private:
     void tick (double seconds) override;
     // Shows tab as the chosen one, with its content.
     void show (DisplayTab tab);
-    staple::TextChip& chipOf (DisplayTab tab);
 
-    // The tabs, left to right.
-    static constexpr DisplayTab allTabs[] { DisplayTab::level, DisplayTab::transferCurve, DisplayTab::spectrum };
+    // A display tab's row in tabs: its chip, labelled with the tab's name, and what the tab shows.
+    struct Tab
+    {
+        staple::TextChip chip;
+        juce::Component& content;
+    };
 
-    staple::TextChip levelChip { "Level", staple::TextChip::Look::plain }, transferCurveChip { "Transfer Curve", staple::TextChip::Look::plain },
-        spectrumChip { "Spectrum", staple::TextChip::Look::plain };
     PluginProcessor& processor;
     LevelGraph level;
     DisplayTab shown = DisplayTab::level;
     TransferCurveGraph transferCurve;
     TransferCurveInset inset;
     SpectrumDisplay spectrum;
+    // The tabs, left to right: a row for each of displayTabs, in its order.
+    std::array<Tab, std::size (displayTabs)> tabs { {
+        { staple::TextChip { "Level", staple::TextChip::Look::plain }, level },
+        { staple::TextChip { "Transfer Curve", staple::TextChip::Look::plain }, transferCurve },
+        { staple::TextChip { "Spectrum", staple::TextChip::Look::plain }, spectrum },
+    } };
 };
 
 } // namespace comp1

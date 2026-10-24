@@ -10,9 +10,10 @@ Display::Display (PluginProcessor& p, LevelHistory& history)
     setName ("Display");
     level.setName ("Level");
     int order = 0;
-    for (const auto tab : allTabs)
+    for (const auto& row : displayTabs)
     {
-        auto& chip = chipOf (tab);
+        const auto tab = row.tab;
+        auto& [chip, content] = tabs[rowOf (tab)];
         chip.setTitle (chip.getButtonText());
         chip.setTooltip ("Show the " + chip.getButtonText() + " display");
         chip.onClick = [this, tab] {
@@ -22,7 +23,7 @@ Display::Display (PluginProcessor& p, LevelHistory& history)
         // Left to right.
         chip.setExplicitFocusOrder (++order);
         addAndMakeVisible (chip);
-        addChildComponent (tabContent (tab));
+        addChildComponent (content);
     }
     // After the tabs.
     inset.setExplicitFocusOrder (++order);
@@ -32,24 +33,7 @@ Display::Display (PluginProcessor& p, LevelHistory& history)
 
 juce::Component& Display::tabContent (DisplayTab tab)
 {
-    switch (tab)
-    {
-        case DisplayTab::level: return level;
-        case DisplayTab::transferCurve: return transferCurve;
-        case DisplayTab::spectrum: return spectrum;
-    }
-    return level;
-}
-
-staple::TextChip& Display::chipOf (DisplayTab tab)
-{
-    switch (tab)
-    {
-        case DisplayTab::level: return levelChip;
-        case DisplayTab::transferCurve: return transferCurveChip;
-        case DisplayTab::spectrum: return spectrumChip;
-    }
-    return levelChip;
+    return tabs[rowOf (tab)].content;
 }
 
 void Display::tick (double)
@@ -61,10 +45,11 @@ void Display::tick (double)
 void Display::show (DisplayTab tab)
 {
     shown = tab;
-    for (const auto each : allTabs)
+    for (const auto& row : displayTabs)
     {
-        chipOf (each).setToggleState (each == tab, juce::dontSendNotification);
-        tabContent (each).setVisible (each == tab);
+        auto& [chip, content] = tabs[rowOf (row.tab)];
+        chip.setToggleState (row.tab == tab, juce::dontSendNotification);
+        content.setVisible (row.tab == tab);
     }
     inset.setVisible (tab == DisplayTab::level);
 }
@@ -72,14 +57,13 @@ void Display::show (DisplayTab tab)
 void Display::resized()
 {
     auto area = getLocalBounds();
-    auto tabs = area.removeFromTop (tabHeight);
+    auto chips = area.removeFromTop (tabHeight);
     area.removeFromTop (contentGap);
-    for (const auto tab : allTabs)
+    for (auto& [chip, content] : tabs)
     {
-        auto& chip = chipOf (tab);
-        chip.setBounds (tabs.removeFromLeft (chip.getIdealWidth()));
-        tabs.removeFromLeft (tabGap);
-        tabContent (tab).setBounds (area);
+        chip.setBounds (chips.removeFromLeft (chip.getIdealWidth()));
+        chips.removeFromLeft (tabGap);
+        content.setBounds (area);
     }
     inset.setTopLeftPosition (level.getPosition().translated (insetGap, insetGap));
 }
