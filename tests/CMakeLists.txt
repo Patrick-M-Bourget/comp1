@@ -101,6 +101,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/DisplayTabTest.cpp
         plugin/DryWetParameterTest.cpp
         plugin/EditorControlsTest.cpp
+        plugin/EditorCpuTest.cpp
         plugin/EditorLayoutTest.cpp
         plugin/EditorMetersTest.cpp
         plugin/EditorScreensTest.cpp
