@@ -1,5 +1,5 @@
 // The Expanded View's controls: one for each host parameter, what a screen reader and the tooltips read, Tab's order and
-// the keys; and the Compact View's: its three host parameters' controls, the footer's and the output popover's, the
+// the keys; and the Compact View's: its own host parameters' controls, the footer's and the output popover's, the
 // names a screen reader reads and Tab's order.
 
 #include "EditorHost.h"
@@ -610,14 +610,16 @@ void showCompactView (host::EditorHost& host)
     }));
 }
 
-// The host parameters with a control in the Compact View: its own three, the footer's, then the output popover's.
-const std::set<juce::String> compactParameters { "Gate",         "Gate Threshold", "Comp",      "Global Bypass", "Style",  "Processing Mode",
-                                                 "Oversampling", "Output Gain",    "Auto Gain", "Limiter",       "Ceiling", "Dry",
-                                                 "Wet" };
+// The host parameters with a control in the Compact View in Clean, the default Style: its Compact Slots' four and Comp,
+// the footer's, then the output popover's.
+const std::set<juce::String> compactParameters { "Attack",        "Knee",          "Release",     "Auto Release",
+                                                 "Comp",          "Global Bypass", "Style",       "Processing Mode",
+                                                 "Oversampling",  "Output Gain",   "Auto Gain",   "Limiter",
+                                                 "Ceiling",       "Dry",           "Wet" };
 
 } // namespace
 
-TEST_CASE ("In the Compact View, Gate, Gate Threshold, Comp, the footer's four and the output popover's six each have exactly one showing control, titled with its name, that changes it by mouse and by keys; no other host parameter has one")
+TEST_CASE ("In the Compact View in Clean, its Compact Slots' four, Comp, the footer's four and the output popover's six each have exactly one showing control, titled with its name, that changes it by mouse and by keys; no other host parameter has one")
 {
     host::EditorHost host;
     showCompactView (host);
@@ -695,7 +697,9 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
     }
     // Every name, in order; the same on mono, as the Compact View has no Clip Light.
     const std::vector<juce::String> expected { "A/B Compare",
+                                               "Attack",
                                                "Auto Gain",
+                                               "Auto Release",
                                                "Ceiling",
                                                "Close Preset browser",
                                                "Comp",
@@ -703,9 +707,8 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
                                                "Dry",
                                                "Factory",
                                                "Gain Reduction",
-                                               "Gate",
-                                               "Gate Threshold",
                                                "Global Bypass",
+                                               "Knee",
                                                "Limiter",
                                                juce::String (juce::CharPointer_UTF8 ("Load Preset File" "\xe2\x80\xa6")),
                                                "Next Preset",
@@ -716,6 +719,7 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
                                                "Previous Preset",
                                                "Processing Mode",
                                                "Redo",
+                                               "Release",
                                                juce::String (juce::CharPointer_UTF8 ("Save as" "\xe2\x80\xa6")),
                                                "Search Presets",
                                                "Show User Presets Folder",
@@ -728,7 +732,7 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
     CHECK (listed == expected);
 }
 
-TEST_CASE ("Tab walks the Compact View: the header, Gate, Gate Threshold, Comp and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
+TEST_CASE ("Tab walks the Compact View: the header, the Compact Slots and Comp, and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
 {
     host::EditorHost host;
     showCompactView (host);
@@ -759,9 +763,10 @@ TEST_CASE ("Tab walks the Compact View: the header, Gate, Gate Threshold, Comp a
         CHECK (std::count (walked.begin(), walked.end(), control) == 1);
     }
     CHECK_FALSE (titles.contains ("Gain Reduction"));
-    // In order: the header's first, then these, the body's three one after another.
-    const juce::StringArray order { "Presets",         "Gate",         "Gate Threshold", "Comp",     "Global Bypass", "Style",
-                                    "Processing Mode", "Oversampling", "Output",         "UI Scale", "Switch to the Expanded View" };
+    // In order: the header's first, then these, the body's five (Clean's) one after another.
+    const juce::StringArray order { "Presets", "Attack",        "Knee",  "Comp",            "Release",      "Auto Release",
+                                    "Global Bypass", "Style", "Processing Mode", "Oversampling", "Output", "UI Scale",
+                                    "Switch to the Expanded View" };
     int last = -1;
     for (const auto& title : order)
     {
@@ -770,8 +775,8 @@ TEST_CASE ("Tab walks the Compact View: the header, Gate, Gate Threshold, Comp a
         CHECK (at > last);
         last = std::max (last, at);
     }
-    const int gate = titles.indexOf ("Gate");
-    CHECK (titles.indexOf ("Global Bypass") == gate + 3);
+    const int attack = titles.indexOf ("Attack");
+    CHECK (titles.indexOf ("Global Bypass") == attack + 5);
 
     // Shift+Tab, backwards.
     std::vector<juce::Component*> back;

@@ -12,6 +12,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <cmath>
+#include <optional>
 #include <vector>
 
 namespace
@@ -405,7 +406,7 @@ TEST_CASE ("Switching to the Compact View lets go of Detection Audition")
     audition.mouseUp (harness::mouseEvent (audition, centre, {}, centre));
 }
 
-TEST_CASE ("Tab walks the Compact View: the header, then Gate, Gate Threshold, Comp, Global Bypass, Style, Processing Mode, Oversampling, the Output readout, UI Scale and the switch, reaching nothing of the Expanded View")
+TEST_CASE ("Tab walks the Compact View: the header, then Clean's Compact Slots and Comp, Global Bypass, Style, Processing Mode, Oversampling, the Output readout, UI Scale and the switch, reaching nothing of the Expanded View")
 {
     host::EditorHost host;
     // High Quality, so Oversampling is enabled.
@@ -441,11 +442,11 @@ TEST_CASE ("Tab walks the Compact View: the header, then Gate, Gate Threshold, C
     for (auto i = inHeader; i < walked.size(); ++i)
         rest.add (walked[i]->getTitle());
     CHECK (rest
-           == juce::StringArray { "Gate",   "Gate Threshold", "Comp",     "Global Bypass", "Style", "Processing Mode", "Oversampling",
-                                  "Output", "UI Scale",       "Switch to the Expanded View" });
+           == juce::StringArray { "Attack",       "Knee",   "Comp",     "Release",     "Auto Release", "Global Bypass", "Style", "Processing Mode",
+                                  "Oversampling", "Output", "UI Scale", "Switch to the Expanded View" });
 }
 
-TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and maximum sizes, the header, the body and the footer don't overlap, nothing in the header or the footer at its widest is clipped, the body's sections and meter are inside it with each control inside its section, and the Preset browser opens inside the window with nothing in it clipped")
+TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and maximum sizes, the header, the body and the footer don't overlap, nothing in the header or the footer at its widest is clipped, in every Style the body's Compact Slots, Comp and meter are inside it with each control inside its part, in the same rectangles for every Style, and the Preset browser opens inside the window with nothing in it clipped")
 {
     host::EditorHost host;
     // The footer at its widest: the Output readout with the parallel mark, two digits and the Auto Gain dot.
@@ -495,52 +496,70 @@ TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and max
         if (group->isVisible())
             CHECK_FALSE (header.wordmarkArea().intersects (group->getBounds()));
     CHECK (host.outputReadout().getWidth() >= host.outputReadout().getIdealWidth());
-    // The body's sections and its meter inside it, none overlapping another, each section's controls inside it; the
-    // meter as tall as the body.
+    // In every Style: the body's Compact Slots, Comp's section and its meter inside it, none overlapping another, each
+    // one's controls inside it; the meter as tall as the body. Every Style's rectangles are the same: the parts', the
+    // slots' primaries' and Comp's (ADR 0011).
     auto& body = editor.compactView();
-    std::vector<juce::Rectangle<int>> placed;
-    for (auto* part : body.getChildren())
-    {
-        CAPTURE (part->getName());
-        REQUIRE (part->isVisible());
-        CHECK (body.getLocalBounds().contains (part->getBounds()));
-        CHECK_FALSE (part->getBounds().isEmpty());
-        for (const auto& other : placed)
-            CHECK_FALSE (other.intersects (part->getBounds()));
-        placed.push_back (part->getBounds());
-        // Each control's own area: a knob's face (its shadow may reach past it), anything else its bounds.
-        for (auto* control : part->getChildren())
-        {
-            if (! control->isVisible())
-                continue;
-            CAPTURE (control->getTitle());
-            auto area = control->getBounds();
-            if (auto* knob = dynamic_cast<staple::Knob*> (control))
-            {
-                const auto face = knob->getFaceCentre().toInt() + knob->getPosition();
-                const int radius = juce::roundToInt (knob->getFaceRadius());
-                area = juce::Rectangle<int> (2 * radius, 2 * radius).withCentre (face);
-            }
-            CHECK (part->getLocalBounds().contains (area));
-        }
-    }
-    // Gate, Comp and the meter.
-    CHECK (placed.size() == 3);
-    CHECK (body.gainReductionMeter().getHeight() == body.getHeight());
-    // One row filling the body: Gate at its left, the meter at its right, Comp centred between them, the sections
-    // centred down it.
-    auto* gate = harness::findChild<juce::Component> (body, [] (juce::Component& c) { return c.getName() == "Gate"; });
     auto* compressor = harness::findChild<juce::Component> (body, [] (juce::Component& c) { return c.getName() == "Compressor"; });
-    REQUIRE (gate != nullptr);
     REQUIRE (compressor != nullptr);
-    const auto meter = body.gainReductionMeter().getBounds();
-    CHECK (gate->getX() == 0);
-    CHECK (meter.getRight() == body.getWidth());
-    CHECK (std::abs (compressor->getBounds().getCentreX() - (gate->getRight() + meter.getX()) / 2) <= 1);
-    for (auto* section : { gate, compressor })
+    auto& slotA = body.compactSlot (0);
+    auto& slotB = body.compactSlot (1);
+    auto& comp = host.showing<staple::Knob> ("Comp");
+    std::optional<std::vector<juce::Rectangle<int>>> firstStyles;
+    for (const auto style : comp1::PluginProcessor::offeredStyles())
     {
-        CAPTURE (section->getName());
-        CHECK (std::abs (section->getBounds().getCentreY() - body.getHeight() / 2) <= 1);
+        CAPTURE (static_cast<int> (style));
+        REQUIRE (host.processor.chooseStyle (style));
+        host.settle();
+        std::vector<juce::Rectangle<int>> placed;
+        for (auto* part : body.getChildren())
+        {
+            CAPTURE (part->getName());
+            REQUIRE (part->isVisible());
+            CHECK (body.getLocalBounds().contains (part->getBounds()));
+            CHECK_FALSE (part->getBounds().isEmpty());
+            for (const auto& other : placed)
+                CHECK_FALSE (other.intersects (part->getBounds()));
+            placed.push_back (part->getBounds());
+            // Each control's own area: a knob's face (its shadow may reach past it), anything else its bounds.
+            for (auto* control : part->getChildren())
+            {
+                if (! control->isVisible())
+                    continue;
+                CAPTURE (control->getTitle());
+                auto area = control->getBounds();
+                if (auto* knob = dynamic_cast<staple::Knob*> (control))
+                {
+                    const auto face = knob->getFaceCentre().toInt() + knob->getPosition();
+                    const int radius = juce::roundToInt (knob->getFaceRadius());
+                    area = juce::Rectangle<int> (2 * radius, 2 * radius).withCentre (face);
+                }
+                CHECK (part->getLocalBounds().contains (area));
+            }
+        }
+        // Slot A, Comp, slot B and the meter.
+        CHECK (placed.size() == 4);
+        CHECK (body.gainReductionMeter().getHeight() == body.getHeight());
+        // One row filling the body, left to right: slot A, Comp, slot B, then the meter at its right; the slots and
+        // Comp centred down it.
+        const auto meter = body.gainReductionMeter().getBounds();
+        CHECK (meter.getRight() == body.getWidth());
+        CHECK (slotA.getRight() < compressor->getX());
+        CHECK (compressor->getRight() < slotB.getX());
+        CHECK (slotB.getRight() < meter.getX());
+        for (juce::Component* part : { static_cast<juce::Component*> (&slotA), compressor, static_cast<juce::Component*> (&slotB) })
+        {
+            CAPTURE (part->getName());
+            CHECK (std::abs (part->getBounds().getCentreY() - body.getHeight() / 2) <= 1);
+        }
+        placed.push_back (in (body));
+        placed.push_back (slotA.primary().getBounds());
+        placed.push_back (slotB.primary().getBounds());
+        placed.push_back (comp.getBounds());
+        if (firstStyles)
+            CHECK (placed == *firstStyles);
+        else
+            firstStyles = placed;
     }
 
     // The Preset browser opens over everything, its panel whole inside its margin.
