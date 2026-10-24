@@ -16,8 +16,8 @@
 namespace comp1
 {
 
-// The Transfer Curve Graph, the Expanded View's Transfer Curve tab: the Transfer Curve the Engine plays, as output
-// level over input level, with the Detection Level as a dot moving along it.
+// The Transfer Curve Graph, which the Transfer Curve inset (TransferCurveInset) draws: the Transfer Curve the Engine
+// plays, as output level over input level, with the Detection Level as a dot moving along it.
 //
 // Both axes run from scaleDb (-60 dB, the bottom of Threshold's range) to 0 dB: input (the Detection Level) left to
 // right, output bottom to top. The curve is output = input less the Transfer Curve's Gain Reduction there
@@ -36,29 +36,17 @@ namespace comp1
 // Under Global Bypass the curve and the dot, which show the compressor's work, dim to a share of their alphas
 // (GlobalBypassFade), gliding on the tick, so they read as not applied; the grid and labels stay.
 //
-// Drawn with stock Staple tokens on plugkit-ui's grid layer: a line every 10 dB on both axes, the 0 dB ones the zero
-// lines, with dB labels; the curve a curve-main line and the dot filled in anSc; the edges dissolve into the window's
-// background over the design system's display fades. A screen reader finds it as a read-only image titled "Transfer
-// Curve Graph", read with the settings it draws and the Detection Level: Threshold and Ratio as their knobs read them
-// (controls::spokenValue), Knee unsigned, a width, to one decimal ("Threshold −18.00 dB, Ratio 4:1, Knee 6.0 dB,
-// Detection Level −20.0 dB"); it is no stop for Tab and takes no mouse input. Named "Transfer Curve", as its tab,
-// which a test finds it by.
-//
-// The Transfer Curve inset (TransferCurveInset) draws one in its inset look: the same curve, dot and following, the grid
-// and labels thinned to every 20 dB to fit, and no fades, as it sits on a slab of its own (provisional, #94).
+// Drawn with stock Staple tokens on plugkit-ui's grid layer, thinned to fit the inset: a line every 20 dB on both axes,
+// the 0 dB ones the zero lines, with dB labels; the curve a curve-main line and the dot filled in anSc. It paints no
+// background and no fades, as it sits on the inset's slab (provisional, #94). It is no stop for Tab and takes no mouse
+// input: the inset, which hides it from the screen reader, is the control, and reads settingsText(). Named "Transfer
+// Curve".
 class TransferCurveGraph final : public juce::Component, private plugkit::ui::EditorTick::Client
 {
 public:
-    // The Transfer Curve tab's, or the Transfer Curve inset's.
-    enum class Look
-    {
-        tab,
-        inset
-    };
+    TransferCurveGraph (PluginProcessor& processor, LevelHistory& history);
 
-    TransferCurveGraph (PluginProcessor& processor, LevelHistory& history, Look look = Look::tab);
-
-    static constexpr double scaleDb = 60.0, gridStepDb = 10.0, insetGridStepDb = 20.0;
+    static constexpr double scaleDb = 60.0, gridStepDb = 20.0;
 
     // The Transfer Curve's settings it draws from.
     const clean::Curve& curve() const { return drawn; }
@@ -76,9 +64,8 @@ public:
     // The curve's and the dot's alpha: 1, dimmed as the fade goes to 1.
     float curveAlpha() const { return bypassFade.dim (1.0f); }
 
-    // The text a screen reader reads as its value: settingsText(), then the Detection Level.
-    juce::String valueText() const;
-    // The settings it draws, as a screen reader reads them: "Threshold −18.00 dB, Ratio 4:1, Knee 6.0 dB".
+    // The settings it draws, as a screen reader reads them: Threshold and Ratio as their knobs read them
+    // (controls::spokenValue), Knee unsigned, a width, to one decimal: "Threshold −18.00 dB, Ratio 4:1, Knee 6.0 dB".
     juce::String settingsText() const;
 
     void paint (juce::Graphics& g) override;
@@ -86,16 +73,13 @@ public:
 private:
     void tick (double seconds) override;
     bool isActive() const override { return shown > -scaleDb || bypassFade.isMoving(); }
-    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
     PluginProcessor& processor;
-    const Look look;
     clean::Curve drawn;
     ShownLevel level; // the Detection Level, on the graph's scale
     double shown = -scaleDb;
     GlobalBypassFade bypassFade;
     plugkit::ui::display::CachedLabels labels;
-    DisplayFades fades;
 };
 
 } // namespace comp1

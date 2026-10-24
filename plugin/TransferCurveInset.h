@@ -28,8 +28,8 @@ enum class InsetHandle
 // Transfer Curve and the Detection Level moving along it show beside the levels and Gain Reduction, and a control
 // that moves Threshold and Ratio there.
 //
-// - **Drawing:** a TransferCurveGraph in its inset look, so the same curve, dot and following as the Transfer Curve
-//   tab's, on a raised slab with stock Staple tokens (provisional, #94). side px square at 100% UI Scale.
+// - **Drawing:** a TransferCurveGraph, the curve, the dot and their following, on a raised slab with stock Staple
+//   tokens (provisional, #94). side px square at 100% UI Scale.
 // - **Handles:** the Threshold handle sits on the curve at the knee (input = Threshold), the Ratio handle at the curve's
 //   right end (input 0 dB), both where the Transfer Curve the Engine plays puts them (PluginProcessor::playedCurve),
 //   laid out again on the editor's tick and at once after an edit, so they follow Threshold, Ratio and Knee from any

@@ -75,7 +75,7 @@ private:
 TransferCurveInset::TransferCurveInset (PluginProcessor& p, LevelHistory& history)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),
       threshold (parameters::parameterOf (p.parameterState(), parameters::thresholdId)),
-      ratio (parameters::parameterOf (p.parameterState(), parameters::ratioId)), curve (p, history, TransferCurveGraph::Look::inset),
+      ratio (parameters::parameterOf (p.parameterState(), parameters::ratioId)), curve (p, history),
       bypassFade (p.parameterState())
 {
     setName ("Transfer Curve inset");
