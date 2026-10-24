@@ -23,6 +23,13 @@ struct ConstAudioBlock
     int numSamples = 0;
 };
 
+// One of the Engine's two sample taps, which the Spectrum display reads: the input tap or the output tap.
+enum class Tap
+{
+    input,
+    output
+};
+
 // The levels of one completed run of the Engine's 16-sample grid, each in dB, the floor (plugkit::levelFloorDb) for
 // silence. The level history holds one per run. Each level is the run's as its stage meets it: in High Quality, the
 // Input Level is of the input as it arrives, and the others are of audio the stages before them have delayed. There
@@ -134,12 +141,9 @@ public:
     // compressor's output is. With no Gain Reduction, the Gate open and Saturation Before not heard, it is the input
     // tap delayed so, bit for bit in Zero Latency. A Processing Mode switch's fade adds none to either tap, as only one
     // path plays at a time.
-    int readInputTapSamples (float* destination, int maxSamples);
-    void skipInputTapSamples();
-    int inputTapSampleCapacity() const;
-    int readOutputTapSamples (float* destination, int maxSamples);
-    void skipOutputTapSamples();
-    int outputTapSampleCapacity() const;
+    int read (Tap tap, float* destination, int maxSamples);
+    void skip (Tap tap);
+    int capacity (Tap tap) const;
 
 private:
     struct Impl;
