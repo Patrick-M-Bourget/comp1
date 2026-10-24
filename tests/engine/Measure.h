@@ -3,6 +3,8 @@
 #include "comp1/Engine.h"
 #include "comp1/Style.h"
 
+#include <plugkit/RunGrid.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -328,6 +330,21 @@ inline std::vector<double> gainReductionDb (const std::vector<float>& input, con
     for (std::size_t i = 0; i < input.size(); ++i)
         reduction.push_back (-20.0 * std::log10 (static_cast<double> (output[i]) / static_cast<double> (input[i])));
     return reduction;
+}
+
+// The Gain Reduction a level history record holds for each whole run of plugkit::runSamples in reduction (per sample,
+// gainReductionDb), from the first: the run's most, and 0 where it is less, as a record's Gain Reductions are 0 or more.
+// A part-run at the end is left out, as the Engine records only completed runs.
+inline std::vector<double> gainReductionPerRun (const std::vector<double>& reduction)
+{
+    constexpr auto runLength = static_cast<std::size_t> (plugkit::runSamples);
+    std::vector<double> perRun;
+    for (std::size_t start = 0; start + runLength <= reduction.size(); start += runLength)
+    {
+        const auto run = reduction.begin() + static_cast<std::ptrdiff_t> (start);
+        perRun.push_back (std::max (*std::max_element (run, run + static_cast<std::ptrdiff_t> (runLength)), 0.0));
+    }
+    return perRun;
 }
 
 // The fractions of a move the timing tests read, as dyn-lab does: one time constant (1 - 1/e), and ln 10 of them.

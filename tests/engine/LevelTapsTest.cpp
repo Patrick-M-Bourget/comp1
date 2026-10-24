@@ -312,15 +312,13 @@ TEST_CASE ("On a step the Gain Reduction records follow the Engine's own step re
     engine.setSettings ({});
     const auto records = test::playAndReadLevels (engine, audio, { 512 });
 
-    const auto heard = test::gainReductionDb (input, audio.front());
-    REQUIRE (records.size() == heard.size() / 16);
+    const auto heard = test::gainReductionPerRun (test::gainReductionDb (input, audio.front()));
+    REQUIRE (records.size() == heard.size());
     for (std::size_t r = 0; r < records.size(); ++r)
     {
         CAPTURE (r);
-        const auto run = heard.begin() + static_cast<std::ptrdiff_t> (r * 16);
-        const double most = *std::max_element (run, run + 16);
         // The output is float: a Gain Reduction read off it carries up to about 1e-6 dB of rounding.
-        REQUIRE_THAT (records[r].gainReductionDb, WithinAbs (std::max (most, 0.0), 1.0e-5));
+        REQUIRE_THAT (records[r].gainReductionDb, WithinAbs (heard[r], 1.0e-5));
     }
 }
 
@@ -512,17 +510,15 @@ TEST_CASE ("Across a Gate step and an on/off glide the Gate's Gain Reduction rec
         std::copy (piece.front().begin(), piece.front().end(), audio.front().begin() + start);
     }
 
-    const auto heard = test::gainReductionDb (input, audio.front());
-    REQUIRE (records.size() == heard.size() / 16);
+    const auto heard = test::gainReductionPerRun (test::gainReductionDb (input, audio.front()));
+    REQUIRE (records.size() == heard.size());
     bool closed = false, glided = false;
     for (std::size_t r = 0; r < records.size(); ++r)
     {
         CAPTURE (r);
-        const auto run = heard.begin() + static_cast<std::ptrdiff_t> (r * 16);
-        const double most = std::max (*std::max_element (run, run + 16), 0.0);
-        REQUIRE_THAT (records[r].gateGainReductionDb, WithinAbs (most, 0.01));
-        closed = closed || most > 19.5;
-        glided = glided || (r * 16 > 3 * length && most > 1.0 && most < 19.0);
+        REQUIRE_THAT (records[r].gateGainReductionDb, WithinAbs (heard[r], 0.01));
+        closed = closed || heard[r] > 19.5;
+        glided = glided || (r * plugkit::runSamples > 3 * length && heard[r] > 1.0 && heard[r] < 19.0);
     }
     CHECK (closed);
     CHECK (glided);
@@ -558,13 +554,12 @@ TEST_CASE ("At Gate Position Post the Gate's Gain Reduction records follow the G
     const auto post = recordsAt (settings, gatedAudio);
     auto ungated = settings;
     ungated.gate.on = false;
-    const auto heard = test::gainReductionDb (test::played (ungated, sampleRate, { input }).front(), gatedAudio.front());
-    REQUIRE (post.size() == heard.size() / 16);
+    const auto heard = test::gainReductionPerRun (test::gainReductionDb (test::played (ungated, sampleRate, { input }).front(), gatedAudio.front()));
+    REQUIRE (post.size() == heard.size());
     for (std::size_t r = 0; r < post.size(); ++r)
     {
         CAPTURE (r);
-        const auto run = heard.begin() + static_cast<std::ptrdiff_t> (r * 16);
-        REQUIRE_THAT (post[r].gateGainReductionDb, WithinAbs (std::max (*std::max_element (run, run + 16), 0.0), 0.01));
+        REQUIRE_THAT (post[r].gateGainReductionDb, WithinAbs (heard[r], 0.01));
     }
 
     // The step's first runs, before the compressor has caught up, find the Gate at Post open; its last, where the Gate

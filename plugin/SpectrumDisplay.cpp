@@ -128,8 +128,8 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     display::paintGrid (g, lines, { shape.width, shape.height });
 
     const float shading = gainReductionAlpha();
-    g.setGradientFill (juce::ColourGradient::vertical (colour::dynRange.withAlpha (shading), 0.0f, colour::dynRangeInner.withAlpha (shading), height));
-    g.fillPath (gainReductionArea());
+    const auto origin = DisplayFades::originInWindow (*this);
+    reductionFill.fill (g, gainReductionArea(), colour::dynRange.withAlpha (shading), colour::dynRangeInner.withAlpha (shading), height, origin);
     // The input's line at full strength, in plugkit-ui's Analyzer's pre line colour, then the output's fill and line
     // over it through a layer at the output's alpha: the output's line on top where the two meet, as paintAnalyzer
     // draws its post line over its pre line.
@@ -147,7 +147,7 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     auto shown = display::frequencyLabels (shape);
     const auto scale = display::analyzerScaleLabels (shape, analyzer);
     shown.insert (shown.end(), scale.begin(), scale.end());
-    labels.paint (g, DisplayFades::originInWindow (*this), shown);
+    labels.paint (g, origin, shown);
 }
 
 std::unique_ptr<juce::AccessibilityHandler> SpectrumDisplay::createAccessibilityHandler()
