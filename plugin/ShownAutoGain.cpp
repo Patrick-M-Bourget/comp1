@@ -11,7 +11,7 @@ namespace comp1
 
 std::optional<juce::String> shownAutoGain (PluginProcessor& processor)
 {
-    if (processor.parameterState().getRawParameterValue (parameters::globalBypassId)->load (std::memory_order_relaxed) >= 0.5f)
+    if (parameters::inGlobalBypass (processor.parameterState()))
         return std::nullopt;
     const double db = processor.appliedAutoGainDb();
     // Tenths of a dB, as signedDb writes it to one decimal.

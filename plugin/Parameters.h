@@ -69,6 +69,13 @@ juce::RangedAudioParameter& parameterOf (juce::AudioProcessorValueTreeState& par
 // Whether the Processing Mode is High Quality, read from any thread.
 bool inHighQuality (juce::AudioProcessorValueTreeState& parameters);
 
+// Whether an on/off host parameter, from its raw value, is on (or a two-way choice is at its second), read from any
+// thread: the one rule every reader of a switch uses.
+inline bool isOn (const std::atomic<float>& value) { return value.load (std::memory_order_relaxed) >= 0.5f; }
+
+// Whether Global Bypass is on, read from any thread.
+bool inGlobalBypass (juce::AudioProcessorValueTreeState& parameters);
+
 // The host parameters as Settings, each resolved once. Reads from any thread, with no allocation or lock.
 class SettingsReader
 {

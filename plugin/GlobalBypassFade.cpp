@@ -12,7 +12,7 @@ GlobalBypassFade::GlobalBypassFade (juce::AudioProcessorValueTreeState& paramete
     fade = isOn() ? 1.0f : 0.0f;
 }
 
-bool GlobalBypassFade::isOn() const { return globalBypass.load (std::memory_order_relaxed) >= 0.5f; }
+bool GlobalBypassFade::isOn() const { return parameters::isOn (globalBypass); }
 
 float GlobalBypassFade::after (float from, bool on, double seconds)
 {
