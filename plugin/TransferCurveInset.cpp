@@ -75,7 +75,8 @@ private:
 TransferCurveInset::TransferCurveInset (PluginProcessor& p, LevelHistory& history)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),
       threshold (parameters::parameterOf (p.parameterState(), parameters::thresholdId)),
-      ratio (parameters::parameterOf (p.parameterState(), parameters::ratioId)), curve (p, history, TransferCurveGraph::Look::inset)
+      ratio (parameters::parameterOf (p.parameterState(), parameters::ratioId)), curve (p, history, TransferCurveGraph::Look::inset),
+      bypassFade (p.parameterState())
 {
     setName ("Transfer Curve inset");
     setTitle ("Transfer Curve inset");
@@ -114,7 +115,8 @@ handles::Look TransferCurveInset::lookOf (InsetHandle which) const
 {
     return { .radius = handleRadius,
              .selected = drag.has_value() && drag->handle == which,
-             .hovered = handleComponents[static_cast<std::size_t> (which)]->hovered };
+             .hovered = handleComponents[static_cast<std::size_t> (which)]->hovered,
+             .alpha = bypassFade.dim (1.0f) };
 }
 
 std::optional<TransferCurveInset::Readout> TransferCurveInset::readout() const
@@ -271,10 +273,13 @@ void TransferCurveInset::endHeldKey()
         endEdit();
 }
 
-void TransferCurveInset::tick (double)
+void TransferCurveInset::tick (double seconds)
 {
     // Follows the played curve, whatever moved it.
     layOutHandles();
+    if (bypassFade.step (seconds))
+        for (auto& h : handleComponents)
+            h->repaint();
     // Tells a screen reader the value changed, when it did.
     const auto now = valueText();
     if (now == announced)

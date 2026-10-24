@@ -39,6 +39,7 @@ target_sources(comp1 PRIVATE
     DisplayFades.cpp
     Footer.cpp
     GainReductionMeter.cpp
+    GlobalBypassFade.cpp
     HandlePainting.cpp
     LevelGraph.cpp
     LevelHistory.cpp

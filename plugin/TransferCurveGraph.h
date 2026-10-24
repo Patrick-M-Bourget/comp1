@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DisplayFades.h"
+#include "GlobalBypassFade.h"
 #include "LevelHistory.h"
 #include "Parameters.h"
 #include "PluginProcessor.h"
@@ -29,7 +30,11 @@ namespace comp1
 // the editor's level history for its whole life, shown or not.
 //
 // It follows the processor on the editor's tick, so a Style, an edit, Host Automation, undo, an A/B switch and a
-// restored session all show, and repaints only when the curve's settings change or the dot moves.
+// restored session all show, and repaints only when the curve's settings change, the dot moves or the Global Bypass
+// fade moves.
+//
+// Under Global Bypass the curve and the dot, which show the compressor's work, dim to a share of their alphas
+// (GlobalBypassFade), gliding on the tick, so they read as not applied; the grid and labels stay.
 //
 // Drawn with stock Staple tokens on plugkit-ui's grid layer: a line every 10 dB on both axes, the 0 dB ones the zero
 // lines, with dB labels; the curve a curve-main line and the dot filled in anSc; the edges dissolve into the window's
@@ -66,6 +71,11 @@ public:
     // Where an input and output level in dB are drawn, from its top left.
     juce::Point<float> pointAt (double inputDb, double outputDb) const;
 
+    // How far into Global Bypass it shows, 0 to 1 (GlobalBypassFade).
+    float globalBypassFade() const { return bypassFade.value(); }
+    // The curve's and the dot's alpha: 1, dimmed as the fade goes to 1.
+    float curveAlpha() const { return bypassFade.dim (1.0f); }
+
     // The text a screen reader reads as its value: settingsText(), then the Detection Level.
     juce::String valueText() const;
     // The settings it draws, as a screen reader reads them: "Threshold −18.00 dB, Ratio 4:1, Knee 6.0 dB".
@@ -75,7 +85,7 @@ public:
 
 private:
     void tick (double seconds) override;
-    bool isActive() const override { return shown > -scaleDb; }
+    bool isActive() const override { return shown > -scaleDb || bypassFade.isMoving(); }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
     PluginProcessor& processor;
@@ -83,6 +93,7 @@ private:
     clean::Curve drawn;
     ShownLevel level; // the Detection Level, on the graph's scale
     double shown = -scaleDb;
+    GlobalBypassFade bypassFade;
     plugkit::ui::display::CachedLabels labels;
     DisplayFades fades;
 };

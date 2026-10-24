@@ -107,6 +107,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/EditorTest.cpp
         plugin/FactoryPresetsTest.cpp
         plugin/GateParameterTest.cpp
+        plugin/GlobalBypassFadeTest.cpp
         plugin/GlobalBypassParameterTest.cpp
         plugin/LatencyReportTest.cpp
         plugin/LevelGraphTest.cpp
