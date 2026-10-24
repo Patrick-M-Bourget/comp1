@@ -3,13 +3,15 @@
 
 #include "Playing.h"
 #include "comp1/Style.h"
-#include "plugkit/ui/staple/Painting.h"
+#include "plugkit/ui/staple/TooltipWindow.h"
+#include "plugkit/ui/staple/controls/KnobTooltip.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
 namespace parameters = comp1::parameters;
@@ -180,7 +182,7 @@ TEST_CASE ("The Compact View's Comp arc dims to the Global Bypass scale, with th
     auto& knob = heroKnob (host);
     const auto bounds = knob.getBounds();
     const auto& tooltip = comp1::HeroComp::offTooltip;
-    CHECK (tooltip == "Comp Follow is off: Threshold and Ratio are set directly. Grab Comp to make them follow again");
+    CHECK (tooltip == "Threshold and Ratio set directly. Grab Comp to follow");
     const auto shows = [&] (bool off) {
         REQUIRE (host.settleUntil ([&] { return arcDimmed (knob) == off; }));
         CHECK (knob.getTooltip() == (off ? tooltip : juce::String()));
@@ -221,4 +223,58 @@ TEST_CASE ("The Compact View's Comp arc dims to the Global Bypass scale, with th
     shows (true);
     REQUIRE (host.processor.chooseStyle (comp1::Style::Bus));
     shows (false);
+}
+
+namespace
+{
+
+// The pointer resting on the hero Comp's face with Comp Follow off: its Knob Readout shows at once, and after the rest
+// the editor's Tooltip window shows the cue's tooltip, placed by the knob as JUCE's timer would show it (a test runs in
+// the background, where JUCE's getTipFor answers nothing). The two cards, in the editor's coordinates.
+std::pair<juce::Rectangle<int>, juce::Rectangle<int>> restOnHero (host::EditorHost& host)
+{
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    host.edit (parameters::compFollowId, 0.0f);
+    showCompactView (host);
+    auto& knob = heroKnob (host);
+    REQUIRE (host.settleUntil ([&] { return knob.getTooltip() == comp1::HeroComp::offTooltip; }));
+    const auto centre = knob.getFaceCentre();
+    host.settleAnimations();
+    // Nothing settles from here: the cards' watchdogs would read the machine's real mouse, off a test's window, and
+    // hide them. The Readout shown at the end of its fade-in.
+    knob.mouseEnter (harness::mouseEvent (knob, centre, {}));
+    auto* readout = knob.getKnobTooltip();
+    REQUIRE (readout != nullptr);
+    REQUIRE (readout->isVisible());
+    readout->setAlpha (1.0f);
+
+    auto* tips = harness::findChild<staple::TooltipWindow> (*host.editor);
+    REQUIRE (tips != nullptr);
+    tips->getTipFor (knob);
+    tips->displayTip (knob.localPointToGlobal (centre).roundToInt(), knob.getTooltip());
+    REQUIRE (tips->isVisible());
+    return { host.editor->getLocalArea (tips, tips->getLocalBounds()), host.editor->getLocalArea (readout, readout->getLocalBounds()) };
+}
+
+} // namespace
+
+TEST_CASE ("With Comp Follow off, the hero Comp's tooltip after a rest on its face doesn't cover its Knob Readout")
+{
+    host::EditorHost host;
+    const auto [tip, readout] = restOnHero (host);
+    CAPTURE (tip.toString(), readout.toString());
+    CHECK_FALSE (tip.intersects (readout));
+    CHECK (host.editor->getLocalBounds().contains (tip));
+    // Beside the knob, short of its lane.
+    auto& knob = heroKnob (host);
+    const auto face = knob.getFaceCentre();
+    const float lane = knob.getFaceRadius() + staple::tokens::knob::ringOffset + staple::tokens::knob::ringLane / 2.0f;
+    CHECK (static_cast<float> (tip.getRight()) <= host.editor->getLocalPoint (&knob, face).x - lane);
+}
+
+TEST_CASE ("Compact View snapshot: the hero Comp hovered with Comp Follow off, its Knob Readout and its tooltip", "[.screens]")
+{
+    host::EditorHost host;
+    restOnHero (host);
+    harness::writeSnapshot (*host.editor, "compact-comp-follow-off-hover", {}, 1.0f);
 }

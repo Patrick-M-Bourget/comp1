@@ -34,6 +34,8 @@ public:
 
     // The arc's alpha while Comp Follow is off: the design system's globalBypassScale.
     static constexpr float offArcAlpha = staple::tokens::motion::globalBypassScale;
+    // One short line: the editor's Tooltip window puts a tooltip under a knob shorter than four of it, over the Knob
+    // Readout, and beside a taller one, so a one-line tooltip sits beside the hero, clear of the Readout and the lane.
     static const juce::String offTooltip;
 
 private:
