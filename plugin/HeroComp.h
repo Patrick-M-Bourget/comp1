@@ -15,8 +15,8 @@ namespace comp1
 // wherever the Compact View places Comp:
 //
 // - The Detection Level ring: Threshold's in the Expanded View (LevelRing::detectionLevel), on Threshold's range, in
-//   a lane sized to the hero (ControlSection::KnobControl::setRing). It is placed around the Threshold the compressor
-//   plays (LevelRing::aroundThreshold): the fill reaches Comp's pointer as the Detection Level reaches that Threshold,
+//   Staple's lane round the hero's face, unscaled (ControlSection::KnobControl::setRing). It is placed around the
+//   Threshold the compressor plays (LevelRing::aroundThreshold): the fill reaches Comp's pointer as the Detection Level reaches that Threshold,
 //   so it passes the pointer exactly while the compressor is over Threshold, as Threshold's ring passes Threshold's
 //   pointer. It shows the detection signal as Threshold's does, under Global Bypass and Detection Audition alike.
 // - The Comp Follow-off cue (ADR 0004): while Comp Follow is off, the value arc draws at the Global Bypass scale

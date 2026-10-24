@@ -59,8 +59,7 @@ public:
         std::unique_ptr<juce::SliderParameterAttachment> attachment;
         bool ringed = false;
 
-        // Gives the knob's lane, outside its face, to handler, and puts the label under it. Above the kit's Gain
-        // size the lane and its offset grow with the face, as the knob's strokes do.
+        // Gives the knob's lane, outside its face, to handler, and puts the label under it.
         void setRing (staple::Knob::RingHandler& handler);
     };
 

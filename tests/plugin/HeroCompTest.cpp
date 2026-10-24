@@ -54,22 +54,23 @@ bool arcDimmed (staple::Knob& knob)
 
 } // namespace
 
-TEST_CASE ("The Compact View's Comp has a Detection Level ring in a lane sized to the hero, display only, and the Expanded View's Comp has none")
+TEST_CASE ("The Compact View's Comp has a Detection Level ring in Staple's lane round the hero's face, display only, and the Expanded View's Comp has none")
 {
     host::EditorHost host;
     CHECK_FALSE (host.knob ("Comp").isOnRing (host.knob ("Comp").getFaceCentre().translated (0.0f, -(host.knob ("Comp").getFaceRadius() + staple::tokens::knob::ringOffset))));
     showCompactView (host);
     auto& knob = heroKnob (host);
-    const float scale = staple::knobStrokeScale (staple::tokens::knob::hero);
-    REQUIRE (scale > 1.0f);
-    const auto onLane = knob.getFaceCentre().translated (0.0f, -(knob.getFaceRadius() + scale * staple::tokens::knob::ringOffset));
+    const auto at = [&knob] (float out) { return knob.getFaceCentre().translated (0.0f, -(knob.getFaceRadius() + out)); };
+    const auto onLane = at (staple::tokens::knob::ringOffset);
     CHECK (knob.isOnRing (onLane));
-    // The lane's outer edge, past the kit's 12 px lane at 10 px out.
-    CHECK (knob.isOnRing (knob.getFaceCentre().translated (0.0f, -(knob.getFaceRadius() + scale * (staple::tokens::knob::ringOffset + staple::tokens::knob::ringLane / 2.0f) - 1.0f))));
+    // The kit's 12 px lane at 10 px out, unscaled: on it just inside its outer edge, off it just past.
+    const float outer = staple::tokens::knob::ringOffset + staple::tokens::knob::ringLane / 2.0f;
+    CHECK (knob.isOnRing (at (outer - 1.0f)));
+    CHECK_FALSE (knob.isOnRing (at (outer + 1.0f)));
     // Its label under the lane.
     auto* label = knob.getLabel();
     REQUIRE (label != nullptr);
-    CHECK (label->getY() >= knob.getY() + juce::roundToInt (knob.getFaceCentre().y + knob.getFaceRadius() + scale * (staple::tokens::knob::ringOffset + staple::tokens::knob::ringLane / 2.0f)) - 1);
+    CHECK (label->getY() >= knob.getY() + juce::roundToInt (knob.getFaceCentre().y + knob.getFaceRadius() + outer) - 1);
 
     // Display only: a press on the lane leaves Comp where it was, and its tooltip lines are empty.
     const float comp = host.value (parameters::compId);
