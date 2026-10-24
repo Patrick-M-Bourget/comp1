@@ -182,7 +182,7 @@ TEST_CASE ("The Compact View's Comp arc dims to the Global Bypass scale, with th
     auto& knob = heroKnob (host);
     const auto bounds = knob.getBounds();
     const auto& tooltip = comp1::HeroComp::offTooltip;
-    CHECK (tooltip == "Threshold and Ratio set directly. Grab Comp to follow");
+    CHECK (tooltip == "Comp Follow off: grab Comp to follow");
     const auto shows = [&] (bool off) {
         REQUIRE (host.settleUntil ([&] { return arcDimmed (knob) == off; }));
         CHECK (knob.getTooltip() == (off ? tooltip : juce::String()));

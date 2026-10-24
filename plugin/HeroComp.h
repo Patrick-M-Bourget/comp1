@@ -20,8 +20,8 @@ namespace comp1
 //   so it passes the pointer exactly while the compressor is over Threshold, as Threshold's ring passes Threshold's
 //   pointer. It shows the detection signal as Threshold's does, under Global Bypass and Detection Audition alike.
 // - The Comp Follow-off cue (ADR 0004): while Comp Follow is off, the value arc draws at the Global Bypass scale
-//   (offArcAlpha), and the knob's tooltip says that Threshold and Ratio are set directly and that grabbing Comp makes
-//   them follow again (offTooltip); while it is on, the arc is full and there is no tooltip. It follows Comp Follow on
+//   (offArcAlpha), and the knob's tooltip says that Comp Follow is off and that grabbing Comp makes Threshold and
+//   Ratio follow again (offTooltip); while it is on, the arc is full and there is no tooltip. It follows Comp Follow on
 //   the editor's tick, whatever changes it: grabbing Comp, the Expanded View, Host Automation, undo, a Preset or a
 //   Style. It adds no element and moves nothing.
 class HeroComp final : private plugkit::ui::EditorTick::Client

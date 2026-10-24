@@ -5,7 +5,7 @@
 namespace comp1
 {
 
-const juce::String HeroComp::offTooltip = "Threshold and Ratio set directly. Grab Comp to follow";
+const juce::String HeroComp::offTooltip = "Comp Follow off: grab Comp to follow";
 
 HeroComp::HeroComp (ControlSection::KnobControl& c, PluginProcessor& p, LevelHistory& history)
     : plugkit::ui::EditorTick::Client (c.knob), comp (c), processor (p),
