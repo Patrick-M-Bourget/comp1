@@ -488,3 +488,59 @@ TEST_CASE ("A Style change crossfades the Compact Slots: the outgoing controls f
     // Nothing moved, during the crossfade or after it.
     CHECK (boundsOf() == during);
 }
+
+TEST_CASE ("Under reduced motion a Style change swaps the Compact Slots' controls at once, with no crossfade")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    host.settleAnimations();
+    auto& body = host.expandedView().compactView();
+    body.setReducedMotion (true);
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    REQUIRE (host.settleUntil ([&] { return body.compactSlot (0).primary().getTitle() == "Colour"; }));
+    // On the tick that rebinds them: nothing easing, every control at full alpha.
+    CHECK (staple::Tween::numberEasing() == 0);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        auto& slot = body.compactSlot (i);
+        CAPTURE (i);
+        CHECK (slot.crossfade() == 1.0f);
+        CHECK_FALSE (slot.showsOutgoing());
+        CHECK (slot.primary().getAlpha() == 1.0f);
+        CHECK (slot.companion().getAlpha() == 1.0f);
+    }
+}
+
+TEST_CASE ("A second Style change during the Compact Slots' crossfade lands cleanly on the newest Style")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    host.settleAnimations();
+    auto& body = host.expandedView().compactView();
+    auto& a = body.compactSlot (0);
+    auto& b = body.compactSlot (1);
+    REQUIRE (host.processor.chooseStyle (comp1::Style::FET));
+    REQUIRE (host.settleUntil ([&] { return b.companion().getTitle() == "Hold"; }));
+    REQUIRE (a.crossfade() < 1.0f);
+    // Mid-crossfade, Drums: it fades out from FET part-way in, toward Drums.
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Drums));
+    REQUIRE (host.settleUntil ([&] { return b.primary().getTitle() == "Drive"; }));
+    CHECK (a.crossfade() < 1.0f);
+    CHECK (a.showsOutgoing());
+
+    host.settleAnimations();
+    const std::array<juce::Component*, 4> shown { &a.primary(), &a.companion(), &b.primary(), &b.companion() };
+    const std::array<const char*, 4> drums { "Attack", "Hold", "Drive", "Saturation" };
+    for (size_t i = 0; i < shown.size(); ++i)
+    {
+        CAPTURE (i);
+        CHECK (shown[i]->getTitle() == drums[i]);
+        CHECK (shown[i]->getAlpha() == 1.0f);
+        CHECK (shown[i]->isVisible());
+    }
+    for (auto* slot : { &a, &b })
+    {
+        CHECK (slot->crossfade() == 1.0f);
+        CHECK_FALSE (slot->showsOutgoing());
+    }
+}

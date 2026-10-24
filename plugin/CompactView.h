@@ -151,6 +151,10 @@ public:
     CompactSlot& compactSlot (std::size_t index) { return *slots[index]; }
     HeroComp& heroComp() { return *hero; }
 
+    // Whether a Style change swaps the Compact Slots' controls at once, without the crossfade, as the OS's reduced
+    // motion setting asks. Nothing in plugkit reads that setting yet, so it is off unless set here.
+    void setReducedMotion (bool on) { reducedMotion = on; }
+
     void resized() override;
 
 private:
@@ -164,6 +168,7 @@ private:
     std::optional<CompFollowAttachment> compAttachment;
     std::optional<HeroComp> hero;
     std::optional<Style> shownStyle;
+    bool reducedMotion = false;
     // Follows the Style on the editor's tick.
     struct StyleFollower final : plugkit::ui::EditorTick::Client
     {

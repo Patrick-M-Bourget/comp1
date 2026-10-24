@@ -188,8 +188,8 @@ void CompactView::followStyle()
     const auto style = compactSlots[std::min (index, std::size (compactSlots) - 1)].style;
     if (shownStyle == style)
         return;
-    // The first Style shown appears at once; a change crossfades.
-    const bool crossfade = shownStyle.has_value();
+    // The first Style shown appears at once; a change crossfades, except under reduced motion.
+    const bool crossfade = shownStyle.has_value() && ! reducedMotion;
     shownStyle = style;
     const auto& row = compactSlots[compactSlotsRowOf (style)];
     slots[0]->show (row.a, crossfade);
