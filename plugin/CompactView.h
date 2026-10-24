@@ -25,9 +25,10 @@ namespace comp1
 //   Threshold or Ratio.
 // - The Gain Reduction meter: the compressor's, on the editor's level history, as tall as the body, and no stop for Tab.
 //
-// The row fills the body: Gate at its left edge, the meter at its right, and Comp centred in the room between them. The sections keep their own sizes, centred down the body, and the meter its
-// width, so a larger window spreads the row out and makes the meter taller. Both views' controls attach to the same
-// host parameters, so an edit in one shows in the other.
+// The row fills the body: Gate at its left edge, the meter at its right, and Comp centred in the room between them.
+// The sections keep their own sizes, centred down the body, and the meter its width, so a larger window spreads the
+// row out and makes the meter taller. Both views' controls attach to the same host parameters, so an edit in one shows
+// in the other.
 class CompactView final : public juce::Component
 {
 public:
