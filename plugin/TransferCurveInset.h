@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CompFollowAttachment.h"
+#include "GlobalBypassFade.h"
 #include "HandlePainting.h"
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
@@ -36,6 +37,8 @@ enum class InsetHandle
 //   over it, with a resize cursor of its direction, and the selected ring and a readout card ("Threshold −18.00 dB",
 //   "Ratio 4:1") while dragged. The Threshold handle is drawn over the Ratio handle, so at 0 dB Threshold, where they
 //   meet, the one that changes the curve is the one grabbed.
+// - **Global Bypass:** the curve, the dot and the handles show the compressor's work, so they dim to a share of their
+//   alphas (GlobalBypassFade), gliding on the tick, and still follow and take edits; the slab and a readout card stay.
 // - **Mouse:** only the handles take a press, within handleHitRadius of their centres: a press anywhere else in the
 //   inset passes through it to what lies under it. The Threshold handle drags Threshold horizontally, at the input
 //   axis's own scale (scaleDb over the curve's width per pixel); the Ratio handle drags Ratio vertically, by the knobs'
@@ -70,7 +73,7 @@ public:
     juce::Component& handle (InsetHandle which);
     // Where a handle is drawn, from the inset's top left.
     juce::Point<float> handleCentre (InsetHandle which) const;
-    // How a handle draws now: its radius, hovered, and selected while dragged.
+    // How a handle draws now: its radius, hovered, selected while dragged, and its alpha, dimmed under Global Bypass.
     handles::Look lookOf (InsetHandle which) const;
 
     // The readout card shown while a handle is dragged: its title and value.
@@ -98,7 +101,8 @@ private:
         juce::Point<float> offset; // the drag's offset from its start at the anchor
     };
 
-    void tick (double) override;
+    void tick (double seconds) override;
+    bool isActive() const override { return bypassFade.isMoving(); }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
     // Opens the edit: a grab of both, one undo step until endEdit().
     void beginEdit();
@@ -125,6 +129,7 @@ private:
     std::optional<Drag> drag;
     bool heldKey = false;
     juce::String announced;
+    GlobalBypassFade bypassFade;
 };
 
 } // namespace comp1
