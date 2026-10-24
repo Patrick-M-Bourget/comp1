@@ -32,7 +32,8 @@ juce::String spokenLevel (double db)
 }
 } // namespace
 
-LevelGraph::LevelGraph (LevelHistory& h, const juce::AudioProcessor& p) : history (h), processor (p)
+LevelGraph::LevelGraph (LevelHistory& h, PluginProcessor& p)
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), history (h), processor (p), bypassFade (p.parameterState())
 {
     setName ("Level");
     setTitle ("Level and Gain Reduction Graph");
@@ -78,6 +79,13 @@ void LevelGraph::levelsRead (std::span<const LevelRecord> records)
     held = std::min (size, held + static_cast<int> (records.size()));
     taken += records.size();
     repaint();
+}
+
+void LevelGraph::tick (double seconds)
+{
+    // The fade follows Global Bypass whether it shows or not, so it is right whenever it next shows.
+    if (bypassFade.step (seconds) && isShowing())
+        repaint();
 }
 
 const LevelGraph::Levels& LevelGraph::levelsAgo (int runsAgo) const
@@ -187,7 +195,9 @@ void LevelGraph::paint (juce::Graphics& g)
         reductionArea.lineTo (left, 0.0f);
         reductionArea.lineTo (right, 0.0f);
         reductionArea.closeSubPath();
-        g.setGradientFill (juce::ColourGradient::vertical (colour::dynRange, 0.0f, colour::dynRangeInner, h));
+        const float reductionAlpha = gainReductionAlpha();
+        g.setGradientFill (juce::ColourGradient::vertical (colour::dynRange.withMultipliedAlpha (reductionAlpha), 0.0f,
+                                                           colour::dynRangeInner.withMultipliedAlpha (reductionAlpha), h));
         g.fillPath (reductionArea);
         // The Input Level's area, down to the bottom, under its trace.
         auto inputArea = input;
@@ -198,7 +208,7 @@ void LevelGraph::paint (juce::Graphics& g)
         g.fillPath (inputArea);
         g.setColour (colour::anLine);
         g.strokePath (input, juce::PathStrokeType (levelLineWidth));
-        g.setColour (colour::dynRange);
+        g.setColour (colour::dynRange.withMultipliedAlpha (reductionAlpha));
         g.strokePath (reduction, juce::PathStrokeType (curveLineWidth));
         g.setColour (colour::curveMain);
         g.strokePath (output, juce::PathStrokeType (curveLineWidth));

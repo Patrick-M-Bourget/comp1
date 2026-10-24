@@ -264,6 +264,45 @@ TEST_CASE ("With no audio and no edits the Transfer Curve Graph asks for no repa
     host.graph().setCachedComponentImage (nullptr);
 }
 
+TEST_CASE ("Under Global Bypass the Transfer Curve Graph dims its curve and dot to 45 % of their alphas, and an edit still moves the curve")
+{
+    Graphing host;
+    host.setCurve (-20.0f, 4.0f, 0.0f, 60.0f);
+    REQUIRE (host.drawsWhatPlays());
+    host.processor.setDisplayTab (comp1::DisplayTab::transferCurve);
+    auto& graph = host.graph();
+    REQUIRE (host.settleUntil ([&] { return graph.isShowing(); }));
+    CHECK (juce::exactlyEqual (graph.globalBypassFade(), 0.0f));
+    CHECK_THAT (graph.curveAlpha(), WithinAbs (1.0, 1.0e-6));
+    // The curve at -45 dB in, under Threshold, so -45 dB out: off the grid's 10 dB lines. The graph paints no background
+    // of its own, so the curve's alpha is the pixel's.
+    const auto at = graph.pointAt (-45.0, -45.0).roundToInt();
+    const auto applied = graph.createComponentSnapshot (graph.getLocalBounds(), false);
+
+    host.edit (parameters::globalBypassId, 1.0f);
+    REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (graph.globalBypassFade(), 1.0f); }));
+    CHECK_THAT (graph.curveAlpha(), WithinAbs (0.45, 1.0e-6));
+    const auto bypassed = graph.createComponentSnapshot (graph.getLocalBounds(), false);
+    CHECK (static_cast<int> (bypassed.getPixelAt (at.x, at.y).getAlpha()) < static_cast<int> (applied.getPixelAt (at.x, at.y).getAlpha()));
+
+    // Dimmed, not frozen: what the compressor would do still follows the settings.
+    host.edit (parameters::kneeId, 12.0f);
+    CHECK (host.drawsWhatPlays());
+
+    host.edit (parameters::globalBypassId, 0.0f);
+    REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (graph.globalBypassFade(), 0.0f); }));
+    CHECK_THAT (graph.curveAlpha(), WithinAbs (1.0, 1.0e-6));
+}
+
+TEST_CASE ("An editor opened under Global Bypass shows the Transfer Curve Graph's curve and dot dimmed at once")
+{
+    Graphing host;
+    host.edit (parameters::globalBypassId, 1.0f);
+    host.reopen();
+    CHECK (juce::exactlyEqual (host.graph().globalBypassFade(), 1.0f));
+    CHECK_THAT (host.graph().curveAlpha(), WithinAbs (0.45, 1.0e-6));
+}
+
 TEST_CASE ("The Transfer Curve Graph is a read-only image titled Transfer Curve Graph, reading its settings and the Detection Level, with no Tab stop and no mouse input")
 {
     Graphing host;

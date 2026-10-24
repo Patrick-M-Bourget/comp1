@@ -602,3 +602,43 @@ TEST_CASE ("The Transfer Curve inset and its handles follow Comp, a Style, A/B a
     host.inset().handle (InsetHandle::threshold).setCachedComponentImage (nullptr);
     host.inset().handle (InsetHandle::ratio).setCachedComponentImage (nullptr);
 }
+
+TEST_CASE ("Under Global Bypass the Transfer Curve inset dims its curve, dot and handles to 45 % of their alphas, and its handles still drag")
+{
+    InsetHost host;
+    auto& inset = host.inset();
+    auto& threshold = inset.handle (InsetHandle::threshold);
+    for (const auto which : { InsetHandle::threshold, InsetHandle::ratio })
+        CHECK_THAT (inset.lookOf (which).alpha, WithinAbs (1.0, 1.0e-6));
+    CHECK_THAT (inset.graph().curveAlpha(), WithinAbs (1.0, 1.0e-6));
+    // A handle paints its disc over nothing of its own, so the disc's alpha is the pixel's.
+    const auto at = centreOf (inset, InsetHandle::threshold).roundToInt();
+    const auto applied = threshold.createComponentSnapshot (threshold.getLocalBounds(), false);
+
+    host.edit (parameters::globalBypassId, 1.0f);
+    REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (inset.lookOf (InsetHandle::threshold).alpha, 0.45f); }));
+    CHECK_THAT (inset.lookOf (InsetHandle::ratio).alpha, WithinAbs (0.45, 1.0e-6));
+    REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (inset.graph().globalBypassFade(), 1.0f); }));
+    CHECK_THAT (inset.graph().curveAlpha(), WithinAbs (0.45, 1.0e-6));
+    const auto bypassed = threshold.createComponentSnapshot (threshold.getLocalBounds(), false);
+    CHECK (static_cast<int> (bypassed.getPixelAt (at.x, at.y).getAlpha()) < static_cast<int> (applied.getPixelAt (at.x, at.y).getAlpha()));
+
+    // Dimmed, not disabled: a drag still moves Threshold.
+    const float before = host.value (parameters::thresholdId);
+    dragHandle (inset, InsetHandle::threshold, { 12.0f, 0.0f });
+    CHECK (host.value (parameters::thresholdId) > before);
+
+    host.edit (parameters::globalBypassId, 0.0f);
+    REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (inset.lookOf (InsetHandle::threshold).alpha, 1.0f); }));
+}
+
+TEST_CASE ("An editor opened under Global Bypass shows the Transfer Curve inset's curve, dot and handles dimmed at once")
+{
+    InsetHost host;
+    host.edit (parameters::globalBypassId, 1.0f);
+    host.reopen();
+    auto& inset = host.inset();
+    CHECK_THAT (inset.lookOf (InsetHandle::threshold).alpha, WithinAbs (0.45, 1.0e-6));
+    CHECK_THAT (inset.lookOf (InsetHandle::ratio).alpha, WithinAbs (0.45, 1.0e-6));
+    CHECK_THAT (inset.graph().curveAlpha(), WithinAbs (0.45, 1.0e-6));
+}
