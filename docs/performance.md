@@ -86,3 +86,13 @@ It opens the Expanded View through the editor harness on a stereo track at 48 kH
 - **paint**: the display, its shown tab and all, painted whole at 2x (a Retina display's scale) into a native image, so by the renderer a window on the platform draws with (CoreGraphics on macOS), not JUCE's software one.
 
 The two tabs take turns, five rounds of 120 timed ticks each after a second of untimed ones, so a change in the machine's load over the run falls on both. It prints each tab's mean and 95th percentile per tick for the tick, the paint and the two together, and the Spectrum tab's over the Level tab's.
+
+| Per tick, Apple M3 | Level mean | Level p95 | Spectrum mean | Spectrum p95 |
+| --- | --- | --- | --- | --- |
+| tick | 0.10 ms | 0.16–0.19 ms | 0.11 ms | 0.17–0.18 ms |
+| paint | 17.9–18.0 ms | 20.4–20.9 ms | 13.0–13.1 ms | 14.2–14.5 ms |
+| tick + paint | 18.0–18.1 ms | 20.5–21.0 ms | 13.2–13.3 ms | 14.3–14.6 ms |
+
+Measured 2026-10-24 on an 8-core Apple M3 (4 performance and 4 efficiency cores, macOS 27.0.1), two runs, each started at load average 3.6 to 3.7 after this tree's build had finished (other agents' builds lifted it to 8 by the end of the first run; the two runs agree within a few percent). The Spectrum tab costs 0.73 times the Level tab per tick, tick and paint together, by the mean, and 0.69 to 0.70 times by the 95th percentile. The tick is a small part of either: the Spectrum tab's FFTs cost about 10 µs a tick over the Level tab's. The paint is nearly all of it, and the Level tab's Level and Gain Reduction Graph is the dearer one to draw. These paint the whole display every tick, an upper bound: a window repaints only what a tick marked as changed.
+
+**Proposed budget**, not yet a gate: the Spectrum tab's tick and paint together cost at most 1.25 times the Level tab's, by the mean, in this benchmark: about 1.7 times what it costs now, room for run-to-run noise and small additions, while a regression that makes the Spectrum tab the dearer one by a quarter fails it.
