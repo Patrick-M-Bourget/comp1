@@ -145,15 +145,16 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     const float shading = gainReductionAlpha();
     g.setGradientFill (juce::ColourGradient::vertical (colour::dynRange.withAlpha (shading), 0.0f, colour::dynRangeInner.withAlpha (shading), height));
     g.fillPath (gainReductionArea());
-    // The output's fill and line through a layer at its alpha, then the input's line over it at full strength, in
-    // plugkit-ui's Analyzer's pre line colour, as paintAnalyzer would draw it beside the post line.
+    // The input's line at full strength, in plugkit-ui's Analyzer's pre line colour, then the output's fill and line
+    // over it through a layer at the output's alpha: the output's line on top where the two meet, as paintAnalyzer
+    // draws its post line over its pre line.
+    g.setColour (colour::anPre);
+    g.strokePath (lineOf (input), juce::PathStrokeType (1.0f));
     auto outputOnly = analyzer;
     outputOnly.showPreEq = false;
     g.beginTransparencyLayer (outputAlpha());
     display::paintAnalyzer (g, shape, { .settings = outputOnly, .preEq = input, .postEq = output, .sidechain = output });
     g.endTransparencyLayer();
-    g.setColour (colour::anPre);
-    g.strokePath (lineOf (input), juce::PathStrokeType (1.0f));
     fades.paint (g, *this);
 
     // The labels go over the fades, unfaded: the Frequency labels along the bottom (gridLabels' first row, without its

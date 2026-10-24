@@ -160,6 +160,8 @@ bool inHighQuality (juce::AudioProcessorValueTreeState& parameters)
            == static_cast<int> (ProcessingMode::HighQuality);
 }
 
+bool inGlobalBypass (juce::AudioProcessorValueTreeState& parameters) { return isOn (*parameters.getRawParameterValue (globalBypassId)); }
+
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 {
     // Each default is Settings' own, so the host's defaults and the Engine's are one.
@@ -333,7 +335,7 @@ SettingsReader::SettingsReader (juce::AudioProcessorValueTreeState& parameters)
 Settings SettingsReader::read() const
 {
     const auto plain = [] (const std::atomic<float>* value) { return static_cast<double> (value->load (std::memory_order_relaxed)); };
-    const auto on = [] (const std::atomic<float>* value) { return value->load (std::memory_order_relaxed) >= 0.5f; };
+    const auto on = [] (const std::atomic<float>* value) { return isOn (*value); };
     // A choice's index, as its enum, the choices in the enum's order up to last.
     const auto choice = [&plain]<typename Choice> (const std::atomic<float>* value, Choice last) {
         return static_cast<Choice> (std::clamp (static_cast<int> (std::lround (plain (value))), 0, static_cast<int> (last)));

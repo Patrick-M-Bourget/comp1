@@ -3,6 +3,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <iterator>
+#include <vector>
+
 namespace
 {
 
@@ -210,4 +214,26 @@ TEST_CASE ("The Spectrum tab, after Transfer Curve: a click shows it, saved as s
     host.reopen();
     CHECK (host.findAll<juce::Button> ([] (juce::Button& b) { return b.getTitle() == "Spectrum" && b.isShowing(); }).empty());
     CHECK (host.findAll<comp1::SpectrumDisplay> ([] (comp1::SpectrumDisplay& d) { return d.isShowing(); }).empty());
+}
+
+TEST_CASE ("The display's tab chips, left to right, are displayTabs' rows in order, each choosing its row's tab and showing that tab's content")
+{
+    host::EditorHost host;
+    auto& display = host.expandedView().display();
+    std::vector<juce::Button*> chips;
+    for (auto* child : display.getChildren())
+        if (auto* chip = dynamic_cast<juce::Button*> (child))
+            chips.push_back (chip);
+    std::sort (chips.begin(), chips.end(), [] (const juce::Button* a, const juce::Button* b) { return a->getX() < b->getX(); });
+    REQUIRE (chips.size() == std::size (comp1::displayTabs));
+    for (std::size_t row = 0; row < chips.size(); ++row)
+    {
+        CAPTURE (row);
+        REQUIRE (chips[row]->onClick != nullptr);
+        chips[row]->onClick();
+        const auto tab = comp1::displayTabs[row].tab;
+        CHECK (host.processor.displayTab() == tab);
+        CHECK (chips[row]->getToggleState());
+        CHECK (display.tabContent (tab).isShowing());
+    }
 }

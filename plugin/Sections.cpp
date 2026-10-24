@@ -20,7 +20,7 @@ using Place = ControlSection::Place;
 // An on/off host parameter's state, or a two-way choice's second.
 bool isOn (PluginProcessor& processor, const juce::String& id)
 {
-    return processor.parameterState().getRawParameterValue (id)->load (std::memory_order_relaxed) >= 0.5f;
+    return parameters::isOn (*processor.parameterState().getRawParameterValue (id));
 }
 
 } // namespace

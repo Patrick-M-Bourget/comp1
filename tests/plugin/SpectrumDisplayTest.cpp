@@ -3,12 +3,14 @@
 #include "Measure.h"
 #include "Playing.h"
 #include "SpectrumDisplay.h"
+#include "plugkit/ui/staple/Tokens.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <vector>
 
 namespace parameters = comp1::parameters;
@@ -99,6 +101,57 @@ float brightestAround (const juce::Image& image, float x, float y)
     return brightest;
 }
 
+// A software renderer that draws as the display's snapshot does, and keeps each stroke's colour and bounds in the
+// order they were drawn.
+class StrokeRecorder final : public juce::LowLevelGraphicsSoftwareRenderer
+{
+public:
+    explicit StrokeRecorder (juce::Rectangle<int> area)
+        : juce::LowLevelGraphicsSoftwareRenderer (juce::Image (juce::Image::ARGB, area.getWidth(), area.getHeight(), true))
+    {
+    }
+
+    void setFill (const juce::FillType& fill) override
+    {
+        colour = fill.isColour() ? std::optional<juce::Colour> (fill.colour) : std::nullopt;
+        juce::LowLevelGraphicsSoftwareRenderer::setFill (fill);
+    }
+
+    void strokePath (const juce::Path& path, const juce::PathStrokeType& type, const juce::AffineTransform& transform) override
+    {
+        strokes.push_back ({ colour, path.getBoundsTransformed (transform) });
+        juce::LowLevelGraphicsSoftwareRenderer::strokePath (path, type, transform);
+    }
+
+    // Paints component, as its snapshot would, keeping its strokes. Nothing reads the pixels.
+    void paint (juce::Component& component)
+    {
+        juce::Graphics g (*this);
+        component.paintEntireComponent (g, false);
+    }
+
+    // The last stroke drawn in c, by its place in the order.
+    std::optional<std::size_t> lastIn (juce::Colour c) const
+    {
+        for (std::size_t i = strokes.size(); i-- > 0;)
+            if (strokes[i].colour == c)
+                return i;
+        return std::nullopt;
+    }
+
+    juce::Rectangle<float> bounds (std::size_t stroke) const { return strokes[stroke].bounds; }
+
+private:
+    struct Stroke
+    {
+        std::optional<juce::Colour> colour;
+        juce::Rectangle<float> bounds;
+    };
+
+    std::optional<juce::Colour> colour;
+    std::vector<Stroke> strokes;
+};
+
 } // namespace
 
 TEST_CASE ("The Spectrum display shows the input and the compressor's output: compressing a tone by a known amount, the output reads that much lower")
@@ -151,6 +204,30 @@ TEST_CASE ("The Spectrum display shades the gap where the output is under the in
     {
         CAPTURE (frequency);
         CHECK_FALSE (host.shadedUnderInputAt (frequency));
+    }
+}
+
+TEST_CASE ("Where the input and the output meet, with no Gain Reduction, the Spectrum display draws the output's line over the input's, with or without Global Bypass")
+{
+    SpectrumHost host;
+    host.edit (parameters::ratioId, 1.0f);
+    REQUIRE (host.gapSettlesAt (tone, 0.0, 0.1));
+    host.settle (100);
+    auto& spectrum = host.spectrum();
+    for (const bool bypassed : { false, true })
+    {
+        CAPTURE (bypassed);
+        host.edit (parameters::globalBypassId, bypassed ? 1.0f : 0.0f);
+        REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (spectrum.globalBypassFade(), bypassed ? 1.0f : 0.0f); }));
+        StrokeRecorder strokes (spectrum.getLocalBounds());
+        strokes.paint (spectrum);
+        // The input's line, in the Analyzer's pre line colour, then the output's, in its line colour, where the
+        // input's was: the last stroke over it.
+        const auto inputLine = strokes.lastIn (staple::tokens::colour::anPre), outputLine = strokes.lastIn (staple::tokens::colour::anLine);
+        REQUIRE (inputLine.has_value());
+        REQUIRE (outputLine.has_value());
+        CHECK (*inputLine < *outputLine);
+        CHECK (strokes.bounds (*outputLine).expanded (1.0f).contains (strokes.bounds (*inputLine)));
     }
 }
 
