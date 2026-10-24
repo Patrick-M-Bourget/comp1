@@ -73,7 +73,7 @@ TEST_CASE ("The Spectrum display shows the input and the compressor's output: co
     // window between bins.
     CHECK_THAT (host.spectrum().inputSpectrum().levelDb (1000.0, 0.0), WithinAbs (toneDb, 2.0));
 
-    // Make-up gain isn't Gain Reduction: Auto Gain and Output Gain leave the gap as it is.
+    // Auto Gain and Output Gain aren't Gain Reduction: they leave the gap as it is.
     host.edit (parameters::autoGainId, 1.0f);
     host.edit (parameters::outputGainId, 12.0f);
     host.playFor (0.5, tone);
