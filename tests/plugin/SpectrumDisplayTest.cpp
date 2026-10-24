@@ -49,6 +49,18 @@ struct SpectrumHost : host::Playing
         return keepPlayingUntil (signal, [&] { return std::abs (gapDb (1000.0) - targetDb) < tolerance; });
     }
 
+    // Keeps playing signal until the two spectra are within tolerance of each other at every one of frequencies. They
+    // don't meet everywhere at once: the Gain Reduction falls in the audio's time and the spectra follow in the
+    // clock's, so how far one frequency lags another depends on how much audio plays between ticks, which is the
+    // machine's speed.
+    template <typename Signal>
+    bool spectraMeetAt (Signal&& signal, const std::vector<double>& frequencies, double tolerance)
+    {
+        return keepPlayingUntil (signal, [&] {
+            return std::all_of (frequencies.begin(), frequencies.end(), [&] (double f) { return std::abs (gapDb (f)) < tolerance; });
+        });
+    }
+
     // The x of the drawn column nearest frequency. The lines and the shading's edges run straight between columns
     // pixelStep apart, so only on a column are they drawn at yOf: between two, a jagged spectrum's line is drawn up to
     // a few pixels from it, and a point 1.5 px under yOf can land in the sliver a faint residual gap leaves.
@@ -128,8 +140,13 @@ TEST_CASE ("The Spectrum display shades the gap where the output is under the in
     host.edit (parameters::ratioId, 1.0f);
     const auto seeded = comp1::test::noise (1, 48000).front();
     const auto toneOverNoise = [&seeded] (int n) { return tone (n) + 0.1 * static_cast<double> (seeded[static_cast<std::size_t> (n) % seeded.size()]); };
-    REQUIRE (host.gapSettlesAt (toneOverNoise, 0.0, 0.05));
-    for (const double frequency : { 100.0, 1000.0, 10000.0 })
+    // Every sixth of an octave from 100 Hz to 16 kHz: the tone's skirts, where the spectra meet last, and the noise's
+    // jagged line.
+    std::vector<double> frequencies;
+    for (double frequency = 100.0; frequency <= 16000.0; frequency *= std::pow (2.0, 1.0 / 6.0))
+        frequencies.push_back (frequency);
+    REQUIRE (host.spectraMeetAt (toneOverNoise, frequencies, 0.05));
+    for (const double frequency : frequencies)
     {
         CAPTURE (frequency);
         CHECK_FALSE (host.shadedUnderInputAt (frequency));
