@@ -1,6 +1,7 @@
 #include "TransferCurveGraph.h"
 
 #include "Controls.h"
+#include "DisplayFades.h"
 #include "plugkit/ui/ValueText.h"
 #include "plugkit/ui/staple/Tokens.h"
 

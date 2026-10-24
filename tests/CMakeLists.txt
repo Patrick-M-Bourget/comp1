@@ -111,10 +111,12 @@ if(COMP1_BUILD_PLUGIN)
         plugin/GateParameterTest.cpp
         plugin/GlobalBypassFadeTest.cpp
         plugin/GlobalBypassParameterTest.cpp
+        plugin/HeroCompTest.cpp
         plugin/LatencyReportTest.cpp
         plugin/LevelGraphTest.cpp
         plugin/LevelHistoryTest.cpp
         plugin/LimiterParameterTest.cpp
+        plugin/MeterLabelTest.cpp
         plugin/OutputMeterTest.cpp
         plugin/OutputPopoverTest.cpp
         plugin/OversamplingParameterTest.cpp

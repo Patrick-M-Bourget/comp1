@@ -5,6 +5,7 @@
 #include "Footer.h"
 #include "GainReductionMeter.h"
 #include "LevelHistory.h"
+#include "MeterLabel.h"
 #include "PluginProcessor.h"
 #include "Sections.h"
 #include "plugkit/ui/EditorShell.h"
@@ -62,8 +63,20 @@ private:
     void layOutBody (juce::Rectangle<int> area) override;
     // The meters at the display's right, left to right, each with its label.
     std::array<std::pair<juce::Component*, MeterLabel*>, 4> labelledMeters();
-    // The sections, row by row, each row left to right in signal order.
-    std::vector<std::vector<Section*>> sectionRows();
+    // One cell of the sections' grid: the columns it spans, first to last, and the sections it holds side by side,
+    // left to right, the last taking what the others leave.
+    struct GridCell
+    {
+        int first, last;
+        std::vector<Section*> sections;
+    };
+    using GridRow = std::vector<GridCell>;
+    static constexpr int gridColumns = 3;
+    // The sections' grid, the one description that their layout, their height and Tab's order read: row by row, each
+    // row's cells left to right in signal order.
+    std::vector<GridRow> sectionGrid();
+    // A row's sections, left to right.
+    static std::vector<Section*> sectionsOf (const GridRow& row);
     // The section rows' height, together with the gap between them.
     int sectionRowsHeight();
     static constexpr int sectionGap = 12;

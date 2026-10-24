@@ -132,7 +132,7 @@ CompactView::CompactView (PluginProcessor& p, LevelHistory& history)
       compressor ("Compressor", p), gainReduction (history)
 {
     setName ("Compact View");
-    addCompKnob (compressor, p, compAttachment, ControlSection::Place::ownColumn, knobSize::hero);
+    hero.emplace (addCompKnob (compressor, p, compAttachment, ControlSection::Place::ownColumn, knobSize::hero), p, history);
 
     int order = 0;
     for (juce::Component* part : std::initializer_list<juce::Component*> { slots[0].get(), &compressor, slots[1].get() })

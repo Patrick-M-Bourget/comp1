@@ -5,7 +5,6 @@
 #include "plugkit/ui/staple/Tokens.h"
 
 #include <algorithm>
-#include <cmath>
 
 namespace comp1
 {
@@ -102,31 +101,6 @@ void GainReductionMeter::paint (juce::Graphics& g)
 std::unique_ptr<juce::AccessibilityHandler> GainReductionMeter::createAccessibilityHandler()
 {
     return plugkit::ui::accessibility::handler (*this, juce::AccessibilityRole::progressBar, [this] { return juce::String (shown, 1) + " dB"; });
-}
-
-namespace
-{
-// The kit's label style (its design-system/tokens.json, "label"), letter-spaced 0.08 em as its section titles are.
-juce::Font meterLabelFont() { return staple::font (size::fs2, staple::Weight::medium).withExtraKerningFactor (0.08f); }
-} // namespace
-
-MeterLabel::MeterLabel (const juce::String& text)
-{
-    setName (text.toUpperCase());
-    setInterceptsMouseClicks (false, false);
-    setAccessible (false);
-}
-
-void MeterLabel::paint (juce::Graphics& g)
-{
-    g.setFont (meterLabelFont());
-    g.setColour (colour::text3);
-    g.drawText (getName(), getLocalBounds(), juce::Justification::centred, false);
-}
-
-int MeterLabel::textWidth() const
-{
-    return static_cast<int> (std::ceil (juce::GlyphArrangement::getStringWidth (meterLabelFont(), getName())));
 }
 
 } // namespace comp1

@@ -3,6 +3,7 @@
 #include "CompFollowAttachment.h"
 #include "Controls.h"
 #include "GainReductionMeter.h"
+#include "HeroComp.h"
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
 #include "comp1/Style.h"
@@ -113,7 +114,7 @@ private:
 //   nothing: a Style change writes only what chooseStyle() writes.
 // - Comp: the Comp knob alone, at the kit's hero size, attached as the Expanded View's (addCompKnob): grabbing it
 //   while Comp Follow is off follows, with the edit that follows as one undo step. There is no Comp Follow toggle,
-//   Threshold or Ratio.
+//   Threshold or Ratio. Its knob has the Detection Level ring and the Comp Follow-off cue (HeroComp).
 // - The Gain Reduction meter: the compressor's, on the editor's level history, as tall as the body, and no stop for Tab.
 //
 // The meter is at the body's right edge, and the room left of it is three equal columns, slot A, Comp and slot B each
@@ -129,6 +130,7 @@ public:
     GainReductionMeter& gainReductionMeter() { return gainReduction; }
     // Compact Slot A (0) or B (1).
     CompactSlot& compactSlot (std::size_t index) { return *slots[index]; }
+    HeroComp& heroComp() { return *hero; }
 
     void resized() override;
 
@@ -141,6 +143,7 @@ private:
     ControlSection compressor;
     GainReductionMeter gainReduction;
     std::optional<CompFollowAttachment> compAttachment;
+    std::optional<HeroComp> hero;
     std::optional<Style> shownStyle;
     // Follows the Style on the editor's tick.
     struct StyleFollower final : plugkit::ui::EditorTick::Client

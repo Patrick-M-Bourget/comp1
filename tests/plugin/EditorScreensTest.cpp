@@ -286,7 +286,7 @@ TEST_CASE ("Footer snapshots: the Output readout with Auto Gain off, then on wit
     }
 }
 
-TEST_CASE ("Compact View snapshot: with signal playing, so the Gain Reduction meter reads", "[.screens]")
+TEST_CASE ("Compact View snapshot: with signal playing, so the Gain Reduction meter and Comp's Detection Level ring read", "[.screens]")
 {
     host::Playing host;
     // -6 dB steady, 24 dB over a -30 dB Threshold at 4:1 with a hard knee: 18 dB of Gain Reduction.
