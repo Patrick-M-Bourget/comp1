@@ -6,6 +6,7 @@
 #include "Measure.h"
 #include "Playing.h"
 #include "comp1/Latency.h"
+#include "plugkit/ui/staple/Tokens.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -39,6 +40,23 @@ TEST_CASE ("The Gain Reduction meter reads 0 with no compression, and repaints o
     CHECK (host.meter().shownDb() == 0.0);
     CHECK (repaints.count == 0);
     host.meter().setCachedComponentImage (nullptr);
+}
+
+TEST_CASE ("The Gain Reduction meter's rail is the design system's meter track as the Output Meter's is")
+{
+    Playing host;
+    host.playFor (0.2, silence());
+    auto& meter = host.meter();
+    REQUIRE (meter.shownDb() == 0.0);
+    // Drawn alone, over nothing: the rail runs down the meter's right half, and its middle is its own colour, with no
+    // bar over it.
+    const auto snapshot = meter.createComponentSnapshot (meter.getLocalBounds(), false);
+    const auto rail = snapshot.getPixelAt (meter.getWidth() * 3 / 4, meter.getHeight() / 2);
+    const auto track = staple::tokens::colour::meterTrack;
+    CHECK (static_cast<int> (rail.getRed()) == static_cast<int> (track.getRed()));
+    CHECK (static_cast<int> (rail.getGreen()) == static_cast<int> (track.getGreen()));
+    CHECK (static_cast<int> (rail.getBlue()) == static_cast<int> (track.getBlue()));
+    CHECK (std::abs (static_cast<int> (rail.getAlpha()) - static_cast<int> (track.getAlpha())) <= 1);
 }
 
 TEST_CASE ("On a steady level above Threshold the Gain Reduction meter reads the Transfer Curve's Gain Reduction, and falls at 20 dB/s when the tone stops")

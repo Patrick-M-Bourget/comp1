@@ -1,5 +1,6 @@
 #include "SpectrumDisplay.h"
 
+#include "GainReductionShading.h"
 #include "plugkit/ui/Accessibility.h"
 #include "plugkit/ui/AssumedSampleRate.h"
 #include "plugkit/ui/display/AnalyzerLayer.h"
@@ -15,8 +16,6 @@ namespace
 namespace colour = staple::tokens::colour;
 namespace display = plugkit::ui::display;
 
-// How strongly the Gain Reduction is shaded: faint enough that the grid and the lines show through it.
-constexpr float appliedGainReductionAlpha = 0.35f;
 // The Analyzer's dB scale's step, as its labels take it at its default range.
 constexpr int scaleStepDb = 10;
 
@@ -42,7 +41,7 @@ SpectrumDisplay::SpectrumDisplay (PluginProcessor& p)
 
 float SpectrumDisplay::outputAlpha() const { return bypassFade.dim (1.0f); }
 
-float SpectrumDisplay::gainReductionAlpha() const { return bypassFade.dim (appliedGainReductionAlpha); }
+float SpectrumDisplay::gainReductionAlpha() const { return bypassFade.dim (gainReductionShadingAlpha); }
 
 display::DisplayGeometry SpectrumDisplay::geometry() const { return { .width = getWidth(), .height = getHeight() }; }
 
