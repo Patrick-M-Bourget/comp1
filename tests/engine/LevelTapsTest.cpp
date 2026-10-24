@@ -528,6 +528,58 @@ TEST_CASE ("Across a Gate step and an on/off glide the Gate's Gain Reduction rec
     CHECK (glided);
 }
 
+TEST_CASE ("At Gate Position Post the Gate's Gain Reduction records follow the Gain Reduction the Gate applies after the compressor, run for run")
+{
+    // A quarter of a second at -60 dB, under Gate Threshold and Threshold, then half a second at -10 dB. Threshold -30 dB
+    // at Ratio ∞:1 with a hard Knee pulls the -10 dB down to -30 dB once Attack has caught up. At Pre the Gate hears the
+    // input, so it opens on the step and stays open; at Post it hears the compressed signal, opens on the step's first
+    // milliseconds, before Attack has caught up, then closes by Gate Range on the -30 dB, the hysteresis under Gate
+    // Threshold -20 dB. A Gate Release of 10 ms settles the close well within the half second.
+    constexpr double sampleRate = 48000.0;
+    constexpr int quiet = 12000, loud = 24000;
+    std::vector<float> input = test::steadyLevel (1, quiet, -60.0).front();
+    const auto step = test::steadyLevel (1, loud, -10.0).front();
+    input.insert (input.end(), step.begin(), step.end());
+    Settings settings { .gate = { .on = true, .thresholdDb = -20.0, .releaseMs = 10.0 },
+                        .gatePosition = GatePosition::Post,
+                        .thresholdDb = -30.0,
+                        .ratio = parameterRanges::inf,
+                        .kneeDb = 0.0 };
+    const auto recordsAt = [&] (const Settings& s, test::Channels& audio) {
+        Engine engine;
+        engine.prepare (sampleRate, 512, 1);
+        engine.setSettings (s);
+        return test::playAndReadLevels (engine, audio, { 512 });
+    };
+
+    // What the Gate applies at Post is how far the output is under the same settings' with the Gate off: the compressor
+    // ahead of it hears the same input either way, and nothing after it changes the level at the defaults.
+    test::Channels gatedAudio { input };
+    const auto post = recordsAt (settings, gatedAudio);
+    auto ungated = settings;
+    ungated.gate.on = false;
+    const auto heard = test::gainReductionDb (test::played (ungated, sampleRate, { input }).front(), gatedAudio.front());
+    REQUIRE (post.size() == heard.size() / 16);
+    for (std::size_t r = 0; r < post.size(); ++r)
+    {
+        CAPTURE (r);
+        const auto run = heard.begin() + static_cast<std::ptrdiff_t> (r * 16);
+        REQUIRE_THAT (post[r].gateGainReductionDb, WithinAbs (std::max (*std::max_element (run, run + 16), 0.0), 0.01));
+    }
+
+    // The step's first runs, before the compressor has caught up, find the Gate at Post open; its last, where the Gate
+    // at Pre reads none, find it closed by Gate Range.
+    settings.gatePosition = GatePosition::Pre;
+    test::Channels preAudio { input };
+    const auto pre = recordsAt (settings, preAudio);
+    const auto firstLoud = static_cast<std::size_t> (quiet / 16);
+    CHECK (std::any_of (post.begin() + static_cast<std::ptrdiff_t> (firstLoud), post.begin() + static_cast<std::ptrdiff_t> (firstLoud + 100), [] (const LevelRecord& record) {
+        return record.gateGainReductionDb == 0.0;
+    }));
+    CHECK_THAT (post.back().gateGainReductionDb, WithinAbs (settings.gate.rangeDb, 0.01));
+    CHECK (pre.back().gateGainReductionDb == 0.0);
+}
+
 namespace
 {
 
