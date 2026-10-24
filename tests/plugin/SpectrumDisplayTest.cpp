@@ -102,6 +102,13 @@ public:
         juce::LowLevelGraphicsSoftwareRenderer::strokePath (path, type, transform);
     }
 
+    // Paints component, as its snapshot would, keeping its strokes. Nothing reads the pixels.
+    void paint (juce::Component& component)
+    {
+        juce::Graphics g (*this);
+        component.paintEntireComponent (g, false);
+    }
+
     // The last stroke drawn in c, by its place in the order.
     std::optional<std::size_t> lastIn (juce::Colour c) const
     {
@@ -186,10 +193,7 @@ TEST_CASE ("Where the input and the output meet, with no Gain Reduction, the Spe
         host.edit (parameters::globalBypassId, bypassed ? 1.0f : 0.0f);
         REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (spectrum.globalBypassFade(), bypassed ? 1.0f : 0.0f); }));
         StrokeRecorder strokes (spectrum.getLocalBounds());
-        {
-            juce::Graphics g (strokes);
-            spectrum.paintEntireComponent (g, false);
-        }
+        strokes.paint (spectrum);
         // The input's line, in the Analyzer's pre line colour, then the output's, in its line colour, where the
         // input's was: the last stroke over it.
         const auto inputLine = strokes.lastIn (staple::tokens::colour::anPre), outputLine = strokes.lastIn (staple::tokens::colour::anLine);
