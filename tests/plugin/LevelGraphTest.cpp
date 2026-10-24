@@ -313,7 +313,7 @@ TEST_CASE ("Under Global Bypass the Level and Gain Reduction Graph dims its Gain
     REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (graph.globalBypassFade(), 1.0f); }));
     CHECK_THAT (graph.gainReductionAlpha(), WithinAbs (0.45, 1.0e-6));
     const auto bypassed = graph.createComponentSnapshot (graph.getLocalBounds(), false);
-    CHECK (bypassed.getPixelAt (x, yAt (5.0)).getAlpha() < applied.getPixelAt (x, yAt (5.0)).getAlpha());
+    CHECK (static_cast<int> (bypassed.getPixelAt (x, yAt (5.0)).getAlpha()) < static_cast<int> (applied.getPixelAt (x, yAt (5.0)).getAlpha()));
     CHECK (bypassed.getPixelAt (x, yAt (50.0)) == applied.getPixelAt (x, yAt (50.0)));
 
     host.edit (parameters::globalBypassId, 0.0f);
