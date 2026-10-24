@@ -116,6 +116,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/LevelGraphTest.cpp
         plugin/LevelHistoryTest.cpp
         plugin/LimiterParameterTest.cpp
+        plugin/MeterLabelTest.cpp
         plugin/OutputMeterTest.cpp
         plugin/OutputPopoverTest.cpp
         plugin/OversamplingParameterTest.cpp

@@ -46,6 +46,7 @@ target_sources(comp1 PRIVATE
     LevelGraph.cpp
     LevelHistory.cpp
     LevelRing.cpp
+    MeterLabel.cpp
     OutputPopover.cpp
     Parameters.cpp
     PluginEditor.cpp
