@@ -41,24 +41,33 @@ struct SpectrumHost : host::Playing
 
     comp1::SpectrumDisplay& spectrum() { return expandedView().display().spectrumDisplay(); }
 
-    // Keeps playing signal until the gap at 1 kHz is within tolerance of gapDb. The spectra move by the time between
+    // Keeps playing signal until the gap at 1 kHz is within tolerance of targetDb. The spectra move by the time between
     // the editor's ticks, at the Analyzer's default speed, so they settle as the clock runs, however fast a test plays.
     template <typename Signal>
-    bool gapSettlesAt (Signal&& signal, double gapDb, double tolerance)
+    bool gapSettlesAt (Signal&& signal, double targetDb, double tolerance)
     {
-        return keepPlayingUntil (signal, [&] { return std::abs (gapAt1kHzDb() - gapDb) < tolerance; });
+        return keepPlayingUntil (signal, [&] { return std::abs (gapDb (1000.0) - targetDb) < tolerance; });
     }
 
-    // Whether the Gain Reduction is shaded just under the input's line at frequency, where it starts.
+    // The x of the drawn column nearest frequency. The lines and the shading's edges run straight between columns
+    // pixelStep apart, so only on a column are they drawn at yOf: between two, a jagged spectrum's line is drawn up to
+    // a few pixels from it, and a point 1.5 px under yOf can land in the sliver a faint residual gap leaves.
+    float columnAt (double frequency)
+    {
+        constexpr float step = plugkit::ui::display::DisplayGeometry::pixelStep;
+        return std::round (spectrum().geometry().xOf (frequency) / step) * step;
+    }
+
+    // Whether the Gain Reduction is shaded just under the input's line at frequency's column, where it starts.
     bool shadedUnderInputAt (double frequency)
     {
         auto& display = spectrum();
-        const float x = display.geometry().xOf (frequency);
+        const float x = columnAt (frequency);
         return display.gainReductionArea().contains (x, display.yOf (display.inputSpectrum(), x) + 1.5f);
     }
 
-    // How much lower the output spectrum reads than the input spectrum at 1 kHz, in dB.
-    double gapAt1kHzDb() { return spectrum().inputSpectrum().levelDb (1000.0, 0.0) - spectrum().outputSpectrum().levelDb (1000.0, 0.0); }
+    // How much lower the output spectrum reads than the input spectrum at frequency, in dB.
+    double gapDb (double frequency) { return spectrum().inputSpectrum().levelDb (frequency, 0.0) - spectrum().outputSpectrum().levelDb (frequency, 0.0); }
 };
 
 constexpr double toneDb = -10.0, knownGainReductionDb = 15.0;
@@ -92,7 +101,7 @@ TEST_CASE ("The Spectrum display shows the input and the compressor's output: co
     host.edit (parameters::autoGainId, 1.0f);
     host.edit (parameters::outputGainId, 12.0f);
     host.playFor (0.5, tone);
-    CHECK_THAT (host.gapAt1kHzDb(), WithinAbs (knownGainReductionDb, 0.5));
+    CHECK_THAT (host.gapDb (1000.0), WithinAbs (knownGainReductionDb, 0.5));
 
     // At Ratio 1:1 the compressor is idle and the two meet.
     host.edit (parameters::ratioId, 1.0f);
@@ -104,7 +113,7 @@ TEST_CASE ("The Spectrum display shades the gap where the output is under the in
     SpectrumHost host;
     REQUIRE (host.gapSettlesAt (tone, knownGainReductionDb, 0.5));
     auto& spectrum = host.spectrum();
-    const float x = spectrum.geometry().xOf (1000.0);
+    const float x = host.columnAt (1000.0);
     const float inputY = spectrum.yOf (spectrum.inputSpectrum(), x), outputY = spectrum.yOf (spectrum.outputSpectrum(), x);
     // The output's line lower on the display than the input's, and the shading between the two, not past either.
     REQUIRE (outputY > inputY + 5.0f);
