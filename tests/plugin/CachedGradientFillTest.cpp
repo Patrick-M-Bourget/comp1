@@ -119,18 +119,33 @@ Compared compared (comp1::CachedGradientFill& fill, float scale, const juce::Ima
     return result;
 }
 
-void checkClose (const Compared& c)
+// The most a row may differ on average, in 8-bit steps, on type's renderer. Direct2D (Windows' native renderer) rounds
+// a drawn image a step off its own gradient fill along whole rows, a bias no eye sees: a step there, half of one
+// elsewhere. A tile drawn a row out of place differs by more, 1.6 steps or more along a row in these gradients, and by 2
+// or more in some pixel.
+double rowMeanBound (const juce::ImageType& type)
+{
+   #if JUCE_WINDOWS
+    if (dynamic_cast<const juce::NativeImageType*> (&type) != nullptr)
+        return 1.0;
+   #endif
+    juce::ignoreUnused (type);
+    return 0.5;
+}
+
+void checkClose (const Compared& c, const juce::ImageType& type)
 {
     CAPTURE (c.largest, c.largestRowMean);
     CHECK (c.largest <= 1);
-    CHECK (c.largestRowMean <= 0.5);
+    CHECK (c.largestRowMean <= rowMeanBound (type));
 }
 
 } // namespace
 
 // Not to the pixel: CoreGraphics dithers a gradient by where each pixel lies, so the tile's dither isn't the window's;
 // and where the path covers part of a pixel, a gradient fill scales the gradient's colour by the coverage before
-// rounding it to 8 bits, the tile's already rounded colour after. An 8-bit step at most, a fraction of one along a row.
+// rounding it to 8 bits, the tile's already rounded colour after. An 8-bit step at most, a fraction of one along a row
+// (a step on Direct2D, rowMeanBound).
 TEST_CASE ("A cached gradient fill draws a path as a gradient fill does, at 1x and 2x, on both renderers")
 {
     static const juce::SoftwareImageType software;
@@ -145,7 +160,7 @@ TEST_CASE ("A cached gradient fill draws a path as a gradient fill does, at 1x a
     for (const auto& area : { wholePixelArea(), jaggedArea() })
         for (const auto& [top, bottom] : { std::pair { translucentTop, translucentBottom }, std::pair { opaqueTop, opaqueBottom },
                                            std::pair { translucentTop, translucentBottom }, std::pair { translucentTop, translucentBottom } })
-            checkClose (compared (fill, scale, renderer.type, area, top, bottom));
+            checkClose (compared (fill, scale, renderer.type, area, top, bottom), renderer.type);
 }
 
 TEST_CASE ("A cached gradient fill draws anew at a new scale")
@@ -155,7 +170,7 @@ TEST_CASE ("A cached gradient fill draws anew at a new scale")
     for (const float scale : { 1.0f, 2.0f, 1.0f })
     {
         CAPTURE (scale);
-        checkClose (compared (fill, scale, native, wholePixelArea(), opaqueTop, opaqueBottom));
+        checkClose (compared (fill, scale, native, wholePixelArea(), opaqueTop, opaqueBottom), native);
     }
 }
 
