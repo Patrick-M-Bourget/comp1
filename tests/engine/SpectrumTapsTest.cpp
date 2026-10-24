@@ -25,9 +25,6 @@ using Catch::Matchers::WithinAbs;
 namespace
 {
 
-const test::SampleTap inputTap { &Engine::readInputTapSamples, &Engine::skipInputTapSamples, &Engine::inputTapSampleCapacity };
-const test::SampleTap outputTap { &Engine::readOutputTapSamples, &Engine::skipOutputTapSamples, &Engine::outputTapSampleCapacity };
-
 std::vector<float> delayed (const std::vector<float>& signal, int samples) { return test::delayed ({ signal }, samples).front(); }
 
 // How far the output tap is behind the input tap in mode at 48 kHz: the Before section and the Lookahead budget in
@@ -63,7 +60,7 @@ TEST_CASE ("The input tap carries the mean of the main input's channels as it ar
     // The Gate closing hard on the noise, and the compressor reducing it: neither reaches the input tap.
     Settings settings = compressing (mode);
     settings.gate = { .on = true, .thresholdDb = 0.0, .rangeDb = 60.0 };
-    CHECK (test::tapOf (inputTap, settings, input) == test::meanOf (input));
+    CHECK (test::tapOf (Tap::input, settings, input) == test::meanOf (input));
 }
 
 TEST_CASE ("The input tap carries a non-finite input sample as the silence it plays as")
@@ -75,7 +72,7 @@ TEST_CASE ("The input tap carries a non-finite input sample as the silence it pl
     auto expected = input;
     expected[0][100] = 0.0f;
     expected[1][200] = 0.0f;
-    CHECK (test::tapOf (inputTap, {}, input) == test::meanOf (expected));
+    CHECK (test::tapOf (Tap::input, {}, input) == test::meanOf (expected));
 }
 
 TEST_CASE ("With the compressor reducing a steady level by a known amount, the output tap reads that much lower than the input tap")
@@ -84,8 +81,8 @@ TEST_CASE ("With the compressor reducing a steady level by a known amount, the o
     const int numChannels = GENERATE (1, 2);
     CAPTURE (mode, numChannels);
     const auto input = test::steadyLevel (numChannels, 24000, steadyInputDb);
-    const auto in = test::tapOf (inputTap, compressing (mode), input);
-    const auto out = test::tapOf (outputTap, compressing (mode), input);
+    const auto in = test::tapOf (Tap::input, compressing (mode), input);
+    const auto out = test::tapOf (Tap::output, compressing (mode), input);
     REQUIRE (in.size() == input.front().size());
     REQUIRE (out.size() == in.size());
     CHECK_THAT (tapGapDb (in, out), WithinAbs (knownGainReductionDb, 0.01));
@@ -99,8 +96,8 @@ TEST_CASE ("With the compressor idle the output tap is the input tap, delayed as
     // Ratio 1:1, and a Threshold over anything the noise reaches: no Gain Reduction either way.
     for (const auto idle : { Settings { .ratio = 1.0, .processingMode = mode }, Settings { .thresholdDb = 0.0, .processingMode = mode } })
     {
-        const auto in = test::tapOf (inputTap, idle, input);
-        const auto out = test::tapOf (outputTap, idle, input);
+        const auto in = test::tapOf (Tap::input, idle, input);
+        const auto out = test::tapOf (Tap::output, idle, input);
         REQUIRE (in.size() == input.front().size());
         REQUIRE (out.size() == in.size());
         CHECK (out == delayed (in, outputTapDelay (mode)));
@@ -113,7 +110,7 @@ TEST_CASE ("Auto Gain, Output Gain, Dry, Saturation After, Detection Audition an
     CAPTURE (mode);
     const auto input = test::steadyLevel (2, 24000, steadyInputDb);
     const auto plain = compressing (mode);
-    const auto reference = test::tapOf (outputTap, plain, input);
+    const auto reference = test::tapOf (Tap::output, plain, input);
     REQUIRE (reference.size() == input.front().size());
     std::vector<std::pair<const char*, Settings>> changes;
     const auto with = [&] (const char* name, auto change) {
@@ -139,7 +136,7 @@ TEST_CASE ("Auto Gain, Output Gain, Dry, Saturation After, Detection Audition an
         CAPTURE (name);
         // Each changes what the Engine sends on, so the tap is ahead of it.
         REQUIRE (test::played (settings, 48000.0, input) != test::played (plain, 48000.0, input));
-        CHECK (test::tapOf (outputTap, settings, input) == reference);
+        CHECK (test::tapOf (Tap::output, settings, input) == reference);
     }
 }
 
@@ -161,7 +158,7 @@ TEST_CASE ("The output tap follows the Gate, at either Gate Position, and Satura
     {
         const auto output = test::played (settings, 48000.0, input);
         REQUIRE (output != input);
-        CHECK (test::tapOf (outputTap, settings, input) == test::meanOf (output));
+        CHECK (test::tapOf (Tap::output, settings, input) == test::meanOf (output));
     }
 }
 
@@ -169,16 +166,16 @@ TEST_CASE ("The input and output taps are the same, sample for sample, however t
 {
     const auto input = test::noise (2, 48000, 9);
     for (const auto mode : { ProcessingMode::ZeroLatency, ProcessingMode::HighQuality })
-        for (const auto* tap : { &inputTap, &outputTap })
+        for (const auto tap : { Tap::input, Tap::output })
         {
-            CAPTURE (mode, tap == &inputTap);
+            CAPTURE (mode, tap == Tap::input);
             const auto settings = compressing (mode);
-            const auto reference = test::tapOf (*tap, settings, input);
+            const auto reference = test::tapOf (tap, settings, input);
             REQUIRE (reference.size() == input.front().size());
             for (const auto& cut : test::blockCuts())
             {
                 CAPTURE (cut);
-                CHECK (test::tapOf (*tap, settings, input, nullptr, cut) == reference);
+                CHECK (test::tapOf (tap, settings, input, nullptr, cut) == reference);
             }
         }
 }
@@ -186,13 +183,13 @@ TEST_CASE ("The input and output taps are the same, sample for sample, however t
 TEST_CASE ("The input and output taps each carry one sample per input sample across a Processing Mode switch")
 {
     const auto input = test::noise (2, 48000, 5);
-    for (const auto* tap : { &inputTap, &outputTap })
+    for (const auto tap : { Tap::input, Tap::output })
     {
-        CAPTURE (tap == &inputTap);
+        CAPTURE (tap == Tap::input);
         Engine engine;
         engine.prepare (48000.0, 512, 2);
         engine.setSettings ({ .processingMode = ProcessingMode::ZeroLatency });
-        const auto read = test::playAndReadTap (engine, *tap, input, { 333 }, nullptr,
+        const auto read = test::playAndReadTap (engine, tap, input, { 333 }, nullptr,
                                                 test::SettingsChange { .at = 4800, .settings = { .processingMode = ProcessingMode::HighQuality } });
         CHECK (read.size() == input.front().size());
     }
@@ -202,13 +199,13 @@ TEST_CASE ("The input and output taps hold at least 150 ms of samples at every s
 {
     const double sampleRate = GENERATE (from_range (test::sampleRates()));
     CAPTURE (sampleRate);
-    for (const auto* tap : { &inputTap, &outputTap })
+    for (const auto tap : { Tap::input, Tap::output })
     {
-        CAPTURE (tap == &inputTap);
+        CAPTURE (tap == Tap::input);
         Engine engine;
         engine.prepare (sampleRate, 512, 1);
         engine.setSettings ({ .ratio = 1.0 });
-        const int capacity = (engine.*tap->capacity)();
+        const int capacity = engine.capacity (tap);
         CHECK (capacity >= 0.15 * sampleRate);
         // Sample n of what is played says when it was played: n / 2^20, exact in float.
         const auto play = [&] (int from, int count) {
@@ -222,14 +219,14 @@ TEST_CASE ("The input and output taps hold at least 150 ms of samples at every s
 
         // Nothing reads: the tap keeps the first capacity samples.
         play (0, capacity + 1000);
-        REQUIRE ((engine.*tap->read) (samples.data(), capacity) == capacity);
+        REQUIRE (engine.read (tap, samples.data(), capacity) == capacity);
         CHECK (at (samples.front()) == 0);
         CHECK (at (samples.back()) == capacity - 1);
 
         play (0, capacity);
-        (engine.*tap->skip)();
+        engine.skip (tap);
         play (5, 100);
-        REQUIRE ((engine.*tap->read) (samples.data(), capacity) == 100);
+        REQUIRE (engine.read (tap, samples.data(), capacity) == 100);
         CHECK (at (samples.front()) == 5);
         CHECK (at (samples[99]) == 104);
     }
@@ -242,12 +239,12 @@ TEST_CASE ("Reading the input and output taps never allocates")
     engine.setSettings (compressing (ProcessingMode::HighQuality));
     auto audio = test::noise (2, 4800, 1);
     test::processInBlocks (engine, audio, { 512 });
-    std::vector<float> samples (static_cast<std::size_t> (std::max (engine.inputTapSampleCapacity(), engine.outputTapSampleCapacity())));
+    std::vector<float> samples (static_cast<std::size_t> (std::max (engine.capacity (Tap::input), engine.capacity (Tap::output))));
     plugkit::test::AllocationGuard guard;
-    const int in = engine.readInputTapSamples (samples.data(), static_cast<int> (samples.size()));
-    const int out = engine.readOutputTapSamples (samples.data(), static_cast<int> (samples.size()));
-    engine.skipInputTapSamples();
-    engine.skipOutputTapSamples();
+    const int in = engine.read (Tap::input, samples.data(), static_cast<int> (samples.size()));
+    const int out = engine.read (Tap::output, samples.data(), static_cast<int> (samples.size()));
+    engine.skip (Tap::input);
+    engine.skip (Tap::output);
     CHECK (guard.allocations() == 0);
     CHECK (in == 4800);
     CHECK (out == 4800);
@@ -276,7 +273,7 @@ TEST_CASE ("The input tap is read on a reader thread while process() runs, in or
         done = true;
     });
 
-    std::vector<float> samples (static_cast<std::size_t> (engine.inputTapSampleCapacity()));
+    std::vector<float> samples (static_cast<std::size_t> (engine.capacity (Tap::input)));
     std::size_t allocations = 0;
     int read = 0;
     float last = -1.0f;
@@ -284,7 +281,7 @@ TEST_CASE ("The input tap is read on a reader thread while process() runs, in or
     while (! done && read < 48000)
     {
         plugkit::test::AllocationGuard guard;
-        const int count = engine.readInputTapSamples (samples.data(), static_cast<int> (samples.size()));
+        const int count = engine.read (Tap::input, samples.data(), static_cast<int> (samples.size()));
         allocations += guard.allocations();
         for (int i = 0; i < count; ++i)
         {
@@ -310,10 +307,10 @@ TEST_CASE ("The input and output taps can be read while the host prepares the En
     std::thread reader ([&] {
         std::vector<float> samples (1 << 16);
         while (! done)
-            for (const auto* tap : { &inputTap, &outputTap })
+            for (const auto tap : { Tap::input, Tap::output })
             {
-                (engine.*tap->read) (samples.data(), std::min ((engine.*tap->capacity)(), static_cast<int> (samples.size())));
-                (engine.*tap->skip)();
+                engine.read (tap, samples.data(), std::min (engine.capacity (tap), static_cast<int> (samples.size())));
+                engine.skip (tap);
             }
     });
 
@@ -330,6 +327,6 @@ TEST_CASE ("The input and output taps can be read while the host prepares the En
     }
     done = true;
     reader.join();
-    CHECK (engine.inputTapSampleCapacity() >= 0.15 * 192000.0);
-    CHECK (engine.outputTapSampleCapacity() >= 0.15 * 192000.0);
+    CHECK (engine.capacity (Tap::input) >= 0.15 * 192000.0);
+    CHECK (engine.capacity (Tap::output) >= 0.15 * 192000.0);
 }

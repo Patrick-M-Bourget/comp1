@@ -202,13 +202,10 @@ public:
 
     // The Engine's input tap and output tap, for the Spectrum display, their one reader, from the message thread: the
     // main input before any stage, and the Wet path directly after the compressor, each a mono sample per sample played
-    // since the last read, oldest first (Engine::readInputTapSamples, readOutputTapSamples and their skip and capacity).
-    int readInputTapSamples (float* destination, int maxSamples) { return engine.readInputTapSamples (destination, maxSamples); }
-    void skipInputTapSamples() { engine.skipInputTapSamples(); }
-    int inputTapSampleCapacity() const { return engine.inputTapSampleCapacity(); }
-    int readOutputTapSamples (float* destination, int maxSamples) { return engine.readOutputTapSamples (destination, maxSamples); }
-    void skipOutputTapSamples() { engine.skipOutputTapSamples(); }
-    int outputTapSampleCapacity() const { return engine.outputTapSampleCapacity(); }
+    // since the last read, oldest first (Engine::read, skip and capacity).
+    int read (Tap tap, float* destination, int maxSamples) { return engine.read (tap, destination, maxSamples); }
+    void skip (Tap tap) { engine.skip (tap); }
+    int capacity (Tap tap) const { return engine.capacity (tap); }
 
     // The display tab the Expanded View shows: saved with the session, read back on restore (Level for a session saved
     // without it, or with a tab there no longer is), and in no Preset; not an undo step, and it makes no side Modified. Any thread.
