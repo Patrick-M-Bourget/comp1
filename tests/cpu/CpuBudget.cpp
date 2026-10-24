@@ -125,6 +125,17 @@ Settings followingFar()
     return settings;
 }
 
+// The Gate on at Gate Position Post, its Gate Threshold the worst case's, so it opens on every compressed loud burst and
+// closes on every quiet one.
+Settings gatedPost()
+{
+    Settings settings;
+    settings.gate.on = true;
+    settings.gate.thresholdDb = test::worstCaseSettings().gate.thresholdDb;
+    settings.gatePosition = GatePosition::Post;
+    return settings;
+}
+
 // The worst case with the Limiter off: what the rest of the Engine costs, and so what the Limiter costs on.
 Settings worstCaseLimiterOff()
 {
@@ -155,6 +166,7 @@ std::vector<Scene> scenes()
         { .name = "Drums' Style defaults", .settings = styled (Style::Drums) },
         { .name = "Comp Follow on, Comp automated", .settings = following(), .automate = automateComp },
         { .name = "Comp Follow gliding", .settings = followingFar(), .automate = automateCompFollow },
+        { .name = "Gate at Post", .settings = gatedPost() },
         { .name = "High Quality, 2x Oversampling", .settings = highQuality() },
         { .name = "Defaults, 32-sample blocks", .settings = {}, .blockSize = 32 },
         // Timed after 10 s of silence, long enough for every filter and envelope to have rung down below the smallest
