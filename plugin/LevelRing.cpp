@@ -25,11 +25,25 @@ LevelRing::Reading LevelRing::detectionLevel() { return { &LevelRecord::detectio
 
 LevelRing::Reading LevelRing::limiterGainReduction() { return { &LevelRecord::limiterGainReductionDb, true, tokens::colour::dynRange }; }
 
-LevelRing::LevelRing (staple::Knob& k, const juce::RangedAudioParameter& s, LevelHistory& h, Reading r)
-    : plugkit::ui::EditorTick::Client (k), knob (k), scale (s), reading (r), floor (r.fromTop ? 0.0 : bottomOf (s)),
+LevelRing::Placement LevelRing::aroundThreshold (staple::Knob& knob, const juce::RangedAudioParameter& scale, std::function<double()> thresholdDb)
+{
+    return [&knob, &scale, thresholdDb = std::move (thresholdDb)] (double db) {
+        const double bottom = bottomOf (scale), top = topOf (scale);
+        const double threshold = juce::jlimit (bottom, top, thresholdDb());
+        const double pointer = knob.valueToProportionOfLength (knob.getValue());
+        db = juce::jlimit (bottom, top, db);
+        if (db <= threshold)
+            return threshold > bottom ? pointer * (db - bottom) / (threshold - bottom) : pointer;
+        return pointer + (1.0 - pointer) * (db - threshold) / (top - threshold);
+    };
+}
+
+LevelRing::LevelRing (staple::Knob& k, const juce::RangedAudioParameter& s, LevelHistory& h, Reading r, Placement p)
+    : plugkit::ui::EditorTick::Client (k), knob (k), scale (s), reading (r), placement (std::move (p)), floor (r.fromTop ? 0.0 : bottomOf (s)),
       // A level fills up to the range's top; a Gain Reduction down to its bottom.
       level (h, r.level, floor, r.fromTop ? topOf (s) - bottomOf (s) : topOf (s)), shown (floor)
 {
+    shownTo = filledTo();
 }
 
 double LevelRing::filledFrom() const
@@ -39,12 +53,24 @@ double LevelRing::filledFrom() const
     return scale.convertTo0to1 (static_cast<float> (topOf (scale) - shown));
 }
 
+double LevelRing::filledTo() const
+{
+    if (reading.fromTop)
+        return 1.0;
+    return placement != nullptr ? placement (shown) : scale.convertTo0to1 (static_cast<float> (shown));
+}
+
 void LevelRing::tick (double seconds)
 {
     const double now = level.next (seconds);
-    if (juce::exactlyEqual (now, shown))
-        return;
+    const bool moved = ! juce::exactlyEqual (now, shown);
     shown = now;
+    // A Placement moves the fill under a steady level as the knob or its Threshold moves; the knob repaints for its
+    // own value, but not for a Threshold set elsewhere.
+    const double to = filledTo();
+    if (! moved && (shown <= floor || juce::exactlyEqual (to, shownTo)))
+        return;
+    shownTo = to;
     knob.ringChanged();
 }
 
@@ -62,7 +88,7 @@ void LevelRing::paintRing (juce::Graphics& g, staple::Knob&, juce::Point<float> 
     if (shown <= floor)
         return;
     const double from = filledFrom();
-    const double to = reading.fromTop ? 1.0 : scale.convertTo0to1 (static_cast<float> (shown));
+    const double to = filledTo();
     juce::Path filled;
     filled.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, angleAt (from), angleAt (to), true);
     g.setColour (reading.colour.withMultipliedAlpha (alpha));
