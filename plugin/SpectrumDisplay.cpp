@@ -157,16 +157,12 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     g.endTransparencyLayer();
     fades.paint (g, *this);
 
-    // The labels go over the fades, unfaded: the Frequency labels along the bottom (gridLabels' first row, without its
-    // Display Range labels, which are no scale here) and the Analyzer's dB scale.
-    auto frequencyLabels = display::gridLabels (shape);
-    const float bottomRow = frequencyLabels.empty() ? 0.0f : frequencyLabels.front().area.getY();
-    frequencyLabels.erase (std::remove_if (frequencyLabels.begin(), frequencyLabels.end(),
-                                           [bottomRow] (const display::Label& l) { return ! juce::exactlyEqual (l.area.getY(), bottomRow); }),
-                           frequencyLabels.end());
+    // The labels go over the fades, unfaded: the Frequency labels along the bottom (without the grid's Display Range
+    // labels, which are no scale here) and the Analyzer's dB scale.
+    auto shown = display::frequencyLabels (shape);
     const auto scale = display::analyzerScaleLabels (shape, analyzer);
-    frequencyLabels.insert (frequencyLabels.end(), scale.begin(), scale.end());
-    labels.paint (g, DisplayFades::originInWindow (*this), frequencyLabels);
+    shown.insert (shown.end(), scale.begin(), scale.end());
+    labels.paint (g, DisplayFades::originInWindow (*this), shown);
 }
 
 std::unique_ptr<juce::AccessibilityHandler> SpectrumDisplay::createAccessibilityHandler()
