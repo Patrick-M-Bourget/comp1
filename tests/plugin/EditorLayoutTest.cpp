@@ -188,6 +188,53 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
     }
 }
 
+TEST_CASE ("Both rows of sections start at the left edge on one grid of columns: Detection under Gate and Compressor, Stereo and Lookahead under Character and Saturation, with no gap between, the Detection section collapsed or open, at 100% and 200% and the minimum and default sizes")
+{
+    host::EditorHost host;
+    auto* menu = harness::findChild<plugkit::ui::UiScaleMenu> (*host.editor);
+    REQUIRE (menu != nullptr);
+    const bool open = GENERATE (false, true);
+    CAPTURE (open);
+    host.processor.setDetectionOpen (open);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().detectionSection().isOpen() == open; }));
+    host.settleAnimations();
+    const auto& window = comp1::PluginProcessor::expandedWindow;
+    const int percent = GENERATE (100, 200);
+    CAPTURE (percent);
+    menu->pick (percent);
+    const auto size = GENERATE_COPY (window.minimum, window.defaultSize);
+    CAPTURE (size.x, size.y);
+    host.editor->setSize (juce::roundToInt (size.x * percent / 100.0), juce::roundToInt (size.y * percent / 100.0));
+
+    auto& sections = named (*host.editor, "Sections");
+    const auto at = [&sections] (const char* name) { return named (sections, name).getBounds(); };
+    const auto gate = at ("Gate"), compressor = at ("Compressor"), character = at ("Character and Saturation");
+    const auto detection = at ("Detection"), stereo = at ("Stereo"), lookahead = at ("Lookahead");
+    const int gap = compressor.getX() - gate.getRight();
+
+    // The first row's columns, from the left edge, a gap apart.
+    CHECK (gap > 0);
+    CHECK (gate.getX() == 0);
+    CHECK (character.getX() - compressor.getRight() == gap);
+    // The second row under them: Detection spans the first two columns, and Stereo then Lookahead the third, a gap
+    // apart, their outer edges on the column's.
+    CHECK (detection.getX() == gate.getX());
+    CHECK (detection.getRight() == compressor.getRight());
+    CHECK (stereo.getX() == character.getX());
+    CHECK (lookahead.getX() - stereo.getRight() == gap);
+    CHECK (lookahead.getRight() == character.getRight());
+    // Each at least as wide as its own content.
+    for (const auto* name : { "Gate", "Compressor", "Character and Saturation", "Detection", "Stereo", "Lookahead" })
+    {
+        CAPTURE (name);
+        auto& section = dynamic_cast<comp1::Section&> (named (sections, name));
+        CHECK (section.getWidth() >= section.idealWidth());
+        CHECK (sections.getLocalBounds().contains (section.getBounds()));
+    }
+    CHECK_FALSE (stereo.intersects (lookahead));
+    CHECK_FALSE (detection.intersects (stereo));
+}
+
 TEST_CASE ("Each meter is labelled under its bar, GATE, COMP, LIM and OUT, the labels overlapping nothing and the bars giving up only the label's line, at 100% and 200% and the minimum and default sizes")
 {
     host::EditorHost host;

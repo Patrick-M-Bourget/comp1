@@ -139,18 +139,22 @@ void PluginEditor::layOutBody (juce::Rectangle<int> area)
     }
     displaySlot.setBounds (area);
 
-    auto rows = sections.getLocalBounds();
-    for (auto& row : sectionRows())
-    {
-        auto line = rows.removeFromTop (tallestOf (row));
-        rows.removeFromTop (sectionGap);
-        for (auto* section : row)
-        {
-            // Its own height, from the row's top: the Detection section collapsed is a strip.
-            section->setBounds (line.removeFromLeft (section->idealWidth()).withHeight (section->idealHeight()));
-            line.removeFromLeft (sectionGap);
-        }
-    }
+    // The grid's three columns: Gate's, the Compressor's and Character and Saturation's, each as wide as the widest it
+    // holds. The second row's Detection spans the first two, and Stereo and Lookahead share the third.
+    const int first = gate.idealWidth();
+    const int second = std::max (compressor.idealWidth(), detection.idealWidth() - first - sectionGap);
+    const int third = std::max (character.idealWidth(), stereo.idealWidth() + sectionGap + lookahead.idealWidth());
+    const int secondX = first + sectionGap, thirdX = secondX + second + sectionGap;
+    // Each from its row's top at its own height: the Detection section collapsed is a strip.
+    const auto place = [] (Section& section, int top, int x, int width) { section.setBounds (x, top, width, section.idealHeight()); };
+    place (gate, 0, 0, first);
+    place (compressor, 0, secondX, second);
+    place (character, 0, thirdX, third);
+    const int secondTop = tallestOf (sectionRows().front()) + sectionGap;
+    place (detection, secondTop, 0, secondX + second);
+    place (stereo, secondTop, thirdX, stereo.idealWidth());
+    const int lookaheadX = thirdX + stereo.idealWidth() + sectionGap;
+    place (lookahead, secondTop, lookaheadX, thirdX + third - lookaheadX);
 }
 
 } // namespace comp1
