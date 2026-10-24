@@ -1,5 +1,5 @@
-// The Compact View's controls at work: a Style pick, Comp and Comp Follow (ADR 0004), the Gate, the output popover's
-// Output Gain into the Limiter, the Gain Reduction meter and the editor-wide keys.
+// The Compact View's controls at work: a Style pick, Comp and Comp Follow (ADR 0004), the Compact Slots (ADR 0011), the
+// output popover's Output Gain into the Limiter, the Gain Reduction meter and the editor-wide keys.
 
 #include "Host.h"
 #include "Playing.h"
@@ -7,9 +7,14 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <catch2/generators/catch_generators_range.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <array>
 #include <cmath>
+#include <set>
+#include <stdexcept>
+#include <vector>
 
 using Catch::Matchers::WithinAbs;
 namespace parameters = comp1::parameters;
@@ -36,15 +41,187 @@ Control& compact (host::EditorHost& host, const juce::String& title)
 
 staple::Knob& compactKnob (host::EditorHost& host, const juce::String& title) { return compact<staple::Knob> (host, title); }
 
+// The host parameter named name.
+juce::RangedAudioParameter& parameterNamed (host::EditorHost& host, const juce::String& name)
+{
+    for (auto* each : host.processor.getParameters())
+        if (auto& ranged = dynamic_cast<juce::RangedAudioParameter&> (*each); ranged.getName (100) == name)
+            return ranged;
+    FAIL ("no parameter named " << name);
+    throw std::logic_error ("unreachable");
+}
+
+constexpr std::array everyStyle { comp1::Style::Clean, comp1::Style::VCA,        comp1::Style::FET, comp1::Style::Opto,
+                                  comp1::Style::Vocal, comp1::Style::Instrument, comp1::Style::Bus, comp1::Style::Drums };
+
 } // namespace
 
-TEST_CASE ("The Compact View's Comp knob is the kit's hero and its Gate Threshold the kit's large, while the Expanded View's Comp stays large")
+TEST_CASE ("The Compact View's Comp knob is the kit's hero, a Compact Slot's primary the kit's large and a knob Companion the kit's small, while the Expanded View's Comp stays large")
 {
     host::EditorHost host;
     CHECK (host.knob ("Comp").getDiameter() == staple::tokens::knob::gain);
     showCompactView (host);
     CHECK (compactKnob (host, "Comp").getDiameter() == staple::tokens::knob::hero);
-    CHECK (compactKnob (host, "Gate Threshold").getDiameter() == staple::tokens::knob::gain);
+    // Clean: Attack over Knee in slot A.
+    CHECK (compactKnob (host, "Attack").getDiameter() == staple::tokens::knob::gain);
+    CHECK (compactKnob (host, "Knee").getDiameter() == staple::tokens::knob::small);
+}
+
+TEST_CASE ("Each Style's Compact Slots show its row, A's primary and Companion then B's, titled with their parameters' names and nothing else; each writes its parameter as one undo step, Comp Follow staying on")
+{
+    // ADR 0011's table, each slot's primary then its Companion, by the parameters' names.
+    struct Row
+    {
+        comp1::Style style;
+        std::array<const char*, 4> names;
+    };
+    const auto row = GENERATE (values<Row> ({
+        { comp1::Style::Clean, { "Attack", "Knee", "Release", "Auto Release" } },
+        { comp1::Style::VCA, { "Attack", "Detection High-Pass", "Release", "Auto Release" } },
+        { comp1::Style::FET, { "Attack", "Colour", "Release", "Hold" } },
+        { comp1::Style::Opto, { "Colour", "Range", "Detection High-Pass Frequency", "Detection High-Pass" } },
+        { comp1::Style::Vocal, { "Gate Threshold", "Gate", "Release", "Auto Release" } },
+        { comp1::Style::Instrument, { "Attack", "Knee", "Release", "Auto Release" } },
+        { comp1::Style::Bus, { "Attack", "Detection High-Pass", "Release", "Auto Release" } },
+        { comp1::Style::Drums, { "Attack", "Hold", "Drive", "Saturation" } },
+    }));
+    CAPTURE (static_cast<int> (row.style));
+    host::EditorHost host;
+    showCompactView (host);
+    REQUIRE (host.processor.chooseStyle (row.style));
+    host.settle();
+    auto& body = host.expandedView().compactView();
+
+    // In each slot, its primary then its Companion; the body's controls are those and Comp, nothing else.
+    const std::array<juce::Component*, 4> shown { &body.compactSlot (0).primary(), &body.compactSlot (0).companion(),
+                                                  &body.compactSlot (1).primary(), &body.compactSlot (1).companion() };
+    std::set<juce::String> expected { "Comp" };
+    for (size_t i = 0; i < shown.size(); ++i)
+    {
+        CAPTURE (i);
+        CHECK (shown[i]->getTitle() == row.names[i]);
+        CHECK (&compact<juce::Component> (host, row.names[i]) == shown[i]);
+        expected.insert (row.names[i]);
+    }
+    std::set<juce::String> titles;
+    for (auto* c : host.findAll<juce::Component> ([&body] (juce::Component& c) {
+             return body.isParentOf (&c) && c.isShowing() && c.getWantsKeyboardFocus() && c.getTitle().isNotEmpty();
+         }))
+        titles.insert (c->getTitle());
+    CHECK (titles == expected);
+
+    // Each edited by mouse: one undo step, only its parameter written, inside its gesture, Comp Follow on throughout.
+    REQUIRE (host.value (parameters::compFollowId) == 1.0f);
+    auto& history = host.processor.session().editHistory();
+    for (auto* control : shown)
+    {
+        const auto name = control->getTitle();
+        CAPTURE (name);
+        auto& parameter = parameterNamed (host, name);
+        const float before = parameter.getValue();
+        const int steps = history.undoSteps();
+        host::GestureRecorder recorder;
+        host.processor.addListener (&recorder);
+        if (auto* knob = dynamic_cast<staple::Knob*> (control))
+            // Down from near the top, up otherwise.
+            host::EditorHost::drag (*knob, before > 0.5f ? -20.0f : 20.0f);
+        else
+            host::EditorHost::click (dynamic_cast<juce::Button&> (*control));
+        host.processor.removeListener (&recorder);
+        CHECK_FALSE (juce::exactlyEqual (parameter.getValue(), before));
+        CHECK (history.undoSteps() == steps + 1);
+        REQUIRE_FALSE (recorder.changes.empty());
+        for (const auto& [index, inGesture] : recorder.changes)
+        {
+            CHECK (index == parameter.getParameterIndex());
+            CHECK (inGesture);
+        }
+        CHECK (host.value (parameters::compFollowId) == 1.0f);
+        history.undo();
+        CHECK (juce::exactlyEqual (parameter.getValue(), before));
+    }
+}
+
+TEST_CASE ("Following a Style change, a Preset load or an A/B switch, the Compact Slots write nothing, and settings no Style writes keep their values while hidden")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    // Settings no Style's defaults include, which Opto's slot B and Drums' show.
+    host.edit (parameters::detectionHighPassFrequencyId, 150.0f);
+    host.edit (parameters::detectionHighPassOnId, 1.0f);
+    host.edit (parameters::driveId, 9.0f);
+    host.edit (parameters::saturationId, 1.0f);
+    host.settle();
+    auto& session = host.processor.session();
+    const juce::String how = GENERATE (as<juce::String> {}, "chip", "preset", "A/B");
+    CAPTURE (how);
+    for (const auto style : { comp1::Style::Opto, comp1::Style::Drums, comp1::Style::Vocal, comp1::Style::Clean })
+    {
+        CAPTURE (static_cast<int> (style));
+        if (how == "chip")
+            REQUIRE (host.processor.chooseStyle (style));
+        else if (how == "preset")
+        {
+            REQUIRE (host.processor.chooseStyle (style));
+            const auto preset = session.presetState();
+            REQUIRE (host.processor.chooseStyle (comp1::Style::Clean));
+            host.settle();
+            REQUIRE (session.loadPreset (preset, "Saved"));
+        }
+        else
+        {
+            // B holds the Style and A Clean, shown; then B.
+            session.selectCompareSide (plugkit::ui::CompareSide::B);
+            REQUIRE (host.processor.chooseStyle (style));
+            session.selectCompareSide (plugkit::ui::CompareSide::A);
+            REQUIRE (host.processor.chooseStyle (comp1::Style::Clean));
+            host.settle();
+            session.selectCompareSide (plugkit::ui::CompareSide::B);
+        }
+        REQUIRE (host.value (parameters::styleId) == static_cast<float> (style));
+        // The tick seeing the Style rebinds the slots, writing nothing.
+        host::GestureRecorder recorder;
+        host.processor.addListener (&recorder);
+        host.settle();
+        host.processor.removeListener (&recorder);
+        CHECK (recorder.changes.empty());
+        CHECK (host.expandedView().compactView().compactSlot (0).primary().getTitle()
+               == (style == comp1::Style::Opto ? "Colour" : style == comp1::Style::Vocal ? "Gate Threshold" : "Attack"));
+        CHECK_THAT (host.value (parameters::detectionHighPassFrequencyId), WithinAbs (150.0f, 0.01));
+        CHECK (host.value (parameters::detectionHighPassOnId) == 1.0f);
+        CHECK_THAT (host.value (parameters::driveId), WithinAbs (9.0f, 1.0e-4));
+        CHECK (host.value (parameters::saturationId) == 1.0f);
+    }
+    // Opto's slot B and Drums' show them.
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    host.settle();
+    CHECK_THAT (compactKnob (host, "Detection High-Pass Frequency").getValue(), WithinAbs (150.0, 0.01));
+    CHECK (compact<juce::ToggleButton> (host, "Detection High-Pass").getToggleState());
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Drums));
+    host.settle();
+    CHECK_THAT (compactKnob (host, "Drive").getValue(), WithinAbs (9.0, 1.0e-4));
+    CHECK (compact<juce::ToggleButton> (host, "Saturation").getToggleState());
+}
+
+TEST_CASE ("In every Style Tab walks the Compact View's body in one order: slot A's primary, its Companion, Comp, slot B's primary, its Companion")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    const auto style = GENERATE (from_range (everyStyle.begin(), everyStyle.end()));
+    CAPTURE (static_cast<int> (style));
+    REQUIRE (host.processor.chooseStyle (style));
+    host.settle();
+    auto& body = host.expandedView().compactView();
+    const std::vector<juce::Component*> expected { &body.compactSlot (0).primary(), &body.compactSlot (0).companion(), &compactKnob (host, "Comp"),
+                                                   &body.compactSlot (1).primary(), &body.compactSlot (1).companion() };
+    expected.front()->grabKeyboardFocus();
+    REQUIRE (expected.front()->hasKeyboardFocus (false));
+    for (size_t i = 1; i < expected.size(); ++i)
+    {
+        CAPTURE (i);
+        REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
+        CHECK (juce::Component::getCurrentlyFocusedComponent() == expected[i]);
+    }
 }
 
 TEST_CASE ("A Style picked from the footer's chip in the Compact View writes that Style's defaults as one undo step, and the Expanded View shows them after switching")
@@ -163,45 +340,6 @@ TEST_CASE ("With Comp Follow on, a drag of the Compact View's Comp moves it as o
     CHECK_THAT (host.value (parameters::compId), WithinAbs (50.0f, 1.0e-4));
 }
 
-TEST_CASE ("The Compact View's Gate toggle turns the Gate on and off and its Gate Threshold moves, one undo step each")
-{
-    host::EditorHost host;
-    showCompactView (host);
-    auto& history = host.processor.session().editHistory();
-    auto& gate = compact<juce::ToggleButton> (host, "Gate");
-    const bool byKeys = GENERATE (false, true);
-    CAPTURE (byKeys);
-    int steps = history.undoSteps();
-    for (const float expected : { 1.0f, 0.0f })
-    {
-        if (byKeys)
-        {
-            gate.grabKeyboardFocus();
-            REQUIRE (gate.hasKeyboardFocus (false));
-            CHECK (host.press (juce::KeyPress (juce::KeyPress::spaceKey)));
-        }
-        else
-            host::EditorHost::click (gate);
-        CHECK (host.value (parameters::gateId) == expected);
-        CHECK (history.undoSteps() == ++steps);
-    }
-
-    const float before = host.value (parameters::gateThresholdId);
-    auto& threshold = compactKnob (host, "Gate Threshold");
-    if (byKeys)
-    {
-        threshold.grabKeyboardFocus();
-        REQUIRE (threshold.hasKeyboardFocus (false));
-        CHECK (host.press (juce::KeyPress (juce::KeyPress::upKey)));
-    }
-    else
-        host::EditorHost::drag (threshold, 20.0f);
-    CHECK (host.value (parameters::gateThresholdId) > before);
-    CHECK (history.undoSteps() == steps + 1);
-    history.undo();
-    CHECK (host.value (parameters::gateThresholdId) == before);
-}
-
 TEST_CASE ("In the Compact View the output popover's Output Gain drag is one undo step, and with the Limiter on a steady tone it pushes over the Ceiling never passes it")
 {
     host::Playing host;
@@ -279,18 +417,18 @@ TEST_CASE ("In the Compact View Cmd-Z undoes, Shift-Cmd-Z redoes and Cmd-B toggl
     host::EditorHost host;
     showCompactView (host);
     const auto command = juce::ModifierKeys::commandModifier;
-    auto& gateThreshold = compactKnob (host, "Gate Threshold");
-    const float before = host.value (parameters::gateThresholdId);
-    host::EditorHost::drag (gateThreshold, 20.0f);
-    const float edited = host.value (parameters::gateThresholdId);
+    auto& attack = compactKnob (host, "Attack");
+    const float before = host.value (parameters::attackId);
+    host::EditorHost::drag (attack, 20.0f);
+    const float edited = host.value (parameters::attackId);
     REQUIRE (edited > before);
-    gateThreshold.grabKeyboardFocus();
-    REQUIRE (gateThreshold.hasKeyboardFocus (false));
+    attack.grabKeyboardFocus();
+    REQUIRE (attack.hasKeyboardFocus (false));
 
     CHECK (host.press (juce::KeyPress ('z', command, 0)));
-    CHECK (host.value (parameters::gateThresholdId) == before);
+    CHECK (host.value (parameters::attackId) == before);
     CHECK (host.press (juce::KeyPress ('z', command | juce::ModifierKeys::shiftModifier, 0)));
-    CHECK (host.value (parameters::gateThresholdId) == edited);
+    CHECK (host.value (parameters::attackId) == edited);
     CHECK (host.press (juce::KeyPress ('b', command, 0)));
     CHECK (host.value (parameters::globalBypassId) == 1.0f);
     CHECK (host.press (juce::KeyPress ('b', command, 0)));

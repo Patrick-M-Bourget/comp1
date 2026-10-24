@@ -81,19 +81,27 @@ void describe (staple::Knob& knob, const juce::RangedAudioParameter& parameter)
     knob.valueFromTextFunction = [&parameter] (const juce::String& text) { return valueFromText (parameter, text); };
 }
 
+juce::Font labelFont() { return staple::font (size::fs2); }
+
+void setUpKnob (staple::Knob& knob, juce::Label& label, const juce::String& text)
+{
+    knob.setArcColour (colour::curveMain);
+    label.setText (text, juce::dontSendNotification);
+    label.setJustificationType (juce::Justification::centred);
+    label.setFont (labelFont());
+    label.setColour (juce::Label::textColourId, colour::text2);
+    label.setInterceptsMouseClicks (false, false);
+    // The knob is read by its title; its label would read the same name again.
+    label.setAccessible (false);
+    knob.setLabel (&label);
+}
+
 } // namespace controls
 
 ControlSection::KnobControl::KnobControl (juce::RangedAudioParameter& p, float diameter, const juce::String& labelText)
     : parameter (p), knob (diameter, p.getName (100))
 {
-    knob.setArcColour (colour::curveMain);
-    label.setText (labelText, juce::dontSendNotification);
-    label.setJustificationType (juce::Justification::centred);
-    label.setFont (staple::font (size::fs2));
-    label.setColour (juce::Label::textColourId, colour::text2);
-    label.setInterceptsMouseClicks (false, false);
-    // The knob is read by its title; its label would read the same name again.
-    label.setAccessible (false);
+    controls::setUpKnob (knob, label, labelText);
 }
 
 ControlSection::ControlSection (const juce::String& title, PluginProcessor& p)
@@ -139,7 +147,6 @@ ControlSection::KnobControl& ControlSection::addKnob (const juce::String& parame
     else
         controls::showRangeOf (control.knob, control.parameter);
     controls::describe (control.knob, control.parameter);
-    control.knob.setLabel (&control.label);
     if (place == Place::ownColumn || columns.empty() || columns.back().knob != nullptr)
         columns.emplace_back();
     columns.back().knob = &control;

@@ -12,7 +12,7 @@ A one-knob compressor is fast, but each kind of compressor is tuned by different
 
 ## The core
 
-- **Comp**, labelled "Comp" in every Style. In the Compact View only, it has a **Detection Level ring**, like Threshold's in the Expanded View, and a **Comp Follow-off cue**: while Comp Follow is off, its arc dims to the Global Bypass scale (0.45), and its tooltip says that Threshold and Ratio are set directly and that grabbing Comp makes them follow again (ADR 0004). The cue adds no new element.
+- **Comp**, labelled "Comp" in every Style. In the Compact View only, it has a **Detection Level ring**, like Threshold's in the Expanded View, and a **Comp Follow-off cue**: while Comp Follow is off, its arc dims to the Global Bypass scale (0.45), and its tooltip says that Comp Follow is off and that grabbing Comp makes Threshold and Ratio follow again (ADR 0004). The cue adds no new element.
 - **The Gain Reduction meter.**
 
 There is no tone control in the core, and the Gate is a Compact Slot's, not the core's.

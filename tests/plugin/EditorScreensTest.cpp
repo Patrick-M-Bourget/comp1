@@ -212,6 +212,21 @@ TEST_CASE ("Compact View snapshots: default at 100% and 200%, with Comp Follow o
     snapshot (host, "compact-preset-browser");
 }
 
+TEST_CASE ("Compact View snapshots: each Style's Compact Slots, at 100%", "[.screens]")
+{
+    host::EditorHost host;
+    openOn (host, juce::AudioChannelSet::stereo());
+    host::EditorHost::click (host.expandedView().viewSwitch());
+    REQUIRE (host.expandedView().shownView() == comp1::View::compact);
+    auto& style = host.parameter (comp1::parameters::styleId);
+    for (const auto each : comp1::PluginProcessor::offeredStyles())
+    {
+        REQUIRE (host.processor.chooseStyle (each));
+        host.settle();
+        snapshot (host, "compact-style-" + style.getText (style.convertTo0to1 (static_cast<float> (each)), 100).toLowerCase());
+    }
+}
+
 TEST_CASE ("Output popover snapshots: open in the Expanded View and the Compact View, with Auto Gain on, with Comp Follow on, and with Dry mixed in", "[.screens]")
 {
     host::EditorHost host;
