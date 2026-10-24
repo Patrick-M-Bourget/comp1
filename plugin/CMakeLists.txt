@@ -42,6 +42,7 @@ target_sources(comp1 PRIVATE
     GainReductionMeter.cpp
     GlobalBypassFade.cpp
     HandlePainting.cpp
+    HeroComp.cpp
     LevelGraph.cpp
     LevelHistory.cpp
     LevelRing.cpp
