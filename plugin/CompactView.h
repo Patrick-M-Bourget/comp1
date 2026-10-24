@@ -23,9 +23,10 @@ namespace comp1
 //   follows, with the edit that follows as one undo step. There is no Comp Follow toggle, Threshold or Ratio.
 // - The Gain Reduction meter: the compressor's, on the editor's level history, as tall as the body, and no stop for Tab.
 //
-// The sections keep their own sizes and the meter its width; the row is centred in the body, whatever room is left
-// going around it (the layout is provisional, #94). Both views' controls attach to the same host parameters, so an
-// edit in one shows in the other.
+// The row fills the body: Gate at its left edge, the meter at its right, and Comp, at the kit's largest knob size,
+// centred in the room between them. The sections keep their own sizes, centred down the body, and the meter its width,
+// so a larger window spreads the row out and makes the meter taller. Both views' controls attach to the same host
+// parameters, so an edit in one shows in the other.
 class CompactView final : public juce::Component
 {
 public:
@@ -34,8 +35,7 @@ public:
 
     GainReductionMeter& gainReductionMeter() { return gainReduction; }
 
-    // The row's size: the sections at their own sizes and the meter, with layout::gap between them.
-    int rowWidth();
+    // The sections' height: the taller's own.
     int sectionsHeight();
 
     void resized() override;

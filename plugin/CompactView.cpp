@@ -4,8 +4,6 @@
 #include "Sections.h"
 #include "plugkit/ui/staple/Tokens.h"
 
-#include <algorithm>
-
 namespace comp1
 {
 
@@ -30,14 +28,6 @@ CompactView::CompactView (PluginProcessor& p, LevelHistory& history)
 
 CompactView::~CompactView() = default;
 
-int CompactView::rowWidth()
-{
-    int width = layout::meterWidth;
-    for (auto* section : sections())
-        width += section->idealWidth() + layout::gap;
-    return width;
-}
-
 int CompactView::sectionsHeight()
 {
     return tallestOf (sections());
@@ -45,15 +35,13 @@ int CompactView::sectionsHeight()
 
 void CompactView::resized()
 {
-    auto row = getLocalBounds().withSizeKeepingCentre (rowWidth(), getHeight());
+    auto row = getLocalBounds();
     gainReduction.setBounds (row.removeFromRight (layout::meterWidth));
-    row.removeFromRight (layout::gap);
-    auto line = row.withSizeKeepingCentre (row.getWidth(), sectionsHeight());
-    for (auto* section : sections())
-    {
-        section->setBounds (line.removeFromLeft (section->idealWidth()));
-        line.removeFromLeft (layout::gap);
-    }
+    const int top = (getHeight() - sectionsHeight()) / 2;
+    gate.setBounds (row.getX(), top, gate.idealWidth(), sectionsHeight());
+    // Comp centred in the room between Gate and the meter.
+    const auto between = row.withLeft (gate.getRight() + layout::gap).withTrimmedRight (layout::gap);
+    compressor.setBounds (between.getCentreX() - compressor.idealWidth() / 2, top, compressor.idealWidth(), sectionsHeight());
 }
 
 } // namespace comp1

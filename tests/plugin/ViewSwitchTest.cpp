@@ -3,6 +3,7 @@
 
 #include "EditorHost.h"
 #include "Footer.h"
+#include "Parameters.h"
 #include "plugkit/ui/OutputMeter.h"
 #include "plugkit/ui/PresetBrowser.h"
 #include "plugkit/ui/UiScaleMenu.h"
@@ -142,6 +143,24 @@ void checkLimits (host::EditorHost& host, View view, int percent)
     CHECK (limits->getMinimumHeight() == scaled (window.minimum.y));
     CHECK (limits->getMaximumWidth() == scaled (window.maximum.x));
     CHECK (limits->getMaximumHeight() == scaled (window.maximum.y));
+}
+
+// parent's visible children inside it, none empty and none overlapping another.
+void checkPlacedInside (juce::Component& parent)
+{
+    CAPTURE (parent.getTitle(), parent.getName());
+    std::vector<juce::Rectangle<int>> placed;
+    for (auto* child : parent.getChildren())
+    {
+        if (! child->isVisible())
+            continue;
+        CAPTURE (child->getTitle(), child->getName());
+        CHECK_FALSE (child->getBounds().isEmpty());
+        CHECK (parent.getLocalBounds().contains (child->getBounds()));
+        for (const auto& other : placed)
+            CHECK_FALSE (other.intersects (child->getBounds()));
+        placed.push_back (child->getBounds());
+    }
 }
 
 const auto& expandedWindow = comp1::PluginProcessor::expandedWindow;
@@ -426,21 +445,31 @@ TEST_CASE ("Tab walks the Compact View: the header, then Gate, Gate Threshold, C
                                   "Output", "UI Scale",       "Switch to the Expanded View" });
 }
 
-TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and maximum sizes, the header, the body and the footer don't overlap, the body's sections and meter are inside it with each control inside its section, and the Preset browser opens inside the window")
+TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and maximum sizes, the header, the body and the footer don't overlap, nothing in the header or the footer at its widest is clipped, the body's sections and meter are inside it with each control inside its section, and the Preset browser opens inside the window with nothing in it clipped")
 {
     host::EditorHost host;
+    // The footer at its widest: the Output readout with the parallel mark, two digits and the Auto Gain dot.
+    host.edit (comp1::parameters::autoGainId, 1.0f);
+    host.edit (comp1::parameters::compId, 100.0f);
+    host.edit (comp1::parameters::outputGainId, 36.0f);
+    host.edit (comp1::parameters::dryId, 0.0f);
     clickSwitch (host);
     const int percent = GENERATE (75, 100, 125, 150, 200);
     CAPTURE (percent);
     host.showing<plugkit::ui::UiScaleMenu> ("UI Scale").pick (percent);
     const auto scaled = [percent] (int logical) { return juce::roundToInt (logical * percent / 100.0); };
+    auto& editor = host.expandedView();
+    auto& header = editor.header();
+    // The wordmark's width with room to spare, which the header keeps at every size.
+    hostResize (host, scaled (compactWindow.maximum.x), scaled (compactWindow.maximum.y));
+    const int wordmarkWidth = header.wordmarkArea().getWidth();
     const auto size = GENERATE_COPY (compactWindow.minimum, compactWindow.defaultSize, compactWindow.maximum);
     CAPTURE (size.x, size.y);
     hostResize (host, scaled (size.x), scaled (size.y));
     REQUIRE (logicalSize (host, percent) == size);
+    host.settle();
+    REQUIRE (host.outputReadout().getButtonText().startsWith ("|| +"));
 
-    auto& editor = host.expandedView();
-    auto& header = editor.header();
     auto& content = *header.getParentComponent();
     auto* footer = harness::findChild<comp1::Footer> (editor);
     REQUIRE (footer != nullptr);
@@ -454,21 +483,18 @@ TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and max
         for (size_t j = i + 1; j < rows.size(); ++j)
             CHECK_FALSE (rows[i].intersects (rows[j]));
     }
-    // The header's and the footer's controls inside them, none overlapping another.
+    // The header's and the footer's controls inside them, none overlapping another, and the controls of the header's
+    // groups inside their group; the wordmark whole, and the Output readout as wide as its text.
     for (auto* bar : { static_cast<juce::Component*> (&header), static_cast<juce::Component*> (footer) })
-    {
-        std::vector<juce::Rectangle<int>> placed;
-        for (auto* control : bar->getChildren())
-        {
-            if (! control->isVisible())
-                continue;
-            CAPTURE (control->getTitle(), control->getName());
-            CHECK (bar->getLocalBounds().contains (control->getBounds()));
-            for (const auto& other : placed)
-                CHECK_FALSE (other.intersects (control->getBounds()));
-            placed.push_back (control->getBounds());
-        }
-    }
+        checkPlacedInside (*bar);
+    for (auto* group : header.getChildren())
+        if (group->isVisible())
+            checkPlacedInside (*group);
+    CHECK (header.wordmarkArea().getWidth() == wordmarkWidth);
+    for (auto* group : header.getChildren())
+        if (group->isVisible())
+            CHECK_FALSE (header.wordmarkArea().intersects (group->getBounds()));
+    CHECK (host.outputReadout().getWidth() >= host.outputReadout().getIdealWidth());
     // The body's sections and its meter inside it, none overlapping another, each section's controls inside it; the
     // meter as tall as the body.
     auto& body = editor.compactView();
@@ -501,6 +527,21 @@ TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and max
     // Gate, Comp and the meter.
     CHECK (placed.size() == 3);
     CHECK (body.gainReductionMeter().getHeight() == body.getHeight());
+    // One row filling the body: Gate at its left, the meter at its right, Comp centred between them, the sections
+    // centred down it.
+    auto* gate = harness::findChild<juce::Component> (body, [] (juce::Component& c) { return c.getName() == "Gate"; });
+    auto* compressor = harness::findChild<juce::Component> (body, [] (juce::Component& c) { return c.getName() == "Compressor"; });
+    REQUIRE (gate != nullptr);
+    REQUIRE (compressor != nullptr);
+    const auto meter = body.gainReductionMeter().getBounds();
+    CHECK (gate->getX() == 0);
+    CHECK (meter.getRight() == body.getWidth());
+    CHECK (std::abs (compressor->getBounds().getCentreX() - (gate->getRight() + meter.getX()) / 2) <= 1);
+    for (auto* section : { gate, compressor })
+    {
+        CAPTURE (section->getName());
+        CHECK (std::abs (section->getBounds().getCentreY() - body.getHeight() / 2) <= 1);
+    }
 
     // The Preset browser opens over everything, its panel whole inside its margin.
     auto& presets = host.showing<juce::Button> ("Presets");
@@ -510,12 +551,17 @@ TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and max
     auto& browser = header.presetBrowser();
     REQUIRE (browser.isShowing());
     CHECK (in (browser) == content.getLocalBounds());
+    // Its panel inside its margin, smaller than its full size in a smaller window, with its search row, folders, list
+    // and footer actions inside it, none overlapping another, and again with Save as's name field open.
     const auto margin = browser.getLocalBounds().reduced (plugkit::ui::PresetBrowser::margin);
-    for (auto* part : browser.getChildren())
-        if (part->isVisible())
+    for (auto* panel : browser.getChildren())
+        if (panel->isVisible())
         {
-            CHECK (margin.contains (part->getBounds()));
-            CHECK (part->getWidth() == plugkit::ui::PresetBrowser::panelWidth);
-            CHECK (part->getHeight() == plugkit::ui::PresetBrowser::panelHeight);
+            CHECK (margin.contains (panel->getBounds()));
+            checkPlacedInside (*panel);
+            auto* save = harness::findChild<juce::Button> (*panel, [] (juce::Button& b) { return b.getButtonText().startsWith ("Save as"); });
+            REQUIRE (save != nullptr);
+            host::EditorHost::click (*save);
+            checkPlacedInside (*panel);
         }
 }
