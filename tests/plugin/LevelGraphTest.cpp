@@ -300,7 +300,7 @@ TEST_CASE ("The Level and Gain Reduction Graph shades its Gain Reduction at the 
     host.feedFor (3.0, host::steady (loudDb));
     auto& graph = host.graph();
     CHECK (juce::exactlyEqual (graph.globalBypassFade(), 0.0f));
-    CHECK_THAT (graph.gainReductionAlpha(), WithinAbs (0.35, 1.0e-6));
+    CHECK_THAT (graph.gainReductionFillAlpha(), WithinAbs (0.35, 1.0e-6));
     CHECK_THAT (graph.gainReductionLineAlpha(), WithinAbs (1.0, 1.0e-6));
     // With no audio the graph holds still, so the two images differ only by Global Bypass. 15 dB of Gain Reduction
     // hangs from the top; the -10 dBFS Input Level's area fills from 10 dB down to the bottom. Halfway across, 5 dB
@@ -314,7 +314,7 @@ TEST_CASE ("The Level and Gain Reduction Graph shades its Gain Reduction at the 
 
     host.edit (parameters::globalBypassId, 1.0f);
     REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (graph.globalBypassFade(), 1.0f); }));
-    CHECK_THAT (graph.gainReductionAlpha(), WithinAbs (0.1575, 1.0e-6));
+    CHECK_THAT (graph.gainReductionFillAlpha(), WithinAbs (0.1575, 1.0e-6));
     CHECK_THAT (graph.gainReductionLineAlpha(), WithinAbs (0.45, 1.0e-6));
     const auto bypassed = graph.createComponentSnapshot (graph.getLocalBounds(), false);
     CHECK (static_cast<int> (bypassed.getPixelAt (x, yAt (5.0)).getAlpha()) < static_cast<int> (applied.getPixelAt (x, yAt (5.0)).getAlpha()));
@@ -322,7 +322,7 @@ TEST_CASE ("The Level and Gain Reduction Graph shades its Gain Reduction at the 
 
     host.edit (parameters::globalBypassId, 0.0f);
     REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (graph.globalBypassFade(), 0.0f); }));
-    CHECK_THAT (graph.gainReductionAlpha(), WithinAbs (0.35, 1.0e-6));
+    CHECK_THAT (graph.gainReductionFillAlpha(), WithinAbs (0.35, 1.0e-6));
     CHECK_THAT (graph.gainReductionLineAlpha(), WithinAbs (1.0, 1.0e-6));
 }
 
@@ -332,7 +332,7 @@ TEST_CASE ("An editor opened under Global Bypass shows the Level and Gain Reduct
     host.edit (parameters::globalBypassId, 1.0f);
     host.reopen();
     CHECK (juce::exactlyEqual (host.graph().globalBypassFade(), 1.0f));
-    CHECK_THAT (host.graph().gainReductionAlpha(), WithinAbs (0.1575, 1.0e-6));
+    CHECK_THAT (host.graph().gainReductionFillAlpha(), WithinAbs (0.1575, 1.0e-6));
     CHECK_THAT (host.graph().gainReductionLineAlpha(), WithinAbs (0.45, 1.0e-6));
 }
 

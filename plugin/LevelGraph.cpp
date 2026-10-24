@@ -196,7 +196,7 @@ void LevelGraph::paint (juce::Graphics& g)
         reductionArea.lineTo (left, 0.0f);
         reductionArea.lineTo (right, 0.0f);
         reductionArea.closeSubPath();
-        const float reductionAlpha = gainReductionAlpha();
+        const float reductionAlpha = gainReductionFillAlpha();
         const auto origin = DisplayFades::originInWindow (*this);
         reductionFill.fill (g, reductionArea, colour::dynRange.withMultipliedAlpha (reductionAlpha), colour::dynRangeInner.withMultipliedAlpha (reductionAlpha), h, origin);
         // The Input Level's area, down to the bottom, under its trace.
