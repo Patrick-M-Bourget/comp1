@@ -24,29 +24,7 @@ using host::Playing;
 using host::silence;
 using host::sine;
 using host::steady;
-
-// How far a meter falls over a wait playing signal, which gives it nothing to show (silence unless given): at most
-// 20 dB/s of the wait and of the longest tick before it (EditorTick's 0.25 s), whose fall a busy machine may count in
-// the wait; and, unless it reached its floor, well on its way. Falling at once, it would fall by tens of dB.
-template <typename Shown, typename Signal>
-void checkFallsAt20DbPerSecond (Playing& host, Shown&& shown, double floor, Signal&& signal)
-{
-    const double from = shown();
-    const double start = juce::Time::getMillisecondCounterHiRes();
-    host.playFor (0.4, signal);
-    const double seconds = (juce::Time::getMillisecondCounterHiRes() - start) / 1000.0;
-    const double fell = from - shown();
-    CAPTURE (from, seconds, fell);
-    CHECK (fell <= 20.0 * (seconds + 0.25));
-    if (shown() > floor)
-        CHECK (fell >= 2.0);
-}
-
-template <typename Shown>
-void checkFallsAt20DbPerSecond (Playing& host, Shown&& shown, double floor)
-{
-    checkFallsAt20DbPerSecond (host, std::forward<Shown> (shown), floor, silence());
-}
+using host::checkFallsAt20DbPerSecond;
 
 } // namespace
 

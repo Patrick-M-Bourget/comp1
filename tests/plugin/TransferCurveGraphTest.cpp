@@ -227,16 +227,10 @@ TEST_CASE ("The Transfer Curve Graph's dot sits on the curve at the Detection Le
     REQUIRE (dot.has_value());
     CHECK (juce::exactlyEqual (dot->y, host.graph().outputAt (dot->x)));
 
-    // Falls at 20 dB/s: at most that over the wait and the longest tick before it (EditorTick's 0.25 s).
-    const double from = *host.graph().dotDb();
-    const double start = juce::Time::getMillisecondCounterHiRes();
-    host.playFor (0.4, host::silence());
-    const double seconds = (juce::Time::getMillisecondCounterHiRes() - start) / 1000.0;
+    // Falls at 20 dB/s, still drawn: from -12 dB it falls well short of the bottom of the scale in the wait.
+    constexpr double bottom = -comp1::TransferCurveGraph::scaleDb;
+    host::checkFallsAt20DbPerSecond (host, [&] { return host.graph().dotDb().value_or (bottom); }, bottom);
     REQUIRE (host.graph().dotDb().has_value());
-    const double fell = from - *host.graph().dotDb();
-    CAPTURE (from, seconds, fell);
-    CHECK (fell <= 20.0 * (seconds + 0.25));
-    CHECK (fell >= 2.0);
     // Then gone, at or under the bottom of the scale.
     CHECK (host.keepPlayingUntil (host::silence(), [&] { return ! host.graph().dotDb().has_value(); }));
 }

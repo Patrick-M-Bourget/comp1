@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <functional>
+#include <utility>
 
 namespace host
 {
@@ -55,15 +56,26 @@ struct Playing : EditorHost
     template <typename Signal>
     void playFor (double seconds, Signal&& signal)
     {
-        // Four blocks at 48 kHz between ticks, about 43 ms at any rate: well within the 150 ms the level history holds
-        // unread.
-        const int perTick = std::max (1, static_cast<int> (std::lround (sampleRate() / 12000.0)));
+        const int perTick = blocksPerTick();
         const int blocks = static_cast<int> (std::ceil (seconds * sampleRate() / blockSize));
         for (int b = 0, n = 0; b < blocks; b += perTick, n += perTick * blockSize)
         {
             play (std::min (perTick, blocks - b), blockSize, [&signal, n] (int i) { return signal (n + i); });
             settle (16);
         }
+    }
+
+    // Plays signal as playFor does until the editor has ticked at least ticks times: how many times it ticked.
+    template <typename Signal>
+    int playForTicks (int ticks, Signal&& signal)
+    {
+        const int start = editorTick().count();
+        for (int n = 0; editorTick().count() - start < ticks; n += blocksPerTick() * blockSize)
+        {
+            play (blocksPerTick(), blockSize, [&signal, n] (int i) { return signal (n + i); });
+            settle (16);
+        }
+        return editorTick().count() - start;
     }
 
     // Keeps playing signal, a block at a time with the editor's tick between, until done() holds (harness::settleUntil).
@@ -85,6 +97,35 @@ struct Playing : EditorHost
     comp1::LevelRing& ceilingRing() { return expandedView().ceilingRing(); }
 
     static constexpr int blockSize = 512;
+
+private:
+    // Four blocks at 48 kHz between ticks, about 43 ms at any rate: well within the 150 ms the level history holds
+    // unread.
+    int blocksPerTick() const { return std::max (1, static_cast<int> (std::lround (sampleRate() / 12000.0))); }
 };
+
+// Checks how far a level falls (shown, a meter's, a ring's, the Transfer Curve Graph's dot) over 24 ticks playing
+// signal, which gives it nothing to show (silence unless given), each tick fixed at 1/60 s (fixTickSeconds), so the
+// fall depends on the ticks and not on the machine's speed: at most 20 dB/s of their time; and, unless it reached
+// floor, well on its way. Falling at once, it would fall by tens of dB.
+template <typename Shown, typename Signal>
+void checkFallsAt20DbPerSecond (Playing& host, Shown&& shown, double floor, Signal&& signal)
+{
+    constexpr double tickSeconds = 1.0 / 60.0;
+    host.fixTickSeconds (tickSeconds);
+    const double from = shown();
+    const int ticks = host.playForTicks (24, signal);
+    const double fell = from - shown();
+    CAPTURE (from, ticks, fell);
+    CHECK (fell <= 20.0 * tickSeconds * ticks + 1.0e-9);
+    if (shown() > floor)
+        CHECK (fell >= 2.0);
+}
+
+template <typename Shown>
+void checkFallsAt20DbPerSecond (Playing& host, Shown&& shown, double floor)
+{
+    checkFallsAt20DbPerSecond (host, std::forward<Shown> (shown), floor, silence());
+}
 
 } // namespace host
