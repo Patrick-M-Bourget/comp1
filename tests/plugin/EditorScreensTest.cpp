@@ -83,7 +83,7 @@ TEST_CASE ("Expanded View snapshots: default at 100% and 200%, on mono, with Com
     snapshot (host, "expanded-preset-browser");
 }
 
-TEST_CASE ("Expanded View snapshot: the Level tab's Level and Gain Reduction Graph with a compressed tone stepping up and down, then a burst train", "[.screens]")
+TEST_CASE ("Expanded View snapshots: the Level tab's Level and Gain Reduction Graph with a compressed tone stepping up and down, then a burst train, and under Global Bypass", "[.screens]")
 {
     host::EditorHost host;
     openOn (host, juce::AudioChannelSet::stereo());
@@ -113,9 +113,18 @@ TEST_CASE ("Expanded View snapshot: the Level tab's Level and Gain Reduction Gra
     playFor (2.4, burst);
     REQUIRE (host.expandedView().display().shownTab() == comp1::DisplayTab::level);
     harness::writeSnapshot (*host.editor, "expanded-level-graph", {}, 1.0f);
+
+    // With no more audio the graph holds still while it and the Transfer Curve inset fade into Global Bypass.
+    auto& display = host.expandedView().display();
+    host.edit (comp1::parameters::globalBypassId, 1.0f);
+    REQUIRE (host.settleUntil ([&] {
+        return juce::exactlyEqual (display.levelGraph().globalBypassFade(), 1.0f) && juce::exactlyEqual (display.transferCurveInset().graph().globalBypassFade(), 1.0f)
+               && juce::exactlyEqual (display.transferCurveInset().lookOf (comp1::InsetHandle::ratio).alpha, comp1::GlobalBypassFade::scale);
+    }));
+    harness::writeSnapshot (*host.editor, "expanded-level-graph-global-bypass", {}, 1.0f);
 }
 
-TEST_CASE ("Expanded View snapshots: the Transfer Curve tab with a hard and a wide Knee, and with signal playing so the Detection Level's dot shows", "[.screens]")
+TEST_CASE ("Expanded View snapshots: the Transfer Curve tab with a hard and a wide Knee, and with signal playing so the Detection Level's dot shows, with Global Bypass off and on", "[.screens]")
 {
     host::EditorHost host;
     openOn (host, juce::AudioChannelSet::stereo());
@@ -143,6 +152,14 @@ TEST_CASE ("Expanded View snapshots: the Transfer Curve tab with a hard and a wi
         return graph.dotDb().has_value() && *graph.dotDb() > -14.0;
     }));
     harness::writeSnapshot (*host.editor, "expanded-transfer-curve-playing", {}, 1.0f);
+
+    // Still playing, so the dot stays up while the graph fades into Global Bypass.
+    host.edit (comp1::parameters::globalBypassId, 1.0f);
+    REQUIRE (host.settleUntil ([&] {
+        host.play (4, 512, tone);
+        return juce::exactlyEqual (graph.globalBypassFade(), 1.0f) && graph.dotDb().has_value() && *graph.dotDb() > -14.0;
+    }));
+    harness::writeSnapshot (*host.editor, "expanded-transfer-curve-playing-global-bypass", {}, 1.0f);
 }
 
 TEST_CASE ("Expanded View snapshot: the Gate's, the compressor's and the Limiter's Gain Reduction meters all reading", "[.screens]")
@@ -282,7 +299,7 @@ TEST_CASE ("Compact View snapshot: with signal playing, so the Gain Reduction me
     harness::writeSnapshot (*host.editor, "compact-playing", {}, 1.0f);
 }
 
-TEST_CASE ("Expanded View snapshots: the Transfer Curve inset's handles with signal playing, the Ratio handle hovered and the Threshold handle dragged with its readout card", "[.screens]")
+TEST_CASE ("Expanded View snapshots: the Transfer Curve inset's handles with signal playing, the Ratio handle hovered and the Threshold handle dragged with its readout card, then under Global Bypass", "[.screens]")
 {
     host::Playing host;
     REQUIRE (host.processor.chooseStyle (comp1::Style::Clean));
@@ -308,4 +325,12 @@ TEST_CASE ("Expanded View snapshots: the Transfer Curve inset's handles with sig
     harness::writeSnapshot (inset, "inset-handles-hovered-and-dragged", {}, 2.0f);
     threshold.mouseUp (harness::mouseEvent (threshold, thresholdCentre + juce::Point<float> { 12.0f, 0.0f }, {}, thresholdCentre));
     ratio.mouseExit (harness::mouseEvent (ratio, ratioCentre + juce::Point<float> { 30.0f, 0.0f }));
+
+    // Under Global Bypass, still playing so the dot stays up: the inset's curve, dot and handles dimmed.
+    host.edit (comp1::parameters::globalBypassId, 1.0f);
+    REQUIRE (host.keepPlayingUntil (sine (0.5), [&] {
+        return juce::exactlyEqual (inset.graph().globalBypassFade(), 1.0f)
+               && juce::exactlyEqual (inset.lookOf (comp1::InsetHandle::ratio).alpha, comp1::GlobalBypassFade::scale);
+    }));
+    harness::writeSnapshot (inset, "inset-handles-global-bypass", {}, 2.0f);
 }
