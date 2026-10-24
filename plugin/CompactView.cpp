@@ -163,14 +163,16 @@ void CompactView::resized()
     auto row = getLocalBounds();
     gainReduction.setBounds (row.removeFromRight (layout::meterWidth));
     row.removeFromRight (layout::gap);
-    // Three equal columns, each part centred in its own and down the body.
-    const int column = row.getWidth() / 3;
+    // Each part centred down the body, and across: slot A at its left edge, Comp in the room between slot A and the
+    // meter, slot B in the room between Comp and the meter. Comp's place leaves its tooltip, to its left, room
+    // clear of its lane (HeroComp::offTooltip).
     const auto centreIn = [this] (juce::Component& part, juce::Rectangle<int> area, int width, int height) {
         part.setBounds (juce::Rectangle<int> (width, height).withCentre ({ area.getCentreX(), getHeight() / 2 }));
     };
-    centreIn (*slots[0], row.removeFromLeft (column), CompactSlot::idealWidth(), CompactSlot::idealHeight());
-    centreIn (compressor, row.removeFromLeft (column), compressor.idealWidth(), compressor.idealHeight());
-    centreIn (*slots[1], row, CompactSlot::idealWidth(), CompactSlot::idealHeight());
+    centreIn (*slots[0], row.removeFromLeft (CompactSlot::idealWidth()), CompactSlot::idealWidth(), CompactSlot::idealHeight());
+    row.removeFromLeft (layout::gap);
+    centreIn (compressor, row, compressor.idealWidth(), compressor.idealHeight());
+    centreIn (*slots[1], row.withLeft (compressor.getRight()), CompactSlot::idealWidth(), CompactSlot::idealHeight());
 }
 
 } // namespace comp1

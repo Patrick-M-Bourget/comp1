@@ -117,8 +117,9 @@ private:
 //   Threshold or Ratio. Its knob has the Detection Level ring and the Comp Follow-off cue (HeroComp).
 // - The Gain Reduction meter: the compressor's, on the editor's level history, as tall as the body, and no stop for Tab.
 //
-// The meter is at the body's right edge, and the room left of it is three equal columns, slot A, Comp and slot B each
-// centred in its own and centred down the body. Nothing's place depends on the Style, so a Style change moves nothing;
+// The meter is at the body's right edge and slot A at its left; Comp is centred in the room between slot A and the
+// meter, which leaves its tooltip room to its left clear of its lane, and slot B in the room between Comp and the
+// meter, each centred down the body. Nothing's place depends on the Style, so a Style change moves nothing;
 // a larger window spreads the row out and makes the meter taller. Both views' controls attach to the same host
 // parameters, so an edit in one shows in the other.
 class CompactView final : public juce::Component
