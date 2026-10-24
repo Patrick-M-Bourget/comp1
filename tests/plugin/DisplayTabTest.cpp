@@ -20,10 +20,8 @@ void checkShows (host::EditorHost& host, DisplayTab tab)
     auto& display = host.expandedView().display();
     CHECK (display.shownTab() == tab);
     CHECK (tabChip (host, "Level").getToggleState() == (tab == DisplayTab::level));
-    CHECK (tabChip (host, "Transfer Curve").getToggleState() == (tab == DisplayTab::transferCurve));
     CHECK (tabChip (host, "Spectrum").getToggleState() == (tab == DisplayTab::spectrum));
     CHECK (display.tabContent (DisplayTab::level).isShowing() == (tab == DisplayTab::level));
-    CHECK (display.tabContent (DisplayTab::transferCurve).isShowing() == (tab == DisplayTab::transferCurve));
     CHECK (display.tabContent (DisplayTab::spectrum).isShowing() == (tab == DisplayTab::spectrum));
 }
 
@@ -38,43 +36,48 @@ void click (host::EditorHost& host, const juce::String& title, DisplayTab tab)
 
 } // namespace
 
-TEST_CASE ("The display opens on Level, its tabs Level, Transfer Curve and Spectrum, and a click on a tab shows that tab")
+TEST_CASE ("The display opens on Level, its tabs Level and Spectrum only, and a click on a tab or Space on it shows that tab")
 {
     host::EditorHost host;
     CHECK (host.processor.displayTab() == DisplayTab::level);
     checkShows (host, DisplayTab::level);
-    // No Detection EQ tab.
-    CHECK (host.findAll<juce::Button> ([] (juce::Button& b) { return b.getTitle() == "Detection EQ"; }).empty());
+    // No Detection EQ or Transfer Curve tab: the Level tab's Transfer Curve inset is the Transfer Curve's view.
+    CHECK (host.findAll<juce::Button> ([] (juce::Button& b) { return b.getTitle() == "Detection EQ" || b.getTitle() == "Transfer Curve"; }).empty());
+    CHECK (std::size (comp1::displayTabs) == 2);
 
-    click (host, "Transfer Curve", DisplayTab::transferCurve);
-    checkShows (host, DisplayTab::transferCurve);
+    click (host, "Spectrum", DisplayTab::spectrum);
+    checkShows (host, DisplayTab::spectrum);
 
     // Space on the focused tab, as the keyboard picks one.
     tabChip (host, "Level").grabKeyboardFocus();
     CHECK (host.press (juce::KeyPress (juce::KeyPress::spaceKey)));
     CHECK (host.processor.displayTab() == DisplayTab::level);
     checkShows (host, DisplayTab::level);
+    tabChip (host, "Spectrum").grabKeyboardFocus();
+    CHECK (host.press (juce::KeyPress (juce::KeyPress::spaceKey)));
+    CHECK (host.processor.displayTab() == DisplayTab::spectrum);
+    checkShows (host, DisplayTab::spectrum);
 }
 
 TEST_CASE ("The chosen tab is saved with the session and restored, and a session saved without it opens on Level")
 {
     host::EditorHost host;
-    click (host, "Transfer Curve", DisplayTab::transferCurve);
+    click (host, "Spectrum", DisplayTab::spectrum);
     const auto saved = host::saved (host.processor);
     CHECK_FALSE (harness::savedNamesContaining (harness::savedState (saved), "display_tab").isEmpty());
 
     // Into a new instance, opened afterwards.
     host::EditorHost other;
     host::restore (other.processor, saved);
-    CHECK (other.processor.displayTab() == DisplayTab::transferCurve);
+    CHECK (other.processor.displayTab() == DisplayTab::spectrum);
     other.reopen();
-    checkShows (other, DisplayTab::transferCurve);
+    checkShows (other, DisplayTab::spectrum);
 
     // Into an open editor, which follows it.
     click (host, "Level", DisplayTab::level);
     host::restore (host.processor, saved);
-    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == DisplayTab::transferCurve; }));
-    checkShows (host, DisplayTab::transferCurve);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == DisplayTab::spectrum; }));
+    checkShows (host, DisplayTab::spectrum);
 
     // Without it.
     auto xml = harness::savedXml (saved);
@@ -86,13 +89,6 @@ TEST_CASE ("The chosen tab is saved with the session and restored, and a session
     // And it is saved again only as the instance holds it.
     CHECK (harness::savedState (host.processor).getProperty ("display_tab") == "level");
 
-    // An older session's Detection EQ tab, which the display no longer has: Level.
-    click (host, "Transfer Curve", DisplayTab::transferCurve);
-    xml->setAttribute ("display_tab", "detection_eq");
-    host::restore (host.processor, *xml);
-    CHECK (host.processor.displayTab() == DisplayTab::level);
-    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == DisplayTab::level; }));
-    checkShows (host, DisplayTab::level);
 }
 
 TEST_CASE ("The chosen tab isn't in a Preset, isn't an undo step and makes no side Modified, and loading a Preset or undoing leaves it alone")
@@ -104,7 +100,7 @@ TEST_CASE ("The chosen tab isn't in a Preset, isn't an undo step and makes no si
     REQUIRE (session.loadPreset (preset, "Start"));
     const int steps = history.undoSteps();
 
-    click (host, "Transfer Curve", DisplayTab::transferCurve);
+    click (host, "Spectrum", DisplayTab::spectrum);
     CHECK (harness::savedNamesContaining (session.presetState(), "display").isEmpty());
     CHECK (history.undoSteps() == steps);
     CHECK_FALSE (session.isLoadedPresetModified());
@@ -120,63 +116,41 @@ TEST_CASE ("The chosen tab isn't in a Preset, isn't an undo step and makes no si
     CHECK (host.processor.displayTab() == DisplayTab::level);
 
     // A Preset loaded.
-    click (host, "Transfer Curve", DisplayTab::transferCurve);
+    click (host, "Spectrum", DisplayTab::spectrum);
     REQUIRE (session.loadPreset (preset, "Start"));
     host.settle();
-    CHECK (host.processor.displayTab() == DisplayTab::transferCurve);
-    checkShows (host, DisplayTab::transferCurve);
+    CHECK (host.processor.displayTab() == DisplayTab::spectrum);
+    checkShows (host, DisplayTab::spectrum);
 }
 
-TEST_CASE ("The Transfer Curve tab: a click or Space shows it, saved as transfer_curve and restored, in no Preset or undo step")
+TEST_CASE ("A session saved on a retired tab, Transfer Curve or Detection EQ, or with an unknown one, opens on Level, and is saved again as level")
 {
     host::EditorHost host;
-    auto& session = host.processor.session();
-    auto& history = session.editHistory();
-    const auto preset = session.presetState();
-    REQUIRE (session.loadPreset (preset, "Start"));
-    const int steps = history.undoSteps();
-
-    // Its chip, after Level's, titled and tooltipped as it.
-    auto& chip = tabChip (host, "Transfer Curve");
-    CHECK (chip.getTooltip() == "Show the Transfer Curve display");
-    CHECK (chip.getX() > tabChip (host, "Level").getRight());
-    CHECK (host.expandedView().display().tabContent (DisplayTab::transferCurve).getTitle() == "Transfer Curve Graph");
-
-    click (host, "Transfer Curve", DisplayTab::transferCurve);
-    checkShows (host, DisplayTab::transferCurve);
-    CHECK (harness::savedNamesContaining (session.presetState(), "display").isEmpty());
-    CHECK (history.undoSteps() == steps);
-    CHECK_FALSE (session.isLoadedPresetModified());
-
-    // Space on the focused tab.
-    click (host, "Level", DisplayTab::level);
-    chip.grabKeyboardFocus();
-    CHECK (host.press (juce::KeyPress (juce::KeyPress::spaceKey)));
-    CHECK (host.processor.displayTab() == DisplayTab::transferCurve);
-    checkShows (host, DisplayTab::transferCurve);
-
-    // Saved as transfer_curve, into a new instance and into an open editor.
-    const auto saved = host::saved (host.processor);
-    CHECK (harness::savedState (saved).getProperty ("display_tab") == "transfer_curve");
-    host::EditorHost other;
-    host::restore (other.processor, saved);
-    CHECK (other.processor.displayTab() == DisplayTab::transferCurve);
-    other.reopen();
-    checkShows (other, DisplayTab::transferCurve);
-    click (host, "Level", DisplayTab::level);
-    host::restore (host.processor, saved);
-    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == DisplayTab::transferCurve; }));
-    checkShows (host, DisplayTab::transferCurve);
-
-    // An unknown value opens on Level.
-    auto xml = harness::savedXml (saved);
+    click (host, "Spectrum", DisplayTab::spectrum);
+    auto xml = harness::savedXml (host::saved (host.processor));
     REQUIRE (xml != nullptr);
-    xml->setAttribute ("display_tab", "waveform");
-    host::restore (host.processor, *xml);
-    CHECK (host.processor.displayTab() == DisplayTab::level);
+    for (const auto* name : { "transfer_curve", "detection_eq", "waveform" })
+    {
+        CAPTURE (name);
+        // Into an open editor on Spectrum, which follows it.
+        click (host, "Spectrum", DisplayTab::spectrum);
+        xml->setAttribute ("display_tab", name);
+        host::restore (host.processor, *xml);
+        CHECK (host.processor.displayTab() == DisplayTab::level);
+        REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == DisplayTab::level; }));
+        checkShows (host, DisplayTab::level);
+        CHECK (harness::savedState (host.processor).getProperty ("display_tab") == "level");
+
+        // Into a new instance, opened afterwards.
+        host::EditorHost other;
+        host::restore (other.processor, *xml);
+        CHECK (other.processor.displayTab() == DisplayTab::level);
+        other.reopen();
+        checkShows (other, DisplayTab::level);
+    }
 }
 
-TEST_CASE ("The Spectrum tab, after Transfer Curve: a click shows it, saved as spectrum and restored, in no Preset or undo step, and not in the Compact View")
+TEST_CASE ("The Spectrum tab, after Level: a click shows it, saved as spectrum and restored, in no Preset or undo step, and not in the Compact View")
 {
     host::EditorHost host;
     auto& session = host.processor.session();
@@ -187,7 +161,7 @@ TEST_CASE ("The Spectrum tab, after Transfer Curve: a click shows it, saved as s
 
     auto& chip = tabChip (host, "Spectrum");
     CHECK (chip.getTooltip() == "Show the Spectrum display");
-    CHECK (chip.getX() > tabChip (host, "Transfer Curve").getRight());
+    CHECK (chip.getX() > tabChip (host, "Level").getRight());
     CHECK (host.expandedView().display().tabContent (DisplayTab::spectrum).getTitle() == "Spectrum");
 
     click (host, "Spectrum", DisplayTab::spectrum);

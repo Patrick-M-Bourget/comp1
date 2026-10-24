@@ -16,7 +16,7 @@ struct Areas
 {
     juce::Rectangle<int> header, display, levelTab, gainReduction, outputMeter, sections, character, footer;
     juce::Rectangle<int> gateGainReduction, limiterGainReduction;
-    juce::Rectangle<int> transferCurveTab;
+    juce::Rectangle<int> spectrumTab;
 };
 
 // The showing component named name: the shown view's, as both views have a "Gate" section and a "Gain Reduction"
@@ -50,7 +50,7 @@ Areas areasOf (juce::AudioProcessorEditor& editor)
              in (*footer),
              in (named (editor, "Gate Gain Reduction")),
              in (named (editor, "Limiter Gain Reduction")),
-             in (tabs.tabContent (comp1::DisplayTab::transferCurve)) };
+             in (tabs.tabContent (comp1::DisplayTab::spectrum)) };
 }
 
 } // namespace
@@ -75,7 +75,7 @@ TEST_CASE ("At its default size the Expanded View is the header, the display wit
     CHECK (areas.sections == juce::Rectangle<int> (14, 524, 1372, 266));
     CHECK (areas.footer == juce::Rectangle<int> (14, 802, 1372, 44));
     // Each tab's content is the display under its tabs.
-    CHECK (areas.levelTab == areas.transferCurveTab);
+    CHECK (areas.levelTab == areas.spectrumTab);
     CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1164, 400));
 
     // Open, the Detection section makes the second row 134 px tall, and the display and the meters give up the 44 px.
@@ -121,8 +121,8 @@ TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes noth
             CHECK_FALSE (rows[i].intersects (rows[j]));
     }
     CHECK (areas.display.contains (areas.levelTab));
-    CHECK (areas.display.contains (areas.transferCurveTab));
-    CHECK (areas.transferCurveTab == areas.levelTab);
+    CHECK (areas.display.contains (areas.spectrumTab));
+    CHECK (areas.spectrumTab == areas.levelTab);
     CHECK (areas.sections.contains (areas.character));
 
     // What the window grows by goes to the display, and its width to the section row; the rest keep their size.

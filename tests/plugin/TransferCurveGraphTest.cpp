@@ -1,4 +1,4 @@
-// The Expanded View's Transfer Curve Graph, the Transfer Curve tab: the curve it draws from the settings the Engine
+// The Transfer Curve Graph the Transfer Curve inset draws: the curve it draws from the settings the Engine
 // plays, and the Detection Level's dot on it, read through its test model (TransferCurveGraph::outputAt, curve,
 // dotDb) rather than its pixels.
 
@@ -27,7 +27,7 @@ struct Graphing : host::Playing
 {
     using Playing::Playing;
 
-    comp1::TransferCurveGraph& graph() { return expandedView().display().transferCurveGraph(); }
+    comp1::TransferCurveGraph& graph() { return expandedView().display().transferCurveInset().graph(); }
 
     // Waits for the graph to draw from thresholdDb, ratio, kneeDb and rangeDb (to the float a host parameter holds).
     bool drawsFrom (double thresholdDb, double ratio, double kneeDb, double rangeDb)
@@ -64,11 +64,6 @@ struct Graphing : host::Playing
         edit (parameters::rangeId, rangeDb);
     }
 };
-
-// What a screen reader reads as the graph's value.
-juce::String spoken (juce::Component& c) { return c.getAccessibilityHandler()->getValueInterface()->getCurrentValueAsString(); }
-
-const juce::String minus { juce::CharPointer_UTF8 ("\xe2\x88\x92") };
 
 } // namespace
 
@@ -246,7 +241,6 @@ TEST_CASE ("With Detection Source External and no Sidechain, the Transfer Curve 
 TEST_CASE ("With no audio and no edits the Transfer Curve Graph asks for no repaint; an edit to Knee repaints it")
 {
     Graphing host;
-    host.processor.setDisplayTab (comp1::DisplayTab::transferCurve);
     REQUIRE (host.settleUntil ([&] { return host.graph().isShowing(); }));
     host.playFor (0.2, host::silence());
     auto& repaints = harness::countRepaintsOf (host.graph());
@@ -263,12 +257,11 @@ TEST_CASE ("Under Global Bypass the Transfer Curve Graph dims its curve and dot 
     Graphing host;
     host.setCurve (-20.0f, 4.0f, 0.0f, 60.0f);
     REQUIRE (host.drawsWhatPlays());
-    host.processor.setDisplayTab (comp1::DisplayTab::transferCurve);
     auto& graph = host.graph();
     REQUIRE (host.settleUntil ([&] { return graph.isShowing(); }));
     CHECK (juce::exactlyEqual (graph.globalBypassFade(), 0.0f));
     CHECK_THAT (graph.curveAlpha(), WithinAbs (1.0, 1.0e-6));
-    // The curve at -45 dB in, under Threshold, so -45 dB out: off the grid's 10 dB lines. The graph paints no background
+    // The curve at -45 dB in, under Threshold, so -45 dB out: off the grid's 20 dB lines. The graph paints no background
     // of its own, so the curve's alpha is the pixel's.
     const auto at = graph.pointAt (-45.0, -45.0).roundToInt();
     const auto applied = graph.createComponentSnapshot (graph.getLocalBounds(), false);
@@ -297,25 +290,12 @@ TEST_CASE ("An editor opened under Global Bypass shows the Transfer Curve Graph'
     CHECK_THAT (host.graph().curveAlpha(), WithinAbs (0.45, 1.0e-6));
 }
 
-TEST_CASE ("The Transfer Curve Graph is a read-only image titled Transfer Curve Graph, reading its settings and the Detection Level, with no Tab stop and no mouse input")
+TEST_CASE ("The Transfer Curve Graph has no Tab stop and takes no mouse input")
 {
     Graphing host;
-    host.setCurve (-18.0f, 4.0f, 6.0f, 60.0f);
-    REQUIRE (host.drawsWhatPlays());
     auto& graph = host.graph();
-    auto* handler = graph.getAccessibilityHandler();
-    REQUIRE (handler != nullptr);
-    CHECK (handler->getRole() == juce::AccessibilityRole::image);
-    CHECK (handler->getTitle() == "Transfer Curve Graph");
-    REQUIRE (handler->getValueInterface() != nullptr);
-    CHECK (handler->getValueInterface()->isReadOnly());
     CHECK_FALSE (graph.getWantsKeyboardFocus());
     bool clicks = true, childClicks = true;
     graph.getInterceptsMouseClicks (clicks, childClicks);
     CHECK_FALSE (clicks);
-
-    // The settings as their knobs read them (controls::spokenValue); no Detection Level yet: under the scale.
-    CHECK (spoken (graph) == "Threshold " + minus + "18.00 dB, Ratio 4:1, Knee 6.0 dB, Detection Level " + minus + "inf dB");
-    CHECK (host.keepPlayingUntil (host::steady (-20.0), [&] { return graph.dotDb() && std::abs (*graph.dotDb() + 20.0) < 0.05; }));
-    CHECK (spoken (graph) == "Threshold " + minus + "18.00 dB, Ratio 4:1, Knee 6.0 dB, Detection Level " + minus + "20.0 dB");
 }

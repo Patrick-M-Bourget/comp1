@@ -1,7 +1,6 @@
 #include "TransferCurveGraph.h"
 
 #include "Controls.h"
-#include "plugkit/ui/Accessibility.h"
 #include "plugkit/ui/ValueText.h"
 #include "plugkit/ui/staple/Tokens.h"
 
@@ -36,12 +35,11 @@ bool operator== (const clean::Curve& a, const clean::Curve& b)
 #endif
 } // namespace
 
-TransferCurveGraph::TransferCurveGraph (PluginProcessor& p, LevelHistory& h, Look l)
-    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), look (l), drawn (p.playedCurve()),
+TransferCurveGraph::TransferCurveGraph (PluginProcessor& p, LevelHistory& h)
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), drawn (p.playedCurve()),
       level (h, &LevelRecord::detectionLevelDb, -scaleDb, 0.0), bypassFade (p.parameterState())
 {
     setName ("Transfer Curve");
-    setTitle ("Transfer Curve Graph");
     setWantsKeyboardFocus (false);
     setInterceptsMouseClicks (false, false);
 }
@@ -89,17 +87,6 @@ juce::String TransferCurveGraph::settingsText() const
            + ", Knee " + juce::String (drawn.kneeDb, 1) + " dB";
 }
 
-juce::String TransferCurveGraph::valueText() const
-{
-    const double shownDb = shown <= -scaleDb ? -std::numeric_limits<double>::infinity() : shown;
-    return settingsText() + ", Detection Level " + plugkit::ui::valueText::signedDb (shownDb,{ .decimals = 1, .unit = false }) + " dB";
-}
-
-std::unique_ptr<juce::AccessibilityHandler> TransferCurveGraph::createAccessibilityHandler()
-{
-    return plugkit::ui::accessibility::handler (*this, juce::AccessibilityRole::image, [this] { return valueText(); });
-}
-
 void TransferCurveGraph::paint (juce::Graphics& g)
 {
     const int width = getWidth(), height = getHeight();
@@ -108,12 +95,10 @@ void TransferCurveGraph::paint (juce::Graphics& g)
     const auto w = static_cast<float> (width), h = static_cast<float> (height);
     const auto xOf = [this] (double db) { return pointAt (db, 0.0).x; };
     const auto yOf = [this] (double db) { return pointAt (-scaleDb, db).y; };
-    const double step = look == Look::inset ? insetGridStepDb : gridStepDb;
-
-    // The grid: a line every step (10 dB, or the inset's 20) on both axes; the 0 dB output line, at the top, the zero
-    // line, and the 0 dB input line, at the right edge, drawn as it is.
+    // The grid: a line every gridStepDb on both axes; the 0 dB output line, at the top, the zero line, and the 0 dB input
+    // line, at the right edge, drawn as it is.
     display::GridLines lines;
-    for (double db = -step; db > -scaleDb; db -= step)
+    for (double db = -gridStepDb; db > -scaleDb; db -= gridStepDb)
     {
         lines.majorX.push_back (xOf (db));
         lines.gainY.push_back (yOf (db));
@@ -144,12 +129,9 @@ void TransferCurveGraph::paint (juce::Graphics& g)
         g.fillEllipse (juce::Rectangle<float> (2.0f * dotRadius, 2.0f * dotRadius).withCentre ({ xOf (at->x), yOf (at->y) }));
     }
 
-    if (look == Look::tab)
-        fades.paint (g, *this);
-
-    // The dB labels, over the fades: the output's at the right, the input's along the bottom.
+    // The dB labels: the output's at the right, the input's along the bottom.
     std::vector<display::Label> scale;
-    for (double db = 0.0; db > -scaleDb; db -= step)
+    for (double db = 0.0; db > -scaleDb; db -= gridStepDb)
     {
         const auto text = plugkit::ui::valueText::signedDb (db, { .decimals = 0, .unit = false });
         const float y = std::clamp (yOf (db), labelHeight / 2.0f, h - labelHeight / 2.0f);

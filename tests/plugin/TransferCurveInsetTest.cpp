@@ -1,5 +1,5 @@
-// The Transfer Curve inset on the Expanded View's Level tab: where it shows, that it draws what the Transfer Curve Graph
-// draws, its Threshold and Ratio handles, their drags and the keys, with Comp Follow (ADR 0004).
+// The Transfer Curve inset on the Expanded View's Level tab: where it shows, its Threshold and Ratio handles, their drags
+// and the keys, with Comp Follow (ADR 0004). What its graph draws is TransferCurveGraphTest's.
 
 #include "Playing.h"
 #include "TransferCurveInset.h"
@@ -52,7 +52,7 @@ TEST_CASE ("The Transfer Curve inset shows in the Level graph's top-left corner 
     CHECK (inGraph.getX() < graph.getWidth() / 4);
     CHECK (inGraph.getY() < graph.getHeight() / 4);
 
-    host.showTab (DisplayTab::transferCurve);
+    host.showTab (DisplayTab::spectrum);
     CHECK_FALSE (inset.isShowing());
     host.showTab (DisplayTab::level);
     CHECK (inset.isShowing());
@@ -69,36 +69,6 @@ TEST_CASE ("The Transfer Curve inset shows in the Level graph's top-left corner 
     host.showing<plugkit::ui::UiScaleMenu> ("UI Scale").pick (200);
     host.settle();
     CHECK (host.inset().getScreenBounds().getWidth() == 2 * comp1::TransferCurveInset::side);
-}
-
-TEST_CASE ("The Transfer Curve inset draws what the Transfer Curve Graph draws, at every Threshold, Ratio and Knee", "[sweep]")
-{
-    InsetHost host;
-    auto& inset = host.inset().graph();
-    auto& tab = host.display().transferCurveGraph();
-    for (const float threshold : { -60.0f, -30.0f, -10.0f })
-        for (const float ratio : { 1.0f, 2.0f, 4.0f, std::numeric_limits<float>::infinity() })
-            for (const float knee : { 0.0f, 12.0f, 72.0f })
-            {
-                CAPTURE (threshold, ratio, knee);
-                host.edit (parameters::thresholdId, threshold);
-                host.edit (parameters::ratioId, ratio);
-                host.edit (parameters::kneeId, knee);
-                REQUIRE (host.settleUntil ([&] {
-                    return juce::exactlyEqual (inset.curve().kneeDb, static_cast<double> (knee))
-                           && juce::exactlyEqual (inset.curve().thresholdDb, static_cast<double> (host.value (parameters::thresholdId)))
-                           && juce::exactlyEqual (tab.curve().kneeDb, static_cast<double> (knee))
-                           && juce::exactlyEqual (tab.curve().thresholdDb, static_cast<double> (host.value (parameters::thresholdId)));
-                }));
-                CHECK (inset.curve().inverseRatio == tab.curve().inverseRatio);
-                CHECK (inset.curve().rangeDb == tab.curve().rangeDb);
-                for (int input = -60; input <= 0; ++input)
-                {
-                    CAPTURE (input);
-                    CHECK (inset.outputAt (input) == tab.outputAt (input));
-                }
-                CHECK (host.inset().valueText() == tab.settingsText());
-            }
 }
 
 namespace

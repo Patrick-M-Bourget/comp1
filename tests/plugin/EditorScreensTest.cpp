@@ -124,7 +124,7 @@ TEST_CASE ("Expanded View snapshots: the Level tab's Level and Gain Reduction Gr
     harness::writeSnapshot (*host.editor, "expanded-level-graph-global-bypass", {}, 1.0f);
 }
 
-TEST_CASE ("Expanded View snapshots: the Transfer Curve tab with a hard and a wide Knee, and with signal playing so the Detection Level's dot shows, with Global Bypass off and on", "[.screens]")
+TEST_CASE ("Snapshots: the Transfer Curve inset with a hard and a wide Knee (with signal playing and under Global Bypass in the inset handles' snapshots)", "[.screens]")
 {
     host::EditorHost host;
     openOn (host, juce::AudioChannelSet::stereo());
@@ -133,33 +133,19 @@ TEST_CASE ("Expanded View snapshots: the Transfer Curve tab with a hard and a wi
     host.edit (comp1::parameters::compFollowId, 0.0f);
     host.edit (comp1::parameters::thresholdId, -30.0f);
     host.edit (comp1::parameters::ratioId, 4.0f);
-    host.processor.setDisplayTab (comp1::DisplayTab::transferCurve);
-    auto& graph = host.expandedView().display().transferCurveGraph();
-    REQUIRE (host.settleUntil ([&] { return graph.isShowing(); }));
+    auto& inset = host.expandedView().display().transferCurveInset();
+    auto& graph = inset.graph();
+    REQUIRE (host.settleUntil ([&] { return inset.isShowing(); }));
 
     host.edit (comp1::parameters::kneeId, 0.0f);
     REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (graph.curve().kneeDb, 0.0); }));
-    snapshot (host, "expanded-transfer-curve-hard-knee");
+    host.settleAnimations();
+    harness::writeSnapshot (inset, "inset-transfer-curve-hard-knee", {}, 2.0f);
 
     host.edit (comp1::parameters::kneeId, 24.0f);
     REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (graph.curve().kneeDb, 24.0); }));
-    snapshot (host, "expanded-transfer-curve-wide-knee");
-
-    // A -12 dB sine, the editor's tick reading between blocks, until the dot is up.
-    const auto tone = sine (std::pow (10.0, -12.0 / 20.0));
-    REQUIRE (host.settleUntil ([&] {
-        host.play (4, 512, tone);
-        return graph.dotDb().has_value() && *graph.dotDb() > -14.0;
-    }));
-    harness::writeSnapshot (*host.editor, "expanded-transfer-curve-playing", {}, 1.0f);
-
-    // Still playing, so the dot stays up while the graph fades into Global Bypass.
-    host.edit (comp1::parameters::globalBypassId, 1.0f);
-    REQUIRE (host.settleUntil ([&] {
-        host.play (4, 512, tone);
-        return juce::exactlyEqual (graph.globalBypassFade(), 1.0f) && graph.dotDb().has_value() && *graph.dotDb() > -14.0;
-    }));
-    harness::writeSnapshot (*host.editor, "expanded-transfer-curve-playing-global-bypass", {}, 1.0f);
+    host.settleAnimations();
+    harness::writeSnapshot (inset, "inset-transfer-curve-wide-knee", {}, 2.0f);
 }
 
 TEST_CASE ("Expanded View snapshot: the Gate's, the compressor's and the Limiter's Gain Reduction meters all reading", "[.screens]")

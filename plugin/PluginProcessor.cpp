@@ -20,7 +20,7 @@ const juce::Identifier versionProperty { "version" };
 const juce::Identifier displayTabProperty { "display_tab" };
 
 // A display tab as the session saves it, and back: anything else, a session saved without one included, is Level. So
-// is "detection_eq", a tab older sessions hold that the display no longer has.
+// is each retired name (DisplayTabRow), a tab older sessions hold that the display no longer has.
 juce::String savedTab (DisplayTab tab)
 {
     return displayTabs[rowOf (tab)].savedName;

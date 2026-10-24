@@ -19,18 +19,18 @@
 namespace comp1
 {
 
-// The Expanded View's three display tabs: the scrolling level and Gain Reduction graph, the Transfer Curve, and the
-// Spectrum. count isn't a tab: it is how many there are, for the tables' checks, and no list the user sees has it.
+// The Expanded View's two display tabs: the scrolling level and Gain Reduction graph, with the Transfer Curve inset over
+// it, and the Spectrum. count isn't a tab: it is how many there are, for the tables' checks, and no list the user sees has it.
 enum class DisplayTab
 {
     level,
-    transferCurve,
     spectrum,
     count,
 };
 
 // A display tab's row in displayTabs: the tab, and the name the session saves it under. A saved name is permanent once
-// released: sessions keep it.
+// released: sessions keep it. Retired names, of tabs the display no longer has, which a session may still hold and no
+// tab may take again: "detection_eq" and "transfer_curve". Restore reads them as Level.
 struct DisplayTabRow
 {
     DisplayTab tab;
@@ -42,7 +42,6 @@ struct DisplayTabRow
 // Level.
 inline constexpr DisplayTabRow displayTabs[] {
     { DisplayTab::level, "level" },
-    { DisplayTab::transferCurve, "transfer_curve" },
     { DisplayTab::spectrum, "spectrum" },
 };
 
