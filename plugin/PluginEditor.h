@@ -5,6 +5,7 @@
 #include "Footer.h"
 #include "GainReductionMeter.h"
 #include "LevelHistory.h"
+#include "MeterLabel.h"
 #include "PluginProcessor.h"
 #include "Sections.h"
 #include "plugkit/ui/EditorShell.h"
