@@ -4,6 +4,7 @@
 #include "plugkit/ui/Accessibility.h"
 #include "plugkit/ui/ValueText.h"
 #include "plugkit/ui/staple/Fonts.h"
+#include "plugkit/ui/staple/LookAndFeel.h"
 #include "plugkit/ui/staple/Tokens.h"
 #include "plugkit/ui/staple/controls/ParseValue.h"
 
@@ -158,9 +159,7 @@ juce::ToggleButton& ControlSection::addToggle (const juce::String& parameterId, 
     toggle.setTooltip (p.getName (100));
     if (attached)
         buttonAttachments.push_back (std::make_unique<juce::ButtonParameterAttachment> (p, toggle));
-    // The kit's box, 2 px in, 14 px wide, its 6 px gap and the text (staple::LookAndFeel::drawToggleButton).
-    const int width = juce::roundToInt (2.0f + 14.0f + 6.0f + juce::GlyphArrangement::getStringWidth (staple::font (size::fs3), text)) + 4;
-    addControl (toggle, width, toggleHeight, newColumn);
+    addControl (toggle, staple::LookAndFeel::idealToggleWidth (text), toggleHeight, newColumn);
     return toggle;
 }
 
