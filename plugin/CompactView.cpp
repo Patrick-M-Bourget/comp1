@@ -99,6 +99,15 @@ void CompactSlot::show (const CompactSlotRow& row, bool crossfading)
     companionLabel.setVisible (! toggle);
     resized();
 
+    // A screen reader keeps the handlers it holds, so it is told their names and values changed: one reading a control
+    // now hears the new parameter. Nothing is announced; the Style chip announces the Style.
+    for (juce::Component* control : { static_cast<juce::Component*> (&primaryKnob), &companion() })
+        if (auto* handler = control->getAccessibilityHandler())
+        {
+            handler->notifyAccessibilityEvent (juce::AccessibilityEvent::titleChanged);
+            handler->notifyAccessibilityEvent (juce::AccessibilityEvent::valueChanged);
+        }
+
     if (outgoing.isValid())
     {
         fade.jump (0.0f);
@@ -176,7 +185,9 @@ CompactView::CompactView (PluginProcessor& p, LevelHistory& history)
         addAndMakeVisible (*part);
         part->setExplicitFocusOrder (++order);
     }
+    // Last for a screen reader; it takes no keyboard focus, so Tab passes it.
     addAndMakeVisible (gainReduction);
+    gainReduction.setExplicitFocusOrder (++order);
     followStyle();
 }
 

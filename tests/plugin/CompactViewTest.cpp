@@ -224,6 +224,85 @@ TEST_CASE ("In every Style Tab walks the Compact View's body in one order: slot 
     }
 }
 
+TEST_CASE ("In every Style a screen reader walks the Compact View's body in one order: slot A's primary, its Companion, Comp, slot B's primary, its Companion, then the Gain Reduction meter")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    const auto style = GENERATE (from_range (everyStyle.begin(), everyStyle.end()));
+    CAPTURE (static_cast<int> (style));
+    REQUIRE (host.processor.chooseStyle (style));
+    host.settleAnimations();
+    auto& body = host.expandedView().compactView();
+    const std::vector<juce::Component*> expected { &body.compactSlot (0).primary(), &body.compactSlot (0).companion(), &compactKnob (host, "Comp"),
+                                                   &body.compactSlot (1).primary(), &body.compactSlot (1).companion(), &body.gainReductionMeter() };
+    // What a screen reader stops on: the body's components in focus order (JUCE's FocusTraverser, which its
+    // accessibility navigation follows) that are shown, accessible and have a role, leaving out the containers
+    // (the slots and Comp's section).
+    std::vector<juce::Component*> reached;
+    for (auto* c : juce::FocusTraverser().getAllComponents (&body))
+        if (auto* handler = c->getAccessibilityHandler(); c->isShowing() && handler != nullptr && ! handler->isIgnored()
+                                                          && handler->getRole() != juce::AccessibilityRole::unspecified
+                                                          && handler->getRole() != juce::AccessibilityRole::group)
+            reached.push_back (c);
+    std::vector<juce::String> names;
+    for (auto* c : reached)
+        names.push_back (c->getTitle().isNotEmpty() ? c->getTitle() : c->getName());
+    CAPTURE (names);
+    CHECK (reached == expected);
+}
+
+TEST_CASE ("After a Style change a Compact Slot control's accessible name and value are its new parameter's, read through the handler a screen reader already holds")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    host.settleAnimations();
+    auto& body = host.expandedView().compactView();
+    auto& a = body.compactSlot (0);
+    auto& b = body.compactSlot (1);
+    // The handlers a screen reader holds for slot A's primary and slot B's primary, from before the change.
+    auto* primaryA = a.primary().getAccessibilityHandler();
+    auto* primaryB = b.primary().getAccessibilityHandler();
+    REQUIRE (primaryA != nullptr);
+    REQUIRE (primaryB != nullptr);
+    CHECK (primaryA->getTitle() == "Attack");
+    CHECK (primaryB->getTitle() == "Release");
+
+    // Opto: Colour + Range in A, Detection High-Pass Frequency + Detection High-Pass in B.
+    host.edit (parameters::detectionHighPassFrequencyId, 150.0f);
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    REQUIRE (host.settleUntil ([&] { return a.primary().getTitle() == "Colour"; }));
+    host.settleAnimations();
+
+    // The Expanded View's knob for the parameter named name: what the parameter's value reads as there.
+    const auto expandedValue = [&] (const juce::String& name) {
+        auto knobs = host.findAll<staple::Knob> ([&] (staple::Knob& k) { return k.getTitle() == name && ! body.isParentOf (&k); });
+        REQUIRE (knobs.size() == 1);
+        return knobs.front()->getAccessibilityHandler()->getValueInterface()->getCurrentValueAsString();
+    };
+    const std::array<std::pair<juce::Component*, const char*>, 4> shown { { { &a.primary(), "Colour" },
+                                                                            { &a.companion(), "Range" },
+                                                                            { &b.primary(), "Detection High-Pass Frequency" },
+                                                                            { &b.companion(), "Detection High-Pass" } } };
+    for (const auto& [control, name] : shown)
+    {
+        CAPTURE (name);
+        auto* handler = control->getAccessibilityHandler();
+        REQUIRE (handler != nullptr);
+        CHECK (handler->getTitle() == name);
+        if (auto* knob = dynamic_cast<staple::Knob*> (control))
+        {
+            REQUIRE (handler->getValueInterface() != nullptr);
+            CHECK (handler->getValueInterface()->getCurrentValueAsString() == expandedValue (name));
+        }
+        else
+            CHECK (handler->getCurrentState().isChecked() == (host.value (parameters::detectionHighPassOnId) == 1.0f));
+    }
+    // The handlers held from before read the new parameters too.
+    CHECK (primaryA->getTitle() == "Colour");
+    CHECK (primaryB->getTitle() == "Detection High-Pass Frequency");
+    CHECK (primaryB->getValueInterface()->getCurrentValueAsString() == expandedValue ("Detection High-Pass Frequency"));
+}
+
 TEST_CASE ("A Style picked from the footer's chip in the Compact View writes that Style's defaults as one undo step, and the Expanded View shows them after switching")
 {
     host::EditorHost host;
