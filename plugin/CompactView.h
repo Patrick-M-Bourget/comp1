@@ -8,7 +8,9 @@
 #include "PluginProcessor.h"
 #include "comp1/Style.h"
 #include "plugkit/ui/EditorTick.h"
+#include "plugkit/ui/staple/Tokens.h"
 #include "plugkit/ui/staple/controls/Knob.h"
+#include "plugkit/ui/staple/controls/Tween.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -74,14 +76,25 @@ static_assert (std::size (compactSlots) == styleCount, "compactSlots has a row f
 // change attaches them to another row's parameters, titles them with those parameters' names and shows the
 // Companion's kind, writing nothing. Its size is the same for every row (idealWidth, idealHeight), and so is where
 // each control sits in it. Tab walks the primary, then the Companion.
+//
+// A rebinding can crossfade: the slot as it looked fades out over crossfadeMs, drawn over the rebound controls as they
+// fade in. The rebound controls take edits and Tab from the start; only alpha changes, never a place.
 class CompactSlot final : public juce::Component
 {
 public:
+    // The crossfade's time: the design system's menus-and-cards duration, the family's pop-in fade.
+    static constexpr int crossfadeMs = staple::tokens::motion::dur2Ms;
+
     CompactSlot (const juce::String& name, PluginProcessor& processor);
     ~CompactSlot() override;
 
-    // Attaches the controls to row's parameters.
-    void show (const CompactSlotRow& row);
+    // Attaches the controls to row's parameters, crossfading from how the slot looks if crossfading and the slot is
+    // showing, else at once. A rebinding during a crossfade fades out from how the slot looks then.
+    void show (const CompactSlotRow& row, bool crossfading = false);
+    // How far the crossfade has gone, 0 to 1: the rebound controls' alpha, and 1 when none is under way.
+    float crossfade() const { return fade.value(); }
+    // Whether the slot as it looked before the rebinding is still drawn, fading out.
+    bool showsOutgoing() const { return outgoing.isValid(); }
 
     staple::Knob& primary() { return primaryKnob; }
     // The Companion shown: the toggle or the small knob.
@@ -92,9 +105,12 @@ public:
     static int idealHeight();
 
     void resized() override;
+    void paintOverChildren (juce::Graphics& g) override;
 
 private:
     juce::RangedAudioParameter& parameter (const CompactSlotControl& control);
+    // Sets the controls' alpha to the crossfade's progress, dropping the outgoing image at its end.
+    void applyCrossfade (float progress);
 
     PluginProcessor& processor;
     staple::Knob primaryKnob, companionKnob;
@@ -102,6 +118,9 @@ private:
     juce::ToggleButton companionToggle;
     std::unique_ptr<juce::SliderParameterAttachment> primaryAttachment, companionKnobAttachment;
     std::unique_ptr<juce::ButtonParameterAttachment> companionToggleAttachment;
+    // The slot as it looked before the rebinding, drawn at 1 - the crossfade's progress until it ends.
+    juce::Image outgoing;
+    staple::Tween fade { crossfadeMs, 1.0f };
 };
 
 // The Compact View's body, under the editor's shared header and footer, named "Compact View": Compact Slot A, Comp,

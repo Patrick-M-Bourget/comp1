@@ -434,3 +434,57 @@ TEST_CASE ("In the Compact View Cmd-Z undoes, Shift-Cmd-Z redoes and Cmd-B toggl
     CHECK (host.press (juce::KeyPress ('b', command, 0)));
     CHECK (host.value (parameters::globalBypassId) == 0.0f);
 }
+
+TEST_CASE ("A Style change crossfades the Compact Slots: the outgoing controls fade out as the incoming ones fade in over the slots' crossfade time, and nothing moves")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    host.settleAnimations();
+    auto& body = host.expandedView().compactView();
+    auto& a = body.compactSlot (0);
+    auto& b = body.compactSlot (1);
+    // Clean at rest: no crossfade, every control at full alpha.
+    for (auto* slot : { &a, &b })
+    {
+        CHECK (slot->crossfade() == 1.0f);
+        CHECK_FALSE (slot->showsOutgoing());
+        CHECK (slot->primary().getAlpha() == 1.0f);
+    }
+    const auto boundsOf = [&] {
+        std::vector<juce::Rectangle<int>> all;
+        for (auto* slot : { &a, &b })
+        {
+            all.push_back (slot->getBoundsInParent());
+            all.push_back (slot->primary().getBoundsInParent());
+            all.push_back (slot->companion().getBoundsInParent());
+        }
+        return all;
+    };
+
+    // From before the Style change, so what's measured is at least the crossfade's own time.
+    const double started = juce::Time::getMillisecondCounterHiRes();
+    REQUIRE (host.processor.chooseStyle (comp1::Style::FET));
+    // The tick that sees FET rebinds the slots at once, under the outgoing Clean controls fading out.
+    REQUIRE (host.settleUntil ([&] { return a.primary().getTitle() == "Attack" && b.companion().getTitle() == "Hold"; }));
+    for (auto* slot : { &a, &b })
+    {
+        CHECK (slot->crossfade() < 1.0f);
+        CHECK (slot->showsOutgoing());
+        CHECK_THAT (slot->primary().getAlpha(), WithinAbs (slot->crossfade(), 1.0e-6));
+        CHECK_THAT (slot->companion().getAlpha(), WithinAbs (slot->crossfade(), 1.0e-6));
+    }
+    const auto during = boundsOf();
+
+    host.settleAnimations();
+    const double took = juce::Time::getMillisecondCounterHiRes() - started;
+    CHECK (took >= comp1::CompactSlot::crossfadeMs);
+    for (auto* slot : { &a, &b })
+    {
+        CHECK (slot->crossfade() == 1.0f);
+        CHECK_FALSE (slot->showsOutgoing());
+        CHECK (slot->primary().getAlpha() == 1.0f);
+        CHECK (slot->companion().getAlpha() == 1.0f);
+    }
+    // Nothing moved, during the crossfade or after it.
+    CHECK (boundsOf() == during);
+}
