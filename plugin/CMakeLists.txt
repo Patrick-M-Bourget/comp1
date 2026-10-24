@@ -32,6 +32,7 @@ juce_add_plugin(comp1
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
 target_sources(comp1 PRIVATE
+    CachedGradientFill.cpp
     CompactView.cpp
     CompFollowAttachment.cpp
     Controls.cpp
