@@ -21,7 +21,7 @@ namespace comp1
 // them the chosen tab's content: on Level, the Level and Gain Reduction Graph (LevelGraph), fed from the editor's level
 // history; on Transfer Curve, the Transfer Curve Graph (TransferCurveGraph), fed from the level history too; on
 // Spectrum, the Spectrum display (SpectrumDisplay), fed from the Engine's input and output taps. The Transfer Curve
-// tab's place is provisional (#94).
+// tab's place is provisional.
 // While the Level tab shows, the Transfer Curve inset (TransferCurveInset) sits over the Level graph's top-left corner,
 // insetGap in from it, over its oldest audio: a Tab stop after the tabs, whose Threshold and Ratio handles take the mouse.
 // Named "Display", and each content by its tab, as a test finds them.
