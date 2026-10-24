@@ -130,11 +130,13 @@ private:
 //
 // - Compact Slots A and B: what each shows is the Style's row in compactSlots, followed on the editor's tick, so
 //   only the Style parameter changes it, from the chip, a Preset, A/B Compare or undo alike. Following it writes
-//   nothing: a Style change writes only what chooseStyle() writes.
+//   nothing: a Style change writes only what chooseStyle() writes. A change crossfades the slots' contents, at once
+//   under reduced motion (setReducedMotion).
 // - Comp: the Comp knob alone, at the kit's hero size, attached as the Expanded View's (addCompKnob): grabbing it
 //   while Comp Follow is off follows, with the edit that follows as one undo step. There is no Comp Follow toggle,
 //   Threshold or Ratio. Its knob has the Detection Level ring and the Comp Follow-off cue (HeroComp).
-// - The Gain Reduction meter: the compressor's, on the editor's level history, as tall as the body, and no stop for Tab.
+// - The Gain Reduction meter: the compressor's, on the editor's level history, as tall as the body, and no stop for Tab;
+//   a screen reader reaches it last.
 //
 // The meter is at the body's right edge, and the room left of it is three equal columns, slot A, Comp and slot B each
 // centred in its own and centred down the body. Nothing's place depends on the Style, so a Style change moves nothing;
