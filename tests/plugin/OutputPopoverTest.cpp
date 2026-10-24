@@ -560,6 +560,48 @@ TEST_CASE ("The Auto Gain dot shows beside the Output readout exactly while the 
     CHECK (host.settleUntil ([&] { return autoGain.getTooltip() == autoGainDescription; }));
 }
 
+TEST_CASE ("With Auto Gain on, an amount that rounds to 0.0 dB, or Global Bypass on, shows no Auto Gain dot, and neither the A toggle's tooltip nor the readout's description gives an amount, in both views")
+{
+    host::EditorHost host;
+    const bool compact = GENERATE (false, true);
+    CAPTURE (compact);
+    if (compact)
+        host::EditorHost::click (host.expandedView().viewSwitch());
+    auto& dot = host.footer().autoGainDot();
+    auto& readout = host.outputReadout();
+    host.openOutputPopover();
+    auto& autoGain = host.showing<plugkit::ui::OutputToggle> ("Auto Gain");
+
+    // From an amount that reads +7.9 dB (Threshold -30 dB on Clean, as the dot's test reads it), so each wait below
+    // waits for a change.
+    dynLabDefaults (host);
+    host.edit (parameters::thresholdId, -30.0f);
+    host.edit (parameters::autoGainId, 1.0f);
+    const auto showsAmount = [&] { return dot.isVisible() && autoGain.getTooltip() == autoGainDescription + ". Now +7.9 dB"; };
+    REQUIRE (host.settleUntil (showsAmount));
+
+    // Threshold 0 dB on Clean: dyn-lab's estimate, +0.0089 dB (`python3 tools/dyn-lab/dynlab.py autogain --threshold
+    // 0`), above zero but 0.0 dB at one decimal.
+    host.edit (parameters::thresholdId, 0.0f);
+    REQUIRE (host.processor.appliedAutoGainDb() > 0.0);
+    REQUIRE (host.processor.appliedAutoGainDb() < 0.05);
+    CHECK (host.settleUntil ([&] { return ! dot.isVisible() && autoGain.getTooltip() == autoGainDescription; }));
+    CHECK_FALSE (readout.getDescription().contains ("Auto Gain"));
+
+    // Global Bypass on, with an amount that reads +7.9 dB: no dot, and no amount either.
+    host.edit (parameters::thresholdId, -30.0f);
+    REQUIRE (host.settleUntil (showsAmount));
+    host.edit (parameters::globalBypassId, 1.0f);
+    CHECK (host.settleUntil ([&] { return readout.isNotApplied() && autoGain.getTooltip() == autoGainDescription; }));
+    CHECK_FALSE (dot.isVisible());
+    CHECK_FALSE (readout.getDescription().contains ("Auto Gain"));
+
+    // Off again: the dot and the amount are back.
+    host.edit (parameters::globalBypassId, 0.0f);
+    CHECK (host.settleUntil (showsAmount));
+    CHECK (readout.getDescription() == "Includes Auto Gain: +7.9 dB");
+}
+
 TEST_CASE ("The Auto Gain dot sits just right of the Output readout, centred down it, and the footer's layout doesn't move as it shows and hides, in both views")
 {
     host::EditorHost host;

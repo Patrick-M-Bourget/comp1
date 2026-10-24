@@ -77,8 +77,9 @@ struct CharacterSection final : ControlSection
 // (plugkit::ui::PopoverSlider, filled from the left), each with its name and its level, "Off" at the bottom, beneath
 // it; under them one row of letter toggles (plugkit::ui::OutputToggle), A for Auto Gain and L for the Limiter, the
 // width of the knobs' row between them. Tab walks them in that order. Ceiling stays enabled while the Limiter is off,
-// as it still applies at delivery. Auto Gain is attached to its parameter whatever Comp Follow (ADR 0004). While Auto
-// Gain is on, A's tooltip adds the amount it applies after its description, ". Now +7.9 dB", on the editor's tick.
+// as it still applies at delivery. Auto Gain is attached to its parameter whatever Comp Follow (ADR 0004). While the
+// Auto Gain dot shows (shownAutoGain), A's tooltip adds the amount after its description, ". Now +7.9 dB", on the
+// editor's tick.
 class OutputSection final : public ControlSection
 {
 public:
