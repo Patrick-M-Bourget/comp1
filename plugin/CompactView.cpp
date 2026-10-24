@@ -46,6 +46,7 @@ CompactSlot::CompactSlot (const juce::String& name, PluginProcessor& p)
         addChildComponent (*c);
     primaryKnob.setVisible (true);
     primaryLabel.setVisible (true);
+    fade.apply = [this] (float progress) { applyCrossfade (progress); };
 }
 
 CompactSlot::~CompactSlot() = default;
@@ -55,8 +56,18 @@ juce::RangedAudioParameter& CompactSlot::parameter (const CompactSlotControl& co
     return parameters::parameterOf (processor.parameterState(), *control.parameterId);
 }
 
-void CompactSlot::show (const CompactSlotRow& row)
+void CompactSlot::show (const CompactSlotRow& row, bool crossfading)
 {
+    // The slot as it looks now, mid-crossfade included, at the screen's pixel density so it stays sharp.
+    juce::Image looked;
+    if (crossfading && isShowing() && ! getLocalBounds().isEmpty())
+    {
+        const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds());
+        const auto density = static_cast<float> (display != nullptr ? display->scale : 1.0);
+        looked = createComponentSnapshot (getLocalBounds(), true, density * juce::Component::getApproximateScaleFactorForComponent (this));
+    }
+    outgoing = looked;
+
     // Each attachment goes before its control is set up again, so nothing the set-up does reaches a parameter; a new
     // attachment shows its parameter's value without writing it.
     primaryAttachment.reset();
@@ -87,6 +98,40 @@ void CompactSlot::show (const CompactSlotRow& row)
     companionKnob.setVisible (! toggle);
     companionLabel.setVisible (! toggle);
     resized();
+
+    // A screen reader keeps the handlers it holds, so it is told their names and values changed: one reading a control
+    // now hears the new parameter. Nothing is announced; the Style chip announces the Style.
+    for (juce::Component* control : { static_cast<juce::Component*> (&primaryKnob), &companion() })
+        if (auto* handler = control->getAccessibilityHandler())
+        {
+            handler->notifyAccessibilityEvent (juce::AccessibilityEvent::titleChanged);
+            handler->notifyAccessibilityEvent (juce::AccessibilityEvent::valueChanged);
+        }
+
+    if (outgoing.isValid())
+    {
+        fade.jump (0.0f);
+        fade.towards (1.0f);
+    }
+    else
+        fade.jump (1.0f);
+}
+
+void CompactSlot::applyCrossfade (float progress)
+{
+    for (auto* child : getChildren())
+        child->setAlpha (progress);
+    if (progress >= 1.0f)
+        outgoing = {};
+    repaint();
+}
+
+void CompactSlot::paintOverChildren (juce::Graphics& g)
+{
+    if (! outgoing.isValid())
+        return;
+    g.setOpacity (1.0f - fade.value());
+    g.drawImage (outgoing, getLocalBounds().toFloat());
 }
 
 juce::Component& CompactSlot::companion()
@@ -140,7 +185,9 @@ CompactView::CompactView (PluginProcessor& p, LevelHistory& history)
         addAndMakeVisible (*part);
         part->setExplicitFocusOrder (++order);
     }
+    // Last for a screen reader; it takes no keyboard focus, so Tab passes it.
     addAndMakeVisible (gainReduction);
+    gainReduction.setExplicitFocusOrder (++order);
     followStyle();
 }
 
@@ -152,10 +199,12 @@ void CompactView::followStyle()
     const auto style = compactSlots[std::min (index, std::size (compactSlots) - 1)].style;
     if (shownStyle == style)
         return;
+    // The first Style shown appears at once; a change crossfades, except under reduced motion.
+    const bool crossfade = shownStyle.has_value() && ! reducedMotion;
     shownStyle = style;
     const auto& row = compactSlots[compactSlotsRowOf (style)];
-    slots[0]->show (row.a);
-    slots[1]->show (row.b);
+    slots[0]->show (row.a, crossfade);
+    slots[1]->show (row.b, crossfade);
 }
 
 void CompactView::resized()

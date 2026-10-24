@@ -51,6 +51,10 @@ juce::RangedAudioParameter& parameterNamed (host::EditorHost& host, const juce::
     throw std::logic_error ("unreachable");
 }
 
+// How near a Component's alpha comes to the value it was set to: JUCE keeps a Component's alpha in 8 bits, so
+// getAlpha() reads it rounded to the nearest n / 255, half a step off at most. 1 and 0 read back exactly.
+constexpr float halfAlphaStep = 0.5f / 255.0f;
+
 constexpr std::array everyStyle { comp1::Style::Clean, comp1::Style::VCA,        comp1::Style::FET, comp1::Style::Opto,
                                   comp1::Style::Vocal, comp1::Style::Instrument, comp1::Style::Bus, comp1::Style::Drums };
 
@@ -222,6 +226,85 @@ TEST_CASE ("In every Style Tab walks the Compact View's body in one order: slot 
         REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
         CHECK (juce::Component::getCurrentlyFocusedComponent() == expected[i]);
     }
+}
+
+TEST_CASE ("In every Style a screen reader walks the Compact View's body in one order: slot A's primary, its Companion, Comp, slot B's primary, its Companion, then the Gain Reduction meter")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    const auto style = GENERATE (from_range (everyStyle.begin(), everyStyle.end()));
+    CAPTURE (static_cast<int> (style));
+    REQUIRE (host.processor.chooseStyle (style));
+    host.settleAnimations();
+    auto& body = host.expandedView().compactView();
+    const std::vector<juce::Component*> expected { &body.compactSlot (0).primary(), &body.compactSlot (0).companion(), &compactKnob (host, "Comp"),
+                                                   &body.compactSlot (1).primary(), &body.compactSlot (1).companion(), &body.gainReductionMeter() };
+    // What a screen reader stops on: the body's components in focus order (JUCE's FocusTraverser, which its
+    // accessibility navigation follows) that are shown, accessible and have a role, leaving out the containers
+    // (the slots and Comp's section).
+    std::vector<juce::Component*> reached;
+    for (auto* c : juce::FocusTraverser().getAllComponents (&body))
+        if (auto* handler = c->getAccessibilityHandler(); c->isShowing() && handler != nullptr && ! handler->isIgnored()
+                                                          && handler->getRole() != juce::AccessibilityRole::unspecified
+                                                          && handler->getRole() != juce::AccessibilityRole::group)
+            reached.push_back (c);
+    std::vector<juce::String> names;
+    for (auto* c : reached)
+        names.push_back (c->getTitle().isNotEmpty() ? c->getTitle() : c->getName());
+    CAPTURE (names);
+    CHECK (reached == expected);
+}
+
+TEST_CASE ("After a Style change a Compact Slot control's accessible name and value are its new parameter's, read through the handler a screen reader already holds")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    host.settleAnimations();
+    auto& body = host.expandedView().compactView();
+    auto& a = body.compactSlot (0);
+    auto& b = body.compactSlot (1);
+    // The handlers a screen reader holds for slot A's primary and slot B's primary, from before the change.
+    auto* primaryA = a.primary().getAccessibilityHandler();
+    auto* primaryB = b.primary().getAccessibilityHandler();
+    REQUIRE (primaryA != nullptr);
+    REQUIRE (primaryB != nullptr);
+    CHECK (primaryA->getTitle() == "Attack");
+    CHECK (primaryB->getTitle() == "Release");
+
+    // Opto: Colour + Range in A, Detection High-Pass Frequency + Detection High-Pass in B.
+    host.edit (parameters::detectionHighPassFrequencyId, 150.0f);
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    REQUIRE (host.settleUntil ([&] { return a.primary().getTitle() == "Colour"; }));
+    host.settleAnimations();
+
+    // The Expanded View's knob for the parameter named name: what the parameter's value reads as there.
+    const auto expandedValue = [&] (const juce::String& name) {
+        auto knobs = host.findAll<staple::Knob> ([&] (staple::Knob& k) { return k.getTitle() == name && ! body.isParentOf (&k); });
+        REQUIRE (knobs.size() == 1);
+        return knobs.front()->getAccessibilityHandler()->getValueInterface()->getCurrentValueAsString();
+    };
+    const std::array<std::pair<juce::Component*, const char*>, 4> shown { { { &a.primary(), "Colour" },
+                                                                            { &a.companion(), "Range" },
+                                                                            { &b.primary(), "Detection High-Pass Frequency" },
+                                                                            { &b.companion(), "Detection High-Pass" } } };
+    for (const auto& [control, name] : shown)
+    {
+        CAPTURE (name);
+        auto* handler = control->getAccessibilityHandler();
+        REQUIRE (handler != nullptr);
+        CHECK (handler->getTitle() == name);
+        if (dynamic_cast<staple::Knob*> (control) != nullptr)
+        {
+            REQUIRE (handler->getValueInterface() != nullptr);
+            CHECK (handler->getValueInterface()->getCurrentValueAsString() == expandedValue (name));
+        }
+        else
+            CHECK (handler->getCurrentState().isChecked() == (host.value (parameters::detectionHighPassOnId) == 1.0f));
+    }
+    // The handlers held from before read the new parameters too.
+    CHECK (primaryA->getTitle() == "Colour");
+    CHECK (primaryB->getTitle() == "Detection High-Pass Frequency");
+    CHECK (primaryB->getValueInterface()->getCurrentValueAsString() == expandedValue ("Detection High-Pass Frequency"));
 }
 
 TEST_CASE ("A Style picked from the footer's chip in the Compact View writes that Style's defaults as one undo step, and the Expanded View shows them after switching")
@@ -433,4 +516,114 @@ TEST_CASE ("In the Compact View Cmd-Z undoes, Shift-Cmd-Z redoes and Cmd-B toggl
     CHECK (host.value (parameters::globalBypassId) == 1.0f);
     CHECK (host.press (juce::KeyPress ('b', command, 0)));
     CHECK (host.value (parameters::globalBypassId) == 0.0f);
+}
+
+TEST_CASE ("A Style change crossfades the Compact Slots: the outgoing controls fade out as the incoming ones fade in over the slots' crossfade time, and nothing moves")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    host.settleAnimations();
+    auto& body = host.expandedView().compactView();
+    auto& a = body.compactSlot (0);
+    auto& b = body.compactSlot (1);
+    // Clean at rest: no crossfade, every control at full alpha.
+    for (auto* slot : { &a, &b })
+    {
+        CHECK (slot->crossfade() == 1.0f);
+        CHECK_FALSE (slot->showsOutgoing());
+        CHECK (slot->primary().getAlpha() == 1.0f);
+    }
+    const auto boundsOf = [&] {
+        std::vector<juce::Rectangle<int>> all;
+        for (auto* slot : { &a, &b })
+        {
+            all.push_back (slot->getBoundsInParent());
+            all.push_back (slot->primary().getBoundsInParent());
+            all.push_back (slot->companion().getBoundsInParent());
+        }
+        return all;
+    };
+
+    // From before the Style change, so what's measured is at least the crossfade's own time.
+    const double started = juce::Time::getMillisecondCounterHiRes();
+    REQUIRE (host.processor.chooseStyle (comp1::Style::FET));
+    // The tick that sees FET rebinds the slots at once, under the outgoing Clean controls fading out.
+    REQUIRE (host.settleUntil ([&] { return a.primary().getTitle() == "Attack" && b.companion().getTitle() == "Hold"; }));
+    for (auto* slot : { &a, &b })
+    {
+        CHECK (slot->crossfade() < 1.0f);
+        CHECK (slot->showsOutgoing());
+        CHECK_THAT (slot->primary().getAlpha(), WithinAbs (slot->crossfade(), halfAlphaStep));
+        CHECK_THAT (slot->companion().getAlpha(), WithinAbs (slot->crossfade(), halfAlphaStep));
+    }
+    const auto during = boundsOf();
+
+    host.settleAnimations();
+    const double took = juce::Time::getMillisecondCounterHiRes() - started;
+    CHECK (took >= comp1::CompactSlot::crossfadeMs);
+    for (auto* slot : { &a, &b })
+    {
+        CHECK (slot->crossfade() == 1.0f);
+        CHECK_FALSE (slot->showsOutgoing());
+        CHECK (slot->primary().getAlpha() == 1.0f);
+        CHECK (slot->companion().getAlpha() == 1.0f);
+    }
+    // Nothing moved, during the crossfade or after it.
+    CHECK (boundsOf() == during);
+}
+
+TEST_CASE ("Under reduced motion a Style change swaps the Compact Slots' controls at once, with no crossfade")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    host.settleAnimations();
+    auto& body = host.expandedView().compactView();
+    body.setReducedMotion (true);
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    REQUIRE (host.settleUntil ([&] { return body.compactSlot (0).primary().getTitle() == "Colour"; }));
+    // On the tick that rebinds them: nothing easing, every control at full alpha.
+    CHECK (staple::Tween::numberEasing() == 0);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        auto& slot = body.compactSlot (i);
+        CAPTURE (i);
+        CHECK (slot.crossfade() == 1.0f);
+        CHECK_FALSE (slot.showsOutgoing());
+        CHECK (slot.primary().getAlpha() == 1.0f);
+        CHECK (slot.companion().getAlpha() == 1.0f);
+    }
+}
+
+TEST_CASE ("A second Style change during the Compact Slots' crossfade lands cleanly on the newest Style")
+{
+    host::EditorHost host;
+    showCompactView (host);
+    host.settleAnimations();
+    auto& body = host.expandedView().compactView();
+    auto& a = body.compactSlot (0);
+    auto& b = body.compactSlot (1);
+    REQUIRE (host.processor.chooseStyle (comp1::Style::FET));
+    REQUIRE (host.settleUntil ([&] { return b.companion().getTitle() == "Hold"; }));
+    REQUIRE (a.crossfade() < 1.0f);
+    // Mid-crossfade, Drums: it fades out from FET part-way in, toward Drums.
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Drums));
+    REQUIRE (host.settleUntil ([&] { return b.primary().getTitle() == "Drive"; }));
+    CHECK (a.crossfade() < 1.0f);
+    CHECK (a.showsOutgoing());
+
+    host.settleAnimations();
+    const std::array<juce::Component*, 4> shown { &a.primary(), &a.companion(), &b.primary(), &b.companion() };
+    const std::array<const char*, 4> drums { "Attack", "Hold", "Drive", "Saturation" };
+    for (size_t i = 0; i < shown.size(); ++i)
+    {
+        CAPTURE (i);
+        CHECK (shown[i]->getTitle() == drums[i]);
+        CHECK (shown[i]->getAlpha() == 1.0f);
+        CHECK (shown[i]->isVisible());
+    }
+    for (auto* slot : { &a, &b })
+    {
+        CHECK (slot->crossfade() == 1.0f);
+        CHECK_FALSE (slot->showsOutgoing());
+    }
 }

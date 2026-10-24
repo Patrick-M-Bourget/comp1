@@ -8,7 +8,9 @@
 #include "PluginProcessor.h"
 #include "comp1/Style.h"
 #include "plugkit/ui/EditorTick.h"
+#include "plugkit/ui/staple/Tokens.h"
 #include "plugkit/ui/staple/controls/Knob.h"
+#include "plugkit/ui/staple/controls/Tween.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -74,14 +76,25 @@ static_assert (std::size (compactSlots) == styleCount, "compactSlots has a row f
 // change attaches them to another row's parameters, titles them with those parameters' names and shows the
 // Companion's kind, writing nothing. Its size is the same for every row (idealWidth, idealHeight), and so is where
 // each control sits in it. Tab walks the primary, then the Companion.
+//
+// A rebinding can crossfade: the slot as it looked fades out over crossfadeMs, drawn over the rebound controls as they
+// fade in. The rebound controls take edits and Tab from the start; only alpha changes, never a place.
 class CompactSlot final : public juce::Component
 {
 public:
+    // The crossfade's time: the design system's menus-and-cards duration, the family's pop-in fade.
+    static constexpr int crossfadeMs = staple::tokens::motion::dur2Ms;
+
     CompactSlot (const juce::String& name, PluginProcessor& processor);
     ~CompactSlot() override;
 
-    // Attaches the controls to row's parameters.
-    void show (const CompactSlotRow& row);
+    // Attaches the controls to row's parameters, crossfading from how the slot looks if crossfading and the slot is
+    // showing, else at once. A rebinding during a crossfade fades out from how the slot looks then.
+    void show (const CompactSlotRow& row, bool crossfading = false);
+    // How far the crossfade has gone, 0 to 1: the rebound controls' alpha, and 1 when none is under way.
+    float crossfade() const { return fade.value(); }
+    // Whether the slot as it looked before the rebinding is still drawn, fading out.
+    bool showsOutgoing() const { return outgoing.isValid(); }
 
     staple::Knob& primary() { return primaryKnob; }
     // The Companion shown: the toggle or the small knob.
@@ -92,9 +105,12 @@ public:
     static int idealHeight();
 
     void resized() override;
+    void paintOverChildren (juce::Graphics& g) override;
 
 private:
     juce::RangedAudioParameter& parameter (const CompactSlotControl& control);
+    // Sets the controls' alpha to the crossfade's progress, dropping the outgoing image at its end.
+    void applyCrossfade (float progress);
 
     PluginProcessor& processor;
     staple::Knob primaryKnob, companionKnob;
@@ -102,6 +118,9 @@ private:
     juce::ToggleButton companionToggle;
     std::unique_ptr<juce::SliderParameterAttachment> primaryAttachment, companionKnobAttachment;
     std::unique_ptr<juce::ButtonParameterAttachment> companionToggleAttachment;
+    // The slot as it looked before the rebinding, drawn at 1 - the crossfade's progress until it ends.
+    juce::Image outgoing;
+    staple::Tween fade { crossfadeMs, 1.0f };
 };
 
 // The Compact View's body, under the editor's shared header and footer, named "Compact View": Compact Slot A, Comp,
@@ -111,11 +130,13 @@ private:
 //
 // - Compact Slots A and B: what each shows is the Style's row in compactSlots, followed on the editor's tick, so
 //   only the Style parameter changes it, from the chip, a Preset, A/B Compare or undo alike. Following it writes
-//   nothing: a Style change writes only what chooseStyle() writes.
+//   nothing: a Style change writes only what chooseStyle() writes. A change crossfades the slots' contents, at once
+//   under reduced motion (setReducedMotion).
 // - Comp: the Comp knob alone, at the kit's hero size, attached as the Expanded View's (addCompKnob): grabbing it
 //   while Comp Follow is off follows, with the edit that follows as one undo step. There is no Comp Follow toggle,
 //   Threshold or Ratio. Its knob has the Detection Level ring and the Comp Follow-off cue (HeroComp).
-// - The Gain Reduction meter: the compressor's, on the editor's level history, as tall as the body, and no stop for Tab.
+// - The Gain Reduction meter: the compressor's, on the editor's level history, as tall as the body, and no stop for Tab;
+//   a screen reader reaches it last.
 //
 // The meter is at the body's right edge, and the room left of it is three equal columns, slot A, Comp and slot B each
 // centred in its own and centred down the body. Nothing's place depends on the Style, so a Style change moves nothing;
@@ -132,6 +153,10 @@ public:
     CompactSlot& compactSlot (std::size_t index) { return *slots[index]; }
     HeroComp& heroComp() { return *hero; }
 
+    // Whether a Style change swaps the Compact Slots' controls at once, without the crossfade, as the OS's reduced
+    // motion setting asks. plugkit doesn't read that setting yet (#209), so it is off unless set here.
+    void setReducedMotion (bool on) { reducedMotion = on; }
+
     void resized() override;
 
 private:
@@ -145,6 +170,7 @@ private:
     std::optional<CompFollowAttachment> compAttachment;
     std::optional<HeroComp> hero;
     std::optional<Style> shownStyle;
+    bool reducedMotion = false;
     // Follows the Style on the editor's tick.
     struct StyleFollower final : plugkit::ui::EditorTick::Client
     {
