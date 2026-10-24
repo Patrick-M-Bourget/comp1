@@ -106,8 +106,9 @@ TEST_CASE ("The Spectrum display shows the input and the compressor's output: co
     SpectrumHost host;
     CHECK (host.gapSettlesAt (tone, knownGainReductionDb, 0.5));
     // The input spectrum at about the tone's level, a full-scale sine reading 0 dB, give or take the Analyzer's
-    // window between bins.
-    CHECK_THAT (host.spectrum().inputSpectrum().levelDb (1000.0, 0.0), WithinAbs (toneDb, 2.0));
+    // window between bins. It rises from silence by the clock as the gap does, so it is still on its way when the gap
+    // is within tolerance, by however far the ticks so far have taken it.
+    CHECK (host.keepPlayingUntil (tone, [&] { return std::abs (host.spectrum().inputSpectrum().levelDb (1000.0, 0.0) - toneDb) < 2.0; }));
 
     // Auto Gain and Output Gain aren't Gain Reduction: they leave the gap as it is.
     host.edit (parameters::autoGainId, 1.0f);
