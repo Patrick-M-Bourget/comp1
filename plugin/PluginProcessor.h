@@ -112,8 +112,8 @@ public:
     static constexpr int stateVersion = 2;
 
     // The Expanded View's logical size (as at 100% UI Scale), and its limits: at the minimum every section fits, the
-    // widest row of them (from Style to Character and Saturation) inside the window's padding, and each size is whole
-    // pixels at every UI Scale.
+    // section rows' grid (both rows as wide, Detection under Gate and Compressor, Stereo and Lookahead under Character
+    // and Saturation) inside the window's padding, and each size is whole pixels at every UI Scale.
     static constexpr plugkit::ui::Session::Window expandedWindow { { 1400, 860 }, { 1356, 720 }, { 2560, 1600 } };
     // The Compact View's: at the minimum the header, the body's row of controls, the footer and the Preset browser's
     // full panel inside its margin fit, the Preset browser setting it (the row needs less), and each size is whole

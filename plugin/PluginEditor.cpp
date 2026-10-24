@@ -27,6 +27,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     content().addAndMakeVisible (gainReduction);
     content().addAndMakeVisible (gateGainReduction);
     content().addAndMakeVisible (limiterGainReduction);
+    for (auto& [meter, label] : labelledMeters())
+        content().addAndMakeVisible (*label);
     // Tab's order, after the header: the display's tabs, the Output Meter, then the sections in signal order. The Gain
     // Reduction meters are read, not operated: they are no stops.
     int order = firstFocusOrder;
@@ -70,6 +72,8 @@ void PluginEditor::show (View view)
     for (juce::Component* part :
          std::initializer_list<juce::Component*> { &displaySlot, &gateGainReduction, &gainReduction, &limiterGainReduction, &outputMeter, &sections })
         part->setVisible (expanded);
+    for (auto& [meter, label] : labelledMeters())
+        label->setVisible (expanded);
     compactBody.setVisible (! expanded);
     footer.showSwitchFor (view);
     if (! expanded)
@@ -96,6 +100,11 @@ void PluginEditor::applyViewWindow()
 
 PluginEditor::~PluginEditor() = default;
 
+std::array<std::pair<juce::Component*, MeterLabel*>, 4> PluginEditor::labelledMeters()
+{
+    return { { { &gateGainReduction, &gateLabel }, { &gainReduction, &compLabel }, { &limiterGainReduction, &limiterLabel }, { &outputMeter, &outputLabel } } };
+}
+
 std::vector<std::vector<Section*>> PluginEditor::sectionRows()
 {
     return { { &gate, &compressor, &character }, { &detection, &stereo, &lookahead } };
@@ -115,28 +124,37 @@ void PluginEditor::layOutBody (juce::Rectangle<int> area)
     compactBody.setBounds (area);
     sections.setBounds (area.removeFromBottom (sectionRowsHeight()));
     area.removeFromBottom (layout::gap);
-    outputMeter.setBounds (area.removeFromRight (layout::meterWidth));
+    const auto meters = labelledMeters();
+    const int count = static_cast<int> (meters.size());
+    auto meterArea = area.removeFromRight (count * layout::meterWidth + (count - 1) * layout::gap);
     area.removeFromRight (layout::gap);
-    limiterGainReduction.setBounds (area.removeFromRight (layout::meterWidth));
-    area.removeFromRight (layout::gap);
-    gainReduction.setBounds (area.removeFromRight (layout::meterWidth));
-    area.removeFromRight (layout::gap);
-    gateGainReduction.setBounds (area.removeFromRight (layout::meterWidth));
-    area.removeFromRight (layout::gap);
+    // Each meter's label on the line under it: the meters give up only that line.
+    auto labelLine = meterArea.removeFromBottom (MeterLabel::lineHeight);
+    for (auto& [meter, label] : meters)
+    {
+        meter->setBounds (meterArea.removeFromLeft (layout::meterWidth));
+        label->setBounds (labelLine.removeFromLeft (layout::meterWidth));
+        meterArea.removeFromLeft (layout::gap);
+        labelLine.removeFromLeft (layout::gap);
+    }
     displaySlot.setBounds (area);
 
-    auto rows = sections.getLocalBounds();
-    for (auto& row : sectionRows())
-    {
-        auto line = rows.removeFromTop (tallestOf (row));
-        rows.removeFromTop (sectionGap);
-        for (auto* section : row)
-        {
-            // Its own height, from the row's top: the Detection section collapsed is a strip.
-            section->setBounds (line.removeFromLeft (section->idealWidth()).withHeight (section->idealHeight()));
-            line.removeFromLeft (sectionGap);
-        }
-    }
+    // The grid's three columns: Gate's, the Compressor's and Character and Saturation's, each as wide as the widest it
+    // holds. The second row's Detection spans the first two, and Stereo and Lookahead share the third.
+    const int first = gate.idealWidth();
+    const int second = std::max (compressor.idealWidth(), detection.idealWidth() - first - sectionGap);
+    const int third = std::max (character.idealWidth(), stereo.idealWidth() + sectionGap + lookahead.idealWidth());
+    const int secondX = first + sectionGap, thirdX = secondX + second + sectionGap;
+    // Each from its row's top at its own height: the Detection section collapsed is a strip.
+    const auto place = [] (Section& section, int top, int x, int width) { section.setBounds (x, top, width, section.idealHeight()); };
+    place (gate, 0, 0, first);
+    place (compressor, 0, secondX, second);
+    place (character, 0, thirdX, third);
+    const int secondTop = tallestOf (sectionRows().front()) + sectionGap;
+    place (detection, secondTop, 0, secondX + second);
+    place (stereo, secondTop, thirdX, stereo.idealWidth());
+    const int lookaheadX = thirdX + stereo.idealWidth() + sectionGap;
+    place (lookahead, secondTop, lookaheadX, thirdX + third - lookaheadX);
 }
 
 } // namespace comp1
