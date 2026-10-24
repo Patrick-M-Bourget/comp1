@@ -15,12 +15,13 @@ namespace
 {
 namespace colour = staple::tokens::colour;
 namespace size = staple::tokens::size;
+namespace curve = staple::tokens::curve;
 namespace display = plugkit::ui::display;
 
 // The dB labels: the output's right-aligned this far in from the right edge, the input's this far up from the
 // bottom, each this big, kept inside the graph.
 constexpr float labelInset = 6.0f, labelWidth = 32.0f, labelHeight = 12.0f;
-constexpr float curveLineWidth = 1.5f, dotRadius = 4.0f;
+constexpr float dotRadius = 4.0f;
 
 #if defined(__GNUC__)
     #pragma GCC diagnostic push
@@ -119,9 +120,14 @@ void TransferCurveGraph::paint (juce::Graphics& g)
         else
             curvePath.lineTo (at);
     }
+    // Staple's main curve: the outer halo, the halo, then the line.
     const float alpha = curveAlpha();
+    g.setColour (colour::curveMainHalo.withMultipliedAlpha (curve::mainOuterHaloAlpha * alpha));
+    g.strokePath (curvePath, juce::PathStrokeType (curve::mainOuterHalo));
+    g.setColour (colour::curveMainHalo.withMultipliedAlpha (alpha));
+    g.strokePath (curvePath, juce::PathStrokeType (curve::mainHalo));
     g.setColour (colour::curveMain.withMultipliedAlpha (alpha));
-    g.strokePath (curvePath, juce::PathStrokeType (curveLineWidth));
+    g.strokePath (curvePath, juce::PathStrokeType (curve::mainLine));
 
     if (const auto at = dot())
     {

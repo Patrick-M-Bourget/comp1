@@ -230,6 +230,33 @@ TEST_CASE ("The Transfer Curve Graph's dot sits on the curve at the Detection Le
     CHECK (host.keepPlayingUntil (host::silence(), [&] { return ! host.graph().dotDb().has_value(); }));
 }
 
+TEST_CASE ("The Transfer Curve Graph draws its curve as Staple's main curve: an opaque line over faint halos that end 4 px out")
+{
+    Graphing host;
+    host.setCurve (-20.0f, 4.0f, 0.0f, 60.0f);
+    REQUIRE (host.drawsWhatPlays());
+    auto& graph = host.graph();
+    REQUIRE (host.settleUntil ([&] { return graph.isShowing(); }));
+    // Under Threshold the curve runs at 45 degrees, so a pixel n px straight up from it is n / sqrt 2 px from its centre
+    // line. -45 dB is off the grid's 20 dB lines, and the graph paints no background of its own, so a pixel's alpha is the
+    // curve's.
+    const auto at = graph.pointAt (-45.0, -45.0).roundToInt();
+    const auto image = graph.createComponentSnapshot (graph.getLocalBounds(), false);
+    const auto pixel = [&] (int up) { return image.getPixelAt (at.x, at.y - up); };
+
+    // The line, 2.8 px tall at 45 degrees, covers a pixel next to the point wholly, in curveMain.
+    juce::Colour core;
+    for (int up = -2; up <= 2; ++up)
+        if (pixel (up).getAlpha() > core.getAlpha())
+            core = pixel (up);
+    CHECK (core.getARGB() == staple::tokens::colour::curveMain.getARGB());
+    // 3.5 px out: only the outer halo, faint.
+    CHECK (static_cast<int> (pixel (5).getAlpha()) > 0);
+    CHECK (static_cast<int> (pixel (5).getAlpha()) < 40);
+    // 5.7 px out: past the outer halo's 4 px.
+    CHECK (static_cast<int> (pixel (8).getAlpha()) == 0);
+}
+
 TEST_CASE ("With Detection Source External and no Sidechain, the Transfer Curve Graph draws no dot")
 {
     Graphing host;
