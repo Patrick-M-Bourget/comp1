@@ -35,6 +35,12 @@ void showRangeOf (juce::Slider& knob, const juce::RangedAudioParameter& paramete
 
 // Titles knob with parameter's name, and has it read, show and take typed values in comp1's units (above).
 void describe (staple::Knob& knob, const juce::RangedAudioParameter& parameter);
+
+// The font of a knob's label.
+juce::Font labelFont();
+// Gives knob a section's look, its arc in curveMain, and label, saying text, a knob label's: centred in labelFont,
+// in text2, letting the mouse through to the knob, and silent to a screen reader, which reads the knob's title.
+void setUpKnob (staple::Knob& knob, juce::Label& label, const juce::String& text);
 } // namespace controls
 
 // A section of controls (Section), in either view: its controls in columns, left to right in the order
