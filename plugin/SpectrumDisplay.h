@@ -22,7 +22,7 @@ namespace comp1
 //
 // - **Spectra:** the Engine's input tap (PluginProcessor::readInputTapSamples), the main input before any stage, as
 //   the quieter line (the Analyzer's pre line); and its output tap (readOutputTapSamples), the Wet path directly
-//   after the compressor, as the main line with its fill (the Analyzer's post line). Make-up gain (Auto Gain, Output
+//   after the compressor, as the main line with its fill (the Analyzer's post line). Any later gain (Auto Gain, Output
 //   Gain) comes after the output tap, so it never closes the gap. Both at the Analyzer's default speed, resolution and
 //   tilt, with no Peak Hold, on the Analyzer's dB scale: the top of the display 0 dB, the bottom its range below.
 // - **Gain Reduction:** the area between the two lines where the output is under the input, shaded in the Gain
