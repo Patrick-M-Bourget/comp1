@@ -18,8 +18,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     editorTick().add (history);
     sections.setName ("Sections");
     int sectionOrder = 0;
-    for (auto& row : sectionRows())
-        for (auto* section : row)
+    for (auto& row : sectionGrid())
+        for (auto* section : sectionsOf (row))
         {
             sections.addAndMakeVisible (*section);
             section->setExplicitFocusOrder (++sectionOrder);
@@ -105,16 +105,27 @@ std::array<std::pair<juce::Component*, MeterLabel*>, 4> PluginEditor::labelledMe
     return { { { &gateGainReduction, &gateLabel }, { &gainReduction, &compLabel }, { &limiterGainReduction, &limiterLabel }, { &outputMeter, &outputLabel } } };
 }
 
-std::vector<std::vector<Section*>> PluginEditor::sectionRows()
+std::vector<PluginEditor::GridRow> PluginEditor::sectionGrid()
 {
-    return { { &gate, &compressor, &character }, { &detection, &stereo, &lookahead } };
+    // Gate, Compressor, and Character and Saturation, a column each; under them Detection, spanning the first two, and
+    // Stereo and Lookahead, sharing the third.
+    return { { { 0, 0, { &gate } }, { 1, 1, { &compressor } }, { 2, 2, { &character } } },
+             { { 0, 1, { &detection } }, { 2, 2, { &stereo, &lookahead } } } };
+}
+
+std::vector<Section*> PluginEditor::sectionsOf (const GridRow& row)
+{
+    std::vector<Section*> sectionsInRow;
+    for (const auto& cell : row)
+        sectionsInRow.insert (sectionsInRow.end(), cell.sections.begin(), cell.sections.end());
+    return sectionsInRow;
 }
 
 int PluginEditor::sectionRowsHeight()
 {
     int height = 0;
-    for (auto& row : sectionRows())
-        height += tallestOf (row) + sectionGap;
+    for (auto& row : sectionGrid())
+        height += tallestOf (sectionsOf (row)) + sectionGap;
     return height - sectionGap;
 }
 
@@ -139,22 +150,44 @@ void PluginEditor::layOutBody (juce::Rectangle<int> area)
     }
     displaySlot.setBounds (area);
 
-    // The grid's three columns: Gate's, the Compressor's and Character and Saturation's, each as wide as the widest it
-    // holds. The second row's Detection spans the first two, and Stereo and Lookahead share the third.
-    const int first = gate.idealWidth();
-    const int second = std::max (compressor.idealWidth(), detection.idealWidth() - first - sectionGap);
-    const int third = std::max (character.idealWidth(), stereo.idealWidth() + sectionGap + lookahead.idealWidth());
-    const int secondX = first + sectionGap, thirdX = secondX + second + sectionGap;
-    // Each from its row's top at its own height: the Detection section collapsed is a strip.
-    const auto place = [] (Section& section, int top, int x, int width) { section.setBounds (x, top, width, section.idealHeight()); };
-    place (gate, 0, 0, first);
-    place (compressor, 0, secondX, second);
-    place (character, 0, thirdX, third);
-    const int secondTop = tallestOf (sectionRows().front()) + sectionGap;
-    place (detection, secondTop, 0, secondX + second);
-    place (stereo, secondTop, thirdX, stereo.idealWidth());
-    const int lookaheadX = thirdX + stereo.idealWidth() + sectionGap;
-    place (lookahead, secondTop, lookaheadX, thirdX + third - lookaheadX);
+    // Each of the grid's columns as wide as the widest it holds: a cell spanning columns needs from its last what the
+    // earlier ones leave it.
+    const auto grid = sectionGrid();
+    std::array<int, gridColumns> columnX {}, columnWidth {};
+    for (int column = 0; column < gridColumns; ++column)
+    {
+        const auto at = static_cast<size_t> (column);
+        if (column > 0)
+            columnX[at] = columnX[at - 1] + columnWidth[at - 1] + sectionGap;
+        for (const auto& row : grid)
+            for (const auto& cell : row)
+            {
+                if (cell.last != column)
+                    continue;
+                int needed = -sectionGap;
+                for (const auto* section : cell.sections)
+                    needed += section->idealWidth() + sectionGap;
+                columnWidth[at] = std::max (columnWidth[at], needed - (columnX[at] - columnX[static_cast<size_t> (cell.first)]));
+            }
+    }
+    // Each section from its row's top at its own height (the Detection section collapsed is a strip), at its own width
+    // in its cell but for the cell's last, which takes the rest.
+    int top = 0;
+    for (const auto& row : grid)
+    {
+        for (const auto& cell : row)
+        {
+            int x = columnX[static_cast<size_t> (cell.first)];
+            const int right = columnX[static_cast<size_t> (cell.last)] + columnWidth[static_cast<size_t> (cell.last)];
+            for (auto* section : cell.sections)
+            {
+                const int width = section == cell.sections.back() ? right - x : section->idealWidth();
+                section->setBounds (x, top, width, section->idealHeight());
+                x += width + sectionGap;
+            }
+        }
+        top += tallestOf (sectionsOf (row)) + sectionGap;
+    }
 }
 
 } // namespace comp1
