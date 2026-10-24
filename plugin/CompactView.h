@@ -18,15 +18,17 @@ namespace comp1
 // compressor's Gain Reduction meter, left to right in one row, which is Tab's order too. Style is the footer's chip, and
 // Output Gain is in the output popover the footer's Output readout opens, as in the Expanded View.
 //
-// - Gate: its on/off toggle over Gate Threshold, attached as the Expanded View's Gate section attaches them.
-// - Comp: the Comp knob alone, attached as the Expanded View's (addCompKnob): grabbing it while Comp Follow is off
-//   follows, with the edit that follows as one undo step. There is no Comp Follow toggle, Threshold or Ratio.
+// - Gate: its on/off toggle over Gate Threshold, at the kit's large knob size, attached as the Expanded View's Gate
+//   section attaches them.
+// - Comp: the Comp knob alone, at the kit's hero size, attached as the Expanded View's (addCompKnob): grabbing it
+//   while Comp Follow is off follows, with the edit that follows as one undo step. There is no Comp Follow toggle,
+//   Threshold or Ratio.
 // - The Gain Reduction meter: the compressor's, on the editor's level history, as tall as the body, and no stop for Tab.
 //
-// The row fills the body: Gate at its left edge, the meter at its right, and Comp, at the kit's largest knob size,
-// centred in the room between them. The sections keep their own sizes, centred down the body, and the meter its width,
-// so a larger window spreads the row out and makes the meter taller. Both views' controls attach to the same host
-// parameters, so an edit in one shows in the other.
+// The row fills the body: Gate at its left edge, the meter in from its right edge by the window's padding, and Comp
+// centred in the room between them. The sections keep their own sizes, centred down the body, and the meter its
+// width, so a larger window spreads the row out and makes the meter taller. Both views' controls attach to the same
+// host parameters, so an edit in one shows in the other.
 class CompactView final : public juce::Component
 {
 public:

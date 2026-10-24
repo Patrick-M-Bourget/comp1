@@ -38,6 +38,15 @@ staple::Knob& compactKnob (host::EditorHost& host, const juce::String& title) { 
 
 } // namespace
 
+TEST_CASE ("The Compact View's Comp knob is the kit's hero and its Gate Threshold the kit's large, while the Expanded View's Comp stays large")
+{
+    host::EditorHost host;
+    CHECK (host.knob ("Comp").getDiameter() == staple::tokens::knob::gain);
+    showCompactView (host);
+    CHECK (compactKnob (host, "Comp").getDiameter() == staple::tokens::knob::hero);
+    CHECK (compactKnob (host, "Gate Threshold").getDiameter() == staple::tokens::knob::gain);
+}
+
 TEST_CASE ("A Style picked from the footer's chip in the Compact View writes that Style's defaults as one undo step, and the Expanded View shows them after switching")
 {
     host::EditorHost host;

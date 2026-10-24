@@ -14,8 +14,8 @@ CompactView::CompactView (PluginProcessor& p, LevelHistory& history)
 {
     setName ("Compact View");
     gate.addToggle (parameters::gateId, "Gate", true);
-    gate.addKnob (parameters::gateThresholdId, knobSize::medium, "Threshold", ControlSection::Place::underStack);
-    addCompKnob (compressor, p, compAttachment);
+    gate.addKnob (parameters::gateThresholdId, knobSize::large, "Threshold", ControlSection::Place::underStack);
+    addCompKnob (compressor, p, compAttachment, ControlSection::Place::ownColumn, knobSize::hero);
 
     int order = 0;
     for (auto* section : sections())
@@ -35,8 +35,10 @@ int CompactView::sectionsHeight()
 
 void CompactView::resized()
 {
+    // The meter in from the body's right edge by the window's padding.
     auto row = getLocalBounds();
-    gainReduction.setBounds (row.removeFromRight (layout::meterWidth));
+    gainReduction.setBounds (row.withTrimmedRight (layout::outerPadding).removeFromRight (layout::meterWidth));
+    row.setRight (gainReduction.getX());
     const int top = (getHeight() - sectionsHeight()) / 2;
     gate.setBounds (row.getX(), top, gate.idealWidth(), sectionsHeight());
     // Comp centred in the room between Gate and the meter.

@@ -527,15 +527,15 @@ TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and max
     // Gate, Comp and the meter.
     CHECK (placed.size() == 3);
     CHECK (body.gainReductionMeter().getHeight() == body.getHeight());
-    // One row filling the body: Gate at its left, the meter at its right, Comp centred between them, the sections
-    // centred down it.
+    // One row filling the body: Gate at its left, the meter in from its right by the window's padding, Comp centred
+    // between them, the sections centred down it.
     auto* gate = harness::findChild<juce::Component> (body, [] (juce::Component& c) { return c.getName() == "Gate"; });
     auto* compressor = harness::findChild<juce::Component> (body, [] (juce::Component& c) { return c.getName() == "Compressor"; });
     REQUIRE (gate != nullptr);
     REQUIRE (compressor != nullptr);
     const auto meter = body.gainReductionMeter().getBounds();
     CHECK (gate->getX() == 0);
-    CHECK (meter.getRight() == body.getWidth());
+    CHECK (meter.getRight() == body.getWidth() - staple::tokens::layout::outerPadding);
     CHECK (std::abs (compressor->getBounds().getCentreX() - (gate->getRight() + meter.getX()) / 2) <= 1);
     for (auto* section : { gate, compressor })
     {
