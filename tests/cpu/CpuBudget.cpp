@@ -25,10 +25,6 @@
 #include <string>
 #include <vector>
 
-#if ! defined(_WIN32)
-    #include <time.h>
-#endif
-
 using namespace comp1;
 
 namespace
@@ -176,20 +172,6 @@ std::vector<Scene> scenes()
     };
 }
 
-// The processing time this thread has used, in seconds: CPU time where the system gives it per thread, so time the
-// thread spends waiting for a core on a busy machine isn't counted; wall-clock time otherwise (Windows, whose thread
-// times tick too coarsely to time a tenth of a second).
-double threadSeconds()
-{
-#if defined(_WIN32)
-    return std::chrono::duration<double> (std::chrono::steady_clock::now().time_since_epoch()).count();
-#else
-    timespec now {};
-    clock_gettime (CLOCK_THREAD_CPUTIME_ID, &now);
-    return static_cast<double> (now.tv_sec) + 1.0e-9 * static_cast<double> (now.tv_nsec);
-#endif
-}
-
 // The Engine's load in a scene, in percent of real time, in a fresh Engine at sampleRate: timed from the scene's start
 // until audioSeconds of audio are timed or, given wallSeconds, until that much wall-clock time has passed. The input
 // is made a tenth of a second at a time ahead of processing it, from 2 s of the bursts (ten of their periods, so the
@@ -234,7 +216,7 @@ double loadPercent (const Scene& scene, double sampleRate, double audioSeconds, 
         const bool timed = next >= firstTimed;
         if (timed && ! timingSince)
             timingSince = std::chrono::steady_clock::now();
-        const double start = threadSeconds();
+        const double start = test::threadSeconds();
         for (std::size_t b = 0; b < chunkBlocks; ++b, ++next)
         {
             if (scene.automate != nullptr)
@@ -247,7 +229,7 @@ double loadPercent (const Scene& scene, double sampleRate, double audioSeconds, 
         }
         if (timed)
         {
-            busy += threadSeconds() - start;
+            busy += test::threadSeconds() - start;
             timedSamples += chunk[0].size();
         }
     }

@@ -4,6 +4,7 @@
 #include "comp1/Style.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -12,6 +13,10 @@
 #include <optional>
 #include <random>
 #include <vector>
+
+#if ! defined(_WIN32)
+    #include <time.h>
+#endif
 
 namespace comp1::test
 {
@@ -863,6 +868,21 @@ inline Channels bursts (int numChannels, int numSamples, double sampleRate, std:
         for (std::size_t i = 0; i < channel.size(); ++i)
             channel[i] = static_cast<float> (2.0 * channel[i] * burstGain (static_cast<double> (i) / sampleRate + offsetSeconds));
     return audio;
+}
+
+// The processing time this thread has used, in seconds: CPU time where the system gives it per thread, so time the
+// thread spends waiting for a core on a busy machine, or sleeping, isn't counted; wall-clock time otherwise (Windows,
+// whose thread times tick too coarsely to time a tenth of a second). What the CPU budget and the editor's CPU benchmark
+// time with.
+inline double threadSeconds()
+{
+#if defined(_WIN32)
+    return std::chrono::duration<double> (std::chrono::steady_clock::now().time_since_epoch()).count();
+#else
+    timespec now {};
+    clock_gettime (CLOCK_THREAD_CPUTIME_ID, &now);
+    return static_cast<double> (now.tv_sec) + 1.0e-9 * static_cast<double> (now.tv_nsec);
+#endif
 }
 
 // --- Auto Gain's reference signal ----------------------------------------------------------------------------
