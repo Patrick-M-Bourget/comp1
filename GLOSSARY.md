@@ -266,7 +266,7 @@ The Engine's mono copy of the main input as the plugin receives it, before any s
 _Avoid_: Pre tap, Input Level (which is its peak, in dBFS)
 
 **Output tap**:
-The Engine's mono copy of the Wet path directly after the compressor, before Colour, Saturation After, Auto Gain, Dry/Wet, Output Gain and the Limiter, which the Spectrum display reads: so the gap to the input tap is what the compressor (with the Gate and Saturation Before) took away, never make-up gain.
+The Engine's mono copy of the Wet path directly after the compressor, before Colour, Saturation After, Auto Gain, Dry/Wet, Output Gain and the Limiter, which the Spectrum display reads: so the gap to the input tap is what the compressor (with the Gate and Saturation Before) took away, never Auto Gain or Output Gain.
 _Avoid_: Post tap, Output Level (which is after every stage)
 
 **Output Meter**:
