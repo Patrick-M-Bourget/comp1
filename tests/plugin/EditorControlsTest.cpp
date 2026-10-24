@@ -254,11 +254,6 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     openDetection (host);
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
-    // And the Transfer Curve tab's: its graph.
-    host.processor.setDisplayTab (comp1::DisplayTab::transferCurve);
-    REQUIRE (host.settleUntil ([&] { return host.expandedView().display().shownTab() == comp1::DisplayTab::transferCurve; }));
-    for (const auto& [name, components] : accessibleNames (*host.editor))
-        names[name] = components;
     // And the output popover's.
     host.openOutputPopover();
     for (const auto& [name, components] : accessibleNames (*host.editor))
@@ -352,8 +347,6 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Style");
     expected.push_back ("Switch to the Compact View");
     expected.push_back ("Threshold");
-    expected.push_back ("Transfer Curve");
-    expected.push_back ("Transfer Curve Graph");
     expected.push_back ("Transfer Curve inset");
     expected.push_back ("UI Scale");
     expected.push_back ("Undo");
@@ -431,7 +424,7 @@ TEST_CASE ("Tab walks the header, the display's tabs and the Transfer Curve inse
         CHECK (std::count (walked.begin(), walked.end(), control) == 1);
     }
     // In order: the header's first, then these.
-    juce::StringArray order { "Presets", "Level", "Transfer Curve", "Transfer Curve inset", "Output Meter", "Gate", "Gate Position", "Gate Hold",
+    juce::StringArray order { "Presets", "Level", "Spectrum", "Transfer Curve inset", "Output Meter", "Gate", "Gate Position", "Gate Hold",
                               "Comp Follow", "Comp", "Threshold", "Range", "Colour", "Saturation Position", "Detection" };
     const juce::StringArray detection { "Detection Source", "Detection Free Band Q", "Detection Audition" };
     if (open)

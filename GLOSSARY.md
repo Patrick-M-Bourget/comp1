@@ -194,7 +194,7 @@ The editor showing only Gate, Comp and a Gain Reduction meter, with Style in the
 _Avoid_: Simple view, mini view, basic mode
 
 **Expanded View**:
-The editor showing every control, the Detection EQ's among them in the Detection section, the Level and Gain Reduction Graph, the Transfer Curve Graph and the Spectrum display.
+The editor showing every control, the Detection EQ's among them in the Detection section, and the display's two tabs: Level, the Level and Gain Reduction Graph with the Transfer Curve inset over it, and Spectrum, the Spectrum display.
 _Avoid_: Advanced view, full view, pro mode
 
 **Level and Gain Reduction Graph**:
@@ -202,11 +202,11 @@ The Expanded View's scrolling graph of the last 5 seconds of Input Level, Output
 _Avoid_: Scope, waveform, history view
 
 **Transfer Curve Graph**:
-The Expanded View's graph of the Transfer Curve the Engine plays, output level over input level from -60 to 0 dB, with the Detection Level as a dot moving along it.
+The graph of the Transfer Curve the Engine plays, output level over input level from -60 to 0 dB, with the Detection Level as a dot moving along it, which the Transfer Curve inset draws.
 _Avoid_: I/O graph, transfer function plot
 
 **Transfer Curve inset**:
-The small Transfer Curve Graph over the top-left corner of the Level and Gain Reduction Graph, on the Level tab: its Threshold handle drags Threshold across and its Ratio handle drags Ratio up and down, and the arrow keys on it move both.
+The small Transfer Curve Graph over the top-left corner of the Level and Gain Reduction Graph, on the Level tab: its Threshold handle drags Threshold across and its Ratio handle drags Ratio up and down, and the arrow keys on it move both. It is the display's Transfer Curve view: there is no Transfer Curve tab.
 _Avoid_: Mini curve, transfer widget
 
 **Spectrum (display)**:

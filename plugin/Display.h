@@ -4,7 +4,6 @@
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
 #include "SpectrumDisplay.h"
-#include "TransferCurveGraph.h"
 #include "TransferCurveInset.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/staple/controls/TextChip.h"
@@ -17,13 +16,12 @@
 namespace comp1
 {
 
-// The Expanded View's display: its three tabs, Level, Transfer Curve and Spectrum, as text chips along its top, and under
-// them the chosen tab's content: on Level, the Level and Gain Reduction Graph (LevelGraph), fed from the editor's level
-// history; on Transfer Curve, the Transfer Curve Graph (TransferCurveGraph), fed from the level history too; on
-// Spectrum, the Spectrum display (SpectrumDisplay), fed from the Engine's input and output taps. The Transfer Curve
-// tab's place is provisional.
+// The Expanded View's display: its two tabs, Level and Spectrum, as text chips along its top, and under them the chosen
+// tab's content: on Level, the Level and Gain Reduction Graph (LevelGraph), fed from the editor's level history; on
+// Spectrum, the Spectrum display (SpectrumDisplay), fed from the Engine's input and output taps.
 // While the Level tab shows, the Transfer Curve inset (TransferCurveInset) sits over the Level graph's top-left corner,
 // insetGap in from it, over its oldest audio: a Tab stop after the tabs, whose Threshold and Ratio handles take the mouse.
+// It is the display's Transfer Curve view.
 // Named "Display", and each content by its tab, as a test finds them.
 //
 // The chosen tab is the processor's (PluginProcessor::displayTab): a tab clicked, or pressed with Space or Return,
@@ -39,8 +37,6 @@ public:
     juce::Component& tabContent (DisplayTab tab);
     DisplayTab shownTab() const { return shown; }
     LevelGraph& levelGraph() { return level; }
-    // What fills the Transfer Curve tab's content.
-    TransferCurveGraph& transferCurveGraph() { return transferCurve; }
     // What fills the Spectrum tab's content.
     SpectrumDisplay& spectrumDisplay() { return spectrum; }
     // Over the Level tab's content, shown with it.
@@ -64,14 +60,12 @@ private:
     PluginProcessor& processor;
     LevelGraph level;
     DisplayTab shown = DisplayTab::level;
-    TransferCurveGraph transferCurve;
     TransferCurveInset inset;
     SpectrumDisplay spectrum;
     // The tabs, left to right: a row for each of displayTabs, in its order, each at its tab's rowOf. A chip chooses
     // its own row's tab, so a row out of place shows the wrong content for its chip.
     std::array<Tab, std::size (displayTabs)> tabs { {
         { DisplayTab::level, staple::TextChip { "Level", staple::TextChip::Look::plain }, level },
-        { DisplayTab::transferCurve, staple::TextChip { "Transfer Curve", staple::TextChip::Look::plain }, transferCurve },
         { DisplayTab::spectrum, staple::TextChip { "Spectrum", staple::TextChip::Look::plain }, spectrum },
     } };
 };
