@@ -79,6 +79,9 @@ struct Engine::Impl
     LevelHistory levelHistory;
     MeanTap inputTap, outputTap;
 
+    MeanTap& tap (Tap which) { return which == Tap::input ? inputTap : outputTap; }
+    const MeanTap& tap (Tap which) const { return which == Tap::input ? inputTap : outputTap; }
+
     void applySettings()
     {
         const auto* latest = handoff.takeLatest();
@@ -384,34 +387,19 @@ int Engine::levelHistoryCapacity() const
     return impl->levelHistory.capacity();
 }
 
-int Engine::readInputTapSamples (float* destination, int maxSamples)
+int Engine::read (Tap tap, float* destination, int maxSamples)
 {
-    return impl->inputTap.pop (destination, maxSamples);
+    return impl->tap (tap).pop (destination, maxSamples);
 }
 
-void Engine::skipInputTapSamples()
+void Engine::skip (Tap tap)
 {
-    impl->inputTap.skip();
+    impl->tap (tap).skip();
 }
 
-int Engine::inputTapSampleCapacity() const
+int Engine::capacity (Tap tap) const
 {
-    return impl->inputTap.capacity();
-}
-
-int Engine::readOutputTapSamples (float* destination, int maxSamples)
-{
-    return impl->outputTap.pop (destination, maxSamples);
-}
-
-void Engine::skipOutputTapSamples()
-{
-    impl->outputTap.skip();
-}
-
-int Engine::outputTapSampleCapacity() const
-{
-    return impl->outputTap.capacity();
+    return impl->tap (tap).capacity();
 }
 
 } // namespace comp1

@@ -36,8 +36,8 @@ SpectrumDisplay::SpectrumDisplay (PluginProcessor& p)
     input.prepare (sampleRate, analyzer.resolution);
     output.prepare (sampleRate, analyzer.resolution);
     // What piled up while no editor read the taps.
-    processor.skipInputTapSamples();
-    processor.skipOutputTapSamples();
+    processor.skip (Tap::input);
+    processor.skip (Tap::output);
 }
 
 float SpectrumDisplay::outputAlpha() const { return bypassFade.dim (1.0f); }
@@ -76,12 +76,12 @@ juce::Path SpectrumDisplay::gainReductionArea() const
 
 void SpectrumDisplay::readTaps()
 {
-    tapBuffer.resize (static_cast<std::size_t> (std::max ({ 1, processor.inputTapSampleCapacity(), processor.outputTapSampleCapacity() })));
+    tapBuffer.resize (static_cast<std::size_t> (std::max ({ 1, processor.capacity (Tap::input), processor.capacity (Tap::output) })));
     const int size = static_cast<int> (tapBuffer.size());
-    const int inputRead = processor.readInputTapSamples (tapBuffer.data(), size);
+    const int inputRead = processor.read (Tap::input, tapBuffer.data(), size);
     if (inputRead > 0)
         input.push (tapBuffer.data(), inputRead);
-    const int outputRead = processor.readOutputTapSamples (tapBuffer.data(), size);
+    const int outputRead = processor.read (Tap::output, tapBuffer.data(), size);
     if (outputRead > 0)
         output.push (tapBuffer.data(), outputRead);
     samplesArriving = inputRead > 0 || outputRead > 0;

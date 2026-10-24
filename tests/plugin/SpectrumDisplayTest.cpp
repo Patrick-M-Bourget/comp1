@@ -303,14 +303,14 @@ TEST_CASE ("The Spectrum display's taps are skipped as the editor opens, and dra
     // where they were.
     host.processor.setDisplayTab (comp1::DisplayTab::level);
     REQUIRE (host.settleUntil ([&] { return ! host.spectrum().isShowing(); }));
-    std::vector<float> left (static_cast<std::size_t> (std::max (host.processor.inputTapSampleCapacity(), host.processor.outputTapSampleCapacity())));
+    std::vector<float> left (static_cast<std::size_t> (std::max (host.processor.capacity (comp1::Tap::input), host.processor.capacity (comp1::Tap::output))));
     for (int i = 0; i < 10; ++i)
     {
         host.play (2, 512, tone);
         const int ticks = host.editorTick().count();
         REQUIRE (host.settleUntil ([&] { return host.editorTick().count() > ticks; }));
-        CHECK (host.processor.readInputTapSamples (left.data(), static_cast<int> (left.size())) == 0);
-        CHECK (host.processor.readOutputTapSamples (left.data(), static_cast<int> (left.size())) == 0);
+        CHECK (host.processor.read (comp1::Tap::input, left.data(), static_cast<int> (left.size())) == 0);
+        CHECK (host.processor.read (comp1::Tap::output, left.data(), static_cast<int> (left.size())) == 0);
     }
     CHECK (host.spectrum().inputSpectrum().levelDb (1000.0, 0.0) < -100.0);
 }
