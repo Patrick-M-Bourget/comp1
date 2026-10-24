@@ -153,7 +153,7 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     auto outputOnly = analyzer;
     outputOnly.showPreEq = false;
     g.beginTransparencyLayer (outputAlpha());
-    display::paintAnalyzer (g, shape, { .settings = outputOnly, .preEq = input, .postEq = output, .sidechain = output });
+    display::paintAnalyzer (g, shape, { .settings = outputOnly, .preEq = input, .postEq = output });
     g.endTransparencyLayer();
     fades.paint (g, *this);
 
