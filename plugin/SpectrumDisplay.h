@@ -54,6 +54,9 @@ public:
     // How far into Global Bypass the display shows, 0 to 1: it glides over the design system's globalBypassFadeMs as
     // Global Bypass switches, and an editor opened under Global Bypass starts at 1.
     float globalBypassFade() const { return bypassFade; }
+    // The fade from `from` after seconds, toward 1 while Global Bypass is on and 0 while it is off: each tick's step,
+    // a whole fade taking globalBypassFadeMs.
+    static float globalBypassFadeAfter (float from, bool on, double seconds);
     // The output's line and fill's alpha, and the Gain Reduction shading's, each dimmed toward a share of its own as
     // the fade goes to 1 (above).
     float outputAlpha() const;

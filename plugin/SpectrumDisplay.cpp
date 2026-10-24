@@ -49,10 +49,15 @@ SpectrumDisplay::SpectrumDisplay (PluginProcessor& p)
 
 bool SpectrumDisplay::isGlobalBypassOn() const { return globalBypass.load (std::memory_order_relaxed) >= 0.5f; }
 
-bool SpectrumDisplay::stepBypassFade (double seconds)
+float SpectrumDisplay::globalBypassFadeAfter (float from, bool on, double seconds)
 {
     const float step = static_cast<float> (seconds * 1000.0) / static_cast<float> (staple::tokens::motion::globalBypassFadeMs);
-    const float moved = juce::jlimit (bypassFade - step, bypassFade + step, isGlobalBypassOn() ? 1.0f : 0.0f);
+    return juce::jlimit (from - step, from + step, on ? 1.0f : 0.0f);
+}
+
+bool SpectrumDisplay::stepBypassFade (double seconds)
+{
+    const float moved = globalBypassFadeAfter (bypassFade, isGlobalBypassOn(), seconds);
     const bool changed = ! juce::exactlyEqual (moved, bypassFade);
     bypassFade = moved;
     return changed;

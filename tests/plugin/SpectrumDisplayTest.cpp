@@ -127,7 +127,21 @@ TEST_CASE ("The Spectrum display shades the gap where the output is under the in
     }
 }
 
-TEST_CASE ("Under Global Bypass the Spectrum display dims the output and the Gain Reduction shading, gliding over the fade, and keeps showing the gap")
+TEST_CASE ("The Spectrum display's Global Bypass fade glides over 150 ms each way")
+{
+    using comp1::SpectrumDisplay;
+    // Half the fade time goes half way; the whole of it, all the way, and no further.
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.0f, true, 0.075), WithinAbs (0.5, 1.0e-6));
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.5f, true, 0.075), WithinAbs (1.0, 1.0e-6));
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.0f, true, 0.25), WithinAbs (1.0, 1.0e-6));
+    // Back the same way.
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (1.0f, false, 0.075), WithinAbs (0.5, 1.0e-6));
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.5f, false, 0.25), WithinAbs (0.0, 1.0e-6));
+    // A tick at 60 Hz moves it a ninth of the way.
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.0f, true, 1.0 / 60.0), WithinAbs (1.0 / 9.0, 1.0e-6));
+}
+
+TEST_CASE ("Under Global Bypass the Spectrum display dims the output and the Gain Reduction shading, and keeps showing the gap")
 {
     SpectrumHost host;
     REQUIRE (host.gapSettlesAt (tone, knownGainReductionDb, 0.5));
@@ -142,16 +156,18 @@ TEST_CASE ("Under Global Bypass the Spectrum display dims the output and the Gai
     const float inputY = spectrum.yOf (spectrum.inputSpectrum(), x), outputY = spectrum.yOf (spectrum.outputSpectrum(), x);
     const auto applied = spectrum.createComponentSnapshot (spectrum.getLocalBounds(), false);
 
-    // Switched on, the fade glides: some ticks see it part-way.
+    // Switched on, the fade only rises until it gets there. How many ticks see it part-way depends on the machine's
+    // speed (the glide's timing is the test above).
     host.edit (parameters::globalBypassId, 1.0f);
-    int partWay = 0;
+    float last = 0.0f;
+    bool monotonic = true;
     REQUIRE (host.settleUntil ([&] {
         const float fade = spectrum.globalBypassFade();
-        if (fade > 0.0f && fade < 1.0f)
-            ++partWay;
+        monotonic = monotonic && fade >= last;
+        last = fade;
         return juce::exactlyEqual (fade, 1.0f);
     }));
-    CHECK (partWay >= 2);
+    CHECK (monotonic);
     // Bypassed: both at 45 % of their alphas, the gap still there to show what the compressor would do.
     CHECK_THAT (spectrum.outputAlpha(), WithinAbs (0.45, 1.0e-6));
     CHECK_THAT (spectrum.gainReductionAlpha(), WithinAbs (0.1575, 1.0e-6));
@@ -160,16 +176,15 @@ TEST_CASE ("Under Global Bypass the Spectrum display dims the output and the Gai
     CHECK (brightestAround (bypassed, x, (inputY + outputY) / 2.0f) < brightestAround (applied, x, (inputY + outputY) / 2.0f));
     CHECK (brightestAround (bypassed, x, outputY) < brightestAround (applied, x, outputY));
 
-    // Switched off, it glides back.
+    // Switched off, it only falls until it is back.
     host.edit (parameters::globalBypassId, 0.0f);
-    partWay = 0;
     REQUIRE (host.settleUntil ([&] {
         const float fade = spectrum.globalBypassFade();
-        if (fade > 0.0f && fade < 1.0f)
-            ++partWay;
+        monotonic = monotonic && fade <= last;
+        last = fade;
         return juce::exactlyEqual (fade, 0.0f);
     }));
-    CHECK (partWay >= 2);
+    CHECK (monotonic);
     CHECK_THAT (spectrum.outputAlpha(), WithinAbs (1.0, 1.0e-6));
     CHECK_THAT (spectrum.gainReductionAlpha(), WithinAbs (0.35, 1.0e-6));
 }
