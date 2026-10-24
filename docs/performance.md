@@ -89,10 +89,25 @@ The two tabs take turns, five rounds of 120 timed ticks each after a second of u
 
 | Per tick, Apple M3 | Level mean | Level p95 | Spectrum mean | Spectrum p95 |
 | --- | --- | --- | --- | --- |
-| tick | 0.10 ms | 0.16–0.19 ms | 0.11 ms | 0.17–0.18 ms |
-| paint | 17.9–18.0 ms | 20.4–20.9 ms | 13.0–13.1 ms | 14.2–14.5 ms |
-| tick + paint | 18.0–18.1 ms | 20.5–21.0 ms | 13.2–13.3 ms | 14.3–14.6 ms |
+| tick | 0.11 ms | 0.18–0.22 ms | 0.10–0.11 ms | 0.16–0.17 ms |
+| paint | 12.6–13.1 ms | 14.6–14.7 ms | 13.1–13.3 ms | 14.4–14.5 ms |
+| tick + paint | 12.7–13.2 ms | 14.7–14.8 ms | 13.2–13.4 ms | 14.5–14.6 ms |
 
-Measured 2026-10-24 on an 8-core Apple M3 (4 performance and 4 efficiency cores, macOS 27.0.1), two runs, each started at load average 3.6 to 3.7 after this tree's build had finished (other agents' builds lifted it to 8 by the end of the first run; the two runs agree within a few percent). The Spectrum tab costs 0.73 times the Level tab per tick, tick and paint together, by the mean, and 0.69 to 0.70 times by the 95th percentile. The tick is a small part of either: the Spectrum tab's FFTs cost about 10 µs a tick over the Level tab's. The paint is nearly all of it, and the Level tab's Level and Gain Reduction Graph is the dearer one to draw. These paint the whole display every tick, an upper bound: a window repaints only what a tick marked as changed.
+Measured 2026-10-24 on an 8-core Apple M3 (4 performance and 4 efficiency cores, macOS 27.0.1), two runs, each started at a 1-minute load average of 3.6 to 3.7 (other agents building) and ending at 2.5 to 2.8. The Spectrum tab costs 1.01 to 1.04 times the Level tab per tick, tick and paint together, by the mean, and 0.98 to 0.99 times by the 95th percentile. The tick is a small part of either, about 0.1 ms on both tabs, the Spectrum tab's FFTs among it. The paint is nearly all of it. These paint the whole display every tick, an upper bound: a window repaints only what a tick marked as changed.
 
-**Proposed budget**, not yet a gate: the Spectrum tab's tick and paint together cost at most 1.25 times the Level tab's, by the mean, in this benchmark: about 1.7 times what it costs now, room for run-to-run noise and small additions, while a regression that makes the Spectrum tab the dearer one by a quarter fails it.
+**The Level tab's paint.** The Level and Gain Reduction Graph is nearly all of it (98% of the samples in a `sample` profile of this benchmark); the tab chips, the Transfer Curve inset, the grid, the dB labels and the edge fades together are a few percent. Of the graph, sampled 2026-10-24:
+
+| Share of the Level tab's paint | Gradient fills | Now |
+| --- | --- | --- |
+| Input Level's area, its gradient fill | 43% | 22% |
+| Output Level's trace | 22% | 29% |
+| Input Level's trace | 17% | 31% |
+| Gain Reduction's trace | 6% | 12% |
+| Gain Reduction's area, its gradient fill | 5% | 1% |
+| grid, edge fades, labels, the rest | 7% | 5% |
+
+With a gradient fill, CoreGraphics works the gradient's colour out afresh for every pixel a path covers, and the Input Level's area under its trace covers most of the graph. Both areas now fill from a gradient drawn once (`CachedGradientFill`, `plugin/CachedGradientFill.h`), drawn again only when its colours, the graph's height or the device scale change. Measured the same way at this tree's parent, at load averages 3.8 and 3.1, the Level tab's paint was 17.6–17.7 ms by the mean (19.2–19.3 ms p95) and the Spectrum tab's 13.3–13.4 ms, the Spectrum tab 0.75 to 0.76 times the Level tab: the Level tab's paint is about 5 ms, 28%, less. What is left is the three traces, about 70% of it: CoreGraphics' stroking of three lines a point per pixel column, which a cheaper stroke would draw differently.
+
+The fills draw within an 8-bit step of the gradient fills: CoreGraphics dithers a gradient by where each pixel lies, so a tile's dither isn't the window's, and at a part-covered edge it rounds the colour at a different step. In the `[.screens]` renders (`scripts/check.sh screens`) the Level tab's snapshots differ from the gradient fills' in about 13% of their pixels, all but 0.2% of them by one or two steps; the rest are no more than two runs of the same tree differ by, in the meters and traces the playing signal moves from run to run.
+
+**Budget**, confirmed by the user 2026-10-24, not yet a gate: the Spectrum tab's tick and paint together cost at most 1.25 times the Level tab's, by the mean, in this benchmark: room for run-to-run noise and small additions, while a regression that makes the Spectrum tab the dearer one by a quarter fails it.

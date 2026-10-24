@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CachedGradientFill.h"
 #include "DisplayFades.h"
 #include "GlobalBypassFade.h"
 #include "LevelHistory.h"
@@ -101,6 +102,8 @@ private:
     GlobalBypassFade bypassFade;
     plugkit::ui::display::CachedLabels labels;
     DisplayFades fades;
+    // The Gain Reduction's and the Input Level's areas, filled from their gradients drawn once.
+    CachedGradientFill reductionFill, inputFill;
 };
 
 } // namespace comp1
