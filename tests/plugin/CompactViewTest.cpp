@@ -51,6 +51,10 @@ juce::RangedAudioParameter& parameterNamed (host::EditorHost& host, const juce::
     throw std::logic_error ("unreachable");
 }
 
+// How near a Component's alpha comes to the value it was set to: JUCE keeps a Component's alpha in 8 bits, so
+// getAlpha() reads it rounded to the nearest n / 255, half a step off at most. 1 and 0 read back exactly.
+constexpr float halfAlphaStep = 0.5f / 255.0f;
+
 constexpr std::array everyStyle { comp1::Style::Clean, comp1::Style::VCA,        comp1::Style::FET, comp1::Style::Opto,
                                   comp1::Style::Vocal, comp1::Style::Instrument, comp1::Style::Bus, comp1::Style::Drums };
 
@@ -549,8 +553,8 @@ TEST_CASE ("A Style change crossfades the Compact Slots: the outgoing controls f
     {
         CHECK (slot->crossfade() < 1.0f);
         CHECK (slot->showsOutgoing());
-        CHECK_THAT (slot->primary().getAlpha(), WithinAbs (slot->crossfade(), 1.0e-6));
-        CHECK_THAT (slot->companion().getAlpha(), WithinAbs (slot->crossfade(), 1.0e-6));
+        CHECK_THAT (slot->primary().getAlpha(), WithinAbs (slot->crossfade(), halfAlphaStep));
+        CHECK_THAT (slot->companion().getAlpha(), WithinAbs (slot->crossfade(), halfAlphaStep));
     }
     const auto during = boundsOf();
 
