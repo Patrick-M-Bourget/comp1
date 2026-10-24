@@ -7,7 +7,7 @@ A one-knob compressor is fast, but each kind of compressor is tuned by different
 ## Layout
 
 - **One fixed body for every Style:** Compact Slot A, then Comp (the 120 px hero), then Compact Slot B, then the Gain Reduction meter. Positions never animate.
-- **A Style change crossfades the Compact Slots' contents** at an existing Staple motion duration, instantly under reduced motion.
+- **A Style change crossfades the Compact Slots' contents** at an existing Staple motion duration, and swaps them instantly under reduced motion. plugkit doesn't read the OS's reduced-motion setting yet (#209), so the crossfade always runs until it does.
 - **The header and footer are unchanged** and never duplicated in the body. The window stays 780×420. The Expanded View is untouched.
 
 ## The core
@@ -40,7 +40,8 @@ Each entry is the primary, then its Companion.
 
 ## Accessibility
 
-- **Tab order is fixed** for every Style: Compact Slot A's primary, its Companion, Comp, Compact Slot B's primary, its Companion, then the Gain Reduction meter.
+- **Tab order is fixed** for every Style: Compact Slot A's primary, its Companion, Comp, Compact Slot B's primary, its Companion.
+- **The Gain Reduction meter is read-only and takes no keyboard focus.** It comes last in the screen-reader order, after Compact Slot B's Companion.
 - **Each control's accessible name is its parameter's name.**
 - **Nothing is announced on a Style change.** The Style chip already announces the new Style.
 

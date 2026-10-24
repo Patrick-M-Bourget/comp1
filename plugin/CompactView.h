@@ -154,7 +154,7 @@ public:
     HeroComp& heroComp() { return *hero; }
 
     // Whether a Style change swaps the Compact Slots' controls at once, without the crossfade, as the OS's reduced
-    // motion setting asks. Nothing in plugkit reads that setting yet, so it is off unless set here.
+    // motion setting asks. plugkit doesn't read that setting yet (#209), so it is off unless set here.
     void setReducedMotion (bool on) { reducedMotion = on; }
 
     void resized() override;
