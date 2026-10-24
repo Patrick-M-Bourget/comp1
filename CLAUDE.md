@@ -1,6 +1,6 @@
 # comp1
 
-Real-time compressor plugin (VST3/AU/AAX/CLAP), the sibling of eq1, modeled on FabFilter Pro-C 3 with compact and expanded views, built with JUCE 9. The spec is issue #1. Use the vocabulary in `GLOSSARY.md`; respect the decisions in `docs/adr/`.
+Real-time compressor plugin (VST3/AU/AAX/CLAP), the sibling of eq1, modeled on FabFilter Pro-C 3 with compact and expanded views, built with JUCE 9. The spec is issue #1. Use the vocabulary in `GLOSSARY.md`; respect the decisions in `docs/adr/`, and plugkit's own `docs/adr/` at the `PLUGKIT_TAG` that `plugkit.conf` pins.
 Follow `CODING_STANDARDS.md`: plugkit's shared standards, then comp1's own rules.
 Checks run through plugkit's `scripts/check.sh` at the `PLUGKIT_TAG` that `plugkit.conf` pins, from comp1's root: comp1 has no copy. CI runs the same stages (`.github/workflows/ci.yml`).
 
