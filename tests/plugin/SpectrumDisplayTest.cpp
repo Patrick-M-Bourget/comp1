@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -63,6 +64,20 @@ struct SpectrumHost : host::Playing
 constexpr double toneDb = -10.0, knownGainReductionDb = 15.0;
 const auto tone = host::sine (std::pow (10.0, toneDb / 20.0));
 
+// The brightest pixel of the Spectrum display's image in a column of rows around y at x, as it shows over black: a 1 px
+// line drawn between two rows lights either. The display paints no background of its own, so a pixel's alpha is part
+// of how bright it shows.
+float brightestAround (const juce::Image& image, float x, float y)
+{
+    float brightest = 0.0f;
+    for (int row = juce::roundToInt (y) - 1; row <= juce::roundToInt (y) + 1; ++row)
+    {
+        const auto pixel = image.getPixelAt (juce::roundToInt (x), row);
+        brightest = std::max (brightest, pixel.getPerceivedBrightness() * pixel.getFloatAlpha());
+    }
+    return brightest;
+}
+
 } // namespace
 
 TEST_CASE ("The Spectrum display shows the input and the compressor's output: compressing a tone by a known amount, the output reads that much lower")
@@ -110,6 +125,77 @@ TEST_CASE ("The Spectrum display shades the gap where the output is under the in
         CAPTURE (frequency);
         CHECK_FALSE (host.shadedUnderInputAt (frequency));
     }
+}
+
+TEST_CASE ("The Spectrum display's Global Bypass fade glides over 150 ms each way")
+{
+    using comp1::SpectrumDisplay;
+    // Half the fade time goes half way; the whole of it, all the way, and no further.
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.0f, true, 0.075), WithinAbs (0.5, 1.0e-6));
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.5f, true, 0.075), WithinAbs (1.0, 1.0e-6));
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.0f, true, 0.25), WithinAbs (1.0, 1.0e-6));
+    // Back the same way.
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (1.0f, false, 0.075), WithinAbs (0.5, 1.0e-6));
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.5f, false, 0.25), WithinAbs (0.0, 1.0e-6));
+    // A tick at 60 Hz moves it a ninth of the way.
+    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.0f, true, 1.0 / 60.0), WithinAbs (1.0 / 9.0, 1.0e-6));
+}
+
+TEST_CASE ("Under Global Bypass the Spectrum display dims the output and the Gain Reduction shading, and keeps showing the gap")
+{
+    SpectrumHost host;
+    REQUIRE (host.gapSettlesAt (tone, knownGainReductionDb, 0.5));
+    auto& spectrum = host.spectrum();
+    // Not applied: the output at full strength, the shading at its own faint alpha.
+    CHECK (juce::exactlyEqual (spectrum.globalBypassFade(), 0.0f));
+    CHECK_THAT (spectrum.outputAlpha(), WithinAbs (1.0, 1.0e-6));
+    CHECK_THAT (spectrum.gainReductionAlpha(), WithinAbs (0.35, 1.0e-6));
+    // With no more audio the spectra hold still, so the two images differ only by Global Bypass.
+    host.settle (100);
+    const float x = spectrum.geometry().xOf (1000.0);
+    const float inputY = spectrum.yOf (spectrum.inputSpectrum(), x), outputY = spectrum.yOf (spectrum.outputSpectrum(), x);
+    const auto applied = spectrum.createComponentSnapshot (spectrum.getLocalBounds(), false);
+
+    // Switched on, the fade only rises until it gets there. How many ticks see it part-way depends on the machine's
+    // speed (the glide's timing is the test above).
+    host.edit (parameters::globalBypassId, 1.0f);
+    float last = 0.0f;
+    bool monotonic = true;
+    REQUIRE (host.settleUntil ([&] {
+        const float fade = spectrum.globalBypassFade();
+        monotonic = monotonic && fade >= last;
+        last = fade;
+        return juce::exactlyEqual (fade, 1.0f);
+    }));
+    CHECK (monotonic);
+    // Bypassed: both at 45 % of their alphas, the gap still there to show what the compressor would do.
+    CHECK_THAT (spectrum.outputAlpha(), WithinAbs (0.45, 1.0e-6));
+    CHECK_THAT (spectrum.gainReductionAlpha(), WithinAbs (0.1575, 1.0e-6));
+    CHECK (spectrum.gainReductionArea().contains (x, (inputY + outputY) / 2.0f));
+    const auto bypassed = spectrum.createComponentSnapshot (spectrum.getLocalBounds(), false);
+    CHECK (brightestAround (bypassed, x, (inputY + outputY) / 2.0f) < brightestAround (applied, x, (inputY + outputY) / 2.0f));
+    CHECK (brightestAround (bypassed, x, outputY) < brightestAround (applied, x, outputY));
+
+    // Switched off, it only falls until it is back.
+    host.edit (parameters::globalBypassId, 0.0f);
+    REQUIRE (host.settleUntil ([&] {
+        const float fade = spectrum.globalBypassFade();
+        monotonic = monotonic && fade <= last;
+        last = fade;
+        return juce::exactlyEqual (fade, 0.0f);
+    }));
+    CHECK (monotonic);
+    CHECK_THAT (spectrum.outputAlpha(), WithinAbs (1.0, 1.0e-6));
+    CHECK_THAT (spectrum.gainReductionAlpha(), WithinAbs (0.35, 1.0e-6));
+}
+
+TEST_CASE ("An editor opened under Global Bypass shows the Spectrum display bypassed at once")
+{
+    SpectrumHost host;
+    host.edit (parameters::globalBypassId, 1.0f);
+    host.reopen();
+    CHECK (juce::exactlyEqual (host.spectrum().globalBypassFade(), 1.0f));
+    CHECK_THAT (host.spectrum().outputAlpha(), WithinAbs (0.45, 1.0e-6));
 }
 
 TEST_CASE ("The Spectrum display's taps are skipped as the editor opens, and drained on every tick on another tab too, while its spectra move only while it shows")
@@ -164,7 +250,7 @@ TEST_CASE ("With no audio the Spectrum display asks for no repaint; samples arri
     host.spectrum().setCachedComponentImage (nullptr);
 }
 
-TEST_CASE ("Expanded View snapshot: the Spectrum tab with a tone and noise compressed", "[.screens]")
+TEST_CASE ("Expanded View snapshot: the Spectrum tab with a tone and noise compressed, and under Global Bypass", "[.screens]")
 {
     SpectrumHost host;
     // The tests' seeded noise under the tone, the same on every platform, so the spectra fill the width.
@@ -175,4 +261,10 @@ TEST_CASE ("Expanded View snapshot: the Spectrum tab with a tone and noise compr
     REQUIRE (host.keepPlayingUntil (signal, [&] { return host.editorTick().count() > ticks + 180; }));
     host.settleAnimations();
     harness::writeSnapshot (*host.editor, "expanded-spectrum", {}, 1.0f);
+
+    // With no more audio the spectra hold still while the display fades into Global Bypass.
+    host.edit (parameters::globalBypassId, 1.0f);
+    REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (host.spectrum().globalBypassFade(), 1.0f); }));
+    host.settleAnimations();
+    harness::writeSnapshot (*host.editor, "expanded-spectrum-global-bypass", {}, 1.0f);
 }
