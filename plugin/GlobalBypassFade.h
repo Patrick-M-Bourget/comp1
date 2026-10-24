@@ -1,5 +1,7 @@
 #pragma once
 
+#include "plugkit/ui/staple/Tokens.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
@@ -15,11 +17,9 @@ namespace comp1
 class GlobalBypassFade
 {
 public:
-    // Copied from eq1's plugin/staple/Tokens.h (eq1 at dbb1127), its staple::tokens::curve::globalBypassScale (which
-    // eq1's display reads through its curveStyle alias), until plugkit's tokens have it (#137). Under Global Bypass, the
-    // share of their own alphas what shows the compressor's work keeps: dim enough to read as not applied, bright enough
-    // to read.
-    static constexpr float scale = 0.45f;
+    // Under Global Bypass, the share of their own alphas what shows the compressor's work keeps: the design system's
+    // globalBypassScale.
+    static constexpr float scale = staple::tokens::motion::globalBypassScale;
 
     explicit GlobalBypassFade (juce::AudioProcessorValueTreeState& parameters);
 

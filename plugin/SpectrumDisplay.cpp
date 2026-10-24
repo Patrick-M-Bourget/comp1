@@ -51,21 +51,6 @@ float SpectrumDisplay::yOf (const plugkit::ui::AnalyzerSpectrum& spectrum, float
     return display::spectrumYAt (geometry(), analyzer, spectrum, x);
 }
 
-juce::Path SpectrumDisplay::lineOf (const plugkit::ui::AnalyzerSpectrum& spectrum) const
-{
-    const auto width = static_cast<float> (getWidth());
-    juce::Path line;
-    for (float x = 0.0f; x <= width; x += display::DisplayGeometry::pixelStep)
-    {
-        const juce::Point<float> point { x, yOf (spectrum, x) };
-        if (juce::exactlyEqual (x, 0.0f))
-            line.startNewSubPath (point);
-        else
-            line.lineTo (point);
-    }
-    return line;
-}
-
 juce::Path SpectrumDisplay::gainReductionArea() const
 {
     // Along the input's line, then back along the lower of the two: where the output is over the input, the two
@@ -149,24 +134,20 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     // over it through a layer at the output's alpha: the output's line on top where the two meet, as paintAnalyzer
     // draws its post line over its pre line.
     g.setColour (colour::anPre);
-    g.strokePath (lineOf (input), juce::PathStrokeType (1.0f));
+    g.strokePath (display::spectrumLine (shape, analyzer, input), juce::PathStrokeType (1.0f));
     auto outputOnly = analyzer;
     outputOnly.showPreEq = false;
     g.beginTransparencyLayer (outputAlpha());
-    display::paintAnalyzer (g, shape, { .settings = outputOnly, .preEq = input, .postEq = output, .sidechain = output });
+    display::paintAnalyzer (g, shape, { .settings = outputOnly, .preEq = input, .postEq = output });
     g.endTransparencyLayer();
     fades.paint (g, *this);
 
-    // The labels go over the fades, unfaded: the Frequency labels along the bottom (gridLabels' first row, without its
-    // Display Range labels, which are no scale here) and the Analyzer's dB scale.
-    auto frequencyLabels = display::gridLabels (shape);
-    const float bottomRow = frequencyLabels.empty() ? 0.0f : frequencyLabels.front().area.getY();
-    frequencyLabels.erase (std::remove_if (frequencyLabels.begin(), frequencyLabels.end(),
-                                           [bottomRow] (const display::Label& l) { return ! juce::exactlyEqual (l.area.getY(), bottomRow); }),
-                           frequencyLabels.end());
+    // The labels go over the fades, unfaded: the Frequency labels along the bottom (without the grid's Display Range
+    // labels, which are no scale here) and the Analyzer's dB scale.
+    auto shown = display::frequencyLabels (shape);
     const auto scale = display::analyzerScaleLabels (shape, analyzer);
-    frequencyLabels.insert (frequencyLabels.end(), scale.begin(), scale.end());
-    labels.paint (g, DisplayFades::originInWindow (*this), frequencyLabels);
+    shown.insert (shown.end(), scale.begin(), scale.end());
+    labels.paint (g, DisplayFades::originInWindow (*this), shown);
 }
 
 std::unique_ptr<juce::AccessibilityHandler> SpectrumDisplay::createAccessibilityHandler()
