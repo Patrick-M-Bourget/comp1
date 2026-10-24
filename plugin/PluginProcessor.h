@@ -115,10 +115,12 @@ public:
     // section rows' grid (both rows as wide, Detection under Gate and Compressor, Stereo and Lookahead under Character
     // and Saturation) inside the window's padding, and each size is whole pixels at every UI Scale.
     static constexpr plugkit::ui::Session::Window expandedWindow { { 1400, 860 }, { 1356, 720 }, { 2560, 1600 } };
-    // The Compact View's: at the minimum the header, the body's row of controls, the footer and the Preset browser's
-    // full panel inside its margin fit, the Preset browser setting it (the row needs less), and each size is whole
-    // pixels at every UI Scale.
-    static constexpr plugkit::ui::Session::Window compactWindow { { 960, 600 }, { 888, 548 }, { 1600, 1000 } };
+    // The Compact View's, opening at its minimum: there the header's groups fit, setting the width (Undo, Redo, A/B
+    // Compare and Copy on one side and the Preset group at its narrowest between, the wordmark's side as wide), the
+    // body's row and the footer at its widest fit beside them, and the Preset browser's panel fits inside its margin
+    // at a smaller size; the height is the row's with a tall Gain Reduction meter. Each size is whole pixels at every
+    // UI Scale.
+    static constexpr plugkit::ui::Session::Window compactWindow { { 780, 420 }, { 780, 420 }, { 1600, 1000 } };
     static const plugkit::ui::Session::Window& windowOf (View view) { return view == View::compact ? compactWindow : expandedWindow; }
     // The Session's window, the envelope of both views': the Expanded View's default, the smaller minimum and the
     // larger maximum on each axis. The editor holds the window to the shown view's own limits.
