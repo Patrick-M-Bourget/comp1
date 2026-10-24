@@ -49,6 +49,7 @@ target_sources(comp1 PRIVATE
     PluginProcessor.cpp
     Section.cpp
     Sections.cpp
+    ShownAutoGain.cpp
     SpectrumDisplay.cpp
     TransferCurveGraph.cpp
     TransferCurveInset.cpp)
