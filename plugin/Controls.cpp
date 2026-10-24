@@ -5,6 +5,7 @@
 #include "plugkit/ui/ValueText.h"
 #include "plugkit/ui/staple/Fonts.h"
 #include "plugkit/ui/staple/LookAndFeel.h"
+#include "plugkit/ui/staple/Painting.h"
 #include "plugkit/ui/staple/Tokens.h"
 #include "plugkit/ui/staple/controls/ParseValue.h"
 
@@ -202,14 +203,20 @@ staple::EdgeSelector& ControlSection::addEdgeSelector (const juce::String& param
 
 void ControlSection::KnobControl::setRing (staple::Knob::RingHandler& handler)
 {
-    knob.setRing (&handler);
+    // The lane grows with the face above the kit's Gain size, as the knob's strokes do (staple::knobStrokes), so the
+    // hero's ring reads as the same recipe.
+    const float scale = staple::knobStrokeScale (knob.getDiameter());
+    knob.setRing (&handler, scale * staple::tokens::knob::ringLane, scale * staple::tokens::knob::ringOffset);
     ringed = true;
 }
 
 int ControlSection::knobExtent (const KnobControl& control)
 {
     // A ring's lane reaches past the face (staple::Knob::setRing), and the label goes under it.
-    return control.ringed ? juce::roundToInt (staple::tokens::knob::ringOffset + staple::tokens::knob::ringLane / 2.0f) : 0;
+    if (! control.ringed)
+        return 0;
+    const float scale = staple::knobStrokeScale (control.knob.getDiameter());
+    return juce::roundToInt (scale * (staple::tokens::knob::ringOffset + staple::tokens::knob::ringLane / 2.0f));
 }
 
 int ControlSection::columnWidth (const Column& column) const
