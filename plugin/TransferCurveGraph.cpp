@@ -38,7 +38,7 @@ bool operator== (const clean::Curve& a, const clean::Curve& b)
 
 TransferCurveGraph::TransferCurveGraph (PluginProcessor& p, LevelHistory& h, Look l)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), look (l), drawn (p.playedCurve()),
-      level (h, &LevelRecord::detectionLevelDb, -scaleDb, 0.0)
+      level (h, &LevelRecord::detectionLevelDb, -scaleDb, 0.0), bypassFade (p.parameterState())
 {
     setName ("Transfer Curve");
     setTitle ("Transfer Curve Graph");
@@ -70,7 +70,8 @@ void TransferCurveGraph::tick (double seconds)
 {
     const double levelDb = level.next (seconds);
     const auto now = processor.playedCurve();
-    if (juce::exactlyEqual (levelDb, shown) && now == drawn)
+    const bool faded = bypassFade.step (seconds);
+    if (juce::exactlyEqual (levelDb, shown) && now == drawn && ! faded)
         return;
     shown = levelDb;
     drawn = now;
@@ -133,12 +134,13 @@ void TransferCurveGraph::paint (juce::Graphics& g)
         else
             curvePath.lineTo (at);
     }
-    g.setColour (colour::curveMain);
+    const float alpha = curveAlpha();
+    g.setColour (colour::curveMain.withMultipliedAlpha (alpha));
     g.strokePath (curvePath, juce::PathStrokeType (curveLineWidth));
 
     if (const auto at = dot())
     {
-        g.setColour (colour::anSc);
+        g.setColour (colour::anSc.withMultipliedAlpha (alpha));
         g.fillEllipse (juce::Rectangle<float> (2.0f * dotRadius, 2.0f * dotRadius).withCentre ({ xOf (at->x), yOf (at->y) }));
     }
 
