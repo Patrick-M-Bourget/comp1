@@ -12,6 +12,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
+#include <iterator>
 #include <vector>
 
 namespace comp1
@@ -25,6 +27,35 @@ enum class DisplayTab
     transferCurve,
     spectrum,
 };
+
+// A display tab's row in displayTabs: the tab, and the name the session saves it under. A saved name is permanent once
+// released: sessions keep it.
+struct DisplayTabRow
+{
+    DisplayTab tab;
+    const char* savedName;
+};
+
+// Every display tab, a row each, in DisplayTab's order, which is the display's left to right. The display's own table
+// (Display::tabs) has a row for each of these. Restore reads any other name, a session saved without one included, as
+// Level.
+inline constexpr DisplayTabRow displayTabs[] {
+    { DisplayTab::level, "level" },
+    { DisplayTab::transferCurve, "transfer_curve" },
+    { DisplayTab::spectrum, "spectrum" },
+};
+
+// A display tab's row in displayTabs.
+constexpr std::size_t rowOf (DisplayTab tab) { return static_cast<std::size_t> (tab); }
+
+static_assert (
+    [] {
+        for (std::size_t row = 0; row < std::size (displayTabs); ++row)
+            if (rowOf (displayTabs[row].tab) != row)
+                return false;
+        return true;
+    }(),
+    "displayTabs lists every DisplayTab once, in DisplayTab's order");
 
 // The editor's views: the Compact View, and the Expanded View with the display and every section.
 enum class View
