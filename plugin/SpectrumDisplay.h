@@ -10,6 +10,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <atomic>
 #include <vector>
 
 namespace comp1
@@ -26,13 +27,16 @@ namespace comp1
 //   tilt, with no Peak Hold, on the Analyzer's dB scale: the top of the display 0 dB, the bottom its range below.
 // - **Gain Reduction:** the area between the two lines where the output is under the input, shaded in the Gain
 //   Reduction meter's colours (dynRange to dynRangeInner), faint enough that the grid shows through.
+// - **Global Bypass:** it passes the input through unprocessed, but the Engine's taps are as without it, so the gap
+//   still shows what the compressor would do; the output's line and fill and the Gain Reduction shading dim to a share
+//   of their alphas, gliding over the design system's fade, so it reads as not applied. The input's line stays.
 // - **Grid:** plugkit-ui's Frequency lines and labels, and the Analyzer's dB scale with a line at each of its labels'
 //   levels; the edges fade into the window's background over the design system's display fades.
 //
 // The taps are skipped as the display opens, and drained every tick even while it is hidden, so the reader never falls
 // behind; they are analysed and repainted only while the display shows and samples arrive, so with no audio it holds
-// still and asks for no repaint. A screen reader finds it as a group titled "Spectrum", with no Tab stop; it takes no
-// mouse input. Named "Spectrum", as its tab.
+// still and asks for no repaint, except while the Global Bypass fade moves. A screen reader finds it as a group titled
+// "Spectrum", with no Tab stop; it takes no mouse input. Named "Spectrum", as its tab.
 class SpectrumDisplay final : public juce::Component, private plugkit::ui::EditorTick::Client
 {
 public:
@@ -47,6 +51,13 @@ public:
     float yOf (const plugkit::ui::AnalyzerSpectrum& spectrum, float x) const;
     // The shaded Gain Reduction: between the input's line and the output's, where the output is under the input.
     juce::Path gainReductionArea() const;
+    // How far into Global Bypass the display shows, 0 to 1: it glides over the design system's globalBypassFadeMs as
+    // Global Bypass switches, and an editor opened under Global Bypass starts at 1.
+    float globalBypassFade() const { return bypassFade; }
+    // The output's line and fill's alpha, and the Gain Reduction shading's, each dimmed toward a share of its own as
+    // the fade goes to 1 (above).
+    float outputAlpha() const;
+    float gainReductionAlpha() const;
 
     void paint (juce::Graphics& g) override;
 
@@ -57,6 +68,11 @@ private:
 
     // Both taps' samples, into their spectra.
     void readTaps();
+    // spectrum's line, across the display.
+    juce::Path lineOf (const plugkit::ui::AnalyzerSpectrum& spectrum) const;
+    bool isGlobalBypassOn() const;
+    // Moves the Global Bypass fade toward Global Bypass by seconds' share of the fade time: whether it moved.
+    bool stepBypassFade (double seconds);
 
     PluginProcessor& processor;
     double sampleRate; // the spectra's
@@ -64,6 +80,8 @@ private:
     plugkit::ui::AnalyzerSpectrum input, output;
     plugkit::ui::AnalyzerSettings analyzer;
     bool samplesArriving = false;
+    const std::atomic<float>& globalBypass;
+    float bypassFade = 0.0f;
     plugkit::ui::display::CachedLabels labels;
     DisplayFades fades;
 };
