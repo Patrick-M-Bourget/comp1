@@ -293,6 +293,43 @@ constexpr double attackSeconds = 0.01, releaseSeconds = 0.1;
 
 } // namespace
 
+TEST_CASE ("Under Global Bypass the Level and Gain Reduction Graph dims its Gain Reduction to 45 % of its alpha and keeps the levels as they are")
+{
+    Graphing host;
+    compress (host);
+    host.feedFor (3.0, host::steady (loudDb));
+    auto& graph = host.graph();
+    CHECK (juce::exactlyEqual (graph.globalBypassFade(), 0.0f));
+    CHECK_THAT (graph.gainReductionAlpha(), WithinAbs (1.0, 1.0e-6));
+    // With no audio the graph holds still, so the two images differ only by Global Bypass. 15 dB of Gain Reduction
+    // hangs from the top; the -10 dBFS Input Level's area fills from 10 dB down to the bottom. Halfway across, 5 dB
+    // down is in the Gain Reduction alone, 50 dB down in the Input Level's area alone.
+    const int x = graph.getWidth() / 2;
+    const auto yAt = [&] (double db) { return juce::roundToInt (db / comp1::LevelGraph::scaleDb * graph.getHeight()); };
+    REQUIRE (graph.drawnAt (comp1::LevelGraph::spanSeconds / 2.0).gainReductionDb > 10.0);
+    const auto applied = graph.createComponentSnapshot (graph.getLocalBounds(), false);
+
+    host.edit (parameters::globalBypassId, 1.0f);
+    REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (graph.globalBypassFade(), 1.0f); }));
+    CHECK_THAT (graph.gainReductionAlpha(), WithinAbs (0.45, 1.0e-6));
+    const auto bypassed = graph.createComponentSnapshot (graph.getLocalBounds(), false);
+    CHECK (bypassed.getPixelAt (x, yAt (5.0)).getAlpha() < applied.getPixelAt (x, yAt (5.0)).getAlpha());
+    CHECK (bypassed.getPixelAt (x, yAt (50.0)) == applied.getPixelAt (x, yAt (50.0)));
+
+    host.edit (parameters::globalBypassId, 0.0f);
+    REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (graph.globalBypassFade(), 0.0f); }));
+    CHECK_THAT (graph.gainReductionAlpha(), WithinAbs (1.0, 1.0e-6));
+}
+
+TEST_CASE ("An editor opened under Global Bypass shows the Level and Gain Reduction Graph's Gain Reduction dimmed at once")
+{
+    Graphing host;
+    host.edit (parameters::globalBypassId, 1.0f);
+    host.reopen();
+    CHECK (juce::exactlyEqual (host.graph().globalBypassFade(), 1.0f));
+    CHECK_THAT (host.graph().gainReductionAlpha(), WithinAbs (0.45, 1.0e-6));
+}
+
 TEST_CASE ("The Level and Gain Reduction Graph shows Attack, as Gain Reduction rising to the Transfer Curve's after a step up, and Release, as it falling back after the step down")
 {
     Graphing host;

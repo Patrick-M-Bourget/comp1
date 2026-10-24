@@ -1,10 +1,12 @@
 #pragma once
 
 #include "DisplayFades.h"
+#include "GlobalBypassFade.h"
 #include "LevelHistory.h"
+#include "PluginProcessor.h"
+#include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/display/GridLayer.h"
 
-#include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <cstdint>
@@ -28,13 +30,17 @@ namespace comp1
 // curve-main line, and the Gain Reduction as a dyn-range line filled up to the top in the Gain Reduction meter's
 // gradient; the edges dissolve into the window's background over the design system's display fades.
 //
+// Under Global Bypass the levels are the signal as it passes, so they stay; the Gain Reduction, which the compressor
+// would apply but doesn't, dims, its line and fill at a share of their alphas (GlobalBypassFade), gliding on the
+// editor's tick, the only repaint it asks for with no records arriving.
+//
 // A screen reader finds it as a read-only image titled "Level and Gain Reduction Graph", read with the latest record's
 // levels ("Input Level −12.0 dBFS, Output Level −12.0 dBFS, Gain Reduction 0.0 dB"); it is no stop for Tab and takes no
 // mouse input. Named "Level", as its tab, which a test finds it by.
-class LevelGraph final : public juce::Component, private LevelHistory::Subscriber
+class LevelGraph final : public juce::Component, private LevelHistory::Subscriber, private plugkit::ui::EditorTick::Client
 {
 public:
-    LevelGraph (LevelHistory& history, const juce::AudioProcessor& processor);
+    LevelGraph (LevelHistory& history, PluginProcessor& processor);
     ~LevelGraph() override;
 
     static constexpr double spanSeconds = 5.0, scaleDb = 60.0, gridStepDb = 10.0, gridStepSeconds = 1.0;
@@ -61,6 +67,11 @@ public:
     // The text a screen reader reads as its value.
     juce::String valueText() const;
 
+    // How far into Global Bypass it shows, 0 to 1 (GlobalBypassFade).
+    float globalBypassFade() const { return bypassFade.value(); }
+    // The Gain Reduction's line and fill's alpha: 1, dimmed as the fade goes to 1.
+    float gainReductionAlpha() const { return bypassFade.dim (1.0f); }
+
     void paint (juce::Graphics& g) override;
 
 private:
@@ -70,6 +81,8 @@ private:
     };
 
     void levelsRead (std::span<const LevelRecord> records) override;
+    void tick (double seconds) override;
+    bool isActive() const override { return isShowing() && bypassFade.isMoving(); }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
     double sampleRate() const;
     // How many records the span covers, at the sample rate.
@@ -85,6 +98,7 @@ private:
     std::vector<Levels> levels; // a ring of the newest records, newest at newest
     int newest = -1, held = 0;
     std::uint64_t taken = 0;
+    GlobalBypassFade bypassFade;
     plugkit::ui::display::CachedLabels labels;
     DisplayFades fades;
 };
