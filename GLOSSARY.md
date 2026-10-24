@@ -89,7 +89,7 @@ The downward expander, placed by Gate Position, which lowers the signal once its
 _Avoid_: Expander, noise gate; Threshold, Range, Attack, Release or Hold (unqualified) for the Gate's
 
 **Gate Position**:
-Where the Gate sits: Pre, on the input before Dry and Wet split, so it lowers both; or Post, on the Wet path directly after the compressor, so Dry is never gated, and with an Internal Detection Source it listens to the compressed signal.
+Where the Gate sits: Pre, on the input before Dry and Wet split, so it lowers both; or Post, on the Wet path directly after the compressor, so Dry is never gated, and with an Internal Detection Source it listens to the compressed signal. Switching it glides the Gate's Gain Reduction out, moves the Gate once that is exactly zero, and glides it back in, so while the Gate is on, every switch, Host Automation included, disengages it for a moment: about 120 ms fading out to exactly zero, then about 50 ms fading back in.
 _Avoid_: Gate order, gate mode
 
 **Gate Threshold**:
@@ -266,7 +266,7 @@ The Engine's mono copy of the main input as the plugin receives it, before any s
 _Avoid_: Pre tap, Input Level (which is its peak, in dBFS)
 
 **Output tap**:
-The Engine's mono copy of the Wet path directly after the compressor, before Colour, Saturation After, Auto Gain, Dry/Wet, Output Gain and the Limiter, which the Spectrum display reads: so the gap to the input tap is what the compressor (with the Gate and Saturation Before) took away, never make-up gain.
+The Engine's mono copy of the Wet path directly after the compressor, before Colour, Saturation After, Auto Gain, Dry/Wet, Output Gain and the Limiter, which the Spectrum display reads: so the gap to the input tap is what the compressor (with the Gate and Saturation Before) took away, never Auto Gain or Output Gain.
 _Avoid_: Post tap, Output Level (which is after every stage)
 
 **Output Meter**:
