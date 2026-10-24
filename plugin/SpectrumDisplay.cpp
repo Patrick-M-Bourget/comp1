@@ -51,21 +51,6 @@ float SpectrumDisplay::yOf (const plugkit::ui::AnalyzerSpectrum& spectrum, float
     return display::spectrumYAt (geometry(), analyzer, spectrum, x);
 }
 
-juce::Path SpectrumDisplay::lineOf (const plugkit::ui::AnalyzerSpectrum& spectrum) const
-{
-    const auto width = static_cast<float> (getWidth());
-    juce::Path line;
-    for (float x = 0.0f; x <= width; x += display::DisplayGeometry::pixelStep)
-    {
-        const juce::Point<float> point { x, yOf (spectrum, x) };
-        if (juce::exactlyEqual (x, 0.0f))
-            line.startNewSubPath (point);
-        else
-            line.lineTo (point);
-    }
-    return line;
-}
-
 juce::Path SpectrumDisplay::gainReductionArea() const
 {
     // Along the input's line, then back along the lower of the two: where the output is over the input, the two
@@ -149,7 +134,7 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     // over it through a layer at the output's alpha: the output's line on top where the two meet, as paintAnalyzer
     // draws its post line over its pre line.
     g.setColour (colour::anPre);
-    g.strokePath (lineOf (input), juce::PathStrokeType (1.0f));
+    g.strokePath (display::spectrumLine (shape, analyzer, input), juce::PathStrokeType (1.0f));
     auto outputOnly = analyzer;
     outputOnly.showPreEq = false;
     g.beginTransparencyLayer (outputAlpha());

@@ -68,8 +68,6 @@ private:
 
     // Both taps' samples, into their spectra.
     void readTaps();
-    // spectrum's line, across the display.
-    juce::Path lineOf (const plugkit::ui::AnalyzerSpectrum& spectrum) const;
 
     PluginProcessor& processor;
     double sampleRate; // the spectra's
