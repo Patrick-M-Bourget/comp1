@@ -193,6 +193,14 @@ _Avoid_: Pre-delay, latency
 The editor showing only Gate, Comp and a Gain Reduction meter, with Style in the footer and Output Gain in the footer's output popover.
 _Avoid_: Simple view, mini view, basic mode
 
+**Compact Slot**:
+One of the Compact View's two places beside Comp whose controls follow the Style: a primary control and its Companion.
+_Avoid_: Slot (unqualified), panel, module, section
+
+**Companion**:
+A Compact Slot's smaller control, a toggle or a small knob, under its primary.
+_Avoid_: Secondary control, sub-knob, satellite
+
 **Expanded View**:
 The editor showing every control, the Detection EQ's among them in the Detection section, and the display's two tabs: Level, the Level and Gain Reduction Graph with the Transfer Curve inset over it, and Spectrum, the Spectrum display.
 _Avoid_: Advanced view, full view, pro mode
