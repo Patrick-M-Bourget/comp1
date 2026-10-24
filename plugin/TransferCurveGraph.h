@@ -38,8 +38,9 @@ namespace comp1
 //
 // Drawn with stock Staple tokens on plugkit-ui's grid layer, thinned to fit the inset: a line every 20 dB on both axes,
 // the 0 dB ones the zero lines, with dB labels; the curve a curve-main line and the dot filled in anSc. It paints no
-// background and no fades, as it sits on the inset's slab. It is no stop for Tab and takes no mouse input: the inset,
-// which hides it from the screen reader, is the control, and reads settingsText(). Named "Transfer Curve".
+// background and no fades, as it sits on the inset's slab (provisional). It is no stop for Tab and takes no mouse
+// input: the inset, which hides it from the screen reader, is the control, and reads settingsText(). Named "Transfer
+// Curve".
 class TransferCurveGraph final : public juce::Component, private plugkit::ui::EditorTick::Client
 {
 public:
