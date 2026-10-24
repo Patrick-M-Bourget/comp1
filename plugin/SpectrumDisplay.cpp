@@ -17,10 +17,6 @@ namespace display = plugkit::ui::display;
 
 // How strongly the Gain Reduction is shaded: faint enough that the grid and the lines show through it.
 constexpr float appliedGainReductionAlpha = 0.35f;
-// Copied from eq1's plugin/staple/Tokens.h (eq1 at dbb1127), its curve::globalBypassScale, until plugkit's tokens
-// have it (#137). Under Global Bypass, the share of their own alphas the output and the Gain Reduction keep: dim enough
-// to read as not applied, bright enough to read.
-constexpr float globalBypassScale = 0.45f;
 // The Analyzer's dB scale's step, as its labels take it at its default range.
 constexpr int scaleStepDb = 10;
 
@@ -28,8 +24,7 @@ constexpr int scaleStepDb = 10;
 
 SpectrumDisplay::SpectrumDisplay (PluginProcessor& p)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),
-      sampleRate (plugkit::ui::sampleRateOrAssumed (p)),
-      globalBypass (*p.parameterState().getRawParameterValue (parameters::globalBypassId))
+      sampleRate (plugkit::ui::sampleRateOrAssumed (p)), bypassFade (p.parameterState())
 {
     setName ("Spectrum");
     setTitle ("Spectrum");
@@ -43,32 +38,11 @@ SpectrumDisplay::SpectrumDisplay (PluginProcessor& p)
     // What piled up while no editor read the taps.
     processor.skipInputTapSamples();
     processor.skipOutputTapSamples();
-    // An editor opened under Global Bypass shows it at once, with no fade.
-    bypassFade = isGlobalBypassOn() ? 1.0f : 0.0f;
 }
 
-bool SpectrumDisplay::isGlobalBypassOn() const { return globalBypass.load (std::memory_order_relaxed) >= 0.5f; }
+float SpectrumDisplay::outputAlpha() const { return bypassFade.dim (1.0f); }
 
-float SpectrumDisplay::globalBypassFadeAfter (float from, bool on, double seconds)
-{
-    const float step = static_cast<float> (seconds * 1000.0) / static_cast<float> (staple::tokens::motion::globalBypassFadeMs);
-    return juce::jlimit (from - step, from + step, on ? 1.0f : 0.0f);
-}
-
-bool SpectrumDisplay::stepBypassFade (double seconds)
-{
-    const float moved = globalBypassFadeAfter (bypassFade, isGlobalBypassOn(), seconds);
-    const bool changed = ! juce::exactlyEqual (moved, bypassFade);
-    bypassFade = moved;
-    return changed;
-}
-
-float SpectrumDisplay::outputAlpha() const { return juce::jmap (bypassFade, 1.0f, globalBypassScale); }
-
-float SpectrumDisplay::gainReductionAlpha() const
-{
-    return juce::jmap (bypassFade, appliedGainReductionAlpha, appliedGainReductionAlpha * globalBypassScale);
-}
+float SpectrumDisplay::gainReductionAlpha() const { return bypassFade.dim (appliedGainReductionAlpha); }
 
 display::DisplayGeometry SpectrumDisplay::geometry() const { return { .width = getWidth(), .height = getHeight() }; }
 
@@ -139,7 +113,7 @@ void SpectrumDisplay::tick (double seconds)
     // Drained whether it shows or not, so the taps never fill.
     readTaps();
     // The fade follows Global Bypass whether it shows or not, so it is right whenever it next shows.
-    const bool faded = stepBypassFade (seconds);
+    const bool faded = bypassFade.step (seconds);
     // Analysed only while shown, and only as samples arrive: with no audio it holds still. Repainted then, and while
     // the fade moves.
     if (isShowing() && samplesArriving)
@@ -153,8 +127,7 @@ void SpectrumDisplay::tick (double seconds)
 
 bool SpectrumDisplay::isActive() const
 {
-    const bool fading = ! juce::exactlyEqual (bypassFade, isGlobalBypassOn() ? 1.0f : 0.0f);
-    return isShowing() && (samplesArriving || fading);
+    return isShowing() && (samplesArriving || bypassFade.isMoving());
 }
 
 void SpectrumDisplay::paint (juce::Graphics& g)

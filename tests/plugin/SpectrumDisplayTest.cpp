@@ -127,20 +127,6 @@ TEST_CASE ("The Spectrum display shades the gap where the output is under the in
     }
 }
 
-TEST_CASE ("The Spectrum display's Global Bypass fade glides over 150 ms each way")
-{
-    using comp1::SpectrumDisplay;
-    // Half the fade time goes half way; the whole of it, all the way, and no further.
-    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.0f, true, 0.075), WithinAbs (0.5, 1.0e-6));
-    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.5f, true, 0.075), WithinAbs (1.0, 1.0e-6));
-    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.0f, true, 0.25), WithinAbs (1.0, 1.0e-6));
-    // Back the same way.
-    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (1.0f, false, 0.075), WithinAbs (0.5, 1.0e-6));
-    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.5f, false, 0.25), WithinAbs (0.0, 1.0e-6));
-    // A tick at 60 Hz moves it a ninth of the way.
-    CHECK_THAT (SpectrumDisplay::globalBypassFadeAfter (0.0f, true, 1.0 / 60.0), WithinAbs (1.0 / 9.0, 1.0e-6));
-}
-
 TEST_CASE ("Under Global Bypass the Spectrum display dims the output and the Gain Reduction shading, and keeps showing the gap")
 {
     SpectrumHost host;
@@ -157,7 +143,7 @@ TEST_CASE ("Under Global Bypass the Spectrum display dims the output and the Gai
     const auto applied = spectrum.createComponentSnapshot (spectrum.getLocalBounds(), false);
 
     // Switched on, the fade only rises until it gets there. How many ticks see it part-way depends on the machine's
-    // speed (the glide's timing is the test above).
+    // speed (the glide's timing is GlobalBypassFadeTest's).
     host.edit (parameters::globalBypassId, 1.0f);
     float last = 0.0f;
     bool monotonic = true;

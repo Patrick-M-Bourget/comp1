@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DisplayFades.h"
+#include "GlobalBypassFade.h"
 #include "PluginProcessor.h"
 #include "plugkit/ui/AnalyzerSettings.h"
 #include "plugkit/ui/AnalyzerSpectrum.h"
@@ -10,7 +11,6 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include <atomic>
 #include <vector>
 
 namespace comp1
@@ -53,10 +53,7 @@ public:
     juce::Path gainReductionArea() const;
     // How far into Global Bypass the display shows, 0 to 1: it glides over the design system's globalBypassFadeMs as
     // Global Bypass switches, and an editor opened under Global Bypass starts at 1.
-    float globalBypassFade() const { return bypassFade; }
-    // The fade from `from` after seconds, toward 1 while Global Bypass is on and 0 while it is off: each tick's step,
-    // a whole fade taking globalBypassFadeMs.
-    static float globalBypassFadeAfter (float from, bool on, double seconds);
+    float globalBypassFade() const { return bypassFade.value(); }
     // The output's line and fill's alpha, and the Gain Reduction shading's, each dimmed toward a share of its own as
     // the fade goes to 1 (above).
     float outputAlpha() const;
@@ -73,9 +70,6 @@ private:
     void readTaps();
     // spectrum's line, across the display.
     juce::Path lineOf (const plugkit::ui::AnalyzerSpectrum& spectrum) const;
-    bool isGlobalBypassOn() const;
-    // Moves the Global Bypass fade toward Global Bypass by seconds' share of the fade time: whether it moved.
-    bool stepBypassFade (double seconds);
 
     PluginProcessor& processor;
     double sampleRate; // the spectra's
@@ -83,8 +77,7 @@ private:
     plugkit::ui::AnalyzerSpectrum input, output;
     plugkit::ui::AnalyzerSettings analyzer;
     bool samplesArriving = false;
-    const std::atomic<float>& globalBypass;
-    float bypassFade = 0.0f;
+    GlobalBypassFade bypassFade;
     plugkit::ui::display::CachedLabels labels;
     DisplayFades fades;
 };
