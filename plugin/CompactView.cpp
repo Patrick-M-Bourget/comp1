@@ -15,7 +15,7 @@ CompactView::CompactView (PluginProcessor& p, LevelHistory& history)
     setName ("Compact View");
     gate.addToggle (parameters::gateId, "Gate", true);
     gate.addKnob (parameters::gateThresholdId, knobSize::large, "Threshold", ControlSection::Place::underStack);
-    addCompKnob (compressor, p, compAttachment, ControlSection::Place::ownColumn, knobSize::hero);
+    hero.emplace (addCompKnob (compressor, p, compAttachment, ControlSection::Place::ownColumn, knobSize::hero), p, history);
 
     int order = 0;
     for (auto* section : sections())
