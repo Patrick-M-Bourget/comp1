@@ -24,7 +24,7 @@ namespace comp1
 // - The Gain Reduction meter: the compressor's, on the editor's level history, as tall as the body, and no stop for Tab.
 //
 // The sections keep their own sizes and the meter its width; the row is centred in the body, whatever room is left
-// going around it (the layout is provisional, #94). Both views' controls attach to the same host parameters, so an
+// going around it (the layout is provisional). Both views' controls attach to the same host parameters, so an
 // edit in one shows in the other.
 class CompactView final : public juce::Component
 {

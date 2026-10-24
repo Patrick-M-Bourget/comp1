@@ -45,7 +45,7 @@ namespace comp1
 // which a test finds it by.
 //
 // The Transfer Curve inset (TransferCurveInset) draws one in its inset look: the same curve, dot and following, the grid
-// and labels thinned to every 20 dB to fit, and no fades, as it sits on a slab of its own (provisional, #94).
+// and labels thinned to every 20 dB to fit, and no fades, as it sits on a slab of its own (provisional).
 class TransferCurveGraph final : public juce::Component, private plugkit::ui::EditorTick::Client
 {
 public:
