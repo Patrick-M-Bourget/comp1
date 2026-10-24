@@ -1,6 +1,5 @@
 #pragma once
 
-#include "DisplayFades.h"
 #include "GlobalBypassFade.h"
 #include "LevelHistory.h"
 #include "Parameters.h"
@@ -37,10 +36,10 @@ namespace comp1
 // (GlobalBypassFade), gliding on the tick, so they read as not applied; the grid and labels stay.
 //
 // Drawn with stock Staple tokens on plugkit-ui's grid layer, thinned to fit the inset: a line every 20 dB on both axes,
-// the 0 dB ones the zero lines, with dB labels; the curve a curve-main line and the dot filled in anSc. It paints no
-// background and no fades, as it sits on the inset's slab (provisional). It is no stop for Tab and takes no mouse
-// input: the inset, which hides it from the screen reader, is the control, and reads settingsText(). Named "Transfer
-// Curve".
+// the 0 dB ones the zero lines, with dB labels; the curve as Staple's main curve (its outer halo, its halo, then its
+// line) and the dot filled in anSc. It paints no background and no fades, as it sits on the inset's slab (provisional).
+// It is no stop for Tab and takes no mouse input: the inset, which hides it from the screen reader, is the control, and
+// reads settingsText(). Named "Transfer Curve".
 class TransferCurveGraph final : public juce::Component, private plugkit::ui::EditorTick::Client
 {
 public:

@@ -73,7 +73,7 @@ public:
     float globalBypassFade() const { return bypassFade.value(); }
     // The Gain Reduction's fill's alpha: gainReductionShadingAlpha, as the Spectrum display shades it, dimmed as the
     // fade goes to 1.
-    float gainReductionAlpha() const { return bypassFade.dim (gainReductionShadingAlpha); }
+    float gainReductionFillAlpha() const { return bypassFade.dim (gainReductionShadingAlpha); }
     // The Gain Reduction's line's alpha: 1, dimmed as the fade goes to 1.
     float gainReductionLineAlpha() const { return bypassFade.dim (1.0f); }
 
