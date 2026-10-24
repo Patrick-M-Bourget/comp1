@@ -19,19 +19,22 @@ namespace comp1
 {
 
 // The Expanded View's sections after the Style's, in signal order. Each knob's diameter is one of the kit's three:
-// Comp and Threshold large, the controls used most medium, the rest small.
+// Comp and Threshold large, the controls used most medium, the rest small. The Compact View's Comp is the kit's hero.
 namespace knobSize
 {
-inline constexpr float large = staple::tokens::knob::gain, medium = staple::tokens::knob::frequency, small = staple::tokens::knob::small;
+inline constexpr float hero = staple::tokens::knob::hero, large = staple::tokens::knob::gain, medium = staple::tokens::knob::frequency,
+                       small = staple::tokens::knob::small;
 }
 
-// Comp's knob, large and labelled "Comp", added to section where place puts it and attached through attachment, a
-// CompFollowAttachment (ADR 0004): grabbing it while Comp Follow is off follows (followComp), with the edit that
-// follows as one undo step. What the Compact View's Comp and the Compressor section's are.
+// Comp's knob, diameter across (large unless given) and labelled "Comp", added to section where place puts it and
+// attached through attachment, a CompFollowAttachment (ADR 0004): grabbing it while Comp Follow is off follows
+// (followComp), with the edit that follows as one undo step. What the Compact View's Comp and the Compressor
+// section's are.
 ControlSection::KnobControl& addCompKnob (ControlSection& section,
                                           PluginProcessor& processor,
                                           std::optional<CompFollowAttachment>& attachment,
-                                          ControlSection::Place place = ControlSection::Place::ownColumn);
+                                          ControlSection::Place place = ControlSection::Place::ownColumn,
+                                          float diameter = knobSize::large);
 
 // Gate: on/off, Gate Position, Gate Threshold, Gate Range, Gate Attack, Gate Release and Gate Hold.
 struct GateSection final : ControlSection

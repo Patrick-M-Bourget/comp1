@@ -25,9 +25,9 @@ bool isOn (PluginProcessor& processor, const juce::String& id)
 
 } // namespace
 
-ControlSection::KnobControl& addCompKnob (ControlSection& section, PluginProcessor& processor, std::optional<CompFollowAttachment>& attachment, Place place)
+ControlSection::KnobControl& addCompKnob (ControlSection& section, PluginProcessor& processor, std::optional<CompFollowAttachment>& attachment, Place place, float diameter)
 {
-    auto& comp = section.addKnob (parameters::compId, knobSize::large, "Comp", place, false);
+    auto& comp = section.addKnob (parameters::compId, diameter, "Comp", place, false);
     attachment.emplace (comp.knob, comp.parameter, processor.session().editHistory(), [&processor] { processor.followComp(); });
     return comp;
 }

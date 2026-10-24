@@ -12,6 +12,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <array>
+#include <utility>
 #include <vector>
 
 namespace comp1
@@ -21,12 +23,15 @@ namespace comp1
 // shows either view, the one the processor holds, each between the same header and footer (Footer), and each with its
 // own window limits and size (PluginProcessor::windowOf, setView).
 //
-// The Expanded View's body, under the header: the display, its two tabs over its full width (Display), with three
-// Gain Reduction meters and the Output Meter's rail at its right edge; under that the sections in signal order, in two
-// rows. The display takes whatever the window grows by, and the section rows its width; each section keeps its own
-// size, the Detection section's height following its slide open or closed (DetectionSection), the display taking up
-// what it gives. The meters are the Gate's, the compressor's and the Limiter's, left to right in signal order (their placement
-// is provisional).
+// The Expanded View's body, under the header: the display, its two tabs over its full width (Display), with four
+// meters at its right edge, left to right in signal order: the Gate's, the compressor's and the Limiter's Gain
+// Reduction, then the Output Meter, each labelled on one line under its bar (GATE, COMP, LIM, OUT; MeterLabel), the
+// meters as tall as the display but for that line. Under that the sections in signal order, in two rows from the left
+// edge on one grid of three columns: Gate, Compressor, and Character and Saturation over Detection, spanning the first
+// two, and Stereo and Lookahead, sharing the third. Each column is as wide as the widest it holds, and each section
+// takes its columns' width (its controls from the left) and its own height, the Detection section's following its
+// slide open or closed (DetectionSection), the display taking up what it gives. The display takes whatever the window
+// grows by, and the section rows its width.
 //
 // The Compact View's body is CompactView, after the header in Tab's order.
 class PluginEditor final : public plugkit::ui::EditorShell
@@ -55,6 +60,8 @@ public:
 
 private:
     void layOutBody (juce::Rectangle<int> area) override;
+    // The meters at the display's right, left to right, each with its label.
+    std::array<std::pair<juce::Component*, MeterLabel*>, 4> labelledMeters();
     // The sections, row by row, each row left to right in signal order.
     std::vector<std::vector<Section*>> sectionRows();
     // The section rows' height, together with the gap between them.
@@ -78,6 +85,7 @@ private:
     GainReductionMeter gateGainReduction { history, GainReductionMeter::Stage::gate };
     GainReductionMeter limiterGainReduction { history, GainReductionMeter::Stage::limiter };
     plugkit::ui::OutputMeter outputMeter;
+    MeterLabel gateLabel { "Gate" }, compLabel { "Comp" }, limiterLabel { "Lim" }, outputLabel { "Out" };
     // The sections, left to right in signal order. Named "Sections", as a test finds it.
     juce::Component sections;
     GateSection gate;

@@ -67,11 +67,11 @@ TEST_CASE ("At its default size the Expanded View is the header, the display wit
     const auto areas = areasOf (*host.editor);
     CHECK (areas.header == juce::Rectangle<int> (14, 14, 1372, 52));
     CHECK (areas.display == juce::Rectangle<int> (14, 78, 1164, 434));
-    // The Gain Reduction meters in signal order, then the Output Meter.
-    CHECK (areas.gateGainReduction == juce::Rectangle<int> (1190, 78, 40, 434));
-    CHECK (areas.gainReduction == juce::Rectangle<int> (1242, 78, 40, 434));
-    CHECK (areas.limiterGainReduction == juce::Rectangle<int> (1294, 78, 40, 434));
-    CHECK (areas.outputMeter == juce::Rectangle<int> (1346, 78, 40, 434));
+    // The Gain Reduction meters in signal order, then the Output Meter, over their labels' 14 px line.
+    CHECK (areas.gateGainReduction == juce::Rectangle<int> (1190, 78, 40, 420));
+    CHECK (areas.gainReduction == juce::Rectangle<int> (1242, 78, 40, 420));
+    CHECK (areas.limiterGainReduction == juce::Rectangle<int> (1294, 78, 40, 420));
+    CHECK (areas.outputMeter == juce::Rectangle<int> (1346, 78, 40, 420));
     CHECK (areas.sections == juce::Rectangle<int> (14, 524, 1372, 266));
     CHECK (areas.footer == juce::Rectangle<int> (14, 802, 1372, 44));
     // Each tab's content is the display under its tabs.
@@ -84,7 +84,7 @@ TEST_CASE ("At its default size the Expanded View is the header, the display wit
     host.settleAnimations();
     const auto open = areasOf (*host.editor);
     CHECK (open.display == juce::Rectangle<int> (14, 78, 1164, 390));
-    CHECK (open.outputMeter == juce::Rectangle<int> (1346, 78, 40, 390));
+    CHECK (open.outputMeter == juce::Rectangle<int> (1346, 78, 40, 376));
     CHECK (open.sections == juce::Rectangle<int> (14, 480, 1372, 310));
     CHECK (open.footer == areas.footer);
     CHECK (open.levelTab == juce::Rectangle<int> (14, 112, 1164, 356));
@@ -135,9 +135,9 @@ TEST_CASE ("At every UI Scale and at the minimum, default and maximum sizes noth
     CHECK (areas.gainReduction.getWidth() == smallest.gainReduction.getWidth());
     CHECK (areas.gateGainReduction.getWidth() == smallest.gateGainReduction.getWidth());
     CHECK (areas.limiterGainReduction.getWidth() == smallest.limiterGainReduction.getWidth());
-    // The meters are as tall as the display.
-    CHECK (areas.gateGainReduction.getHeight() == areas.display.getHeight());
-    CHECK (areas.limiterGainReduction.getHeight() == areas.display.getHeight());
+    // The meters are as tall as the display but for their labels' line.
+    CHECK (areas.gateGainReduction.getHeight() == areas.display.getHeight() - comp1::MeterLabel::lineHeight);
+    CHECK (areas.limiterGainReduction.getHeight() == areas.display.getHeight() - comp1::MeterLabel::lineHeight);
     CHECK (areas.character.getWidth() == smallest.character.getWidth());
     CHECK (areas.character.getHeight() == smallest.character.getHeight());
     CHECK (areas.header.getHeight() == smallest.header.getHeight());
@@ -185,6 +185,96 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
             }
             CHECK (section.getLocalBounds().contains (area));
         }
+    }
+}
+
+TEST_CASE ("Both rows of sections start at the left edge on one grid of columns: Detection under Gate and Compressor, Stereo and Lookahead under Character and Saturation, with no gap between, the Detection section collapsed or open, at 100% and 200% and the minimum and default sizes")
+{
+    host::EditorHost host;
+    auto* menu = harness::findChild<plugkit::ui::UiScaleMenu> (*host.editor);
+    REQUIRE (menu != nullptr);
+    const bool open = GENERATE (false, true);
+    CAPTURE (open);
+    host.processor.setDetectionOpen (open);
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().detectionSection().isOpen() == open; }));
+    host.settleAnimations();
+    const auto& window = comp1::PluginProcessor::expandedWindow;
+    const int percent = GENERATE (100, 200);
+    CAPTURE (percent);
+    menu->pick (percent);
+    const auto size = GENERATE_COPY (window.minimum, window.defaultSize);
+    CAPTURE (size.x, size.y);
+    host.editor->setSize (juce::roundToInt (size.x * percent / 100.0), juce::roundToInt (size.y * percent / 100.0));
+
+    auto& sections = named (*host.editor, "Sections");
+    const auto at = [&sections] (const char* name) { return named (sections, name).getBounds(); };
+    const auto gate = at ("Gate"), compressor = at ("Compressor"), character = at ("Character and Saturation");
+    const auto detection = at ("Detection"), stereo = at ("Stereo"), lookahead = at ("Lookahead");
+    const int gap = compressor.getX() - gate.getRight();
+
+    // The first row's columns, from the left edge, a gap apart.
+    CHECK (gap > 0);
+    CHECK (gate.getX() == 0);
+    CHECK (character.getX() - compressor.getRight() == gap);
+    // The second row under them: Detection spans the first two columns, and Stereo then Lookahead the third, a gap
+    // apart, their outer edges on the column's.
+    CHECK (detection.getX() == gate.getX());
+    CHECK (detection.getRight() == compressor.getRight());
+    CHECK (stereo.getX() == character.getX());
+    CHECK (lookahead.getX() - stereo.getRight() == gap);
+    CHECK (lookahead.getRight() == character.getRight());
+    // Each at least as wide as its own content.
+    for (const auto* name : { "Gate", "Compressor", "Character and Saturation", "Detection", "Stereo", "Lookahead" })
+    {
+        CAPTURE (name);
+        auto& section = dynamic_cast<comp1::Section&> (named (sections, name));
+        CHECK (section.getWidth() >= section.idealWidth());
+        CHECK (sections.getLocalBounds().contains (section.getBounds()));
+    }
+    CHECK_FALSE (stereo.intersects (lookahead));
+    CHECK_FALSE (detection.intersects (stereo));
+}
+
+TEST_CASE ("Each meter is labelled under its bar, GATE, COMP, LIM and OUT, the labels overlapping nothing and the bars giving up only the label's line, at 100% and 200% and the minimum and default sizes")
+{
+    host::EditorHost host;
+    auto* menu = harness::findChild<plugkit::ui::UiScaleMenu> (*host.editor);
+    REQUIRE (menu != nullptr);
+    const auto& window = comp1::PluginProcessor::expandedWindow;
+    const int percent = GENERATE (100, 200);
+    CAPTURE (percent);
+    menu->pick (percent);
+    const auto size = GENERATE_COPY (window.minimum, window.defaultSize);
+    CAPTURE (size.x, size.y);
+    host.editor->setSize (juce::roundToInt (size.x * percent / 100.0), juce::roundToInt (size.y * percent / 100.0));
+
+    const auto areas = areasOf (*host.editor);
+    auto& content = *harness::findChild<plugkit::ui::HeaderBar> (*host.editor)->getParentComponent();
+    const std::vector<std::pair<juce::String, juce::Rectangle<int>>> meters {
+        { "GATE", areas.gateGainReduction }, { "COMP", areas.gainReduction }, { "LIM", areas.limiterGainReduction }, { "OUT", areas.outputMeter }
+    };
+    std::vector<juce::Rectangle<int>> placed { areas.header,        areas.display,       areas.sections,
+                                               areas.footer,        areas.gateGainReduction, areas.gainReduction,
+                                               areas.limiterGainReduction, areas.outputMeter };
+    for (const auto& [text, meter] : meters)
+    {
+        CAPTURE (text);
+        auto* label = harness::findChild<comp1::MeterLabel> (*host.editor, [&text] (comp1::MeterLabel& l) { return l.getName() == text && l.isShowing(); });
+        REQUIRE (label != nullptr);
+        const auto area = content.getLocalArea (label->getParentComponent(), label->getBounds());
+        // Its line, straight under its meter and centred on it, its text whole.
+        CHECK (area.getY() == meter.getBottom());
+        CHECK (area.getHeight() == comp1::MeterLabel::lineHeight);
+        CHECK (area.getCentreX() == meter.getCentreX());
+        CHECK (area.getWidth() <= meter.getWidth());
+        CHECK (area.getWidth() >= label->textWidth());
+        // Clear of every other area and label.
+        for (const auto& other : placed)
+            CHECK_FALSE (other.intersects (area));
+        placed.push_back (area);
+        // The meter keeps the display's height but for the label's line.
+        CHECK (meter.getY() == areas.display.getY());
+        CHECK (meter.getHeight() == areas.display.getHeight() - comp1::MeterLabel::lineHeight);
     }
 }
 
