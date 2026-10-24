@@ -174,26 +174,18 @@ inline std::vector<LevelRecord> playAndReadLevels (Engine& engine,
     return all;
 }
 
-// One of the Engine's sample taps, a mono sample per input sample, as its reader reaches it.
-struct SampleTap
-{
-    int (Engine::*read) (float*, int);
-    void (Engine::*skip)();
-    int (Engine::*capacity)() const;
-};
-
 // Runs audio through engine, already prepared and set up, in place, cut into blocks of the sizes given, in turn and
 // repeating, with the samples of sidechainSamples on the Sidechain when it isn't null, reading tap after each block, as
 // the editor reads it while the host plays; from change's sample on, with its settings, when there is one, the block
 // before it cut short there. Returns every sample read.
 inline std::vector<float> playAndReadTap (Engine& engine,
-                                          const SampleTap& tap,
+                                          Tap tap,
                                           Channels audio,
                                           const std::vector<int>& blockSizes,
                                           const Channels* sidechainSamples = nullptr,
                                           const std::optional<SettingsChange>& change = std::nullopt)
 {
-    std::vector<float> all, samples (static_cast<std::size_t> ((engine.*tap.capacity)()));
+    std::vector<float> all, samples (static_cast<std::size_t> (engine.capacity (tap)));
     const int numSamples = static_cast<int> (audio.front().size());
     std::vector<float*> main (audio.size());
     std::vector<const float*> sidechain (sidechainSamples != nullptr ? sidechainSamples->size() : 0);
@@ -211,14 +203,14 @@ inline std::vector<float> playAndReadTap (Engine& engine,
         const ConstAudioBlock sidechainBlock { sidechain.data(), static_cast<int> (sidechain.size()), count };
         engine.process ({ main.data(), static_cast<int> (main.size()), count }, sidechainSamples != nullptr ? &sidechainBlock : nullptr);
         start += count;
-        const int read = (engine.*tap.read) (samples.data(), static_cast<int> (samples.size()));
+        const int read = engine.read (tap, samples.data(), static_cast<int> (samples.size()));
         all.insert (all.end(), samples.begin(), samples.begin() + read);
     }
     return all;
 }
 
 // What tap carries for audio through a fresh Engine at sampleRate with settings, read as playAndReadTap() reads it.
-inline std::vector<float> tapOf (const SampleTap& tap,
+inline std::vector<float> tapOf (Tap tap,
                                  const Settings& settings,
                                  const Channels& audio,
                                  const Channels* sidechainSamples = nullptr,
