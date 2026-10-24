@@ -10,10 +10,8 @@ Display::Display (PluginProcessor& p, LevelHistory& history)
     setName ("Display");
     level.setName ("Level");
     int order = 0;
-    for (const auto& row : displayTabs)
+    for (auto& [tab, chip, content] : tabs)
     {
-        const auto tab = row.tab;
-        auto& [chip, content] = tabs[rowOf (tab)];
         chip.setTitle (chip.getButtonText());
         chip.setTooltip ("Show the " + chip.getButtonText() + " display");
         chip.onClick = [this, tab] {
@@ -45,11 +43,10 @@ void Display::tick (double)
 void Display::show (DisplayTab tab)
 {
     shown = tab;
-    for (const auto& row : displayTabs)
+    for (auto& [rowTab, chip, content] : tabs)
     {
-        auto& [chip, content] = tabs[rowOf (row.tab)];
-        chip.setToggleState (row.tab == tab, juce::dontSendNotification);
-        content.setVisible (row.tab == tab);
+        chip.setToggleState (rowTab == tab, juce::dontSendNotification);
+        content.setVisible (rowTab == tab);
     }
     inset.setVisible (tab == DisplayTab::level);
 }
@@ -59,7 +56,7 @@ void Display::resized()
     auto area = getLocalBounds();
     auto chips = area.removeFromTop (tabHeight);
     area.removeFromTop (contentGap);
-    for (auto& [chip, content] : tabs)
+    for (auto& [tab, chip, content] : tabs)
     {
         chip.setBounds (chips.removeFromLeft (chip.getIdealWidth()));
         chips.removeFromLeft (tabGap);

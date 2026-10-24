@@ -53,9 +53,10 @@ private:
     // Shows tab as the chosen one, with its content.
     void show (DisplayTab tab);
 
-    // A display tab's row in tabs: its chip, labelled with the tab's name, and what the tab shows.
+    // A display tab's row in tabs: the tab, its chip, labelled with the tab's name, and what the tab shows.
     struct Tab
     {
+        DisplayTab tab;
         staple::TextChip chip;
         juce::Component& content;
     };
@@ -66,11 +67,12 @@ private:
     TransferCurveGraph transferCurve;
     TransferCurveInset inset;
     SpectrumDisplay spectrum;
-    // The tabs, left to right: a row for each of displayTabs, in its order.
+    // The tabs, left to right: a row for each of displayTabs, in its order, each at its tab's rowOf. A chip chooses
+    // its own row's tab, so a row out of place shows the wrong content for its chip.
     std::array<Tab, std::size (displayTabs)> tabs { {
-        { staple::TextChip { "Level", staple::TextChip::Look::plain }, level },
-        { staple::TextChip { "Transfer Curve", staple::TextChip::Look::plain }, transferCurve },
-        { staple::TextChip { "Spectrum", staple::TextChip::Look::plain }, spectrum },
+        { DisplayTab::level, staple::TextChip { "Level", staple::TextChip::Look::plain }, level },
+        { DisplayTab::transferCurve, staple::TextChip { "Transfer Curve", staple::TextChip::Look::plain }, transferCurve },
+        { DisplayTab::spectrum, staple::TextChip { "Spectrum", staple::TextChip::Look::plain }, spectrum },
     } };
 };
 

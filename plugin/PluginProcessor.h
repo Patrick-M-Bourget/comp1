@@ -20,12 +20,13 @@ namespace comp1
 {
 
 // The Expanded View's three display tabs: the scrolling level and Gain Reduction graph, the Transfer Curve, and the
-// Spectrum.
+// Spectrum. count isn't a tab: it is how many there are, for the tables' checks, and no list the user sees has it.
 enum class DisplayTab
 {
     level,
     transferCurve,
     spectrum,
+    count,
 };
 
 // A display tab's row in displayTabs: the tab, and the name the session saves it under. A saved name is permanent once
@@ -56,6 +57,7 @@ static_assert (
         return true;
     }(),
     "displayTabs lists every DisplayTab once, in DisplayTab's order");
+static_assert (std::size (displayTabs) == rowOf (DisplayTab::count), "displayTabs has a row for every DisplayTab");
 
 // The editor's views: the Compact View, and the Expanded View with the display and every section.
 enum class View
