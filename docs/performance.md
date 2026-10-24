@@ -89,11 +89,13 @@ The two tabs take turns, five rounds of 120 timed ticks each after a second of u
 
 | Per tick, Apple M3 | Level mean | Level p95 | Spectrum mean | Spectrum p95 |
 | --- | --- | --- | --- | --- |
-| tick | 0.11 ms | 0.18–0.22 ms | 0.10–0.11 ms | 0.16–0.17 ms |
-| paint | 12.6–13.1 ms | 14.6–14.7 ms | 13.1–13.3 ms | 14.4–14.5 ms |
-| tick + paint | 12.7–13.2 ms | 14.7–14.8 ms | 13.2–13.4 ms | 14.5–14.6 ms |
+| tick | 0.10 ms | 0.15 ms | 0.11 ms | 0.17–0.18 ms |
+| paint | 13.7 ms | 15.6–15.7 ms | 13.8 ms | 14.8 ms |
+| tick + paint | 13.8 ms | 15.7–15.8 ms | 13.9 ms | 14.9 ms |
 
-Measured 2026-10-24 on an 8-core Apple M3 (4 performance and 4 efficiency cores, macOS 27.0.1), two runs, each started at a 1-minute load average of 3.6 to 3.7 (other agents building) and ending at 2.5 to 2.8. The Spectrum tab costs 1.01 to 1.04 times the Level tab per tick, tick and paint together, by the mean, and 0.98 to 0.99 times by the 95th percentile. The tick is a small part of either, about 0.1 ms on both tabs, the Spectrum tab's FFTs among it. The paint is nearly all of it. These paint the whole display every tick, an upper bound: a window repaints only what a tick marked as changed.
+Measured 2026-10-24 on an 8-core Apple M3 (4 performance and 4 efficiency cores, macOS 27.0.1), two runs, each started at a 1-minute load average under 4 (3.95 and 2.5, other agents building) and ending at 2.5 and 1.9. The Spectrum tab costs 1.01 times the Level tab per tick, tick and paint together, by the mean, and 0.94 to 0.95 times by the 95th percentile. The tick is a small part of either, about 0.1 ms on both tabs, the Spectrum tab's FFTs among it. The paint is nearly all of it. These paint the whole display every tick, an upper bound: a window repaints only what a tick marked as changed. The machine's load moves both tabs' figures by several percent from one session to the next; the Spectrum tab over the Level tab, measured as they take turns, moves far less.
+
+**The Spectrum tab's paint.** Its Gain Reduction's area, between the input's and the output's spectra, fills from a gradient drawn once (`CachedGradientFill`, below), drawn again only when its colours (the Global Bypass shading among them), the display's height or the device scale change. Measured the same way at this tree's parent, at load averages 3.6 and 2.4, the Spectrum tab's paint was 14.4 ms by the mean (15.2–15.3 ms p95) and the Level tab's 13.0–13.1 ms, the Spectrum tab 1.10 times the Level tab. Its paint is 0.6 ms less by the mean (14.4 to 13.8 ms) while the unchanged Level tab's rose 5% with the load; by the ratio, which the load moves far less, it is about 8% less, about 1.2 ms at the Level tab's cost. In the `[.screens]` renders the Spectrum snapshots differ from the gradient fill's in about 8% of their pixels by one or two steps, for the reason given below; their larger differences lie along the two spectra, which differ between runs of the same tree too.
 
 **The Level tab's paint.** The Level and Gain Reduction Graph is nearly all of it (98% of the samples in a `sample` profile of this benchmark); the tab chips, the Transfer Curve inset, the grid, the dB labels and the edge fades together are a few percent. Of the graph, sampled 2026-10-24:
 
