@@ -293,7 +293,7 @@ TEST_CASE ("After a Style change a Compact Slot control's accessible name and va
         auto* handler = control->getAccessibilityHandler();
         REQUIRE (handler != nullptr);
         CHECK (handler->getTitle() == name);
-        if (auto* knob = dynamic_cast<staple::Knob*> (control))
+        if (dynamic_cast<staple::Knob*> (control) != nullptr)
         {
             REQUIRE (handler->getValueInterface() != nullptr);
             CHECK (handler->getValueInterface()->getCurrentValueAsString() == expandedValue (name));
