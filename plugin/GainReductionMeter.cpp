@@ -75,8 +75,8 @@ juce::Rectangle<float> GainReductionMeter::barArea() const
 void GainReductionMeter::paint (juce::Graphics& g)
 {
     const auto bar = barArea();
-    // The rail, then the bar hanging from its top.
-    g.setColour (colour::knobRingLane);
+    // The rail, in the design system's meter track, which every meter's bar runs in, then the bar hanging from its top.
+    g.setColour (colour::meterTrack);
     g.fillRoundedRectangle (bar, size::r1 / 2.0f);
     if (shown > 0.0)
     {

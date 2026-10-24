@@ -190,7 +190,8 @@ void LevelGraph::paint (juce::Graphics& g)
             }
         }
         const float left = w - static_cast<float> (columns) + 0.5f, right = w - 0.5f;
-        // The Gain Reduction, filled up to the top, as the Gain Reduction meter's bar hangs, under the levels.
+        // The Gain Reduction, filled up to the top, as the Gain Reduction meter's bar hangs, under the levels: shaded,
+        // so the grid and the Input Level's trace show through it.
         auto reductionArea = reduction;
         reductionArea.lineTo (left, 0.0f);
         reductionArea.lineTo (right, 0.0f);
@@ -206,7 +207,7 @@ void LevelGraph::paint (juce::Graphics& g)
         inputFill.fill (g, inputArea, colour::anFillTop, colour::anFillMid, h, origin);
         g.setColour (colour::anLine);
         g.strokePath (input, juce::PathStrokeType (levelLineWidth));
-        g.setColour (colour::dynRange.withMultipliedAlpha (reductionAlpha));
+        g.setColour (colour::dynRange.withMultipliedAlpha (gainReductionLineAlpha()));
         g.strokePath (reduction, juce::PathStrokeType (curveLineWidth));
         g.setColour (colour::curveMain);
         g.strokePath (output, juce::PathStrokeType (curveLineWidth));

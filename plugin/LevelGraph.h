@@ -2,6 +2,7 @@
 
 #include "CachedGradientFill.h"
 #include "DisplayFades.h"
+#include "GainReductionShading.h"
 #include "GlobalBypassFade.h"
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
@@ -70,8 +71,11 @@ public:
 
     // How far into Global Bypass it shows, 0 to 1 (GlobalBypassFade).
     float globalBypassFade() const { return bypassFade.value(); }
-    // The Gain Reduction's line and fill's alpha: 1, dimmed as the fade goes to 1.
-    float gainReductionAlpha() const { return bypassFade.dim (1.0f); }
+    // The Gain Reduction's fill's alpha: gainReductionShadingAlpha, as the Spectrum display shades it, dimmed as the
+    // fade goes to 1.
+    float gainReductionAlpha() const { return bypassFade.dim (gainReductionShadingAlpha); }
+    // The Gain Reduction's line's alpha: 1, dimmed as the fade goes to 1.
+    float gainReductionLineAlpha() const { return bypassFade.dim (1.0f); }
 
     void paint (juce::Graphics& g) override;
 
