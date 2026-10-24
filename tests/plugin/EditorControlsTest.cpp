@@ -6,6 +6,7 @@
 #include "Footer.h"
 #include "plugkit/ui/OutputPopoverFrame.h"
 #include "plugkit/ui/PopoverSlider.h"
+#include "plugkit/ui/staple/LookAndFeel.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -18,6 +19,7 @@
 #include <map>
 #include <regex>
 #include <set>
+#include <typeinfo>
 #include <vector>
 
 namespace parameters = comp1::parameters;
@@ -546,6 +548,20 @@ TEST_CASE ("Space and Return toggle a toggle, and up and down step a choice, one
         pressIn (host, control, juce::KeyPress (juce::KeyPress::upKey));
         CHECK (plainOf (parameter) == 0.0f);
         CHECK (history.undoSteps() == steps + 2);
+    }
+}
+
+TEST_CASE ("Every section toggle is as wide as the kit's ideal width for its label, which draws it whole")
+{
+    host::EditorHost host;
+    everythingAvailable (host);
+    // The sections' toggles are stock juce::ToggleButtons; the output popover's are the kit's own.
+    const auto toggles = host.findAll<juce::ToggleButton> ([] (juce::ToggleButton& t) { return typeid (t) == typeid (juce::ToggleButton) && t.isShowing(); });
+    REQUIRE (toggles.size() >= 7);
+    for (auto* toggle : toggles)
+    {
+        CAPTURE (toggle->getButtonText());
+        CHECK (toggle->getWidth() == staple::LookAndFeel::idealToggleWidth (toggle->getButtonText()));
     }
 }
 
