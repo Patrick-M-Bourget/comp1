@@ -359,6 +359,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Style");
     expected.push_back ("Switch to the Compact View");
     expected.push_back ("Threshold");
+    expected.push_back ("Timing Response inset");
     expected.push_back ("Transfer Curve inset");
     expected.push_back ("UI Scale");
     expected.push_back ("Undo");
@@ -399,7 +400,7 @@ TEST_CASE ("Each knob reads its value with its unit as its tooltip shows it: Rat
     CHECK_THAT (host.value (parameters::ceilingId), Catch::Matchers::WithinAbs (-6.0f, 1.0e-4));
 }
 
-TEST_CASE ("Tab walks the header, the display's tabs and the Transfer Curve inset, the Output Meter, the sections in signal order and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
+TEST_CASE ("Tab walks the header, the display's tabs, the Transfer Curve inset and the Timing Response inset, the Output Meter, the sections in signal order and the footer, reaching every enabled control once with a focus ring; Shift+Tab walks it back")
 {
     host::EditorHost host;
     everythingAvailable (host);
@@ -436,8 +437,8 @@ TEST_CASE ("Tab walks the header, the display's tabs and the Transfer Curve inse
         CHECK (std::count (walked.begin(), walked.end(), control) == 1);
     }
     // In order: the header's first, then these.
-    juce::StringArray order { "Presets", "Level", "Spectrum", "Transfer Curve inset", "Output Meter", "Gate", "Gate Position", "Gate Hold",
-                              "Comp Follow", "Comp", "Threshold", "Range", "Colour", "Detection" };
+    juce::StringArray order { "Presets", "Level", "Spectrum", "Transfer Curve inset", "Timing Response inset", "Output Meter", "Gate", "Gate Position",
+                              "Gate Hold", "Comp Follow", "Comp", "Threshold", "Range", "Colour", "Detection" };
     const juce::StringArray detection { "Detection Source", "Detection Free Band Q", "Detection Audition" };
     if (open)
         order.addArray (detection);

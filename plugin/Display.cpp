@@ -4,7 +4,7 @@ namespace comp1
 {
 
 Display::Display (PluginProcessor& p, LevelHistory& history)
-    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), level (history, p), inset (p, history), spectrum (p)
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p), level (history, p), inset (p, history), timing (p), spectrum (p)
 {
     setName ("Display");
     level.setName ("Level");
@@ -25,6 +25,8 @@ Display::Display (PluginProcessor& p, LevelHistory& history)
     // After the tabs.
     inset.setExplicitFocusOrder (++order);
     addChildComponent (inset);
+    timing.setExplicitFocusOrder (++order);
+    addChildComponent (timing);
     show (processor.displayTab());
 }
 
@@ -48,6 +50,7 @@ void Display::show (DisplayTab tab)
         content.setVisible (rowTab == tab);
     }
     inset.setVisible (tab == DisplayTab::level);
+    timing.setVisible (tab == DisplayTab::level);
 }
 
 void Display::resized()
@@ -62,6 +65,7 @@ void Display::resized()
         content.setBounds (area);
     }
     inset.setTopLeftPosition (level.getPosition().translated (insetGap, insetGap));
+    timing.setTopLeftPosition (inset.getPosition().translated (inset.getWidth() + insetGap, 0));
 }
 
 } // namespace comp1

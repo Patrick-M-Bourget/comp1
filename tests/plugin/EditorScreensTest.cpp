@@ -351,3 +351,45 @@ TEST_CASE ("Expanded View snapshots: the Transfer Curve inset's handles with sig
     }));
     harness::writeSnapshot (inset, "inset-handles-global-bypass", {}, 2.0f);
 }
+
+TEST_CASE ("Snapshots: the Timing Response inset on Clean and on FET, the Attack handle dragged with its readout card, Auto Release on, and the Expanded View with both insets while signal plays", "[.screens]")
+{
+    host::Playing host;
+    auto& inset = host.expandedView().display().timingResponseInset();
+    const auto drawsWhatIsHeld = [&] {
+        return host.settleUntil ([&] {
+            return inset.drawn().has_value() && inset.drawn()->request.settings == comp1::TimingResponseWorker::shaping (host.processor.heldSettings());
+        });
+    };
+    for (const auto style : { comp1::Style::Clean, comp1::Style::FET })
+    {
+        REQUIRE (host.processor.chooseStyle (style));
+        const juce::String name = style == comp1::Style::Clean ? "clean" : "fet";
+        REQUIRE (drawsWhatIsHeld());
+        host.settleAnimations();
+        harness::writeSnapshot (inset, "inset-timing-response-" + name, {}, 2.0f);
+
+        auto& attack = inset.handle (comp1::TimingHandle::attack);
+        const auto centre = inset.handleCentre (comp1::TimingHandle::attack) - attack.getPosition().toFloat();
+        const auto held = juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier);
+        attack.mouseDown (harness::mouseEvent (attack, centre, held));
+        attack.mouseDrag (harness::mouseEvent (attack, centre + juce::Point<float> { 15.0f, 0.0f }, held, centre));
+        REQUIRE (drawsWhatIsHeld());
+        harness::writeSnapshot (inset, "inset-timing-response-" + name + "-attack-dragged", {}, 2.0f);
+        attack.mouseUp (harness::mouseEvent (attack, centre + juce::Point<float> { 15.0f, 0.0f }, {}, centre));
+
+        host.edit (comp1::parameters::autoReleaseId, 1.0f);
+        REQUIRE (drawsWhatIsHeld());
+        host.settleAnimations();
+        harness::writeSnapshot (inset, "inset-timing-response-" + name + "-auto-release", {}, 2.0f);
+        host.edit (comp1::parameters::autoReleaseId, 0.0f);
+    }
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Clean));
+    REQUIRE (drawsWhatIsHeld());
+    host.playFor (1.0, sine (0.5));
+    harness::writeSnapshot (*host.editor, "expanded-timing-response-inset-playing", {}, 1.0f);
+
+    host.edit (comp1::parameters::globalBypassId, 1.0f);
+    REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (inset.curveAlpha(), comp1::GlobalBypassFade::scale); }));
+    harness::writeSnapshot (inset, "inset-timing-response-global-bypass", {}, 2.0f);
+}

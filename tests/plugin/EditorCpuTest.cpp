@@ -4,12 +4,15 @@
 
 #include "Measure.h"
 #include "Playing.h"
+#include "TimingResponseInset.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -148,4 +151,92 @@ TEST_CASE ("Editor CPU: the editor's tick and the display's paint per tick, on t
     }
     std::printf ("  Spectrum / Level, tick + paint: mean %.2fx   p95 %.2fx\n", mean (spectrum.total) / mean (level.total),
                  p95 (spectrum.total) / p95 (level.total));
+}
+
+TEST_CASE ("Editor CPU: a frame of a drag on the Timing Response inset's handles, the Expanded View at its default size", "[.editor-cpu][.drag-frame]")
+{
+    EditorCpuHost host;
+    host.show (DisplayTab::level);
+    auto& editor = *host.editor;
+    const auto size = comp1::PluginProcessor::expandedWindow.defaultSize;
+    REQUIRE (editor.getWidth() == size.x);
+    REQUIRE (editor.getHeight() == size.y);
+    auto& inset = host.expandedView().display().timingResponseInset();
+    REQUIRE (host.settleUntil ([&] { return inset.drawn().has_value() && ! inset.isWaiting(); }));
+    host.timeTicks (60, nullptr);
+
+    constexpr int framesPerHandle = 300;
+    // The thread's CPU painting component whole at 2x into a native image, as a window draws it.
+    const auto paintTime = [] (juce::Component& component) {
+        double painted = 0.0;
+        harness::paintImage (static_cast<int> (paintScale * static_cast<float> (component.getWidth())),
+                             static_cast<int> (paintScale * static_cast<float> (component.getHeight())),
+                             [&] (juce::Graphics& g) {
+                                 g.addTransform (juce::AffineTransform::scale (paintScale));
+                                 const double paintStart = comp1::test::threadSeconds();
+                                 component.paintEntireComponent (g, false);
+                                 painted = comp1::test::threadSeconds() - paintStart;
+                             },
+                             juce::NativeImageType());
+        return painted;
+    };
+    // Per frame: the drag handler's CPU (0 with no drag), then 1/60 s of audio and the tick, then the paints.
+    struct Frames
+    {
+        std::vector<double> drag, tick, insetPaint, editorPaint, frame, wholeFrame;
+    };
+    int behind = 0, mostBehind = 0; // ticks in a row the curve drawn trailed the settings held
+    const auto runFrame = [&] (Frames& frames, const std::function<void()>& move) {
+        const double start = comp1::test::threadSeconds();
+        if (move)
+            move();
+        frames.drag.push_back (comp1::test::threadSeconds() - start);
+        host.play (2, 400, [&host] (int i) { return host.sample (host.played + i); });
+        host.played += 800;
+        const int before = host.editorTick().count();
+        const double tickStart = comp1::test::threadSeconds();
+        REQUIRE (host.settleUntil ([&] { return host.editorTick().count() > before; }));
+        frames.tick.push_back ((comp1::test::threadSeconds() - tickStart) / (host.editorTick().count() - before));
+        behind = inset.isWaiting() ? behind + 1 : 0;
+        mostBehind = std::max (mostBehind, behind);
+        frames.insetPaint.push_back (paintTime (inset));
+        frames.editorPaint.push_back (paintTime (editor));
+        frames.frame.push_back (frames.drag.back() + frames.tick.back() + frames.insetPaint.back());
+        frames.wholeFrame.push_back (frames.drag.back() + frames.tick.back() + frames.editorPaint.back());
+    };
+
+    // The same frames with no drag, the signal playing: what the editor costs anyway.
+    Frames still, dragged;
+    for (int f = 0; f < 2 * framesPerHandle; ++f)
+        runFrame (still, {});
+    for (const auto which : { comp1::TimingHandle::attack, comp1::TimingHandle::release })
+    {
+        auto& handle = inset.handle (which);
+        const auto from = inset.handleCentre (which) - handle.getPosition().toFloat();
+        const auto held = juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier);
+        handle.mouseDown (harness::mouseEvent (handle, from, held));
+        for (int f = 0; f < framesPerHandle; ++f)
+        {
+            // A sweep across the axis and back, a few px a frame, as a hand drags.
+            const float x = 60.0f * std::sin (2.0f * juce::MathConstants<float>::pi * static_cast<float> (f) / 150.0f);
+            runFrame (dragged, [&] { handle.mouseDrag (harness::mouseEvent (handle, from + juce::Point<float> { x, 0.0f }, held, from)); });
+        }
+        handle.mouseUp (harness::mouseEvent (handle, from, {}, from));
+    }
+    const auto worst = [] (const std::vector<double>& xs) { return *std::max_element (xs.begin(), xs.end()); };
+    std::printf ("Timing Response inset drag, %zu frames, the editor at %d x %d, 1/60 s ticks, painted at %.0fx, message thread CPU:\n",
+                 dragged.frame.size(), size.x, size.y, static_cast<double> (paintScale));
+    for (auto [name, frames] : { std::pair { "still", &still }, std::pair { "drag", &dragged } })
+    {
+        print (name, "handler", frames->drag);
+        print (name, "tick", frames->tick);
+        print (name, "inset paint", frames->insetPaint);
+        print (name, "editor paint", frames->editorPaint);
+        print (name, "frame", frames->frame);
+        print (name, "whole frame", frames->wholeFrame);
+    }
+    std::printf ("  frame: handler + tick + the inset's paint, what a drag dirties; whole frame: with the whole editor painted, an upper bound\n");
+    std::printf ("  worst drag frame %.2f ms, worst whole frame %.2f ms still and %.2f ms dragging (a 60 Hz frame is 16.67 ms)\n",
+                 1.0e3 * worst (dragged.frame), 1.0e3 * worst (still.wholeFrame), 1.0e3 * worst (dragged.wholeFrame));
+    std::printf ("  the curve drawn trails the handle by at most %d ticks\n", mostBehind);
 }

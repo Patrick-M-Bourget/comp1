@@ -266,16 +266,11 @@ double PluginProcessor::followedRatio() const
     return compRatio (settings.compCurve, settings.comp);
 }
 
+Settings PluginProcessor::heldSettings() const { return reader.read(); }
+
 clean::Curve PluginProcessor::playedCurve() const
 {
-    const auto settings = reader.read();
-    auto curve = clean::curveOf (settings);
-    if (settings.compFollow)
-    {
-        curve.thresholdDb = compThresholdDb (settings.compCurve, settings.comp);
-        curve.inverseRatio = compInverseRatio (settings.compCurve, settings.comp);
-    }
-    return curve;
+    return clean::playedCurveOf (reader.read());
 }
 
 double PluginProcessor::appliedAutoGainDb() const

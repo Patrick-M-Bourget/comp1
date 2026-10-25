@@ -202,7 +202,7 @@ A Compact Slot's smaller control, a toggle or a small knob, under its primary.
 _Avoid_: Secondary control, sub-knob, satellite
 
 **Expanded View**:
-The editor showing every control, the Detection EQ's among them in the Detection section, and the display's two tabs: Level, the Level and Gain Reduction Graph with the Transfer Curve inset over it, and Spectrum, the Spectrum display.
+The editor showing every control, the Detection EQ's among them in the Detection section, and the display's two tabs: Level, the Level and Gain Reduction Graph with the Transfer Curve inset and the Timing Response inset over it, and Spectrum, the Spectrum display.
 _Avoid_: Advanced view, full view, pro mode
 
 **Level and Gain Reduction Graph**:
@@ -216,6 +216,14 @@ _Avoid_: I/O graph, transfer function plot
 **Transfer Curve inset**:
 The small Transfer Curve Graph over the top-left corner of the Level and Gain Reduction Graph, on the Level tab: its Threshold handle drags Threshold across, or Knee up and down with Alt, and its Ratio handle drags Ratio up and down; the arrow keys on it move Threshold and Ratio, and Alt with up and down moves Knee. It is the display's Transfer Curve view: there is no Transfer Curve tab.
 _Avoid_: Mini curve, transfer widget
+
+**Timing Response inset**:
+The small graph beside the Transfer Curve inset, as tall as it, on the Level tab: the compressor's Gain Reduction over time for a test burst at Threshold + 20 dB (at most 0 dBFS), worked out from the Character's detector alone, in two halves side by side, each on a log time axis of its own: Attack's, the rise as the burst starts, from one sample's time to 1 s, and Release's, the recovery once it stops, from 1 ms to about 10 s. Its Attack handle drags Attack across, and its Release handle Release; the arrow keys on it move Attack (left and right) and Release (up and down).
+_Avoid_: Envelope graph, timing graph, response curve (unqualified)
+
+**Attack handle** / **Release handle**:
+The Timing Response inset's two drag handles: the Attack handle on the rise at Attack, the Release handle on the recovery at Hold plus Release, as Release begins once Hold is over. Only they take the mouse.
+_Avoid_: Attack grabber, Release grabber
 
 **Spectrum (display)**:
 The Expanded View's Spectrum tab: the spectrum of the input tap and of the output tap overlaid, the gap between them, where the output is under the input, shaded as Gain Reduction. comp1 is single-band, so the gap is the same at every frequency.

@@ -173,6 +173,8 @@ public:
     // Comp while Comp Follow is on (followedThresholdDb, followedRatio), else the stored ones; Knee and Range stored.
     // Any thread.
     clean::Curve playedCurve() const;
+    // The Settings the host parameters hold, as the Plugin Shell hands them to the Engine. Any thread.
+    Settings heldSettings() const;
     // Auto Gain's estimate in dB (comp1/AutoGain.h, ADR 0010) for the settings the host parameters hold, from the
     // played Transfer Curve, the timing and the Character, while Auto Gain is on, with Comp Follow on or off; else 0.
     // What the Engine glides its Auto Gain to. Any thread.

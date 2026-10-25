@@ -2,6 +2,7 @@
 add_compile_options(${comp1_compile_options})
 add_library(comp1_engine STATIC
     src/Engine.cpp
+    src/TimingResponse.cpp
 )
 add_library(comp1::engine ALIAS comp1_engine)
 
