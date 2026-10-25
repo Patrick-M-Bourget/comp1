@@ -3,6 +3,7 @@
 #include "LevelHistory.h"
 #include "OutputPopover.h"
 #include "PluginProcessor.h"
+#include "SaturationPopover.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/OutputReadout.h"
 #include "plugkit/ui/Session.h"
@@ -93,8 +94,8 @@ public:
 };
 
 // The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Style,
-// Processing Mode and Oversampling, as chips that open menus; at the right the Output readout, the UI Scale menu and the
-// switch between the views, in that order, which is Tab's order too.
+// Processing Mode and Oversampling, as chips that open menus; at the right the Saturation readout (SaturationItem), the
+// Output readout, the UI Scale menu and the switch between the views, in that order, which is Tab's order too.
 //
 // The Style chip reads "Style: " and the Style. Its menu lists the offered Styles (PluginProcessor::offeredStyles) in
 // Style's order, each with the Character it plays in brackets, "Drums (FET)", or alone where the Style is that
@@ -128,6 +129,7 @@ public:
     plugkit::ui::OutputReadout& outputReadout() { return output; }
     OutputPopover& outputPopover() { return popover; }
     AutoGainDot& autoGainDot() { return dot; }
+    SaturationItem& saturation() { return saturationItem; }
 
     // The switch between the views, at the far right after the UI Scale menu, last in Tab's order: Staple icon buttons
     // titled by what they do, the collapse arrow "Switch to the Compact View" in the Expanded View, the expand arrow
@@ -149,6 +151,7 @@ private:
     staple::IconButton globalBypass { "Global Bypass", staple::Icon::power };
     juce::AudioProcessorValueTreeState::ButtonAttachment globalBypassAttachment;
     ChoiceChip style, processingMode, oversampling;
+    SaturationItem saturationItem;
     plugkit::ui::OutputReadout output;
     AutoGainDot dot;
     OutputPopover popover;

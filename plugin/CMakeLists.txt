@@ -52,6 +52,7 @@ target_sources(comp1 PRIVATE
     Parameters.cpp
     PluginEditor.cpp
     PluginProcessor.cpp
+    SaturationPopover.cpp
     Section.cpp
     Sections.cpp
     ShownAutoGain.cpp
