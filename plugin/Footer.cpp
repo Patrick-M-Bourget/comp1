@@ -55,7 +55,7 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
              styleChip (p, parameters::parameterOf (p.parameterState(), parameters::styleId).getAllValueStrings())),
       processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
       highQuality (p),
-      saturationItem (p), popover (p, history), highQualityPopup (p), uiScale (p.session())
+      stereoItem (p), saturationItem (p), popover (p, history), highQualityPopup (p), uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
     // Its "on" is bypassed, so on it shows Off.
@@ -65,7 +65,8 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
     globalBypass.setTooltip ("Global Bypass (Cmd/Ctrl+B)");
     // Left to right.
     int order = 0;
-    for (juce::Component* child : std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &highQuality, &saturationItem, &output, &uiScale })
+    for (juce::Component* child :
+         std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &highQuality, &stereoItem, &saturationItem, &output, &uiScale })
     {
         addAndMakeVisible (*child);
         child->setExplicitFocusOrder (++order);
@@ -193,6 +194,11 @@ void Footer::resized()
     }
     row.removeFromLeft (chipGap);
     highQuality.setBounds (row.removeFromLeft (highQuality.widestIdealWidth()));
+    // The Stereo readout left of the Saturation readout, shrunk to its label where the chips leave too little room.
+    row.removeFromRight (chipGap);
+    row.removeFromLeft (chipGap);
+    const int fullWidth = stereoItem.idealWidth();
+    stereoItem.setBounds (row.removeFromRight (row.getWidth() >= fullWidth ? fullWidth : stereoItem.shrunkWidth()));
 }
 
 } // namespace comp1

@@ -6,6 +6,7 @@
 #include "OutputPopover.h"
 #include "PluginProcessor.h"
 #include "SaturationPopover.h"
+#include "StereoPopover.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/OutputReadout.h"
 #include "plugkit/ui/Session.h"
@@ -34,9 +35,10 @@ public:
 };
 
 // The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Style and
-// Processing Mode, as chips that open menus, and the High Quality readout; at the right the Saturation readout
-// (SaturationItem), the Output readout, the UI Scale menu and the switch between the views, in that order, which is
-// Tab's order too.
+// Processing Mode, as chips that open menus, and the High Quality readout; at the right the Stereo readout
+// (StereoItem), the Saturation readout (SaturationItem), the Output readout, the UI Scale menu and the switch between
+// the views, in that order, which is Tab's order too. Where the chips leave the row too little room for the Stereo
+// readout's widest text, it shrinks to its label, "ST"; it is never hidden.
 //
 // The Style chip reads "Style: " and the Style. Its menu lists the offered Styles (PluginProcessor::offeredStyles) in
 // Style's order, each with the Character it plays in brackets, "Drums (FET)", or alone where the Style is that
@@ -73,6 +75,7 @@ public:
     HighQualityPopover& highQualityPopover() { return highQualityPopup; }
     AutoGainDot& autoGainDot() { return dot; }
     SaturationItem& saturation() { return saturationItem; }
+    StereoItem& stereo() { return stereoItem; }
 
     // The switch between the views, at the far right after the UI Scale menu, last in Tab's order: Staple icon buttons
     // titled by what they do, the collapse arrow "Switch to the Compact View" in the Expanded View, the expand arrow
@@ -96,6 +99,7 @@ private:
     ChoiceChip style, processingMode;
     HighQualityReadout highQuality;
     SaturationItem saturationItem;
+    StereoItem stereoItem;
     plugkit::ui::OutputReadout output;
     AutoGainDot dot;
     OutputPopover popover;

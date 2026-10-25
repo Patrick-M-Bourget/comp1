@@ -9,6 +9,7 @@
 #include "PluginProcessor.h"
 #include "SaturationPopover.h"
 #include "SessionHost.h"
+#include "StereoPopover.h"
 #include "plugkit/test/EditorHarness.h"
 #include "plugkit/ui/staple/controls/Knob.h"
 
@@ -89,6 +90,12 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
     comp1::SaturationPopover& saturationPopover() { return footer().saturation().popover(); }
     // Opens the Saturation popover as openOutputPopover opens the output popover.
     comp1::SaturationPopover& openSaturationPopover() { return openFooterPopover (saturationReadout(), saturationPopover()); }
+
+    // The footer's Stereo readout, and the stereo popover it opens.
+    plugkit::ui::FooterReadout& stereoReadout() { return footer().stereo().readout(); }
+    comp1::StereoPopover& stereoPopover() { return footer().stereo().popover(); }
+    // Opens the stereo popover as openOutputPopover opens the output popover.
+    comp1::StereoPopover& openStereoPopover() { return openFooterPopover (stereoReadout(), stereoPopover()); }
 
     // Opens popover by a click on readout, the footer readout that opens it, as the user opens it, unless it is open,
     // and waits for it to pop in.

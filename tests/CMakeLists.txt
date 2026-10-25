@@ -128,6 +128,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/SpectrumDisplayTest.cpp
         plugin/StateTest.cpp
         plugin/StereoParametersTest.cpp
+        plugin/StereoPopoverTest.cpp
         plugin/StyleChipTest.cpp
         plugin/StyleParameterTest.cpp
         plugin/TransferCurveGraphTest.cpp

@@ -1,0 +1,81 @@
+#include "StereoPopover.h"
+
+#include "Parameters.h"
+#include "plugkit/ui/staple/Tokens.h"
+
+namespace comp1
+{
+
+namespace
+{
+constexpr int edge = staple::tokens::popover::edge;
+} // namespace
+
+juce::String stereoReadoutText (const juce::String& placement, double linkPercent) { return placement + " " + juce::String (juce::roundToInt (linkPercent)) + "%"; }
+
+StereoPopover::StereoPopover (PluginProcessor& processor) : stereo (processor)
+{
+    addAndMakeVisible (stereo);
+    const int inset = 2 * (edge + padding);
+    setCardSize (stereo.idealWidth() + inset, stereo.idealHeight() + inset);
+    followProcessor();
+}
+
+void StereoPopover::resized() { stereo.setBounds (getCardBounds().reduced (edge + padding)); }
+
+StereoItem::StereoItem (PluginProcessor& p)
+    : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),
+      shown ("Stereo", "ST", "Stereo: Stereo Placement and Stereo Link. Click for the stereo controls"), stereoPopover (p)
+{
+    addAndMakeVisible (shown);
+    shown.onClick = [this] {
+        if (stereoPopover.isOpen())
+            stereoPopover.close();
+        else
+        {
+            stereoPopover.openFrom (shown);
+            shown.setOpen (stereoPopover.isOpen());
+        }
+    };
+    // Back in the item once closed, hidden, so it stays on the editor's tick.
+    stereoPopover.onClose = [this] {
+        shown.setOpen (false);
+        addChildComponent (stereoPopover);
+    };
+    addChildComponent (stereoPopover);
+    show();
+}
+
+StereoItem::~StereoItem()
+{
+    stereoPopover.onClose = nullptr;
+    stereoPopover.close();
+}
+
+int StereoItem::idealWidth()
+{
+    const auto text = shown.getButtonText();
+    shown.setButtonText (stereoReadoutText ("Stereo", 100.0));
+    const int widest = shown.getIdealWidth();
+    shown.setButtonText (text);
+    return widest;
+}
+
+void StereoItem::show()
+{
+    auto& state = processor.parameterState();
+    auto& placement = parameters::parameterOf (state, parameters::stereoPlacementId);
+    const int choice = juce::roundToInt (placement.convertFrom0to1 (placement.getValue()));
+    const double link = state.getRawParameterValue (parameters::stereoLinkId)->load (std::memory_order_relaxed);
+    if (const auto text = stereoReadoutText (placement.getAllValueStrings()[choice], link); text != shown.getButtonText())
+        shown.setButtonText (text);
+    if (const bool mono = ! (processor.isStereoPlacementAvailable() && processor.isStereoLinkAvailable()); mono != shown.isNotApplied())
+    {
+        shown.setNotApplied (mono);
+        shown.setDescription (mono ? "Mono track: Stereo Placement and Stereo Link change nothing" : juce::String());
+    }
+}
+
+void StereoItem::resized() { shown.setBounds (getLocalBounds()); }
+
+} // namespace comp1
