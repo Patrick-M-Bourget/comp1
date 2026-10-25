@@ -227,10 +227,60 @@ void PluginProcessor::play (juce::AudioBuffer<float>& buffer, bool hostBypassed)
     }
 
     auto main = getBusBuffer (buffer, false, 0);
+    if (protoTestSignal.load (std::memory_order_relaxed) != 0)
+        writeTestSignal (main);
     const auto sidechainBuffer = getBusBuffer (buffer, true, 1);
     const ConstAudioBlock sidechain { sidechainBuffer.getArrayOfReadPointers(), sidechainBuffer.getNumChannels(), sidechainBuffer.getNumSamples() };
     engine.process ({ main.getArrayOfWritePointers(), main.getNumChannels(), main.getNumSamples() },
                     sidechain.numChannels > 0 ? &sidechain : nullptr);
+}
+
+// PROTOTYPE #215: a 120 bpm loop, 2 s a bar, sample-accurate from protoClock.
+void PluginProcessor::writeTestSignal (juce::AudioBuffer<float>& main)
+{
+    const double rate = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
+    const int pattern = protoTestSignal.load (std::memory_order_relaxed);
+    const double twoPi = juce::MathConstants<double>::twoPi;
+    for (int i = 0; i < main.getNumSamples(); ++i)
+    {
+        const double t = protoClock + i / rate;
+        double x = 0.0;
+        if (pattern == 1 || pattern == 3)
+        {
+            const double beat = std::fmod (t, 0.5), bar = std::fmod (t, 2.0);
+            // Kick on 1 and 3, snare on 2 and 4, hats on the eighths.
+            if (bar < 0.5 || (bar >= 1.0 && bar < 1.5))
+            {
+                const double k = beat;
+                const double phase = twoPi * (50.0 * k + 70.0 * 0.03 * (1.0 - std::exp (-k / 0.03)));
+                x += 0.9 * std::exp (-k / 0.18) * std::sin (phase);
+            }
+            else
+                x += std::exp (-beat / 0.09) * (0.55 * (protoRandom.nextDouble() * 2.0 - 1.0) + 0.3 * std::sin (twoPi * 185.0 * beat));
+            const double eighth = std::fmod (t, 0.25);
+            x += 0.12 * std::exp (-eighth / 0.015) * (protoRandom.nextDouble() * 2.0 - 1.0);
+            if (pattern == 3)
+            {
+                // A sustained bass note: 1.5 s of each 2 s bar.
+                if (bar < 1.5)
+                    x += 0.3 * std::min (1.0, bar / 0.01) * std::min (1.0, (1.5 - bar) / 0.01) * std::sin (twoPi * 55.0 * t) * (1.0 + 0.3 * std::sin (twoPi * 110.0 * t));
+            }
+        }
+        else if (pattern == 2)
+        {
+            // Tone bursts, a 4 s cycle: a short one (150 ms) at 0 s, a long one (1.2 s) at 1.5 s.
+            const double c = std::fmod (t, 4.0);
+            double on = 0.0;
+            if (c < 0.15)
+                on = std::min (1.0, c / 0.001) * std::min (1.0, (0.15 - c) / 0.001);
+            else if (c >= 1.5 && c < 2.7)
+                on = std::min (1.0, (c - 1.5) / 0.001) * std::min (1.0, (2.7 - c) / 0.001);
+            x = 0.7 * on * std::sin (twoPi * 440.0 * t);
+        }
+        for (int ch = 0; ch < main.getNumChannels(); ++ch)
+            main.setSample (ch, i, static_cast<float> (x));
+    }
+    protoClock = std::fmod (protoClock + main.getNumSamples() / rate, 8.0);
 }
 
 const std::vector<Style>& PluginProcessor::offeredStyles()

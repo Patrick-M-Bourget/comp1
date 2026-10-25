@@ -88,8 +88,27 @@ void LevelGraph::tick (double seconds)
         repaint();
 }
 
+void LevelGraph::protoFreeze (bool on)
+{
+    if (on == frozen)
+        return;
+    frozen = on;
+    if (on)
+    {
+        frozenLevels = levels;
+        frozenNewest = newest;
+        frozenHeld = held;
+    }
+    repaint();
+}
+
 const LevelGraph::Levels& LevelGraph::levelsAgo (int runsAgo) const
 {
+    if (frozen)
+    {
+        const int fsize = static_cast<int> (frozenLevels.size());
+        return frozenLevels[static_cast<size_t> (((frozenNewest - runsAgo) % fsize + fsize) % fsize)];
+    }
     const int size = static_cast<int> (levels.size());
     return levels[static_cast<size_t> (((newest - runsAgo) % size + size) % size)];
 }
@@ -112,7 +131,7 @@ LevelGraph::Drawn LevelGraph::column (int index, int columns) const
     // The runs it covers, ago, from its right edge to its left: those whose time ago falls in it.
     const double perColumn = spanRecords() / columns;
     const int from = static_cast<int> (std::ceil (index * perColumn));
-    const int to = std::min (held, static_cast<int> (std::ceil ((index + 1) * perColumn)));
+    const int to = std::min (protoHeld(), static_cast<int> (std::ceil ((index + 1) * perColumn)));
     Drawn drawn;
     for (int ago = from; ago < to; ++ago)
     {
@@ -166,7 +185,7 @@ void LevelGraph::paint (juce::Graphics& g)
 
     // The columns holding records, from the right edge.
     const double perColumn = spanRecords() / width;
-    const int columns = std::min (width, static_cast<int> (std::ceil (held / perColumn)));
+    const int columns = std::min (width, static_cast<int> (std::ceil (protoHeld() / perColumn)));
     if (columns > 0)
     {
         juce::Path input, output, reduction;

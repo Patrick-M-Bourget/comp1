@@ -79,6 +79,18 @@ public:
 
     void paint (juce::Graphics& g) override;
 
+    // PROTOTYPE #215: freezes the drawing (records keep arriving underneath), or lets it go back to live.
+    void protoFreeze (bool on);
+    bool protoFrozen() const { return frozen; }
+    // PROTOTYPE #215: the Gain Reduction a column (0 at the right edge) draws, and the input level runsAgo, of what is
+    // drawn (frozen or live); how many runs are drawn; the runs a column covers.
+    double protoColumnReduction (int c) const { return column (c, std::max (1, getWidth())).gainReductionDb; }
+    double protoInputDb (int runsAgo) const { return levelsAgo (runsAgo).inputDb; }
+    double protoReductionDb (int runsAgo) const { return levelsAgo (runsAgo).gainReductionDb; }
+    int protoHeld() const { return frozen ? frozenHeld : held; }
+    double protoRunsPerColumn() const { return spanRecords() / std::max (1, getWidth()); }
+    double protoSampleRate() const { return sampleRate(); }
+
 private:
     struct Levels
     {
@@ -102,6 +114,10 @@ private:
     const juce::AudioProcessor& processor;
     std::vector<Levels> levels; // a ring of the newest records, newest at newest
     int newest = -1, held = 0;
+    // PROTOTYPE #215: the frozen copy drawn while frozen.
+    bool frozen = false;
+    std::vector<Levels> frozenLevels;
+    int frozenNewest = -1, frozenHeld = 0;
     std::uint64_t taken = 0;
     GlobalBypassFade bypassFade;
     plugkit::ui::display::CachedLabels labels;

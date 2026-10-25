@@ -233,7 +233,17 @@ public:
     void setDetectionAudition (bool held) { heldDetectionAudition.store (held, std::memory_order_relaxed); }
     bool detectionAudition() const { return heldDetectionAudition.load (std::memory_order_relaxed); }
 
+    // PROTOTYPE #215: the host parameters as Settings, for the prototype's offline Engine replays.
+    Settings protoSettings() const { return reader.read(); }
+    // PROTOTYPE #215: a test signal replacing the main input: 0 off, 1 drums, 2 tone bursts, 3 drums and sustained bass.
+    // Drums by default in the Standalone only.
+    std::atomic<int> protoTestSignal { juce::JUCEApplicationBase::isStandaloneApp() ? 1 : 0 };
+
 private:
+    // PROTOTYPE #215: writes the test signal over main.
+    void writeTestSignal (juce::AudioBuffer<float>& main);
+    double protoClock = 0.0;
+    juce::Random protoRandom;
     // processBlock(), with Global Bypass forced on while the host bypasses.
     void play (juce::AudioBuffer<float>& buffer, bool hostBypassed);
 

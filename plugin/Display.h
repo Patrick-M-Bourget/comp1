@@ -2,6 +2,7 @@
 
 #include "LevelGraph.h"
 #include "LevelHistory.h"
+#include "Proto215.h"
 #include "PluginProcessor.h"
 #include "SpectrumDisplay.h"
 #include "TransferCurveInset.h"
@@ -62,6 +63,18 @@ private:
     DisplayTab shown = DisplayTab::level;
     TransferCurveInset inset;
     SpectrumDisplay spectrum;
+    // PROTOTYPE #215.
+    proto215::State protoState;
+    proto215::OverlayA protoA;
+    proto215::InsetB protoB;
+    proto215::Bar protoBar;
+    void protoLayout();
+
+public:
+    proto215::OverlayA& prototypeA() { return protoA; }
+    proto215::State& prototypeState() { return protoState; }
+
+private:
     // The tabs, left to right: a row for each of displayTabs, in its order, each at its tab's rowOf. A chip chooses
     // its own row's tab, so a row out of place shows the wrong content for its chip.
     std::array<Tab, std::size (displayTabs)> tabs { {
