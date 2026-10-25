@@ -48,8 +48,8 @@ enum class InsetHandle
 // - **Knee:** Alt on the Threshold handle sets Knee in place of Threshold, vertically by the knobs' travel: up widens
 //   it, and Threshold stays put. Shift still drags finely on top. Alt pressed or let go mid-drag carries on from where
 //   the settings are, as Shift does. While Alt is held over the handle or the drag is setting Knee, the inset shades
-//   the knee region (kneeShading) and the readout card shows "Knee 6.00 dB", over the inset so nothing moves, and the
-//   handle's cursor turns up-down. Shift is the knobs' fine drag, so Knee takes Alt, which does nothing else here.
+//   the knee region (kneeShading) and the readout card shows "Knee 6.00 dB", over the inset so nothing moves, both
+//   following Knee and Threshold from any route on the tick, and the handle's cursor turns up-down. Shift is the knobs' fine drag, so Knee takes Alt, which does nothing else here.
 // - **Keys:** while focused, left and right step Threshold, up and down Ratio, and Alt with up and down Knee, each 1% of
 //   its parameter's travel (0.2% with Shift), as the knobs' arrows do: right raises Threshold, up raises Ratio and up
 //   widens Knee.
@@ -84,11 +84,12 @@ public:
     handles::Look lookOf (InsetHandle which) const;
 
     // The readout card shown while a handle is dragged, or Knee's while Alt is held over the Threshold handle: its
-    // title and value, and the handle it is shown at.
+    // title and value, and the handle it is shown at, which every card names.
     struct Readout
     {
+        Readout (juce::String t, juce::String v, InsetHandle a) : title (std::move (t)), value (std::move (v)), at (a) {}
         juce::String title, value;
-        InsetHandle at = InsetHandle::threshold;
+        InsetHandle at;
     };
     std::optional<Readout> readout() const;
     // The knee region shaded while Alt is held over the Threshold handle or the drag sets Knee: the inputs from
@@ -106,11 +107,20 @@ public:
 private:
     class Handle;
 
+    // What a drag sets: Threshold or Ratio by its handle, or Knee by the Threshold handle with Alt.
+    enum class DragSetting
+    {
+        threshold,
+        ratio,
+        knee,
+    };
+    static DragSetting settingOf (InsetHandle which, const juce::ModifierKeys& mods);
+    static InsetHandle handleOf (DragSetting setting);
+
     struct Drag
     {
-        InsetHandle handle = InsetHandle::threshold;
+        DragSetting setting = DragSetting::threshold;
         bool fine = false;
-        bool knee = false; // the Threshold handle with Alt: setting Knee
         double from = 0.0; // the dragged setting at the anchor: Threshold in dB, or Ratio or Knee in its parameter's travel
         juce::Point<float> offset; // the drag's offset from its start at the anchor
     };
@@ -138,6 +148,15 @@ private:
     bool showsKnee() const;
     // The Knee cue shown or hidden as showsKnee() says: the shading, the card and the Threshold handle's cursor.
     void kneeCueChanged();
+    // What the Knee cue draws: the shading, and the card's text at its handle; none of it while the cue is hidden.
+    struct KneeCue
+    {
+        std::optional<juce::Rectangle<float>> shading;
+        juce::Point<float> cardAt;
+        juce::String card;
+        bool operator== (const KneeCue&) const = default;
+    };
+    KneeCue kneeCue() const;
     // The handles moved to where the played Transfer Curve puts them.
     void layOutHandles();
 
@@ -153,6 +172,8 @@ private:
     std::optional<juce::Slider::ScopedDragNotification> thresholdEdit, ratioEdit, kneeEdit;
     std::optional<Drag> drag;
     bool heldKey = false;
+    // The Knee cue as last drawn: the tick repaints the inset when Knee or Threshold, from any route, changes it.
+    KneeCue drawnKneeCue;
     juce::String announced;
     GlobalBypassFade bypassFade;
 };
