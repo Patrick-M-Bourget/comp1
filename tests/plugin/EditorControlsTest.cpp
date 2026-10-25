@@ -5,6 +5,7 @@
 #include "EditorHost.h"
 #include "Footer.h"
 #include "plugkit/ui/FooterPopoverFrame.h"
+#include "plugkit/ui/FooterReadout.h"
 #include "plugkit/ui/PopoverSlider.h"
 #include "plugkit/ui/staple/LookAndFeel.h"
 
@@ -33,10 +34,13 @@ bool isControl (juce::Component& c)
     return dynamic_cast<juce::Slider*> (&c) != nullptr || dynamic_cast<juce::Button*> (&c) != nullptr || dynamic_cast<juce::ComboBox*> (&c) != nullptr;
 }
 
-// The showing controls titled title: the shown view's, the header's, the footer's and the output popover's while open.
+// The showing controls titled title: the shown view's, the header's, the footer's and its popovers' while open. A footer
+// readout reads a setting, titled by it ("Saturation"), but isn't its control, so it is left out.
 std::vector<juce::Component*> controlsTitled (host::EditorHost& host, const juce::String& title)
 {
-    return host.findAll<juce::Component> ([&title] (juce::Component& c) { return isControl (c) && c.isShowing() && c.getTitle() == title; });
+    return host.findAll<juce::Component> ([&title] (juce::Component& c) {
+        return isControl (c) && c.isShowing() && c.getTitle() == title && dynamic_cast<plugkit::ui::FooterReadout*> (&c) == nullptr;
+    });
 }
 
 // The Detection section open, its slide over, so its controls show.
@@ -47,24 +51,19 @@ void openDetection (host::EditorHost& host)
     host.settleAnimations();
 }
 
-// Every control can be but the stereo popover's (showStereoControls): the output popover open (so Output Gain, Auto
-// Gain, the Limiter and Ceiling show), the Detection section open (so its controls show), Comp Follow off (so Threshold
-// and Ratio are set directly), High Quality (so Lookahead and Oversampling are), on a stereo track (so Stereo Placement
-// and Stereo Link are, once their popover is open).
+// Every control can be: the output popover, the Saturation popover and the stereo popover open (so Output Gain, Auto
+// Gain, the Limiter and Ceiling; Saturation, Saturation Position and Drive; and Stereo Placement and Stereo Link show),
+// the Detection section open (so its controls show), Comp Follow off (so Threshold and Ratio are set directly), High
+// Quality (so Lookahead and Oversampling are), on a stereo track (so Stereo Placement and Stereo Link are).
 void everythingAvailable (host::EditorHost& host)
 {
     openDetection (host);
     host.openOutputPopover();
+    host.openSaturationPopover();
+    host.openStereoPopover();
     host.edit (parameters::processingModeId, 1.0f);
     host.edit (parameters::compFollowId, 0.0f);
     REQUIRE (host.settleUntil ([&] { return host.showing<plugkit::ui::OutputToggle> ("Auto Gain").isEnabled() && host.knob ("Lookahead").isEnabled(); }));
-}
-
-// The stereo popover open, so Stereo Placement and Stereo Link show, when name is one of them.
-void showStereoControls (host::EditorHost& host, const juce::String& name)
-{
-    if (name == "Stereo Placement" || name == "Stereo Link")
-        host.openStereoPopover();
 }
 
 float plainOf (juce::RangedAudioParameter& parameter) { return parameter.convertFrom0to1 (parameter.getValue()); }
@@ -219,7 +218,6 @@ TEST_CASE ("Every host parameter has exactly one control, titled with its name, 
         auto& parameter = dynamic_cast<juce::RangedAudioParameter&> (*each);
         const auto name = parameter.getName (100);
         CAPTURE (name);
-        showStereoControls (host, name);
         const auto controls = controlsTitled (host, name);
         REQUIRE (controls.size() == 1);
         auto& control = *controls.front();
@@ -265,10 +263,9 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     openDetection (host);
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
-    // And the output popover's, then the stereo popover's.
+    // And the output popover's, the Saturation popover's and the stereo popover's.
     host.openOutputPopover();
-    for (const auto& [name, components] : accessibleNames (*host.editor))
-        names[name] = components;
+    host.openSaturationPopover();
     host.openStereoPopover();
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
@@ -440,15 +437,15 @@ TEST_CASE ("Tab walks the header, the display's tabs and the Transfer Curve inse
     }
     // In order: the header's first, then these.
     juce::StringArray order { "Presets", "Level", "Spectrum", "Transfer Curve inset", "Output Meter", "Gate", "Gate Position", "Gate Hold",
-                              "Comp Follow", "Comp", "Threshold", "Range", "Colour", "Saturation Position", "Detection" };
+                              "Comp Follow", "Comp", "Threshold", "Range", "Colour", "Detection" };
     const juce::StringArray detection { "Detection Source", "Detection Free Band Q", "Detection Audition" };
     if (open)
         order.addArray (detection);
     else
         for (const auto& title : detection)
             CHECK_FALSE (titles.contains (title));
-    order.addArray (juce::StringArray { "Lookahead", "Global Bypass", "Style", "Processing Mode", "Oversampling", "Stereo", "Output",
-                                        "UI Scale", "Switch to the Compact View" });
+    order.addArray (juce::StringArray { "Lookahead", "Global Bypass", "Style", "Processing Mode", "Oversampling", "Stereo", "Saturation",
+                                        "Output", "UI Scale", "Switch to the Compact View" });
     int last = -1;
     for (const auto& title : order)
     {
@@ -493,14 +490,8 @@ TEST_CASE ("The arrow keys step every knob within its range, a press or a held k
     host::EditorHost host;
     everythingAvailable (host);
     auto& history = host.processor.session().editHistory();
-    auto knobs = host.findAll<staple::Knob> ([] (staple::Knob& k) { return k.isShowing(); });
-    // And the stereo popover's.
-    host.openStereoPopover();
-    knobs.push_back (&host.knob ("Stereo Link"));
-    everythingAvailable (host);
-    for (auto* knob : knobs)
+    for (auto* knob : host.findAll<staple::Knob> ([] (staple::Knob& k) { return k.isShowing(); }))
     {
-        showStereoControls (host, knob->getTitle());
         CAPTURE (knob->getTitle());
         knob->grabKeyboardFocus();
         REQUIRE (knob->hasKeyboardFocus (false));
@@ -534,7 +525,7 @@ TEST_CASE ("Space and Return toggle a toggle, and up and down step a choice, one
 
     const juce::String toggle = GENERATE (as<juce::String> {}, "Gate", "Auto Release", "Saturation", "Auto Gain", "Limiter", "Detection High-Pass", "Detection Free Band");
     CAPTURE (toggle);
-    auto& button = host.showing<juce::Button> (toggle);
+    auto& button = dynamic_cast<juce::Button&> (*controlsTitled (host, toggle).front());
     const bool was = button.getToggleState();
     int steps = history.undoSteps();
     pressIn (host, button, juce::KeyPress (juce::KeyPress::spaceKey));
@@ -548,7 +539,6 @@ TEST_CASE ("Space and Return toggle a toggle, and up and down step a choice, one
     for (const juce::String choice : { "Gate Position", "Saturation Position", "Detection Source", "Detection Free Band Shape", "Stereo Placement", "Oversampling", "Processing Mode" })
     {
         CAPTURE (choice);
-        showStereoControls (host, choice);
         auto& id = choice == "Gate Position"             ? parameters::gatePositionId
                    : choice == "Detection Free Band Shape" ? parameters::detectionBandShapeId
                    : choice == "Stereo Placement"        ? parameters::stereoPlacementId
@@ -698,8 +688,9 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
     presets.onClick();
     host.settleAnimations();
     auto names = accessibleNames (*host.editor);
-    // And the output popover's.
+    // And the output popover's and the Saturation popover's.
     host.openOutputPopover();
+    host.openSaturationPopover();
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
 
@@ -724,6 +715,7 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
                                                "Close Preset browser",
                                                "Comp",
                                                "Copy A to B",
+                                               "Drive",
                                                "Dry",
                                                "Factory",
                                                "Gain Reduction",
@@ -740,6 +732,8 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
                                                "Processing Mode",
                                                "Redo",
                                                "Release",
+                                               "Saturation",
+                                               "Saturation Position",
                                                juce::String (juce::CharPointer_UTF8 ("Save as" "\xe2\x80\xa6")),
                                                "Search Presets",
                                                "Show User Presets Folder",
@@ -786,7 +780,7 @@ TEST_CASE ("Tab walks the Compact View: the header, the Compact Slots and Comp, 
     CHECK_FALSE (titles.contains ("Gain Reduction"));
     // In order: the header's first, then these, the body's five (Clean's) one after another.
     const juce::StringArray order { "Presets", "Attack",        "Knee",  "Comp",            "Release",      "Auto Release",
-                                    "Global Bypass", "Style", "Processing Mode", "Oversampling", "Stereo", "Output", "UI Scale",
+                                    "Global Bypass", "Style", "Processing Mode", "Oversampling", "Stereo", "Saturation", "Output", "UI Scale",
                                     "Switch to the Expanded View" };
     int last = -1;
     for (const auto& title : order)

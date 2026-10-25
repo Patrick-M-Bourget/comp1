@@ -190,7 +190,7 @@ How far the compressor sees ahead of the audio it processes, in High Quality onl
 _Avoid_: Pre-delay, latency
 
 **Compact View**:
-The editor showing only Comp, two Compact Slots and a Gain Reduction meter, with Style in the footer and Output Gain in the footer's output popover.
+The editor showing only Comp, two Compact Slots and a Gain Reduction meter, with Style in the footer, Output Gain in the footer's output popover and Saturation's controls in its Saturation popover.
 _Avoid_: Simple view, mini view, basic mode
 
 **Compact Slot**:
@@ -232,6 +232,10 @@ _Avoid_: Master gain, Gain (unqualified)
 **Output readout**:
 The footer's reading of Output Gain plus Auto Gain's estimate while Auto Gain is in effect, in both views; a click opens the output popover, which holds Output Gain, Auto Gain, the Limiter and Ceiling.
 _Avoid_: Output display, gain readout
+
+**Saturation readout**:
+The footer's reading of Drive, "SAT +6 dB", dimmed while Saturation is off, in both views, left of the Output readout; a click opens the Saturation popover, which holds Saturation's on switch, Saturation Position and Drive. The Expanded View's body has no Saturation controls: its Character section holds Colour alone.
+_Avoid_: Drive readout, SAT chip
 
 **Stereo readout**:
 The footer's reading of Stereo Placement then Stereo Link ("Stereo 100%", "Mid 80%"), in both views, dimmed on a mono track, where neither changes anything; short of room it shows only "ST". A click opens the stereo popover, which holds Stereo Placement and Stereo Link.

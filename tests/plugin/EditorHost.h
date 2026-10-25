@@ -6,6 +6,7 @@
 #include "OutputPopover.h"
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "SaturationPopover.h"
 #include "SessionHost.h"
 #include "StereoPopover.h"
 #include "plugkit/test/EditorHarness.h"
@@ -75,30 +76,29 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
 
     // Opens the output popover by a click on the Output readout, as the user opens it, unless it is open, and waits for
     // it to pop in.
-    comp1::OutputPopover& openOutputPopover()
-    {
-        auto& popover = outputPopover();
-        if (! popover.isOpen())
-        {
-            REQUIRE (outputReadout().onClick != nullptr);
-            outputReadout().onClick();
-        }
-        REQUIRE (popover.isOpen());
-        REQUIRE (settleUntil ([&popover] { return ! popover.isTransformed(); }));
-        return popover;
-    }
+    comp1::OutputPopover& openOutputPopover() { return openFooterPopover (outputReadout(), outputPopover()); }
 
-    // The footer's Stereo readout, and the stereo popover it opens by a click, as the user opens it, unless it is open,
-    // waiting for it to pop in.
+    // The footer's Saturation readout, and the Saturation popover it opens.
+    plugkit::ui::FooterReadout& saturationReadout() { return footer().saturation().readout(); }
+    comp1::SaturationPopover& saturationPopover() { return footer().saturation().popover(); }
+    // Opens the Saturation popover as openOutputPopover opens the output popover.
+    comp1::SaturationPopover& openSaturationPopover() { return openFooterPopover (saturationReadout(), saturationPopover()); }
+
+    // The footer's Stereo readout, and the stereo popover it opens.
     plugkit::ui::FooterReadout& stereoReadout() { return footer().stereo().readout(); }
     comp1::StereoPopover& stereoPopover() { return footer().stereo().popover(); }
-    comp1::StereoPopover& openStereoPopover()
+    // Opens the stereo popover as openOutputPopover opens the output popover.
+    comp1::StereoPopover& openStereoPopover() { return openFooterPopover (stereoReadout(), stereoPopover()); }
+
+    // Opens popover by a click on readout, the footer readout that opens it, as the user opens it, unless it is open,
+    // and waits for it to pop in.
+    template <typename Popover>
+    Popover& openFooterPopover (plugkit::ui::FooterReadout& readout, Popover& popover)
     {
-        auto& popover = stereoPopover();
         if (! popover.isOpen())
         {
-            REQUIRE (stereoReadout().onClick != nullptr);
-            stereoReadout().onClick();
+            REQUIRE (readout.onClick != nullptr);
+            readout.onClick();
         }
         REQUIRE (popover.isOpen());
         REQUIRE (settleUntil ([&popover] { return ! popover.isTransformed(); }));

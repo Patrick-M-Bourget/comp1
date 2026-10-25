@@ -204,7 +204,7 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
                               return static_cast<int> (oversamplingInForce (stored, sampleRateOf (p)));
                           },
                       .available = [&p] { return parameters::inHighQuality (p.parameterState()); } }),
-      stereoItem (p), popover (p, history), uiScale (p.session())
+      stereoItem (p), saturationItem (p), popover (p, history), uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
     // Its "on" is bypassed, so on it shows Off.
@@ -214,7 +214,8 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
     globalBypass.setTooltip ("Global Bypass (Cmd/Ctrl+B)");
     // Left to right.
     int order = 0;
-    for (juce::Component* child : std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &oversampling, &stereoItem, &output, &uiScale })
+    for (juce::Component* child :
+         std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &oversampling, &stereoItem, &saturationItem, &output, &uiScale })
     {
         addAndMakeVisible (*child);
         child->setExplicitFocusOrder (++order);
@@ -317,12 +318,14 @@ void Footer::resized()
     // The gap left of the UI Scale menu holds the Auto Gain dot, so the readout doesn't move as it shows.
     dot.setBounds (row.removeFromRight (chipGap));
     output.setBounds (row.removeFromRight (std::max (outputWidth, output.getIdealWidth())));
+    row.removeFromRight (chipGap);
+    saturationItem.setBounds (row.removeFromRight (saturationItem.idealWidth()));
     for (auto* chip : { &style, &processingMode, &oversampling })
     {
         row.removeFromLeft (chipGap);
         chip->setBounds (row.removeFromLeft (chip->widestIdealWidth()));
     }
-    // The Stereo readout left of the Output readout, shrunk to its label where the chips leave too little room.
+    // The Stereo readout left of the Saturation readout, shrunk to its label where the chips leave too little room.
     row.removeFromRight (chipGap);
     row.removeFromLeft (chipGap);
     const int fullWidth = stereoItem.idealWidth();
