@@ -84,11 +84,12 @@ public:
     handles::Look lookOf (InsetHandle which) const;
 
     // The readout card shown while a handle is dragged, or Knee's while Alt is held over the Threshold handle: its
-    // title and value, and the handle it is shown at.
+    // title and value, and the handle it is shown at, which every card names.
     struct Readout
     {
+        Readout (juce::String t, juce::String v, InsetHandle a) : title (std::move (t)), value (std::move (v)), at (a) {}
         juce::String title, value;
-        InsetHandle at = InsetHandle::threshold;
+        InsetHandle at;
     };
     std::optional<Readout> readout() const;
     // The knee region shaded while Alt is held over the Threshold handle or the drag sets Knee: the inputs from
