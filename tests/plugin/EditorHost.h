@@ -7,6 +7,7 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "SessionHost.h"
+#include "StereoReadout.h"
 #include "plugkit/test/EditorHarness.h"
 #include "plugkit/ui/staple/controls/Knob.h"
 
@@ -81,6 +82,22 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
         {
             REQUIRE (outputReadout().onClick != nullptr);
             outputReadout().onClick();
+        }
+        REQUIRE (popover.isOpen());
+        REQUIRE (settleUntil ([&popover] { return ! popover.isTransformed(); }));
+        return popover;
+    }
+
+    // The footer's Stereo readout, and the stereo popover it opens by a click, as the user opens it, unless it is open,
+    // waiting for it to pop in.
+    comp1::StereoReadout& stereoReadout() { return footer().stereoReadout(); }
+    comp1::StereoPopover& openStereoPopover()
+    {
+        auto& popover = stereoReadout().popover();
+        if (! popover.isOpen())
+        {
+            REQUIRE (stereoReadout().onClick != nullptr);
+            stereoReadout().onClick();
         }
         REQUIRE (popover.isOpen());
         REQUIRE (settleUntil ([&popover] { return ! popover.isTransformed(); }));

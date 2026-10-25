@@ -211,9 +211,11 @@ TEST_CASE ("Collapsed, the Detection section's summary names the Detection Sourc
     REQUIRE (host.settleUntil ([&] { return summary() == after; }));
 }
 
-TEST_CASE ("Tab reaches the disclosure after the Character and Saturation section's Drive, then the Detection section's controls only while it is open, then the Stereo section")
+TEST_CASE ("Tab reaches the disclosure after the Character and Saturation section's Drive, then the Detection section's controls only while it is open, then the Lookahead section")
 {
     host::EditorHost host;
+    // In High Quality, so Lookahead is enabled.
+    host.edit (comp1::parameters::processingModeId, 1.0f);
     const bool open = GENERATE (false, true);
     CAPTURE (open);
     host.processor.setDetectionOpen (open);
@@ -225,7 +227,7 @@ TEST_CASE ("Tab reaches the disclosure after the Character and Saturation sectio
     REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
     auto* next = juce::Component::getCurrentlyFocusedComponent();
     REQUIRE (next != nullptr);
-    CHECK (next->getTitle() == (open ? "Detection Source" : "Stereo Placement"));
+    CHECK (next->getTitle() == (open ? "Detection Source" : "Lookahead"));
 
     REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey, juce::ModifierKeys::shiftModifier, 0)));
     REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey, juce::ModifierKeys::shiftModifier, 0)));
@@ -234,9 +236,11 @@ TEST_CASE ("Tab reaches the disclosure after the Character and Saturation sectio
     CHECK (before->getTitle() == "Drive");
 }
 
-TEST_CASE ("Open, the Detection section shows its controls and Detection Audition after them: Tab reaches Detection Audition after Detection Free Band Q, then the Stereo section")
+TEST_CASE ("Open, the Detection section shows its controls and Detection Audition after them: Tab reaches Detection Audition after Detection Free Band Q, then the Lookahead section")
 {
     host::EditorHost host;
+    // In High Quality, so Lookahead is enabled.
+    host.edit (comp1::parameters::processingModeId, 1.0f);
     host.processor.setDetectionOpen (true);
     REQUIRE (host.settleUntil ([&] { return section (host).isOpen(); }));
     host.settleAnimations();
@@ -265,14 +269,14 @@ TEST_CASE ("Open, the Detection section shows its controls and Detection Auditio
         auto* focused = juce::Component::getCurrentlyFocusedComponent();
         REQUIRE (focused != nullptr);
         titles.add (focused->getTitle());
-        if (focused->getTitle() == "Stereo Placement")
+        if (focused->getTitle() == "Lookahead")
             break;
     }
     CAPTURE (titles.joinIntoString (", "));
     const int last = titles.indexOf ("Detection Free Band Q");
     REQUIRE (last >= 0);
     CHECK (titles[last + 1] == "Detection Audition");
-    CHECK (titles[last + 2] == "Stereo Placement");
+    CHECK (titles[last + 2] == "Lookahead");
 }
 
 namespace

@@ -47,9 +47,10 @@ void openDetection (host::EditorHost& host)
     host.settleAnimations();
 }
 
-// Every control can be: the output popover open (so Output Gain, Auto Gain, the Limiter and Ceiling show), the
-// Detection section open (so its controls show), Comp Follow off (so Threshold and Ratio are set directly), High
-// Quality (so Lookahead and Oversampling are), on a stereo track (so Stereo Placement and Stereo Link are).
+// Every control can be but the stereo popover's (showStereoControls): the output popover open (so Output Gain, Auto
+// Gain, the Limiter and Ceiling show), the Detection section open (so its controls show), Comp Follow off (so Threshold
+// and Ratio are set directly), High Quality (so Lookahead and Oversampling are), on a stereo track (so Stereo Placement
+// and Stereo Link are, once their popover is open).
 void everythingAvailable (host::EditorHost& host)
 {
     openDetection (host);
@@ -57,6 +58,13 @@ void everythingAvailable (host::EditorHost& host)
     host.edit (parameters::processingModeId, 1.0f);
     host.edit (parameters::compFollowId, 0.0f);
     REQUIRE (host.settleUntil ([&] { return host.showing<plugkit::ui::OutputToggle> ("Auto Gain").isEnabled() && host.knob ("Lookahead").isEnabled(); }));
+}
+
+// The stereo popover open, so Stereo Placement and Stereo Link show, when name is one of them.
+void showStereoControls (host::EditorHost& host, const juce::String& name)
+{
+    if (name == "Stereo Placement" || name == "Stereo Link")
+        host.openStereoPopover();
 }
 
 float plainOf (juce::RangedAudioParameter& parameter) { return parameter.convertFrom0to1 (parameter.getValue()); }
@@ -211,6 +219,7 @@ TEST_CASE ("Every host parameter has exactly one control, titled with its name, 
         auto& parameter = dynamic_cast<juce::RangedAudioParameter&> (*each);
         const auto name = parameter.getName (100);
         CAPTURE (name);
+        showStereoControls (host, name);
         const auto controls = controlsTitled (host, name);
         REQUIRE (controls.size() == 1);
         auto& control = *controls.front();
@@ -256,8 +265,11 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     openDetection (host);
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
-    // And the output popover's.
+    // And the output popover's, then the stereo popover's.
     host.openOutputPopover();
+    for (const auto& [name, components] : accessibleNames (*host.editor))
+        names[name] = components;
+    host.openStereoPopover();
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
     const auto glossary = readGlossary();
@@ -344,6 +356,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Search Presets");
     expected.push_back ("Show User Presets Folder");
     expected.push_back ("Spectrum");
+    expected.push_back ("Stereo");
     expected.push_back ("Stereo Link");
     expected.push_back ("Stereo Placement");
     expected.push_back ("Style");
@@ -434,8 +447,8 @@ TEST_CASE ("Tab walks the header, the display's tabs and the Transfer Curve inse
     else
         for (const auto& title : detection)
             CHECK_FALSE (titles.contains (title));
-    order.addArray (juce::StringArray { "Stereo Placement", "Stereo Link", "Lookahead", "Global Bypass", "Style", "Processing Mode",
-                                        "Oversampling", "Output", "UI Scale", "Switch to the Compact View" });
+    order.addArray (juce::StringArray { "Lookahead", "Global Bypass", "Style", "Processing Mode", "Oversampling", "Stereo", "Output",
+                                        "UI Scale", "Switch to the Compact View" });
     int last = -1;
     for (const auto& title : order)
     {
@@ -480,8 +493,14 @@ TEST_CASE ("The arrow keys step every knob within its range, a press or a held k
     host::EditorHost host;
     everythingAvailable (host);
     auto& history = host.processor.session().editHistory();
-    for (auto* knob : host.findAll<staple::Knob> ([] (staple::Knob& k) { return k.isShowing(); }))
+    auto knobs = host.findAll<staple::Knob> ([] (staple::Knob& k) { return k.isShowing(); });
+    // And the stereo popover's.
+    host.openStereoPopover();
+    knobs.push_back (&host.knob ("Stereo Link"));
+    everythingAvailable (host);
+    for (auto* knob : knobs)
     {
+        showStereoControls (host, knob->getTitle());
         CAPTURE (knob->getTitle());
         knob->grabKeyboardFocus();
         REQUIRE (knob->hasKeyboardFocus (false));
@@ -529,6 +548,7 @@ TEST_CASE ("Space and Return toggle a toggle, and up and down step a choice, one
     for (const juce::String choice : { "Gate Position", "Saturation Position", "Detection Source", "Detection Free Band Shape", "Stereo Placement", "Oversampling", "Processing Mode" })
     {
         CAPTURE (choice);
+        showStereoControls (host, choice);
         auto& id = choice == "Gate Position"             ? parameters::gatePositionId
                    : choice == "Detection Free Band Shape" ? parameters::detectionBandShapeId
                    : choice == "Stereo Placement"        ? parameters::stereoPlacementId
@@ -723,6 +743,7 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
                                                juce::String (juce::CharPointer_UTF8 ("Save as" "\xe2\x80\xa6")),
                                                "Search Presets",
                                                "Show User Presets Folder",
+                                               "Stereo",
                                                "Style",
                                                "Switch to the Expanded View",
                                                "UI Scale",
@@ -765,7 +786,7 @@ TEST_CASE ("Tab walks the Compact View: the header, the Compact Slots and Comp, 
     CHECK_FALSE (titles.contains ("Gain Reduction"));
     // In order: the header's first, then these, the body's five (Clean's) one after another.
     const juce::StringArray order { "Presets", "Attack",        "Knee",  "Comp",            "Release",      "Auto Release",
-                                    "Global Bypass", "Style", "Processing Mode", "Oversampling", "Output", "UI Scale",
+                                    "Global Bypass", "Style", "Processing Mode", "Oversampling", "Stereo", "Output", "UI Scale",
                                     "Switch to the Expanded View" };
     int last = -1;
     for (const auto& title : order)
