@@ -105,11 +105,4 @@ HighQualityPopover::HighQualityPopover (PluginProcessor& processor) : section (p
 
 void HighQualityPopover::resized() { section.setBounds (getCardBounds().reduced (edge + padding)); }
 
-void HighQualityPopover::mouseDown (const juce::MouseEvent& event)
-{
-    if (const auto* pressed = event.eventComponent; pressed != nullptr && pressed->getTopLevelComponent() != getTopLevelComponent())
-        return;
-    FooterPopoverFrame::mouseDown (event);
-}
-
 } // namespace comp1
