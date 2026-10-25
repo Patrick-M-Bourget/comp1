@@ -1,5 +1,5 @@
 // The Expanded View's Gain Reduction meters (the Gate's, the compressor's and the Limiter's), the Detection Level ring on
-// Threshold and the Ceiling ring, which read the editor's level history; and which controls are available on mono, in
+// Threshold and the Ceiling ring, which read the editor's level history; and which controls are available in
 // Zero Latency, and at each sample rate's Oversampling cap.
 
 #include "Footer.h"
@@ -288,28 +288,6 @@ TEST_CASE ("With Detection Source External and no Sidechain, the Detection Level
     host.edit (parameters::detectionSourceId, 1.0f);
     host.playFor (0.3, sine (0.5));
     CHECK (host.ring().shownDb() == -60.0);
-}
-
-TEST_CASE ("On a mono track Stereo Placement and Stereo Link are disabled, their values kept; on stereo they are enabled")
-{
-    host::EditorHost host;
-    host.edit (parameters::stereoPlacementId, 1.0f);
-    host.edit (parameters::stereoLinkId, 40.0f);
-    const auto channels = GENERATE (juce::AudioChannelSet::mono(), juce::AudioChannelSet::stereo());
-    CAPTURE (channels.getDescription());
-    host.editor.reset();
-    harness::useLayout (host.processor, channels);
-    host.reopen();
-    const bool stereo = channels == juce::AudioChannelSet::stereo();
-    auto& placement = host.showing<juce::ComboBox> ("Stereo Placement");
-    auto& link = host.knob ("Stereo Link");
-    REQUIRE (host.settleUntil ([&] { return placement.isEnabled() == stereo && link.isEnabled() == stereo; }));
-    CHECK (placement.isVisible());
-    CHECK (link.isVisible());
-    CHECK (placement.getSelectedItemIndex() == 1);
-    CHECK_THAT (link.getValue(), WithinAbs (40.0, 1.0e-4));
-    CHECK (host.value (parameters::stereoPlacementId) == 1.0f);
-    CHECK_THAT (host.value (parameters::stereoLinkId), WithinAbs (40.0f, 1.0e-4));
 }
 
 TEST_CASE ("In Zero Latency Lookahead and Oversampling are disabled, their values kept; in High Quality they are enabled")

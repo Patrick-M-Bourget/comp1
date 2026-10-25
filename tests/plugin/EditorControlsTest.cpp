@@ -51,14 +51,16 @@ void openDetection (host::EditorHost& host)
     host.settleAnimations();
 }
 
-// Every control can be: the output popover open (so Output Gain, Auto Gain, the Limiter and Ceiling show), the
-// Saturation popover open (so Saturation, Saturation Position and Drive show), the Detection section open (so its controls show), Comp Follow off (so Threshold and Ratio are set directly), High
+// Every control can be: the output popover, the Saturation popover and the stereo popover open (so Output Gain, Auto
+// Gain, the Limiter and Ceiling; Saturation, Saturation Position and Drive; and Stereo Placement and Stereo Link show),
+// the Detection section open (so its controls show), Comp Follow off (so Threshold and Ratio are set directly), High
 // Quality (so Lookahead and Oversampling are), on a stereo track (so Stereo Placement and Stereo Link are).
 void everythingAvailable (host::EditorHost& host)
 {
     openDetection (host);
     host.openOutputPopover();
     host.openSaturationPopover();
+    host.openStereoPopover();
     host.edit (parameters::processingModeId, 1.0f);
     host.edit (parameters::compFollowId, 0.0f);
     REQUIRE (host.settleUntil ([&] { return host.showing<plugkit::ui::OutputToggle> ("Auto Gain").isEnabled() && host.knob ("Lookahead").isEnabled(); }));
@@ -261,9 +263,10 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     openDetection (host);
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
-    // And the output popover's and the Saturation popover's.
+    // And the output popover's, the Saturation popover's and the stereo popover's.
     host.openOutputPopover();
     host.openSaturationPopover();
+    host.openStereoPopover();
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
     const auto glossary = readGlossary();
@@ -350,6 +353,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Search Presets");
     expected.push_back ("Show User Presets Folder");
     expected.push_back ("Spectrum");
+    expected.push_back ("Stereo");
     expected.push_back ("Stereo Link");
     expected.push_back ("Stereo Placement");
     expected.push_back ("Style");
@@ -440,8 +444,8 @@ TEST_CASE ("Tab walks the header, the display's tabs and the Transfer Curve inse
     else
         for (const auto& title : detection)
             CHECK_FALSE (titles.contains (title));
-    order.addArray (juce::StringArray { "Stereo Placement", "Stereo Link", "Lookahead", "Global Bypass", "Style", "Processing Mode",
-                                        "Oversampling", "Saturation", "Output", "UI Scale", "Switch to the Compact View" });
+    order.addArray (juce::StringArray { "Lookahead", "Global Bypass", "Style", "Processing Mode", "Oversampling", "Stereo", "Saturation",
+                                        "Output", "UI Scale", "Switch to the Compact View" });
     int last = -1;
     for (const auto& title : order)
     {
@@ -733,6 +737,7 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
                                                juce::String (juce::CharPointer_UTF8 ("Save as" "\xe2\x80\xa6")),
                                                "Search Presets",
                                                "Show User Presets Folder",
+                                               "Stereo",
                                                "Style",
                                                "Switch to the Expanded View",
                                                "UI Scale",
@@ -775,7 +780,7 @@ TEST_CASE ("Tab walks the Compact View: the header, the Compact Slots and Comp, 
     CHECK_FALSE (titles.contains ("Gain Reduction"));
     // In order: the header's first, then these, the body's five (Clean's) one after another.
     const juce::StringArray order { "Presets", "Attack",        "Knee",  "Comp",            "Release",      "Auto Release",
-                                    "Global Bypass", "Style", "Processing Mode", "Oversampling", "Saturation", "Output", "UI Scale",
+                                    "Global Bypass", "Style", "Processing Mode", "Oversampling", "Stereo", "Saturation", "Output", "UI Scale",
                                     "Switch to the Expanded View" };
     int last = -1;
     for (const auto& title : order)

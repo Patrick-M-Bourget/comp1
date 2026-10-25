@@ -62,7 +62,7 @@ TEST_CASE ("At its default size the Expanded View is the header, the display wit
     REQUIRE (host.editor->getHeight() == 860);
 
     // 14 px padding and 12 px gaps; four 40 px meter rails and the two rows of sections, 164 and 90 px tall (the
-    // first's Threshold ring reaching past its knob, the second's the Stereo section's with the Detection section
+    // first's Threshold ring reaching past its knob, the second's the Lookahead section's with the Detection section
     // collapsed to its strip).
     const auto areas = areasOf (*host.editor);
     CHECK (areas.header == juce::Rectangle<int> (14, 14, 1372, 52));
@@ -155,7 +155,7 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
     const auto& window = comp1::PluginProcessor::expandedWindow;
     host.editor->setSize (window.minimum.x, window.minimum.y);
     auto& sections = named (*host.editor, "Sections");
-    const auto names = { "Gate", "Compressor", "Character", "Detection", "Stereo", "Lookahead" };
+    const auto names = { "Gate", "Compressor", "Character", "Detection", "Lookahead" };
     REQUIRE (static_cast<size_t> (sections.getNumChildComponents()) == names.size());
     std::vector<juce::Rectangle<int>> placed;
     for (const auto* name : names)
@@ -188,7 +188,7 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
     }
 }
 
-TEST_CASE ("Both rows of sections start at the left edge on one grid of columns: Detection under Gate and Compressor, Stereo and Lookahead under Character, with no gap between, the Detection section collapsed or open, at 100% and 200% and the minimum and default sizes")
+TEST_CASE ("Both rows of sections start at the left edge on one grid of columns: Detection under Gate and Compressor, Lookahead under Character, with no gap between, the Detection section collapsed or open, at 100% and 200% and the minimum and default sizes")
 {
     host::EditorHost host;
     auto* menu = harness::findChild<plugkit::ui::UiScaleMenu> (*host.editor);
@@ -209,30 +209,27 @@ TEST_CASE ("Both rows of sections start at the left edge on one grid of columns:
     auto& sections = named (*host.editor, "Sections");
     const auto at = [&sections] (const char* name) { return named (sections, name).getBounds(); };
     const auto gate = at ("Gate"), compressor = at ("Compressor"), character = at ("Character");
-    const auto detection = at ("Detection"), stereo = at ("Stereo"), lookahead = at ("Lookahead");
+    const auto detection = at ("Detection"), lookahead = at ("Lookahead");
     const int gap = compressor.getX() - gate.getRight();
 
     // The first row's columns, from the left edge, a gap apart.
     CHECK (gap > 0);
     CHECK (gate.getX() == 0);
     CHECK (character.getX() - compressor.getRight() == gap);
-    // The second row under them: Detection spans the first two columns, and Stereo then Lookahead the third, a gap
-    // apart, their outer edges on the column's.
+    // The second row under them: Detection spans the first two columns, and Lookahead the third.
     CHECK (detection.getX() == gate.getX());
     CHECK (detection.getRight() == compressor.getRight());
-    CHECK (stereo.getX() == character.getX());
-    CHECK (lookahead.getX() - stereo.getRight() == gap);
+    CHECK (lookahead.getX() == character.getX());
     CHECK (lookahead.getRight() == character.getRight());
     // Each at least as wide as its own content.
-    for (const auto* name : { "Gate", "Compressor", "Character", "Detection", "Stereo", "Lookahead" })
+    for (const auto* name : { "Gate", "Compressor", "Character", "Detection", "Lookahead" })
     {
         CAPTURE (name);
         auto& section = dynamic_cast<comp1::Section&> (named (sections, name));
         CHECK (section.getWidth() >= section.idealWidth());
         CHECK (sections.getLocalBounds().contains (section.getBounds()));
     }
-    CHECK_FALSE (stereo.intersects (lookahead));
-    CHECK_FALSE (detection.intersects (stereo));
+    CHECK_FALSE (detection.intersects (lookahead));
 }
 
 TEST_CASE ("Each meter is labelled under its bar, GATE, COMP, LIM and OUT, the labels overlapping nothing and the bars giving up only the label's line, at 100% and 200% and the minimum and default sizes")

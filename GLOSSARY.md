@@ -168,11 +168,11 @@ The level of the detection signal, before any feedback, in dB where a full-scale
 _Avoid_: Input level, sidechain level
 
 **Stereo Link**:
-How much the two channels share one gain reduction, from 0% (independent) to 100% (fully shared).
+How much the two channels share one gain reduction, from 0% (independent) to 100% (fully shared). Set in the stereo popover (Stereo readout).
 _Avoid_: Link (unqualified), channel link
 
 **Stereo Placement**:
-Which part of the stereo signal is compressed: Stereo, Mid or Side.
+Which part of the stereo signal is compressed: Stereo, Mid or Side. Set in the stereo popover (Stereo readout).
 _Avoid_: Channel mode, M/S mode
 
 ## Whole-plugin
@@ -236,6 +236,10 @@ _Avoid_: Output display, gain readout
 **Saturation readout**:
 The footer's reading of Drive, "SAT +6 dB", dimmed while Saturation is off, in both views, left of the Output readout; a click opens the Saturation popover, which holds Saturation's on switch, Saturation Position and Drive. The Expanded View's body has no Saturation controls: its Character section holds Colour alone.
 _Avoid_: Drive readout, SAT chip
+
+**Stereo readout**:
+The footer's reading of Stereo Placement then Stereo Link ("Stereo 100%", "Mid 80%"), in both views, dimmed on a mono track, where neither changes anything; short of room it shows only "ST". A click opens the stereo popover, which holds Stereo Placement and Stereo Link.
+_Avoid_: Stereo display, link readout
 
 **Global Bypass**:
 comp1's own click-free switch that passes the input through unprocessed, separate from the host's bypass.
