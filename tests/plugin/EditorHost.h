@@ -7,6 +7,7 @@
 #include "OutputPopover.h"
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "SaturationPopover.h"
 #include "SessionHost.h"
 #include "plugkit/test/EditorHarness.h"
 #include "plugkit/ui/staple/controls/Knob.h"
@@ -79,13 +80,20 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
 
     // Opens the output popover by a click on the Output readout, as the user opens it, unless it is open, and waits for
     // it to pop in.
-    comp1::OutputPopover& openOutputPopover() { return openFrom (outputReadout(), outputPopover()); }
-    // Opens the High Quality popover by a click on the High Quality readout, as openOutputPopover does the output's.
-    comp1::HighQualityPopover& openHighQualityPopover() { return openFrom (highQualityReadout(), highQualityPopover()); }
+    comp1::OutputPopover& openOutputPopover() { return openFooterPopover (outputReadout(), outputPopover()); }
+    // Opens the High Quality popover as openOutputPopover opens the output popover.
+    comp1::HighQualityPopover& openHighQualityPopover() { return openFooterPopover (highQualityReadout(), highQualityPopover()); }
 
-    // Opens popover by a click on readout, unless it is open, and waits for it to pop in.
+    // The footer's Saturation readout, and the Saturation popover it opens.
+    plugkit::ui::FooterReadout& saturationReadout() { return footer().saturation().readout(); }
+    comp1::SaturationPopover& saturationPopover() { return footer().saturation().popover(); }
+    // Opens the Saturation popover as openOutputPopover opens the output popover.
+    comp1::SaturationPopover& openSaturationPopover() { return openFooterPopover (saturationReadout(), saturationPopover()); }
+
+    // Opens popover by a click on readout, the footer readout that opens it, as the user opens it, unless it is open,
+    // and waits for it to pop in.
     template <typename Popover>
-    Popover& openFrom (juce::Button& readout, Popover& popover)
+    Popover& openFooterPopover (plugkit::ui::FooterReadout& readout, Popover& popover)
     {
         if (! popover.isOpen())
         {

@@ -55,7 +55,7 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
              styleChip (p, parameters::parameterOf (p.parameterState(), parameters::styleId).getAllValueStrings())),
       processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
       highQuality (p),
-      popover (p, history), highQualityPopup (p), uiScale (p.session())
+      saturationItem (p), popover (p, history), highQualityPopup (p), uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
     // Its "on" is bypassed, so on it shows Off.
@@ -65,7 +65,7 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
     globalBypass.setTooltip ("Global Bypass (Cmd/Ctrl+B)");
     // Left to right.
     int order = 0;
-    for (juce::Component* child : std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &highQuality, &output, &uiScale })
+    for (juce::Component* child : std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &highQuality, &saturationItem, &output, &uiScale })
     {
         addAndMakeVisible (*child);
         child->setExplicitFocusOrder (++order);
@@ -184,6 +184,8 @@ void Footer::resized()
     // The gap left of the UI Scale menu holds the Auto Gain dot, so the readout doesn't move as it shows.
     dot.setBounds (row.removeFromRight (chipGap));
     output.setBounds (row.removeFromRight (std::max (outputWidth, output.getIdealWidth())));
+    row.removeFromRight (chipGap);
+    saturationItem.setBounds (row.removeFromRight (saturationItem.idealWidth()));
     for (auto* chip : { &style, &processingMode })
     {
         row.removeFromLeft (chipGap);

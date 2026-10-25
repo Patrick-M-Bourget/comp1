@@ -107,8 +107,8 @@ std::array<std::pair<juce::Component*, MeterLabel*>, 4> PluginEditor::labelledMe
 
 std::vector<PluginEditor::GridRow> PluginEditor::sectionGrid()
 {
-    // Gate, Compressor, and Character and Saturation, a column each; under them Detection, spanning the first two, and
-    // Stereo, in the third.
+    // Gate, Compressor, and Character, a column each; under them Detection, spanning the first two, and Stereo, in the
+    // third.
     return { { { 0, 0, { &gate } }, { 1, 1, { &compressor } }, { 2, 2, { &character } } },
              { { 0, 1, { &detection } }, { 2, 2, { &stereo } } } };
 }

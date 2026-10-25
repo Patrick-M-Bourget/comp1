@@ -211,7 +211,7 @@ TEST_CASE ("Collapsed, the Detection section's summary names the Detection Sourc
     REQUIRE (host.settleUntil ([&] { return summary() == after; }));
 }
 
-TEST_CASE ("Tab reaches the disclosure after the Character and Saturation section's Drive, then the Detection section's controls only while it is open, then the Stereo section")
+TEST_CASE ("Tab reaches the disclosure after the Character section's Colour, then the Detection section's controls only while it is open, then the Stereo section")
 {
     host::EditorHost host;
     const bool open = GENERATE (false, true);
@@ -231,7 +231,7 @@ TEST_CASE ("Tab reaches the disclosure after the Character and Saturation sectio
     REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey, juce::ModifierKeys::shiftModifier, 0)));
     auto* before = juce::Component::getCurrentlyFocusedComponent();
     REQUIRE (before != nullptr);
-    CHECK (before->getTitle() == "Drive");
+    CHECK (before->getTitle() == "Colour");
 }
 
 TEST_CASE ("Open, the Detection section shows its controls and Detection Audition after them: Tab reaches Detection Audition after Detection Free Band Q, then the Stereo section")
