@@ -45,11 +45,18 @@ enum class InsetHandle
 //   travel (staple::tokens::knob::dragPixels for the whole of Ratio's range): up lowers it, straightening the curve's
 //   end up, down raises it. Shift drags finely, by the knobs' proportion (fineDragPixels). A double-click is two
 //   presses: it resets nothing.
-// - **Keys:** while focused, left and right step Threshold, up and down Ratio, each 1% of its parameter's travel
-//   (0.2% with Shift), as the knobs' arrows do: right raises Threshold and up raises Ratio.
+// - **Knee:** Alt on the Threshold handle sets Knee in place of Threshold, vertically by the knobs' travel: up widens
+//   it, and Threshold stays put. Shift still drags finely on top. Alt pressed or let go mid-drag carries on from where
+//   the settings are, as Shift does. While Alt is held over the handle or the drag is setting Knee, the inset shades
+//   the knee region (kneeShading) and the readout card shows "Knee 6.00 dB", over the inset so nothing moves, and the
+//   handle's cursor turns up-down. Shift is the knobs' fine drag, so Knee takes Alt, which does nothing else here.
+// - **Keys:** while focused, left and right step Threshold, up and down Ratio, and Alt with up and down Knee, each 1% of
+//   its parameter's travel (0.2% with Shift), as the knobs' arrows do: right raises Threshold, up raises Ratio and up
+//   widens Knee.
 // - **Comp Follow:** Threshold and Ratio are written through a CompFollowAttachment each, as the knobs are, so a grab
 //   while Comp Follow is on turns it off first (stopFollowingComp) in the same undo step, and the edit carries on from
-//   the followed values. A drag, or a key press with its repeats, is one undo step, inside gestures the host sees.
+//   the followed values. Knee isn't followed: setting it, as its knob does, leaves Comp Follow as it is. A drag, or a
+//   key press with its repeats, is one undo step, inside gestures the host sees.
 //
 // A screen reader finds it as a slider titled "Transfer Curve inset", never a parameter's name, read with the settings
 // the curve draws (TransferCurveGraph::settingsText); it is a Tab stop after the display's tabs. Its graph and handles
@@ -76,12 +83,18 @@ public:
     // How a handle draws now: its radius, hovered, selected while dragged, and its alpha, dimmed under Global Bypass.
     handles::Look lookOf (InsetHandle which) const;
 
-    // The readout card shown while a handle is dragged: its title and value.
+    // The readout card shown while a handle is dragged, or Knee's while Alt is held over the Threshold handle: its
+    // title and value, and the handle it is shown at.
     struct Readout
     {
         juce::String title, value;
+        InsetHandle at = InsetHandle::threshold;
     };
     std::optional<Readout> readout() const;
+    // The knee region shaded while Alt is held over the Threshold handle or the drag sets Knee: the inputs from
+    // Threshold less half the Knee to Threshold plus half of it, kept on the graph, over its whole height, from the
+    // inset's top left; none otherwise.
+    std::optional<juce::Rectangle<float>> kneeShading() const;
 
     void paint (juce::Graphics& g) override;
     void paintOverChildren (juce::Graphics& g) override;
@@ -97,15 +110,19 @@ private:
     {
         InsetHandle handle = InsetHandle::threshold;
         bool fine = false;
-        double from = 0.0;         // the dragged setting at the anchor: Threshold in dB, or Ratio in its parameter's travel
+        bool knee = false; // the Threshold handle with Alt: setting Knee
+        double from = 0.0; // the dragged setting at the anchor: Threshold in dB, or Ratio or Knee in its parameter's travel
         juce::Point<float> offset; // the drag's offset from its start at the anchor
     };
 
     void tick (double seconds) override;
     bool isActive() const override { return bypassFade.isMoving(); }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
-    // Opens the edit: a grab of both, one undo step until endEdit().
+    // Opens the edit: a grab of Threshold and Ratio, one undo step until endEdit(). Overlapping gestures are one step,
+    // so the edit may open Knee's too, before or after.
     void beginEdit();
+    // Opens Knee's edit alone, leaving Comp Follow as it is.
+    void beginKneeEdit();
     void endEdit();
     void endHeldKey();
     void grab (InsetHandle which, const juce::MouseEvent& e);
@@ -115,17 +132,25 @@ private:
     void setThreshold (double db);
     void setRatioTravel (double travel);
     double ratioTravel() const;
+    void setKneeTravel (double travel);
+    double kneeTravel() const;
+    // Whether the Knee cue shows: Alt held over the Threshold handle, or the drag setting Knee.
+    bool showsKnee() const;
+    // The Knee cue shown or hidden as showsKnee() says: the shading, the card and the Threshold handle's cursor.
+    void kneeCueChanged();
     // The handles moved to where the played Transfer Curve puts them.
     void layOutHandles();
 
     PluginProcessor& processor;
-    juce::RangedAudioParameter &threshold, &ratio;
+    juce::RangedAudioParameter &threshold, &ratio, &knee;
     TransferCurveGraph curve;
     std::array<std::unique_ptr<Handle>, 2> handleComponents;
     // What the attachments write from: a slider each, never shown.
-    juce::Slider thresholdValue, ratioValue;
+    juce::Slider thresholdValue, ratioValue, kneeValue;
     std::optional<CompFollowAttachment> thresholdAttachment, ratioAttachment;
-    std::optional<juce::Slider::ScopedDragNotification> thresholdEdit, ratioEdit;
+    // Knee's, as its knob's: Comp Follow doesn't set it.
+    std::unique_ptr<juce::SliderParameterAttachment> kneeAttachment;
+    std::optional<juce::Slider::ScopedDragNotification> thresholdEdit, ratioEdit, kneeEdit;
     std::optional<Drag> drag;
     bool heldKey = false;
     juce::String announced;
