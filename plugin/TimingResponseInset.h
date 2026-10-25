@@ -37,7 +37,8 @@ enum class TimingHandle
 // - **The response:** worked out on TimingResponseWorker's thread, never the message thread. Each tick it asks for
 //   the response at the settings the host parameters hold (only those that shape it) and the sample rate the Engine
 //   plays at, when they changed, and draws the newest finished one: so the curve follows a drag a response or two
-//   behind, while the handles follow the pointer at once. Until the first response finishes it draws no curve.
+//   behind, while the handles follow the pointer at once. Until the first response finishes it draws no curve. Hidden,
+//   it asks for nothing, and catches up when it shows again.
 // - **Handles:** the Attack handle sits on the rise at Attack, the Release handle on the recovery at Hold plus Release
 //   (Release starts once Hold is over), each on the curve drawn, laid out again on the tick and at once after an edit,
 //   so they follow Attack, Release and Hold from any route. Drawn as the Transfer Curve inset's are (DragHandle, at its
