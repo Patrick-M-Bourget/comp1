@@ -55,7 +55,8 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
              styleChip (p, parameters::parameterOf (p.parameterState(), parameters::styleId).getAllValueStrings())),
       processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
       highQuality (p),
-      stereoItem (p), saturationItem (p), popover (p, history), highQualityPopup (p), uiScale (p.session())
+      stereoItem (p), saturationItem (p), popover (p, history), highQualityPopup (p), opensOutput (output, popover, *this),
+      opensHighQuality (highQuality, highQualityPopup, *this), uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
     // Its "on" is bypassed, so on it shows Off.
@@ -86,46 +87,11 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
     }
     showSwitchFor (p.view());
 
-    output.onClick = [this] {
-        if (popover.isOpen())
-            popover.close();
-        else
-        {
-            popover.openFrom (output);
-            output.setOpen (popover.isOpen());
-        }
-    };
-    // Back in the footer once closed, hidden, so it stays on the editor's tick.
-    popover.onClose = [this] {
-        output.setOpen (false);
-        addChildComponent (popover);
-    };
-    addChildComponent (popover);
-    highQuality.onClick = [this] {
-        if (highQualityPopup.isOpen())
-            highQualityPopup.close();
-        else
-        {
-            highQualityPopup.openFrom (highQuality);
-            highQuality.setOpen (highQualityPopup.isOpen());
-        }
-    };
-    highQualityPopup.onClose = [this] {
-        highQuality.setOpen (false);
-        addChildComponent (highQualityPopup);
-    };
-    addChildComponent (highQualityPopup);
     addChildComponent (dot);
     showOutput();
 }
 
-Footer::~Footer()
-{
-    popover.onClose = nullptr;
-    popover.close();
-    highQualityPopup.onClose = nullptr;
-    highQualityPopup.close();
-}
+Footer::~Footer() = default;
 
 void Footer::showOutput()
 {

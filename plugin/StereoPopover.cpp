@@ -25,31 +25,10 @@ void StereoPopover::resized() { stereo.setBounds (getCardBounds().reduced (edge 
 
 StereoItem::StereoItem (PluginProcessor& p)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),
-      shown ("Stereo", "ST", "Stereo: Stereo Placement and Stereo Link. Click for the stereo controls"), stereoPopover (p)
+      shown ("Stereo", "ST", "Stereo: Stereo Placement and Stereo Link. Click for the stereo controls"), stereoPopover (p), opens (shown, stereoPopover, *this)
 {
     addAndMakeVisible (shown);
-    shown.onClick = [this] {
-        if (stereoPopover.isOpen())
-            stereoPopover.close();
-        else
-        {
-            stereoPopover.openFrom (shown);
-            shown.setOpen (stereoPopover.isOpen());
-        }
-    };
-    // Back in the item once closed, hidden, so it stays on the editor's tick.
-    stereoPopover.onClose = [this] {
-        shown.setOpen (false);
-        addChildComponent (stereoPopover);
-    };
-    addChildComponent (stereoPopover);
     show();
-}
-
-StereoItem::~StereoItem()
-{
-    stereoPopover.onClose = nullptr;
-    stereoPopover.close();
 }
 
 int StereoItem::idealWidth()

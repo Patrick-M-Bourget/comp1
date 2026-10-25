@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "ReadoutPopover.h"
 #include "Sections.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/FooterPopoverFrame.h"
@@ -39,7 +40,6 @@ class StereoItem final : public juce::Component, private plugkit::ui::EditorTick
 {
 public:
     explicit StereoItem (PluginProcessor& processor);
-    ~StereoItem() override;
 
     plugkit::ui::FooterReadout& readout() { return shown; }
     StereoPopover& popover() { return stereoPopover; }
@@ -59,6 +59,7 @@ private:
     PluginProcessor& processor;
     plugkit::ui::FooterReadout shown;
     StereoPopover stereoPopover;
+    ReadoutPopover opens;
 };
 
 // What the Stereo readout reads: Stereo Placement's name, then Stereo Link in whole percent, "Stereo 100%", "Mid 80%".

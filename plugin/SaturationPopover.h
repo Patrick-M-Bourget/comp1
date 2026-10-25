@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "ReadoutPopover.h"
 #include "Sections.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/FooterPopoverFrame.h"
@@ -39,7 +40,6 @@ class SaturationItem final : public juce::Component, private plugkit::ui::Editor
 {
 public:
     explicit SaturationItem (PluginProcessor& processor);
-    ~SaturationItem() override;
 
     plugkit::ui::FooterReadout& readout() { return shown; }
     SaturationPopover& popover() { return saturationPopover; }
@@ -57,6 +57,7 @@ private:
     PluginProcessor& processor;
     plugkit::ui::FooterReadout shown;
     SaturationPopover saturationPopover;
+    ReadoutPopover opens;
 };
 
 // What the Saturation readout reads: "SAT" and Drive in whole dB, signed, "SAT +6 dB", "SAT 0 dB".

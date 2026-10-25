@@ -54,6 +54,7 @@ target_sources(comp1 PRIVATE
     Parameters.cpp
     PluginEditor.cpp
     PluginProcessor.cpp
+    ReadoutPopover.cpp
     SaturationPopover.cpp
     Section.cpp
     Sections.cpp

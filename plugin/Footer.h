@@ -5,6 +5,7 @@
 #include "LevelHistory.h"
 #include "OutputPopover.h"
 #include "PluginProcessor.h"
+#include "ReadoutPopover.h"
 #include "SaturationPopover.h"
 #include "StereoPopover.h"
 #include "plugkit/ui/EditorTick.h"
@@ -104,6 +105,7 @@ private:
     AutoGainDot dot;
     OutputPopover popover;
     HighQualityPopover highQualityPopup;
+    ReadoutPopover opensOutput, opensHighQuality;
     plugkit::ui::UiScaleMenu uiScale;
     staple::IconButton toCompact { "Switch to the Compact View", staple::Icon::collapse },
         toExpanded { "Switch to the Expanded View", staple::Icon::expand };
