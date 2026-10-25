@@ -52,6 +52,7 @@ add_executable(comp1_engine_tests
     engine/StereoPlacementTest.cpp
     engine/StyleTest.cpp
     engine/SubnormalsTest.cpp
+    engine/TimingResponseTest.cpp
     engine/TransferCurveTest.cpp
     engine/VocalStyleTest.cpp
 )
@@ -131,6 +132,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/StereoPopoverTest.cpp
         plugin/StyleChipTest.cpp
         plugin/StyleParameterTest.cpp
+        plugin/TimingResponseInsetTest.cpp
         plugin/TransferCurveGraphTest.cpp
         plugin/TransferCurveInsetTest.cpp
         plugin/UiScaleTest.cpp

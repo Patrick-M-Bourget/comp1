@@ -113,3 +113,17 @@ With a gradient fill, CoreGraphics works the gradient's colour out afresh for ev
 The fills draw within an 8-bit step of the gradient fills: CoreGraphics dithers a gradient by where each pixel lies, so a tile's dither isn't the window's, and at a part-covered edge it rounds the colour at a different step. In the `[.screens]` renders (`scripts/check.sh screens`) the Level tab's snapshots differ from the gradient fills' in about 13% of their pixels, all but 0.2% of them by one or two steps; the rest are no more than two runs of the same tree differ by, in the meters and traces the playing signal moves from run to run.
 
 **Budget**, confirmed by the user 2026-10-24, not yet a gate: the Spectrum tab's tick and paint together cost at most 1.25 times the Level tab's, by the mean, in this benchmark: room for run-to-run noise and small additions, while a regression that makes the Spectrum tab the dearer one by a quarter fails it.
+
+### A drag on the Timing Response inset
+
+The same file's `[.drag-frame]` benchmark (hidden too, and not a `[paint]` test, so `paint` doesn't run it) times a frame of a drag on the Timing Response inset's handles, the Expanded View at its default size (1400 × 860), on the same host and signal. It runs 600 frames with no drag, then 300 dragging the Attack handle and 300 the Release handle, back and forth across the axis. Per frame it times the drag handler, the tick (in which the inset asks for and takes Timing Responses, worked out on a thread of its own), the inset's paint (what a drag dirties) and the whole editor's paint at 2x (an upper bound), and how many ticks in a row the curve drawn trails the settings held. `build/tests/comp1_plugin_tests "[.drag-frame]"` runs it.
+
+| Per frame, Apple M3 | still mean | still p95 | dragging mean | dragging p95 |
+| --- | --- | --- | --- | --- |
+| drag handler | 0 ms | 0 ms | 0.011 ms | 0.026 ms |
+| tick | 0.09 ms | 0.12 ms | 0.12 ms | 0.26 ms |
+| the inset's paint | 0.75 ms | 0.85 ms | 1.00 ms | 1.10 ms |
+| handler + tick + the inset's paint | 0.84 ms | 0.95 ms | 1.13 ms | 1.27 ms |
+| the whole editor's paint | 18.2 ms | 20.1 ms | 19.5 ms | 21.0 ms |
+
+Measured 2026-10-25, the inset at 260 × 160 in its two halves, at a 1-minute load average of 3.9. The worst dragging frame, handler, tick and the inset's paint, was 2.2 ms of a 60 Hz frame's 16.7 ms; the curve drawn trailed the handle by at most 3 ticks. The whole editor's paint, the existing Level tab's cost, is about the same still or dragging. `timingResponse()` itself, on its thread, costs at most about 15 ms at 48 kHz and 60 ms at 192 kHz (Opto, Release 5000 ms, measured at a load average of 30).

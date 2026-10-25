@@ -4,6 +4,7 @@
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
 #include "SpectrumDisplay.h"
+#include "TimingResponseInset.h"
 #include "TransferCurveInset.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/staple/controls/TextChip.h"
@@ -21,7 +22,8 @@ namespace comp1
 // Spectrum, the Spectrum display (SpectrumDisplay), fed from the Engine's input and output taps.
 // While the Level tab shows, the Transfer Curve inset (TransferCurveInset) sits over the Level graph's top-left corner,
 // insetGap in from it, over its oldest audio: a Tab stop after the tabs, whose Threshold and Ratio handles take the mouse.
-// It is the display's Transfer Curve view.
+// It is the display's Transfer Curve view. The Timing Response inset (TimingResponseInset) sits beside it, insetGap to
+// its right, at the same size: the next Tab stop, whose Attack and Release handles take the mouse.
 // Named "Display", and each content by its tab, as a test finds them.
 //
 // The chosen tab is the processor's (PluginProcessor::displayTab): a tab clicked, or pressed with Space or Return,
@@ -41,6 +43,7 @@ public:
     SpectrumDisplay& spectrumDisplay() { return spectrum; }
     // Over the Level tab's content, shown with it.
     TransferCurveInset& transferCurveInset() { return inset; }
+    TimingResponseInset& timingResponseInset() { return timing; }
 
     static constexpr int tabHeight = 28, tabGap = 4, contentGap = 6, insetGap = 8;
 
@@ -61,6 +64,7 @@ private:
     LevelGraph level;
     DisplayTab shown = DisplayTab::level;
     TransferCurveInset inset;
+    TimingResponseInset timing;
     SpectrumDisplay spectrum;
     // The tabs, left to right: a row for each of displayTabs, in its order, each at its tab's rowOf. A chip chooses
     // its own row's tab, so a row out of place shows the wrong content for its chip.

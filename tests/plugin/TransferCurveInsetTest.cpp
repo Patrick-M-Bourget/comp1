@@ -514,7 +514,8 @@ TEST_CASE ("The Transfer Curve inset is a slider titled Transfer Curve inset, re
     const int tabs = titles.indexOf ("Spectrum");
     REQUIRE (tabs >= 0);
     CHECK (titles[tabs + 1] == "Transfer Curve inset");
-    CHECK (titles[tabs + 2] == "Output Meter");
+    CHECK (titles[tabs + 2] == "Timing Response inset");
+    CHECK (titles[tabs + 3] == "Output Meter");
 }
 
 TEST_CASE ("The Transfer Curve inset and its handles follow Comp, a Style, A/B and a restored session on the tick, and with no audio and no edits ask for no repaint")

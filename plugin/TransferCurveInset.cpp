@@ -20,69 +20,6 @@ namespace knob = staple::tokens::knob;
 constexpr double keyStep = 0.01, fineKeyStep = 0.002;
 } // namespace
 
-// A handle: drawn at its centre, and taking a press within handleHitRadius of it, which it hands to the inset.
-class TransferCurveInset::Handle final : public juce::Component
-{
-public:
-    Handle (TransferCurveInset& o, InsetHandle w) : owner (o), which (w)
-    {
-        setName (w == InsetHandle::threshold ? "Threshold handle" : "Ratio handle");
-        setAccessible (false);
-        setWantsKeyboardFocus (false);
-        setMouseCursor (w == InsetHandle::threshold ? juce::MouseCursor::LeftRightResizeCursor : juce::MouseCursor::UpDownResizeCursor);
-    }
-
-    bool hovered = false;
-    bool altHeld = false;      // Alt, while hovered
-    juce::Point<float> centre; // in the inset
-
-    // Centred on at, in the inset.
-    void place (juce::Point<float> at)
-    {
-        if (at == centre && ! getBounds().isEmpty())
-            return;
-        centre = at;
-        const float half = handleHitRadius + 1.0f;
-        setBounds (juce::Rectangle<float> (2.0f * half, 2.0f * half).withCentre (at).getSmallestIntegerContainer());
-        repaint();
-    }
-
-    juce::Point<float> localCentre() const { return centre - getPosition().toFloat(); }
-
-    bool hitTest (int x, int y) override
-    {
-        return juce::Point<float> (static_cast<float> (x) + 0.5f, static_cast<float> (y) + 0.5f).getDistanceFrom (localCentre()) <= handleHitRadius;
-    }
-
-    void paint (juce::Graphics& g) override { handles::paint (g, localCentre(), owner.lookOf (which)); }
-
-    void mouseEnter (const juce::MouseEvent& e) override { setHovered (true, e.mods.isAltDown()); }
-    void mouseMove (const juce::MouseEvent& e) override { setHovered (true, e.mods.isAltDown()); }
-    void mouseExit (const juce::MouseEvent&) override { setHovered (false, false); }
-    void modifierKeysChanged (const juce::ModifierKeys& mods) override
-    {
-        if (hovered)
-            setHovered (true, mods.isAltDown());
-        // Passed on, so the inset's ancestors still hear it.
-        juce::Component::modifierKeysChanged (mods);
-    }
-    void mouseDown (const juce::MouseEvent& e) override { owner.grab (which, e); }
-    void mouseDrag (const juce::MouseEvent& e) override { owner.dragTo (e); }
-    void mouseUp (const juce::MouseEvent&) override { owner.letGo(); }
-
-private:
-    void setHovered (bool now, bool alt)
-    {
-        if (std::exchange (hovered, now) != now)
-            repaint();
-        if (std::exchange (altHeld, alt) != alt)
-            owner.kneeCueChanged();
-    }
-
-    TransferCurveInset& owner;
-    const InsetHandle which;
-};
-
 TransferCurveInset::TransferCurveInset (PluginProcessor& p, LevelHistory& history)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),
       threshold (parameters::parameterOf (p.parameterState(), parameters::thresholdId)),
@@ -102,7 +39,9 @@ TransferCurveInset::TransferCurveInset (PluginProcessor& p, LevelHistory& histor
     for (const auto which : { InsetHandle::ratio, InsetHandle::threshold })
     {
         auto& h = handleComponents[static_cast<std::size_t> (which)];
-        h = std::make_unique<Handle> (*this, which);
+        h = std::make_unique<DragHandle> (static_cast<DragHandle::Owner&> (*this), which == InsetHandle::threshold ? "Threshold handle" : "Ratio handle", handleHitRadius,
+                                          which == InsetHandle::threshold ? juce::MouseCursor::LeftRightResizeCursor
+                                                                          : juce::MouseCursor::UpDownResizeCursor);
         addAndMakeVisible (*h);
     }
 
@@ -124,6 +63,13 @@ juce::Point<float> TransferCurveInset::handleCentre (InsetHandle which) const
 {
     return handleComponents[static_cast<std::size_t> (which)]->centre;
 }
+
+InsetHandle TransferCurveInset::whichIs (const DragHandle& handle) const
+{
+    return &handle == handleComponents[static_cast<std::size_t> (InsetHandle::threshold)].get() ? InsetHandle::threshold : InsetHandle::ratio;
+}
+
+handles::Look TransferCurveInset::lookOf (const DragHandle& handle) const { return lookOf (whichIs (handle)); }
 
 handles::Look TransferCurveInset::lookOf (InsetHandle which) const
 {
@@ -297,9 +243,9 @@ void TransferCurveInset::anchorAt (const juce::MouseEvent& e)
     drag->offset = e.getOffsetFromDragStart().toFloat();
 }
 
-void TransferCurveInset::grab (InsetHandle which, const juce::MouseEvent& e)
+void TransferCurveInset::grab (DragHandle& handle, const juce::MouseEvent& e)
 {
-    drag = Drag { .setting = settingOf (which, e.mods), .fine = e.mods.isShiftDown() };
+    drag = Drag { .setting = settingOf (whichIs (handle), e.mods), .fine = e.mods.isShiftDown() };
     anchorAt (e);
     // The grab may have turned Comp Follow off, which leaves the curve where it was.
     layOutHandles();

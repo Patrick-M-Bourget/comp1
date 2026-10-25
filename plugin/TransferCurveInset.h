@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CompFollowAttachment.h"
+#include "DragHandle.h"
 #include "GlobalBypassFade.h"
 #include "HandlePainting.h"
 #include "LevelHistory.h"
@@ -61,7 +62,7 @@ enum class InsetHandle
 // A screen reader finds it as a slider titled "Transfer Curve inset", never a parameter's name, read with the settings
 // the curve draws (TransferCurveGraph::settingsText); it is a Tab stop after the display's tabs. Its graph and handles
 // are hidden from the screen reader and take no focus; the graph takes no mouse input.
-class TransferCurveInset final : public juce::Component, private plugkit::ui::EditorTick::Client
+class TransferCurveInset final : public juce::Component, private plugkit::ui::EditorTick::Client, private DragHandle::Owner
 {
 public:
     TransferCurveInset (PluginProcessor& processor, LevelHistory& history);
@@ -105,7 +106,6 @@ public:
     void focusLost (FocusChangeType) override;
 
 private:
-    class Handle;
 
     // What a drag sets: Threshold or Ratio by its handle, or Knee by the Threshold handle with Alt.
     enum class DragSetting
@@ -135,9 +135,12 @@ private:
     void beginKneeEdit();
     void endEdit();
     void endHeldKey();
-    void grab (InsetHandle which, const juce::MouseEvent& e);
-    void dragTo (const juce::MouseEvent& e);
-    void letGo();
+    InsetHandle whichIs (const DragHandle& handle) const;
+    handles::Look lookOf (const DragHandle& handle) const override;
+    void grab (DragHandle& handle, const juce::MouseEvent& e) override;
+    void dragTo (const juce::MouseEvent& e) override;
+    void letGo() override;
+    void altChanged (DragHandle&) override { kneeCueChanged(); }
     void anchorAt (const juce::MouseEvent& e);
     void setThreshold (double db);
     void setRatioTravel (double travel);
@@ -163,7 +166,7 @@ private:
     PluginProcessor& processor;
     juce::RangedAudioParameter &threshold, &ratio, &knee;
     TransferCurveGraph curve;
-    std::array<std::unique_ptr<Handle>, 2> handleComponents;
+    std::array<std::unique_ptr<DragHandle>, 2> handleComponents;
     // What the attachments write from: a slider each, never shown.
     juce::Slider thresholdValue, ratioValue, kneeValue;
     std::optional<CompFollowAttachment> thresholdAttachment, ratioAttachment;
