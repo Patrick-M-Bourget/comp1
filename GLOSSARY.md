@@ -225,6 +225,18 @@ _Avoid_: Envelope graph, timing graph, response curve (unqualified)
 The Timing Response inset's two drag handles: the Attack handle on the rise at Attack, the Release handle on the recovery at Hold plus Release, as Release begins once Hold is over. Only they take the mouse.
 _Avoid_: Attack grabber, Release grabber
 
+**Auto Release band**:
+With Auto Release on, the Timing Response inset's recovery, drawn as a band rather than one curve: from the recovery at Release, its fast edge, where the Release handle sits, to the recovery at 5 × Release, as long as Auto Release makes it after sustained compression. One curve would show a single sustain level and hide what Auto Release does.
+_Avoid_: Auto Release range, release spread
+
+**Opto attack band**:
+On Opto, the band behind the Timing Response inset's rise: from the rise at Attack × 0.5 to the rise at Attack × 2, the range Opto's overshoot scales Attack across. The rise drawn lies within it.
+_Avoid_: Attack range
+
+**Slow part**:
+The 40% of Opto's Gain Reduction that releases at a time of Opto's own, from 500 ms to 5000 ms as Opto's history grows, which Release doesn't move; the fast part, the rest, releases at Release. The Timing Response inset shades those times on its Release half, after Hold, labelled "slow, fixed", and the Release handle stays on the fast part.
+_Avoid_: Opto tail, slow release
+
 **Spectrum (display)**:
 The Expanded View's Spectrum tab: the spectrum of the input tap and of the output tap overlaid, the gap between them, where the output is under the input, shaded as Gain Reduction. comp1 is single-band, so the gap is the same at every frequency.
 _Avoid_: Analyzer (for the whole display), FFT view, spectrogram

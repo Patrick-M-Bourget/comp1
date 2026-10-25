@@ -39,6 +39,12 @@ enum class TimingHandle
 //   top, as on the Level and Gain Reduction Graph, scaled so the burst's most reaches the bottom of the plot, a
 //   dyn-range line with its area shaded up to the top. Each curve runs through the first of the response's times that
 //   reads each sample, so between samples it is a straight line in log time, never a step (curveAt).
+// - **Bands:** where the response holds a range rather than one curve, a band, filled over the shading between its
+//   edges (band). With Auto Release on, Release's half draws the Auto Release band, the recovery at Release to the
+//   recovery at 5 x Release, in place of the one recovery, its fastest edge the curve; one sustain level would hide
+//   what Auto Release does. On Opto, Attack's half draws the Opto attack band, Attack x 0.5 to Attack x 2 as the
+//   overshoot scales it, behind the rise, and Release's half shades the slow part's times, which Release doesn't
+//   move, labelled "slow, fixed" (slowPartMs).
 // - **The response:** worked out on TimingResponseWorker's thread, never the message thread. Each tick it asks for
 //   the response at the settings the host parameters hold (only those that shape it) and the sample rate the Engine
 //   plays at, when they changed, and draws the newest finished one: so the curve follows a drag a response or two
@@ -95,6 +101,16 @@ public:
     // straight between vertices in log time and held past its ends; empty, and 0 dB, before the first response.
     const std::vector<juce::Point<double>>& curve (TimingHandle half) const;
     double curveAt (TimingHandle half, double ms) const;
+    // A band a half draws, its fastest and slowest edges as vertices as curve() gives them: Opto's attack band on
+    // Attack's half, the Auto Release band on Release's, whose fastest edge is that half's curve. None where the
+    // response has none.
+    struct Band
+    {
+        std::vector<juce::Point<double>> fastest, slowest;
+    };
+    const std::optional<Band>& band (TimingHandle half) const { return half == TimingHandle::attack ? riseBand : recoveryBand; }
+    // The times Release's half shades and labels fixed on Opto, its slow part's, in ms; none on the other Characters.
+    std::optional<juce::Range<double>> slowPartMs() const;
 
     juce::Component& handle (TimingHandle which);
     juce::Point<float> handleCentre (TimingHandle which) const;
@@ -153,6 +169,8 @@ private:
     // took one.
     bool follow();
     void layOutHandles();
+    // The points a half draws a curve's vertices through, in the inset's pixels, from its axis's start to its end.
+    std::vector<juce::Point<float>> pointsThrough (TimingHandle half, const std::vector<juce::Point<double>>& vertices) const;
 
     PluginProcessor& processor;
     juce::RangedAudioParameter &attack, &release;
@@ -167,8 +185,9 @@ private:
     std::optional<TimingResponseWorker::Request> asked; // the last request the worker took
     std::optional<TimingResponseWorker::Result> shown;
     double scaleDb = 1.0; // the Gain Reduction drawn at the plot's bottom: the shown response's most, at least 1 dB
-    // The shown response's curves, as curve() gives them.
+    // The shown response's curves and bands, as curve() and band() give them.
     std::vector<juce::Point<double>> riseCurve, recoveryCurve;
+    std::optional<Band> riseBand, recoveryBand;
     juce::String announced;
     GlobalBypassFade bypassFade;
     plugkit::ui::display::CachedLabels labels;
