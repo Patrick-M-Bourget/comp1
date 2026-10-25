@@ -266,6 +266,8 @@ double PluginProcessor::followedRatio() const
     return compRatio (settings.compCurve, settings.comp);
 }
 
+Settings PluginProcessor::heldSettings() const { return reader.read(); }
+
 clean::Curve PluginProcessor::playedCurve() const
 {
     return clean::playedCurveOf (reader.read());
