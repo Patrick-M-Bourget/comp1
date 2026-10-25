@@ -46,6 +46,8 @@ public:
 
     // The readout's width for its widest reading, Drive's top, so it keeps its width as Drive changes.
     int idealWidth();
+    // The readout's width for its label alone, "SAT": the least the footer gives it.
+    int shrunkWidth() const { return shown.getShrunkWidth(); }
 
     void resized() override;
 

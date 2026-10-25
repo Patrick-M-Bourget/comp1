@@ -274,3 +274,79 @@ TEST_CASE ("Each meter is labelled under its bar, GATE, COMP, LIM and OUT, the l
     }
 }
 
+
+TEST_CASE ("At the Compact View's 780 px and at the Expanded View's minimum and default widths, in Zero Latency and in High Quality, the footer holds the Stereo and the Saturation readouts at full length, between the High Quality readout and the Output readout")
+{
+    host::EditorHost host;
+    const bool compact = GENERATE (false, true);
+    const bool highQuality = GENERATE (false, true);
+    CAPTURE (compact, highQuality);
+    if (compact)
+        host::EditorHost::click (host.expandedView().viewSwitch());
+    REQUIRE (host.expandedView().shownView() == (compact ? comp1::View::compact : comp1::View::expanded));
+    host.edit (comp1::parameters::processingModeId, highQuality ? 1.0f : 0.0f);
+    // At their widest readings, "Stereo 100%" and Drive's top.
+    host.edit (comp1::parameters::driveId, 24.0f);
+    const auto& window = comp1::PluginProcessor::windowOf (compact ? comp1::View::compact : comp1::View::expanded);
+    const int width = GENERATE_COPY (window.minimum.x, window.defaultSize.x);
+    CAPTURE (width);
+    host.editor->setSize (width, window.minimum.y);
+    auto& stereo = host.stereoReadout();
+    auto& saturation = host.saturationReadout();
+    REQUIRE (host.settleUntil ([&] { return stereo.getButtonText() == "Stereo 100%" && saturation.getButtonText() == "SAT +24 dB"; }));
+    // The minimum is 780 px for the Compact View, 1356 px for the Expanded View.
+    CHECK (window.minimum.x == (compact ? 780 : 1356));
+
+    CHECK_FALSE (stereo.isShrunk());
+    CHECK_FALSE (saturation.isShrunk());
+    const auto hq = host.inEditor (host.highQualityReadout()), st = host.inEditor (stereo), sat = host.inEditor (saturation),
+               out = host.inEditor (host.outputReadout());
+    CHECK (st.getX() >= hq.getRight() + comp1::Footer::chipGap);
+    CHECK (sat.getX() == st.getRight() + comp1::Footer::chipGap);
+    CHECK (sat.getRight() + comp1::Footer::chipGap == out.getX());
+}
+
+TEST_CASE ("Narrowed a pixel at a time, the footer shrinks the Stereo readout to ST, then the Saturation readout to SAT, each staying shrunk once shrunk, both showing between the High Quality readout and the Output readout, overlapping neither")
+{
+    host::EditorHost host;
+    auto& footer = host.footer();
+    auto& stereo = host.stereoReadout();
+    auto& saturation = host.saturationReadout();
+    auto& highQuality = host.highQualityReadout();
+    auto& output = host.outputReadout();
+    // Placed in the footer: the readouts fill their items.
+    const auto in = [&footer] (juce::Component& c) { return footer.getLocalArea (c.getParentComponent(), c.getBounds()); };
+    REQUIRE_FALSE (stereo.isShrunk());
+    REQUIRE_FALSE (saturation.isShrunk());
+    bool stereoShrank = false;
+    int stereoShrankAt = 0, saturationShrankAt = 0;
+    while (! saturation.isShrunk() && footer.getWidth() > 0)
+    {
+        footer.setSize (footer.getWidth() - 1, footer.getHeight());
+        CAPTURE (footer.getWidth());
+        // Saturation never shrinks while Stereo is at full length, and neither grows back as the row narrows.
+        if (saturation.isShrunk())
+        {
+            CHECK (stereoShrank);
+            saturationShrankAt = footer.getWidth();
+        }
+        CHECK ((! stereoShrank || stereo.isShrunk()));
+        if (stereo.isShrunk() && ! stereoShrank)
+            stereoShrankAt = footer.getWidth();
+        stereoShrank = stereo.isShrunk();
+        const auto st = in (stereo), sat = in (saturation);
+        CHECK (st.getX() >= in (highQuality).getRight() + comp1::Footer::chipGap);
+        CHECK (sat.getX() == st.getRight() + comp1::Footer::chipGap);
+        CHECK (sat.getRight() + comp1::Footer::chipGap == in (output).getX());
+    }
+    REQUIRE (saturation.isShrunk());
+    // Shrunk, each at its label's width, still showing, and read whole by a screen reader.
+    for (auto* readout : { &stereo, &saturation })
+    {
+        CHECK (readout->isShowing());
+        CHECK (readout->getWidth() == readout->getShrunkWidth());
+    }
+    CHECK (stereo.getButtonText() == "Stereo 100%");
+    CHECK (saturation.getButtonText() == comp1::saturationReadoutText (6.0));
+    CHECK (saturationShrankAt < stereoShrankAt);
+}

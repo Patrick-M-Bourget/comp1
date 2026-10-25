@@ -152,7 +152,6 @@ void Footer::resized()
     dot.setBounds (row.removeFromRight (chipGap));
     output.setBounds (row.removeFromRight (std::max (outputWidth, output.getIdealWidth())));
     row.removeFromRight (chipGap);
-    saturationItem.setBounds (row.removeFromRight (saturationItem.idealWidth()));
     for (auto* chip : { &style, &processingMode })
     {
         row.removeFromLeft (chipGap);
@@ -160,11 +159,15 @@ void Footer::resized()
     }
     row.removeFromLeft (chipGap);
     highQuality.setBounds (row.removeFromLeft (highQuality.widestIdealWidth()));
-    // The Stereo readout left of the Saturation readout, shrunk to its label where the chips leave too little room.
-    row.removeFromRight (chipGap);
     row.removeFromLeft (chipGap);
-    const int fullWidth = stereoItem.idealWidth();
-    stereoItem.setBounds (row.removeFromRight (row.getWidth() >= fullWidth ? fullWidth : stereoItem.shrunkWidth()));
+    // What the chips leave holds the Stereo readout then the Saturation readout, a gap apart: at full length where it
+    // can, else Stereo shrunk to its label, else both.
+    const int fullStereo = stereoItem.idealWidth(), fullSaturation = saturationItem.idealWidth();
+    const int stereoWidth = row.getWidth() >= fullStereo + chipGap + fullSaturation ? fullStereo : stereoItem.shrunkWidth();
+    const int saturationWidth = row.getWidth() >= stereoWidth + chipGap + fullSaturation ? fullSaturation : saturationItem.shrunkWidth();
+    saturationItem.setBounds (row.removeFromRight (saturationWidth));
+    row.removeFromRight (chipGap);
+    stereoItem.setBounds (row.removeFromRight (stereoWidth));
 }
 
 } // namespace comp1
