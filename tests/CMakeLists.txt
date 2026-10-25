@@ -52,6 +52,7 @@ add_executable(comp1_engine_tests
     engine/StereoPlacementTest.cpp
     engine/StyleTest.cpp
     engine/SubnormalsTest.cpp
+    engine/TimingResponseTest.cpp
     engine/TransferCurveTest.cpp
     engine/VocalStyleTest.cpp
 )
