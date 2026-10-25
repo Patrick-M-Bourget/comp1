@@ -56,15 +56,12 @@ private:
 // Quality section (HighQualitySection), its controls attached to their host parameters, so they follow Host Automation,
 // undo, A/B Compare and Presets, and each edit is one undo step. Opened from the keys, focus moves to Lookahead;
 // closed, focus inside it goes back to the readout.
-//
-// A press in another window, the Oversampling chip's menu, is not a click outside it: it stays open for the pick.
 class HighQualityPopover final : public plugkit::ui::FooterPopoverFrame
 {
 public:
     explicit HighQualityPopover (PluginProcessor& processor);
 
     void resized() override;
-    void mouseDown (const juce::MouseEvent& event) override;
 
     static constexpr int padding = 12;
 
