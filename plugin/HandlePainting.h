@@ -5,8 +5,8 @@
 namespace comp1
 {
 
-// How the editor's drag handles draw: the Transfer Curve inset's Threshold and Ratio handles, drawn at their own
-// radius.
+// How the editor's drag handles draw: the Transfer Curve inset's Threshold and Ratio handles and the Timing Response
+// inset's Attack and Release handles, drawn at their own radius.
 namespace handles
 {
 // The ring around a handle's disc, in px.

@@ -56,6 +56,8 @@ target_sources(comp1 PRIVATE
     Sections.cpp
     ShownAutoGain.cpp
     SpectrumDisplay.cpp
+    TimingResponseInset.cpp
+    TimingResponseWorker.cpp
     TransferCurveGraph.cpp
     TransferCurveInset.cpp)
 

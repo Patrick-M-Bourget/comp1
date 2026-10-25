@@ -129,6 +129,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/StereoParametersTest.cpp
         plugin/StyleChipTest.cpp
         plugin/StyleParameterTest.cpp
+        plugin/TimingResponseInsetTest.cpp
         plugin/TransferCurveGraphTest.cpp
         plugin/TransferCurveInsetTest.cpp
         plugin/UiScaleTest.cpp
