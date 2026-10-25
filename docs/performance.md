@@ -118,12 +118,12 @@ The fills draw within an 8-bit step of the gradient fills: CoreGraphics dithers 
 
 The same file's `[.drag-frame]` benchmark (hidden too, and not a `[paint]` test, so `paint` doesn't run it) times a frame of a drag on the Timing Response inset's handles, the Expanded View at its default size (1400 × 860), on the same host and signal. It runs 600 frames with no drag, then 300 dragging the Attack handle and 300 the Release handle, back and forth across the axis. Per frame it times the drag handler, the tick (in which the inset asks for and takes Timing Responses, worked out on a thread of its own), the inset's paint (what a drag dirties) and the whole editor's paint at 2x (an upper bound), how many ticks in a row the curve drawn trails the settings held, and how many ticks at most pass, while it trails, before it draws a newer response. It runs twice: on Clean, one curve a half, and on Opto with Auto Release, the dearest response to work out and the most to draw (the Opto attack band, the Auto Release band and the slow part). `build/tests/comp1_plugin_tests "[.drag-frame]"` runs it.
 
-| Per frame, Apple M3 | still mean | still p95 | dragging mean | dragging p95 |
+| Per dragging frame, Apple M3 | Clean mean | Clean p95 | Opto with Auto Release mean | Opto with Auto Release p95 |
 | --- | --- | --- | --- | --- |
-| drag handler | 0 ms | 0 ms | 0.011 ms | 0.026 ms |
-| tick | 0.09 ms | 0.12 ms | 0.12 ms | 0.26 ms |
-| the inset's paint | 0.75 ms | 0.85 ms | 1.00 ms | 1.10 ms |
-| handler + tick + the inset's paint | 0.84 ms | 0.95 ms | 1.13 ms | 1.27 ms |
-| the whole editor's paint | 18.2 ms | 20.1 ms | 19.5 ms | 21.0 ms |
+| drag handler | 0.008 ms | 0.016 ms | 0.008 ms | 0.017 ms |
+| tick | 0.12 ms | 0.26 ms | 0.09 ms | 0.20 ms |
+| the inset's paint | 0.97 ms | 1.05 ms | 1.32 ms | 1.39 ms |
+| handler + tick + the inset's paint | 1.10 ms | 1.25 ms | 1.41 ms | 1.55 ms |
+| the whole editor's paint | 18.6 ms | 19.4 ms | 18.6 ms | 19.2 ms |
 
-Measured 2026-10-25, the inset at 260 × 160 in its two halves, at a 1-minute load average of 3.9. The worst dragging frame, handler, tick and the inset's paint, was 2.2 ms of a 60 Hz frame's 16.7 ms; the curve drawn trailed the handle by at most 3 ticks. The whole editor's paint, the existing Level tab's cost, is about the same still or dragging. `timingResponse()` itself, on its thread, costs at most about 15 ms at 48 kHz and 60 ms at 192 kHz (Opto, Release 5000 ms, measured at a load average of 30).
+Measured 2026-10-25, the inset at 260 × 160 in its two halves, at a 1-minute load average of 2.3. The worst dragging frame, handler, tick and the inset's paint, was 1.4 ms on Clean and 3.2 ms on Opto with Auto Release, of a 60 Hz frame's 16.7 ms: the bands cost the inset's paint about a third more. On Clean the curve drawn trailed the handle by at most 5 ticks and drew a newer response at least every 2; on Opto with Auto Release, whose response takes longer than a tick to work out, it trailed for the whole of each drag, drawing a newer response at least every 3 ticks. The whole editor's paint, the existing Level tab's cost, is about the same still or dragging. `timingResponse()` itself, on its thread, costs at most about 17 ms at 48 kHz and 70 ms at 192 kHz with Auto Release off, and with it on, whose band adds two recoveries, 41 ms and 170 ms (Opto, Release 5000 ms, measured at a load average of 2.7).
