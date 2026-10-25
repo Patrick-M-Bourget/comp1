@@ -168,11 +168,11 @@ The level of the detection signal, before any feedback, in dB where a full-scale
 _Avoid_: Input level, sidechain level
 
 **Stereo Link**:
-How much the two channels share one gain reduction, from 0% (independent) to 100% (fully shared).
+How much the two channels share one gain reduction, from 0% (independent) to 100% (fully shared). Set in the stereo popover (Stereo readout).
 _Avoid_: Link (unqualified), channel link
 
 **Stereo Placement**:
-Which part of the stereo signal is compressed: Stereo, Mid or Side.
+Which part of the stereo signal is compressed: Stereo, Mid or Side. Set in the stereo popover (Stereo readout).
 _Avoid_: Channel mode, M/S mode
 
 ## Whole-plugin
@@ -232,6 +232,10 @@ _Avoid_: Master gain, Gain (unqualified)
 **Output readout**:
 The footer's reading of Output Gain plus Auto Gain's estimate while Auto Gain is in effect, in both views; a click opens the output popover, which holds Output Gain, Auto Gain, the Limiter and Ceiling.
 _Avoid_: Output display, gain readout
+
+**Stereo readout**:
+The footer's reading of Stereo Placement then Stereo Link ("Stereo 100%", "Mid 80%"), in both views, dimmed on a mono track, where neither changes anything; short of room it shows only "ST". A click opens the stereo popover, which holds Stereo Placement and Stereo Link.
+_Avoid_: Stereo display, link readout
 
 **Global Bypass**:
 comp1's own click-free switch that passes the input through unprocessed, separate from the host's bypass.
