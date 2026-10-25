@@ -122,6 +122,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/OversamplingParameterTest.cpp
         plugin/PluginShellTest.cpp
         plugin/SaturationParameterTest.cpp
+        plugin/SaturationPopoverTest.cpp
         plugin/SessionTest.cpp
         plugin/SpectrumDisplayTest.cpp
         plugin/StateTest.cpp

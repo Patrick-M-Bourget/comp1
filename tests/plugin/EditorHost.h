@@ -6,6 +6,7 @@
 #include "OutputPopover.h"
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "SaturationPopover.h"
 #include "SessionHost.h"
 #include "plugkit/test/EditorHarness.h"
 #include "plugkit/ui/staple/controls/Knob.h"
@@ -74,13 +75,23 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
 
     // Opens the output popover by a click on the Output readout, as the user opens it, unless it is open, and waits for
     // it to pop in.
-    comp1::OutputPopover& openOutputPopover()
+    comp1::OutputPopover& openOutputPopover() { return openFooterPopover (outputReadout(), outputPopover()); }
+
+    // The footer's Saturation readout, and the Saturation popover it opens.
+    plugkit::ui::FooterReadout& saturationReadout() { return footer().saturation().readout(); }
+    comp1::SaturationPopover& saturationPopover() { return footer().saturation().popover(); }
+    // Opens the Saturation popover as openOutputPopover opens the output popover.
+    comp1::SaturationPopover& openSaturationPopover() { return openFooterPopover (saturationReadout(), saturationPopover()); }
+
+    // Opens popover by a click on readout, the footer readout that opens it, as the user opens it, unless it is open,
+    // and waits for it to pop in.
+    template <typename Popover>
+    Popover& openFooterPopover (plugkit::ui::FooterReadout& readout, Popover& popover)
     {
-        auto& popover = outputPopover();
         if (! popover.isOpen())
         {
-            REQUIRE (outputReadout().onClick != nullptr);
-            outputReadout().onClick();
+            REQUIRE (readout.onClick != nullptr);
+            readout.onClick();
         }
         REQUIRE (popover.isOpen());
         REQUIRE (settleUntil ([&popover] { return ! popover.isTransformed(); }));
