@@ -33,8 +33,8 @@ private:
 
 // The footer's Saturation readout and the Saturation popover it opens: one footer item, in both views. The readout
 // (plugkit::ui::FooterReadout, titled "Saturation", shrinking to "SAT") reads "SAT" and Drive in whole dB, signed
-// (saturationReadoutText), drawn in text4, not applied, while Saturation is off; it follows the parameters on the
-// editor's tick. A click on it, or Space or Return, opens and closes the popover, fill2 behind the readout while it is
+// (saturationReadoutText), drawn in text4, not applied, while Saturation is off or Global Bypass on; it follows the
+// parameters on the editor's tick. A click on it, or Space or Return, opens and closes the popover, fill2 behind the readout while it is
 // open. The readout fills the item.
 class SaturationItem final : public juce::Component, private plugkit::ui::EditorTick::Client
 {

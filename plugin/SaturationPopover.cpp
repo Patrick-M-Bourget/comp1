@@ -48,8 +48,9 @@ void SaturationItem::show()
     const double driveDb = state.getRawParameterValue (parameters::driveId)->load (std::memory_order_relaxed);
     if (const auto text = saturationReadoutText (driveDb); text != shown.getButtonText())
         shown.setButtonText (text);
-    if (const bool off = ! parameters::isOn (*state.getRawParameterValue (parameters::saturationId)); off != shown.isNotApplied())
-        shown.setNotApplied (off);
+    const bool off = ! parameters::isOn (*state.getRawParameterValue (parameters::saturationId));
+    if (const bool notApplied = off || parameters::isOn (*state.getRawParameterValue (parameters::globalBypassId)); notApplied != shown.isNotApplied())
+        shown.setNotApplied (notApplied);
 }
 
 void SaturationItem::resized() { shown.setBounds (getLocalBounds()); }

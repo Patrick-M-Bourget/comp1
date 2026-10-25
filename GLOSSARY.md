@@ -246,11 +246,11 @@ The footer's reading of Output Gain plus Auto Gain's estimate while Auto Gain is
 _Avoid_: Output display, gain readout
 
 **Saturation readout**:
-The footer's reading of Drive, "SAT +6 dB", dimmed while Saturation is off, in both views, left of the Output readout; a click opens the Saturation popover, which holds Saturation's on switch, Saturation Position and Drive. The Expanded View's body has no Saturation controls: its Character section holds Colour alone.
+The footer's reading of Drive, "SAT +6 dB", dimmed while Saturation is off or Global Bypass on, in both views, left of the Output readout; short of room, once the Stereo readout has shrunk, it shows only "SAT". A click opens the Saturation popover, which holds Saturation's on switch, Saturation Position and Drive. The Expanded View's body has no Saturation controls: its Character section holds Colour alone.
 _Avoid_: Drive readout, SAT chip
 
 **Stereo readout**:
-The footer's reading of Stereo Placement then Stereo Link ("Stereo 100%", "Mid 80%"), in both views, dimmed on a mono track, where neither changes anything; short of room it shows only "ST". A click opens the stereo popover, which holds Stereo Placement and Stereo Link.
+The footer's reading of Stereo Placement then Stereo Link ("Stereo 100%", "Mid 80%"), in both views, dimmed under Global Bypass and on a mono track, where neither changes anything; short of room it shows only "ST". A click opens the stereo popover, which holds Stereo Placement and Stereo Link.
 _Avoid_: Stereo display, link readout
 
 **Global Bypass**:

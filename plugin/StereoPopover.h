@@ -33,8 +33,8 @@ private:
 
 // The footer's Stereo readout and the stereo popover it opens: one footer item, in both views. The readout
 // (plugkit::ui::FooterReadout, titled "Stereo", shrinking to "ST") reads Stereo Placement then Stereo Link in whole
-// percent (stereoReadoutText), drawn in text4, not applied, on a mono track, where neither changes anything, which its
-// description tells a screen reader; it follows the processor on the editor's tick. A click on it, or Space or Return,
+// percent (stereoReadoutText), drawn in text4, not applied, while Global Bypass is on, and on a mono track, where neither
+// changes anything, which its description tells a screen reader; it follows the processor on the editor's tick. A click on it, or Space or Return,
 // opens and closes the popover, fill2 behind the readout while it is open. The readout fills the item.
 class StereoItem final : public juce::Component, private plugkit::ui::EditorTick::Client
 {

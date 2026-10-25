@@ -48,11 +48,11 @@ void StereoItem::show()
     const double link = state.getRawParameterValue (parameters::stereoLinkId)->load (std::memory_order_relaxed);
     if (const auto text = stereoReadoutText (placement.getAllValueStrings()[choice], link); text != shown.getButtonText())
         shown.setButtonText (text);
-    if (const bool mono = ! (processor.isStereoPlacementAvailable() && processor.isStereoLinkAvailable()); mono != shown.isNotApplied())
-    {
-        shown.setNotApplied (mono);
-        shown.setDescription (mono ? "Mono track: Stereo Placement and Stereo Link change nothing" : juce::String());
-    }
+    const bool mono = ! (processor.isStereoPlacementAvailable() && processor.isStereoLinkAvailable());
+    if (const bool notApplied = mono || parameters::isOn (*state.getRawParameterValue (parameters::globalBypassId)); notApplied != shown.isNotApplied())
+        shown.setNotApplied (notApplied);
+    if (const auto said = mono ? juce::String ("Mono track: Stereo Placement and Stereo Link change nothing") : juce::String(); said != shown.getDescription())
+        shown.setDescription (said);
 }
 
 void StereoItem::resized() { shown.setBounds (getLocalBounds()); }
