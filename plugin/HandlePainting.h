@@ -29,6 +29,14 @@ void paint (juce::Graphics& g, juce::Point<float> centre, const Look& look);
 // above would leave the area's top, and kept across inside the area's width.
 void paintReadout (juce::Graphics& g, juce::Point<float> centre, float radius, float areaWidth, const juce::String& title,
                    const juce::String& value);
+// Where the readout card of a dragged handle at centre (of radius) goes beside it rather than above it: level with it,
+// kept inside area's height, readoutGap to its right, or to its left where the right would leave area; so the card
+// never covers the handle.
+juce::Rectangle<float> readoutBeside (juce::Point<float> centre, float radius, juce::Rectangle<float> area, const juce::String& title,
+                                      const juce::String& value);
+
+// The readout card, title and value, drawn at card.
+void paintReadoutAt (juce::Graphics& g, juce::Rectangle<float> card, const juce::String& title, const juce::String& value);
 } // namespace handles
 
 } // namespace comp1
