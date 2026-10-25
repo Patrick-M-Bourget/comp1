@@ -218,7 +218,7 @@ The small Transfer Curve Graph over the top-left corner of the Level and Gain Re
 _Avoid_: Mini curve, transfer widget
 
 **Timing Response inset**:
-The small graph beside the Transfer Curve inset, at its size, on the Level tab: the compressor's Gain Reduction over time for a test burst at Threshold + 20 dB (at most 0 dBFS), its rise as the burst starts and its recovery once it stops, on a log time axis from 5 µs to about 10 s, worked out from the Character's detector alone. Its Attack handle drags Attack across, and its Release handle Release; the arrow keys on it move Attack (left and right) and Release (up and down).
+The small graph beside the Transfer Curve inset, as tall as it, on the Level tab: the compressor's Gain Reduction over time for a test burst at Threshold + 20 dB (at most 0 dBFS), worked out from the Character's detector alone, in two halves side by side, each on a log time axis of its own: Attack's, the rise as the burst starts, from one sample's time to 1 s, and Release's, the recovery once it stops, from 1 ms to about 10 s. Its Attack handle drags Attack across, and its Release handle Release; the arrow keys on it move Attack (left and right) and Release (up and down).
 _Avoid_: Envelope graph, timing graph, response curve (unqualified)
 
 **Attack handle** / **Release handle**:

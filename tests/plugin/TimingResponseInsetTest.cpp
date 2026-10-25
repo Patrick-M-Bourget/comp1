@@ -12,6 +12,8 @@
 #include <cmath>
 #include <map>
 #include <thread>
+#include <utility>
+#include <vector>
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
@@ -73,23 +75,32 @@ std::map<juce::String, float> allValues (host::EditorHost& host)
     return values;
 }
 
-// How many pixels a decade of time spans on the inset's axis: the plot's width over the axis's decades.
-double pixelsPerDecade (comp1::TimingResponseInset& inset)
+// The times a half's axis spans, in ms, worked out apart from the inset: Attack's from one sample's time at the rate
+// the response was worked out at to the burst's end, Release's from 1 ms to the response's last time.
+std::pair<double, double> axisOf (comp1::TimingResponseInset& inset, TimingHandle half)
 {
-    const double decades = std::log10 (comp1::TimingResponse::timeMsAt (comp1::TimingResponse::points - 1) / comp1::TimingResponse::earliestMs);
-    return inset.plot().getWidth() / decades;
+    if (half == TimingHandle::attack)
+        return { 1000.0 / inset.drawn()->request.sampleRate, 1000.0 };
+    return { 1.0, comp1::TimingResponse::timeMsAt (comp1::TimingResponse::points - 1) };
+}
+
+// How many pixels a decade of time spans on a half's axis: its plot's width over the axis's decades.
+double pixelsPerDecade (comp1::TimingResponseInset& inset, TimingHandle half)
+{
+    const auto [from, to] = axisOf (inset, half);
+    return inset.plot (half).getWidth() / std::log10 (to / from);
 }
 
 } // namespace
 
-TEST_CASE ("The Timing Response inset shows beside the Transfer Curve inset, at its size and height, on the Level tab only, in the Expanded View only")
+TEST_CASE ("The Timing Response inset shows beside the Transfer Curve inset, 260 px wide and as tall, on the Level tab only, in the Expanded View only")
 {
     TimingHost host;
     auto& inset = host.inset();
     auto& curveInset = host.display().transferCurveInset();
     auto& graph = host.display().levelGraph();
     CHECK (inset.isShowing());
-    CHECK (inset.getWidth() == comp1::TransferCurveInset::side);
+    CHECK (inset.getWidth() == 260);
     CHECK (inset.getHeight() == comp1::TransferCurveInset::side);
     // insetGap to the right of the Transfer Curve inset, level with it, inside the graph.
     CHECK (inset.getX() == curveInset.getRight() + comp1::Display::insetGap);
@@ -154,19 +165,61 @@ TEST_CASE ("Dragging a Timing Response inset handle never works the response out
     CHECK (juce::exactlyEqual (inset.drawn()->request.settings.attackMs, static_cast<double> (host.value (parameters::attackId))));
 }
 
-TEST_CASE ("The Timing Response inset's time axis is logarithmic, 5 us at the plot's left edge to about 10 s at its right")
+TEST_CASE ("The Timing Response inset's two halves side by side, Attack's on the left from one sample's time to 1 s and Release's on the right from 1 ms to about 10 s, each on a log time axis")
 {
     TimingHost host;
     auto& inset = host.inset();
-    const auto plot = inset.plot();
-    CHECK (plot.getWidth() > 0.9f * (comp1::TimingResponseInset::side - 2 * comp1::TimingResponseInset::padding));
-    CHECK_THAT (inset.xAt (0.005), WithinAbs (plot.getX(), 1.0e-3));
-    CHECK_THAT (inset.xAt (comp1::TimingResponse::timeMsAt (comp1::TimingResponse::points - 1)), WithinAbs (plot.getRight(), 1.0e-3));
-    // Each decade the same width.
-    const double decade = pixelsPerDecade (inset);
-    for (const double ms : { 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0 })
-        CHECK_THAT (inset.xAt (10.0 * ms) - inset.xAt (ms), WithinAbs (decade, 1.0e-3));
-    CHECK_THAT (inset.timeAt (inset.xAt (42.0)), WithinRel (42.0, 1.0e-5));
+    REQUIRE (host.drawsWhatIsHeld());
+    const auto attack = inset.plot (TimingHandle::attack), release = inset.plot (TimingHandle::release);
+    // Side by side, level, Attack's narrower, together across nearly the whole inset.
+    CHECK (attack.getRight() < release.getX());
+    CHECK (attack.getY() == release.getY());
+    CHECK (attack.getHeight() == release.getHeight());
+    CHECK (attack.getWidth() < release.getWidth());
+    CHECK (attack.getWidth() + release.getWidth() > 0.85f * static_cast<float> (inset.getWidth()));
+    for (const auto half : { TimingHandle::attack, TimingHandle::release })
+    {
+        CAPTURE (half == TimingHandle::attack ? "Attack" : "Release");
+        const auto plot = inset.plot (half);
+        const auto [from, to] = axisOf (inset, half);
+        CHECK_THAT (inset.xAt (half, from), WithinAbs (plot.getX(), 1.0e-3));
+        CHECK_THAT (inset.xAt (half, to), WithinAbs (plot.getRight(), 1.0e-3));
+        // Each decade the same width.
+        const double decade = pixelsPerDecade (inset, half);
+        for (double ms = from; ms * 10.0 <= to; ms *= 10.0)
+            CHECK_THAT (inset.xAt (half, 10.0 * ms) - inset.xAt (half, ms), WithinAbs (decade, 1.0e-3));
+        CHECK_THAT (inset.timeAt (half, inset.xAt (half, 42.0)), WithinRel (42.0, 1.0e-5));
+    }
+}
+
+TEST_CASE ("The Timing Response inset draws its curves straight between samples, never a step of a sample held across the times between")
+{
+    TimingHost host;
+    auto& inset = host.inset();
+    // FET's fastest Attack, whose rise lasts a few samples at 48 kHz.
+    REQUIRE (host.processor.chooseStyle (comp1::Style::FET));
+    host.edit (parameters::attackId, 0.05f);
+    REQUIRE (host.drawsWhatIsHeld());
+    for (const auto half : { TimingHandle::attack, TimingHandle::release })
+    {
+        CAPTURE (half == TimingHandle::attack ? "Attack" : "Release");
+        const auto& vertices = inset.curve (half);
+        REQUIRE (vertices.size() > 10);
+        int moving = 0;
+        for (std::size_t i = 1; i + 1 < vertices.size(); ++i)
+        {
+            CAPTURE (i, vertices[i].x);
+            CHECK (vertices[i].x > vertices[i - 1].x);
+            // Each vertex a sample of its own: two in a row never read the same sample while the curve still moves.
+            const bool rising = half == TimingHandle::attack;
+            if (rising ? vertices[i].y < 0.999 * vertices.back().y : vertices[i].y > 1.0e-3)
+            {
+                CHECK_FALSE (juce::exactlyEqual (vertices[i].y, vertices[i - 1].y));
+                ++moving;
+            }
+        }
+        CHECK (moving > 2);
+    }
 }
 
 TEST_CASE ("The Timing Response inset's Attack handle sits on the rise at Attack and its Release handle on the recovery at Hold plus Release")
@@ -179,21 +232,59 @@ TEST_CASE ("The Timing Response inset's Attack handle sits on the rise at Attack
         const auto& response = inset.drawn()->response;
         const double attackMs = host.value (parameters::attackId), releaseFromMs = host.value (parameters::holdId) + host.value (parameters::releaseId);
         const auto attack = inset.handleCentre (TimingHandle::attack), release = inset.handleCentre (TimingHandle::release);
-        CHECK_THAT (attack.x, WithinAbs (inset.xAt (attackMs), 1.0e-3));
-        CHECK_THAT (attack.y, WithinAbs (inset.yAt (response.riseAt (attackMs)), 1.0e-3));
-        CHECK_THAT (release.x, WithinAbs (inset.xAt (releaseFromMs), 1.0e-3));
-        CHECK_THAT (release.y, WithinAbs (inset.yAt (response.recoveryAt (releaseFromMs)), 1.0e-3));
+        CHECK_THAT (attack.x, WithinAbs (inset.xAt (TimingHandle::attack, attackMs), 1.0e-3));
+        CHECK_THAT (attack.y, WithinAbs (inset.yAt (inset.curveAt (TimingHandle::attack, attackMs)), 1.0e-3));
+        CHECK_THAT (release.x, WithinAbs (inset.xAt (TimingHandle::release, releaseFromMs), 1.0e-3));
+        CHECK_THAT (release.y, WithinAbs (inset.yAt (inset.curveAt (TimingHandle::release, releaseFromMs)), 1.0e-3));
         // On Clean, one pole each: the rise is 1 - 1/e of the way at Attack, the recovery 1/e of the way back at
-        // Release once Hold is over, within a sample's step at the axis's coarsest.
+        // Release once Hold is over, within a sample's step at the axis's coarsest; and the curves drawn are the
+        // response's.
         const double most = response.rise.back();
         CHECK_THAT (response.riseAt (attackMs) / most, WithinAbs (1.0 - std::exp (-1.0), 0.02));
         CHECK_THAT (response.recoveryAt (releaseFromMs) / most, WithinAbs (std::exp (-1.0), 0.02));
+        CHECK_THAT (inset.curveAt (TimingHandle::attack, attackMs) / most, WithinAbs (1.0 - std::exp (-1.0), 0.02));
+        CHECK_THAT (inset.curveAt (TimingHandle::release, releaseFromMs) / most, WithinAbs (std::exp (-1.0), 0.02));
     };
     check();
     host.edit (parameters::attackId, 1.0f);
     host.edit (parameters::releaseId, 40.0f);
     host.edit (parameters::holdId, 20.0f);
     check();
+
+    // An Attack under one sample's time: the handle at the axis's start.
+    host.edit (parameters::attackId, 0.005f);
+    REQUIRE (host.drawsWhatIsHeld());
+    host.settle();
+    CHECK_THAT (inset.handleCentre (TimingHandle::attack).x, WithinAbs (inset.plot (TimingHandle::attack).getX(), 1.0e-3));
+}
+
+TEST_CASE ("A Timing Response inset handle's readout card sits beside it, inside the inset, never over it")
+{
+    TimingHost host;
+    auto& inset = host.inset();
+    REQUIRE (host.processor.chooseStyle (comp1::Style::FET));
+    const auto inside = inset.getLocalBounds().toFloat();
+    // Each handle at the start, the middle and the end of its range, so at the top, the middle and the bottom of its
+    // curve and at either side.
+    for (const auto which : { TimingHandle::attack, TimingHandle::release })
+        for (const float ms : which == TimingHandle::attack ? std::vector<float> { 0.005f, 0.5f, 5.0f, 250.0f } : std::vector<float> { 5.0f, 100.0f, 5000.0f })
+        {
+            CAPTURE (which == TimingHandle::attack ? "Attack" : "Release", ms);
+            host.edit (which == TimingHandle::attack ? parameters::attackId : parameters::releaseId, ms);
+            REQUIRE (host.drawsWhatIsHeld());
+            host.settle();
+            auto& handle = inset.handle (which);
+            const auto from = centreOf (inset, which);
+            const auto held = juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier);
+            handle.mouseDown (harness::mouseEvent (handle, from, held));
+            const auto card = inset.readoutBounds();
+            REQUIRE (card.has_value());
+            const auto disc = juce::Rectangle<float> (2.0f * comp1::TimingResponseInset::handleRadius, 2.0f * comp1::TimingResponseInset::handleRadius)
+                                  .withCentre (inset.handleCentre (which));
+            CHECK_FALSE (card->intersects (disc));
+            CHECK (inside.contains (*card));
+            handle.mouseUp (harness::mouseEvent (handle, from, {}, from));
+        }
 }
 
 TEST_CASE ("Dragging the Timing Response inset's Attack handle moves only Attack and the Release handle only Release, across at the time axis's scale, Shift a quarter as far, each drag one undo step inside gestures")
@@ -207,14 +298,14 @@ TEST_CASE ("Dragging the Timing Response inset's Attack handle moves only Attack
     host.settle();
     auto& history = host.processor.session().editHistory();
     const int start = history.undoSteps();
-    const double decade = pixelsPerDecade (inset);
+    const double attackDecade = pixelsPerDecade (inset, TimingHandle::attack), releaseDecade = pixelsPerDecade (inset, TimingHandle::release);
 
     host::GestureRecorder recorder;
     host.processor.addListener (&recorder);
     // The Attack handle right (and down, which changes nothing): Attack up by the decades the pixels span.
     auto before = allValues (host);
     dragHandle (inset, TimingHandle::attack, { 30.0f, 25.0f });
-    CHECK_THAT (host.value (parameters::attackId), WithinRel (1.0 * std::pow (10.0, 30.0 / decade), 1.0e-3));
+    CHECK_THAT (host.value (parameters::attackId), WithinRel (1.0 * std::pow (10.0, 30.0 / attackDecade), 1.0e-3));
     auto after = allValues (host);
     after.erase (parameters::attackId);
     before.erase (parameters::attackId);
@@ -224,7 +315,7 @@ TEST_CASE ("Dragging the Timing Response inset's Attack handle moves only Attack
     // The Release handle left, from Hold plus Release: Release is the time there less Hold.
     before = allValues (host);
     dragHandle (inset, TimingHandle::release, { -10.0f, 0.0f });
-    CHECK_THAT (host.value (parameters::releaseId), WithinRel (120.0 * std::pow (10.0, -10.0 / decade) - 20.0, 1.0e-3));
+    CHECK_THAT (host.value (parameters::releaseId), WithinRel (120.0 * std::pow (10.0, -10.0 / releaseDecade) - 20.0, 1.0e-3));
     after = allValues (host);
     after.erase (parameters::releaseId);
     before.erase (parameters::releaseId);
@@ -235,7 +326,7 @@ TEST_CASE ("Dragging the Timing Response inset's Attack handle moves only Attack
     host.settle();
     const double attackNow = host.value (parameters::attackId);
     dragHandle (inset, TimingHandle::attack, { -40.0f, 0.0f }, juce::ModifierKeys::shiftModifier);
-    CHECK_THAT (host.value (parameters::attackId), WithinRel (attackNow * std::pow (10.0, -10.0 / decade), 1.0e-3));
+    CHECK_THAT (host.value (parameters::attackId), WithinRel (attackNow * std::pow (10.0, -10.0 / attackDecade), 1.0e-3));
     CHECK (history.undoSteps() == start + 3);
     host.processor.removeListener (&recorder);
 

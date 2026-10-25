@@ -14,26 +14,31 @@
 #include <array>
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace comp1
 {
 
 // The Timing Response inset's two handles.
+// Each is also the half of the inset it sits in.
 enum class TimingHandle
 {
-    attack,  // on the rise, at Attack
-    release, // on the recovery, at Hold plus Release
+    attack,  // on the rise, at Attack, in the left half
+    release, // on the recovery, at Hold plus Release, in the right half
 };
 
 // The Timing Response inset: a small graph beside the Transfer Curve inset over the Level tab's top-left corner
 // (Display), of the compressor's Gain Reduction over time for a test burst (comp1/TimingResponse.h), and a control that
 // moves Attack and Release there.
 //
-// - **Drawing:** on the Transfer Curve inset's slab, at its size (TransferCurveInset::side square at 100% UI Scale): a
-//   log time axis from TimingResponse's earliest time, 5 µs, to about 10 s, left to right, with a line every decade
-//   and labels every other; the Gain Reduction hangs from the top, as on the Level and Gain Reduction Graph, scaled so
-//   the burst's most reaches the bottom of the plot. The rise, from the burst's start, is a dyn-range line over the
-//   burst's second, its area shaded up to the top; the recovery, from the burst's end, a dashed dyn-range line.
+// - **Drawing:** on the Transfer Curve inset's slab, width by its height (TransferCurveInset::side) at 100% UI Scale,
+//   in two halves side by side, each captioned and with a log time axis of its own, a line every decade and labels
+//   under it: Attack's on the left (attackShare of the width), the rise from the burst's start, from one sample's time
+//   at the sample rate the response was worked out at to the burst's end (TimingResponse::burstSeconds); Release's on
+//   the right, the recovery from the burst's end, from 1 ms to about 10 s. In both the Gain Reduction hangs from the
+//   top, as on the Level and Gain Reduction Graph, scaled so the burst's most reaches the bottom of the plot, a
+//   dyn-range line with its area shaded up to the top. Each curve runs through the first of the response's times that
+//   reads each sample, so between samples it is a straight line in log time, never a step (curveAt).
 // - **The response:** worked out on TimingResponseWorker's thread, never the message thread. Each tick it asks for
 //   the response at the settings the host parameters hold (only those that shape it) and the sample rate the Engine
 //   plays at, when they changed, and draws the newest finished one: so the curve follows a drag a response or two
@@ -41,13 +46,15 @@ enum class TimingHandle
 //   it asks for nothing, and catches up when it shows again.
 // - **Handles:** the Attack handle sits on the rise at Attack, the Release handle on the recovery at Hold plus Release
 //   (Release starts once Hold is over), each on the curve drawn, laid out again on the tick and at once after an edit,
-//   so they follow Attack, Release and Hold from any route. Drawn as the Transfer Curve inset's are (DragHandle, at its
+//   so they follow Attack, Release and Hold from any route; a time off its half's axis (an Attack under one sample's
+//   time) puts the handle at the axis's end. Drawn as the Transfer Curve inset's are (DragHandle, at its
 //   handleRadius), lit while hovered, with a left-right resize cursor, and the selected ring and a readout card
-//   ("Attack 10.000 ms", "Release 100.0 ms") while dragged. The Attack handle is drawn over the Release handle.
+//   ("Attack 10.000 ms", "Release 100.0 ms") while dragged, beside the handle, never over it
+//   (handles::readoutBeside).
 // - **Global Bypass:** the curves and the handles show the compressor's work, so they dim to a share of their alphas
 //   (GlobalBypassFade), gliding on the tick, and still follow and take edits; the slab, grid and labels stay.
 // - **Mouse:** only the handles take a press, within TransferCurveInset::handleHitRadius of their centres: a press
-//   anywhere else passes through. Each drags its setting horizontally at the time axis's own scale, right longer,
+//   anywhere else passes through. Each drags its setting horizontally at its half's axis's scale, right longer,
 //   Shift finely, by the knobs' proportion. A drag is one undo step, inside gestures the host sees.
 // - **Keys:** while focused, left and right step Attack, up and down Release, each 1% of its parameter's travel (0.2%
 //   with Shift), as the knobs' arrows do; a key press with its repeats is one undo step.
@@ -61,22 +68,33 @@ public:
     explicit TimingResponseInset (PluginProcessor& processor);
     ~TimingResponseInset() override;
 
-    static constexpr int side = TransferCurveInset::side, padding = TransferCurveInset::padding;
+    // Its size at 100% UI Scale: as tall as the Transfer Curve inset.
+    static constexpr int width = 260, height = TransferCurveInset::side, padding = TransferCurveInset::padding;
     static constexpr float handleRadius = TransferCurveInset::handleRadius, handleHitRadius = TransferCurveInset::handleHitRadius;
-    // The time labels' height, under the plot.
-    static constexpr float labelHeight = 12.0f;
+    // The captions' height, over the plots, the time labels', under them, and the gap between the halves.
+    static constexpr float captionHeight = 14.0f, labelHeight = 12.0f, halfGap = 10.0f;
+    // Attack's half's share of the width the two halves have.
+    static constexpr float attackShare = 0.42f;
+    // Release's half's axis's first time, in ms; its last is TimingResponse's.
+    static constexpr double recoveryFromMs = 1.0;
 
     // The response it draws: the newest finished, and the request it answers; none before the first.
     const std::optional<TimingResponseWorker::Result>& drawn() const { return shown; }
     // Whether it has asked for a response it hasn't drawn yet.
     bool isWaiting() const;
 
-    // Where the plot is, from the inset's top left, and where a time in ms and a Gain Reduction in dB are drawn in it.
-    juce::Rectangle<float> plot() const;
-    float xAt (double ms) const;
+    // Where a half's plot is, from the inset's top left, the times its axis spans, in ms, and where a time in ms (not
+    // kept on the axis) and a Gain Reduction in dB are drawn in it.
+    juce::Rectangle<float> plot (TimingHandle half) const;
+    juce::Range<double> axisMs (TimingHandle half) const;
+    float xAt (TimingHandle half, double ms) const;
     float yAt (double gainReductionDb) const;
-    // The time in ms at an x, from the inset's left.
-    double timeAt (float x) const;
+    // The time in ms at an x, from the inset's left, on a half's axis, past its ends too.
+    double timeAt (TimingHandle half, float x) const;
+    // The curve a half draws, its vertices as time in ms and Gain Reduction in dB, and its Gain Reduction at any time,
+    // straight between vertices in log time and held past its ends; empty, and 0 dB, before the first response.
+    const std::vector<juce::Point<double>>& curve (TimingHandle half) const;
+    double curveAt (TimingHandle half, double ms) const;
 
     juce::Component& handle (TimingHandle which);
     juce::Point<float> handleCentre (TimingHandle which) const;
@@ -89,6 +107,8 @@ public:
         TimingHandle at;
     };
     std::optional<Readout> readout() const;
+    // Where the readout card is drawn, from the inset's top left; none while there is no card.
+    std::optional<juce::Rectangle<float>> readoutBounds() const;
 
     // The curves' and the handles' alpha: 1, dimmed under Global Bypass.
     float curveAlpha() const { return bypassFade.dim (1.0f); }
@@ -147,6 +167,8 @@ private:
     std::optional<TimingResponseWorker::Request> asked; // the last request the worker took
     std::optional<TimingResponseWorker::Result> shown;
     double scaleDb = 1.0; // the Gain Reduction drawn at the plot's bottom: the shown response's most, at least 1 dB
+    // The shown response's curves, as curve() gives them.
+    std::vector<juce::Point<double>> riseCurve, recoveryCurve;
     juce::String announced;
     GlobalBypassFade bypassFade;
     plugkit::ui::display::CachedLabels labels;

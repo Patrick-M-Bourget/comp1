@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <span>
 
 namespace comp1
 {
@@ -24,19 +25,33 @@ namespace display = plugkit::ui::display;
 // An arrow's step, in a parameter's travel, as the knobs' (KeyboardSlider): 1%, or 0.2% with Shift.
 constexpr double keyStep = 0.01, fineKeyStep = 0.002;
 constexpr float curveLineWidth = 1.5f;
-// The recovery's dashes, in px: drawn, then skipped.
-constexpr float recoveryDashes[] = { 4.0f, 2.0f };
-// The labelled times, in ms, and their labels: every other decade.
+// The labelled times on each half's axis, in ms, and their labels.
 struct TimeLabel
 {
     double ms;
     const char* text;
 };
-constexpr TimeLabel timeLabels[] = { { 0.01, "10 \xc2\xb5s" }, { 1.0, "1 ms" }, { 100.0, "0.1 s" }, { 10000.0, "10 s" } };
-constexpr float labelWidth = 34.0f;
+constexpr TimeLabel attackLabels[] = { { 0.1, "0.1 ms" }, { 10.0, "10 ms" }, { 1000.0, "1 s" } };
+constexpr TimeLabel releaseLabels[] = { { 10.0, "10 ms" }, { 1000.0, "1 s" }, { 10000.0, "10 s" } };
+constexpr float labelWidth = 34.0f, captionWidth = 60.0f;
 
-double earliestMs() { return TimingResponse::timeMsAt (0); }
-double latestMs() { return TimingResponse::timeMsAt (TimingResponse::points - 1); }
+// A curve's vertices from a response's values: the first of the points that reads each sample, the times between
+// those holding the sample's Gain Reduction, so the curve is straight between samples rather than a step; and the
+// last point, so it reaches the axis's end.
+std::vector<juce::Point<double>> verticesOf (const std::array<double, TimingResponse::points>& values, double sampleRate)
+{
+    std::vector<juce::Point<double>> vertices;
+    vertices.reserve (values.size());
+    long previous = -1;
+    for (int i = 0; i < TimingResponse::points; ++i)
+    {
+        const long sample = TimingResponse::sampleAt (i, sampleRate);
+        if (sample != previous || i == TimingResponse::points - 1)
+            vertices.push_back ({ TimingResponse::timeMsAt (i), values[static_cast<std::size_t> (i)] });
+        previous = sample;
+    }
+    return vertices;
+}
 } // namespace
 
 TimingResponseInset::TimingResponseInset (PluginProcessor& p)
@@ -62,7 +77,7 @@ TimingResponseInset::TimingResponseInset (PluginProcessor& p)
     controls::showRangeOf (releaseValue, release);
     attackAttachment = std::make_unique<juce::SliderParameterAttachment> (attack, attackValue);
     releaseAttachment = std::make_unique<juce::SliderParameterAttachment> (release, releaseValue);
-    setSize (side, side);
+    setSize (width, height);
     follow();
 }
 
@@ -70,29 +85,65 @@ TimingResponseInset::~TimingResponseInset() { endEdit(); }
 
 bool TimingResponseInset::isWaiting() const { return asked.has_value() && ! (shown.has_value() && shown->request == *asked); }
 
-juce::Rectangle<float> TimingResponseInset::plot() const
+juce::Rectangle<float> TimingResponseInset::plot (TimingHandle half) const
 {
-    return getLocalBounds().toFloat().reduced (static_cast<float> (padding)).withTrimmedBottom (labelHeight);
+    auto area = getLocalBounds().toFloat().reduced (static_cast<float> (padding)).withTrimmedTop (captionHeight).withTrimmedBottom (labelHeight);
+    const float attackWidth = (area.getWidth() - halfGap) * attackShare;
+    if (half == TimingHandle::attack)
+        return area.withWidth (attackWidth);
+    return area.withTrimmedLeft (attackWidth + halfGap);
 }
 
-float TimingResponseInset::xAt (double ms) const
+juce::Range<double> TimingResponseInset::axisMs (TimingHandle half) const
 {
-    const auto area = plot();
-    const double share = std::log10 (std::max (ms, 1.0e-9) / earliestMs()) / std::log10 (latestMs() / earliestMs());
+    if (half == TimingHandle::release)
+        return { recoveryFromMs, TimingResponse::timeMsAt (TimingResponse::points - 1) };
+    // From one sample's time: under it the response has only the first sample's Gain Reduction.
+    const double rate = shown ? shown->request.sampleRate : plugkit::ui::sampleRateOrAssumed (processor);
+    return { 1000.0 / rate, TimingResponse::burstSeconds * 1000.0 };
+}
+
+float TimingResponseInset::xAt (TimingHandle half, double ms) const
+{
+    const auto area = plot (half);
+    const auto axis = axisMs (half);
+    const double share = std::log10 (std::max (ms, 1.0e-9) / axis.getStart()) / std::log10 (axis.getEnd() / axis.getStart());
     return area.getX() + static_cast<float> (share) * area.getWidth();
 }
 
-double TimingResponseInset::timeAt (float x) const
+double TimingResponseInset::timeAt (TimingHandle half, float x) const
 {
-    const auto area = plot();
+    const auto area = plot (half);
+    const auto axis = axisMs (half);
     const double share = (x - area.getX()) / std::max (1.0f, area.getWidth());
-    return earliestMs() * std::pow (latestMs() / earliestMs(), share);
+    return axis.getStart() * std::pow (axis.getEnd() / axis.getStart(), share);
 }
 
 float TimingResponseInset::yAt (double gainReductionDb) const
 {
-    const auto area = plot();
+    const auto area = plot (TimingHandle::attack);
     return area.getY() + static_cast<float> (std::clamp (gainReductionDb / scaleDb, 0.0, 1.0)) * area.getHeight();
+}
+
+const std::vector<juce::Point<double>>& TimingResponseInset::curve (TimingHandle half) const
+{
+    return half == TimingHandle::attack ? riseCurve : recoveryCurve;
+}
+
+double TimingResponseInset::curveAt (TimingHandle half, double ms) const
+{
+    const auto& vertices = curve (half);
+    if (vertices.empty())
+        return 0.0;
+    if (ms <= vertices.front().x)
+        return vertices.front().y;
+    if (ms >= vertices.back().x)
+        return vertices.back().y;
+    const auto after = std::upper_bound (vertices.begin(), vertices.end(), ms, [] (double t, const juce::Point<double>& v) { return t < v.x; });
+    const auto& b = *after;
+    const auto& a = *(after - 1);
+    const double between = std::log (ms / a.x) / std::log (b.x / a.x);
+    return a.y + between * (b.y - a.y);
 }
 
 juce::Component& TimingResponseInset::handle (TimingHandle which) { return *handleComponents[static_cast<std::size_t> (which)]; }
@@ -117,6 +168,15 @@ handles::Look TimingResponseInset::lookOf (TimingHandle which) const
              .alpha = curveAlpha() };
 }
 
+std::optional<juce::Rectangle<float>> TimingResponseInset::readoutBounds() const
+{
+    const auto card = readout();
+    if (! card)
+        return std::nullopt;
+    return handles::readoutBeside (handleCentre (card->at), handleRadius, getLocalBounds().toFloat().reduced (static_cast<float> (padding)),
+                                   card->title, card->value);
+}
+
 std::optional<TimingResponseInset::Readout> TimingResponseInset::readout() const
 {
     if (! drag)
@@ -135,79 +195,73 @@ void TimingResponseInset::resized() { layOutHandles(); }
 
 void TimingResponseInset::layOutHandles()
 {
-    const double attackMs = attackValue.getValue();
-    const double releaseFromMs = processor.heldSettings().holdMs + releaseValue.getValue();
-    const auto rise = shown ? shown->response.riseAt (attackMs) : 0.0;
-    const auto recovery = shown ? shown->response.recoveryAt (releaseFromMs) : 0.0;
-    handleComponents[static_cast<std::size_t> (TimingHandle::attack)]->place ({ xAt (attackMs), yAt (rise) });
-    handleComponents[static_cast<std::size_t> (TimingHandle::release)]->place ({ xAt (releaseFromMs), yAt (recovery) });
+    const auto place = [this] (TimingHandle half, double ms) {
+        const auto area = plot (half);
+        const float x = std::clamp (xAt (half, ms), area.getX(), area.getRight());
+        handleComponents[static_cast<std::size_t> (half)]->place ({ x, yAt (curveAt (half, ms)) });
+    };
+    place (TimingHandle::attack, attackValue.getValue());
+    place (TimingHandle::release, processor.heldSettings().holdMs + releaseValue.getValue());
 }
 
 void TimingResponseInset::paint (juce::Graphics& g)
 {
     g.setColour (colour::raised);
     g.fillRoundedRectangle (getLocalBounds().toFloat(), size::r3);
-    const auto area = plot();
-
-    // The grid: a line every decade, the top the zero line. Drawn in the plot's own coordinates.
+    const float alpha = curveAlpha();
+    std::vector<display::Label> texts;
+    for (const auto half : { TimingHandle::attack, TimingHandle::release })
     {
-        juce::Graphics::ScopedSaveState state (g);
-        g.addTransform (juce::AffineTransform::translation (area.getX(), area.getY()));
-        display::GridLines lines;
-        for (double ms = 0.01; ms < latestMs(); ms *= 10.0)
-            lines.majorX.push_back (xAt (ms) - area.getX());
-        lines.zeroY = 0.0f;
-        display::paintGrid (g, lines, { juce::roundToInt (area.getWidth()), juce::roundToInt (area.getHeight()) });
-    }
-
-    if (shown)
-    {
-        const auto& response = shown->response;
-        juce::Path rise, recovery;
-        const float alpha = curveAlpha();
-        float riseEnd = area.getX();
-        for (int i = 0; i < TimingResponse::points; ++i)
+        const auto area = plot (half);
+        const auto axis = axisMs (half);
+        // The grid: a line every decade, the top the zero line, in the plot's own coordinates.
         {
-            const double ms = TimingResponse::timeMsAt (i);
-            const auto n = static_cast<std::size_t> (i);
-            if (ms <= TimingResponse::burstSeconds * 1000.0)
-            {
-                const juce::Point<float> at { xAt (ms), yAt (response.rise[n]) };
-                i == 0 ? rise.startNewSubPath (at) : rise.lineTo (at);
-                riseEnd = at.x;
-            }
-            const juce::Point<float> at { xAt (ms), yAt (response.recovery[n]) };
-            i == 0 ? recovery.startNewSubPath (at) : recovery.lineTo (at);
+            juce::Graphics::ScopedSaveState state (g);
+            g.addTransform (juce::AffineTransform::translation (area.getX(), area.getY()));
+            display::GridLines lines;
+            for (double ms = std::pow (10.0, std::ceil (std::log10 (axis.getStart()))); ms < axis.getEnd(); ms *= 10.0)
+                lines.majorX.push_back (xAt (half, ms) - area.getX());
+            lines.zeroY = 0.0f;
+            display::paintGrid (g, lines, { juce::roundToInt (area.getWidth()), juce::roundToInt (area.getHeight()) });
         }
-        // The rise's area, up to the top, shaded as the Level and Gain Reduction Graph shades its Gain Reduction.
-        auto riseArea = rise;
-        riseArea.lineTo (riseEnd, area.getY());
-        riseArea.lineTo (area.getX(), area.getY());
-        riseArea.closeSubPath();
-        g.setColour (colour::dynRange.withMultipliedAlpha (gainReductionShadingAlpha * alpha));
-        g.fillPath (riseArea);
-        g.setColour (colour::dynRange.withMultipliedAlpha (alpha));
-        g.strokePath (rise, juce::PathStrokeType (curveLineWidth));
-        juce::Path dashed;
-        juce::PathStrokeType (curveLineWidth).createDashedStroke (dashed, recovery, recoveryDashes, 2);
-        g.fillPath (dashed);
+        // The curve, from the axis's start, with its area up to the top shaded as the Level and Gain Reduction Graph
+        // shades its Gain Reduction.
+        const auto& vertices = curve (half);
+        if (! vertices.empty())
+        {
+            juce::Path line;
+            line.startNewSubPath (area.getX(), yAt (curveAt (half, axis.getStart())));
+            for (const auto& v : vertices)
+                if (v.x > axis.getStart() && v.x <= axis.getEnd())
+                    line.lineTo (xAt (half, v.x), yAt (v.y));
+            line.lineTo (area.getRight(), yAt (curveAt (half, axis.getEnd())));
+            auto shaded = line;
+            shaded.lineTo (area.getRight(), area.getY());
+            shaded.lineTo (area.getX(), area.getY());
+            shaded.closeSubPath();
+            g.setColour (colour::dynRange.withMultipliedAlpha (gainReductionShadingAlpha * alpha));
+            g.fillPath (shaded);
+            g.setColour (colour::dynRange.withMultipliedAlpha (alpha));
+            g.strokePath (line, juce::PathStrokeType (curveLineWidth));
+        }
+        // The caption over the plot, the time labels under it.
+        texts.push_back ({ half == TimingHandle::attack ? "Attack" : "Release",
+                           { area.getX(), area.getY() - captionHeight, captionWidth, captionHeight },
+                           juce::Justification::centredLeft, colour::text3, size::fs1 });
+        for (const auto& label : half == TimingHandle::attack ? std::span<const TimeLabel> (attackLabels) : std::span<const TimeLabel> (releaseLabels))
+        {
+            const float x = std::clamp (xAt (half, label.ms), area.getX() + labelWidth / 2.0f, area.getRight() - labelWidth / 2.0f);
+            texts.push_back ({ juce::CharPointer_UTF8 (label.text), { x - labelWidth / 2.0f, area.getBottom(), labelWidth, labelHeight },
+                               juce::Justification::centred, colour::text3, size::fs1 });
+        }
     }
-
-    // The time labels, under the plot.
-    std::vector<display::Label> scale;
-    for (const auto& label : timeLabels)
-    {
-        const float x = std::clamp (xAt (label.ms), area.getX() + labelWidth / 2.0f, area.getRight() - labelWidth / 2.0f);
-        scale.push_back ({ juce::CharPointer_UTF8 (label.text), { x - labelWidth / 2.0f, area.getBottom(), labelWidth, labelHeight },
-                           juce::Justification::centred, colour::text3, size::fs1 });
-    }
-    labels.paint (g, DisplayFades::originInWindow (*this), scale);
+    labels.paint (g, DisplayFades::originInWindow (*this), texts);
 }
 
 void TimingResponseInset::paintOverChildren (juce::Graphics& g)
 {
     if (const auto card = readout())
-        handles::paintReadout (g, handleCentre (card->at), handleRadius, static_cast<float> (getWidth()), card->title, card->value);
+        handles::paintReadoutAt (g, *readoutBounds(), card->title, card->value);
 }
 
 bool TimingResponseInset::follow()
@@ -220,6 +274,8 @@ bool TimingResponseInset::follow()
     if (! finished)
         return false;
     shown = std::move (finished);
+    riseCurve = verticesOf (shown->response.rise, shown->request.sampleRate);
+    recoveryCurve = verticesOf (shown->response.recovery, shown->request.sampleRate);
     double most = 0.0;
     for (const auto* values : { &shown->response.rise, &shown->response.recovery })
         most = std::max (most, *std::max_element (values->begin(), values->end()));
@@ -251,7 +307,9 @@ void TimingResponseInset::setTime (TimingHandle which, double ms)
 void TimingResponseInset::anchorAt (const juce::MouseEvent& e)
 {
     beginEdit (drag->which);
-    drag->fromX = handleCentre (drag->which).x;
+    // At the setting's own time, which may lie off the axis, where the handle is held at the end.
+    const double ms = drag->which == TimingHandle::attack ? attackValue.getValue() : processor.heldSettings().holdMs + releaseValue.getValue();
+    drag->fromX = xAt (drag->which, ms);
     drag->offset = static_cast<float> (e.getDistanceFromDragStartX());
 }
 
@@ -273,7 +331,7 @@ void TimingResponseInset::dragTo (const juce::MouseEvent& e)
         anchorAt (e);
     }
     const double speed = drag->fine ? knob::dragPixels / knob::fineDragPixels : 1.0;
-    const double ms = timeAt (drag->fromX + static_cast<float> ((static_cast<float> (e.getDistanceFromDragStartX()) - drag->offset) * speed));
+    const double ms = timeAt (drag->which, drag->fromX + static_cast<float> ((static_cast<float> (e.getDistanceFromDragStartX()) - drag->offset) * speed));
     // The Release handle sits at Hold plus Release.
     setTime (drag->which, drag->which == TimingHandle::attack ? ms : ms - processor.heldSettings().holdMs);
     repaint();
