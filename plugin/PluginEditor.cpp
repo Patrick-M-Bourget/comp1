@@ -12,8 +12,7 @@ namespace layout = staple::tokens::layout;
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : EditorShell (p, p.session(), { "comp1", parameters::globalBypassId }), history (*this, p), displaySlot (p, history), gainReduction (history),
-      outputMeter (p), gate (p), compressor (p, history), character (p), detection (p), stereo (p),
-      lookahead (p), footer (p, history), compactBody (p, history)
+      outputMeter (p), gate (p), compressor (p, history), character (p), detection (p), lookahead (p), footer (p, history), compactBody (p, history)
 {
     editorTick().add (history);
     sections.setName ("Sections");
@@ -107,10 +106,10 @@ std::array<std::pair<juce::Component*, MeterLabel*>, 4> PluginEditor::labelledMe
 
 std::vector<PluginEditor::GridRow> PluginEditor::sectionGrid()
 {
-    // Gate, Compressor, and Character, a column each; under them Detection, spanning the first two, and
-    // Stereo and Lookahead, sharing the third.
+    // Gate, Compressor, and Character, a column each; under them Detection, spanning the first two, and Lookahead
+    // under the third.
     return { { { 0, 0, { &gate } }, { 1, 1, { &compressor } }, { 2, 2, { &character } } },
-             { { 0, 1, { &detection } }, { 2, 2, { &stereo, &lookahead } } } };
+             { { 0, 1, { &detection } }, { 2, 2, { &lookahead } } } };
 }
 
 std::vector<Section*> PluginEditor::sectionsOf (const GridRow& row)

@@ -181,8 +181,8 @@ private:
     juce::String shownSummary;
 };
 
-// Stereo: Stereo Placement and Stereo Link, available only on a stereo track: on a mono one both are disabled, their
-// values kept.
+// Stereo, the stereo popover's (StereoPopover), in both views: Stereo Placement and Stereo Link, available only on a
+// stereo track: on a mono one both are disabled, their values kept.
 struct StereoSection final : ControlSection
 {
     explicit StereoSection (PluginProcessor& processor);

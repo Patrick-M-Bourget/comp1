@@ -406,7 +406,7 @@ TEST_CASE ("Switching to the Compact View lets go of Detection Audition")
     audition.mouseUp (harness::mouseEvent (audition, centre, {}, centre));
 }
 
-TEST_CASE ("Tab walks the Compact View: the header, then Clean's Compact Slots and Comp, Global Bypass, Style, Processing Mode, Oversampling, the Saturation readout, the Output readout, UI Scale and the switch, reaching nothing of the Expanded View")
+TEST_CASE ("Tab walks the Compact View: the header, then Clean's Compact Slots and Comp, Global Bypass, Style, Processing Mode, Oversampling, the Stereo readout, the Saturation readout, the Output readout, UI Scale and the switch, reaching nothing of the Expanded View")
 {
     host::EditorHost host;
     // High Quality, so Oversampling is enabled.
@@ -442,8 +442,8 @@ TEST_CASE ("Tab walks the Compact View: the header, then Clean's Compact Slots a
     for (auto i = inHeader; i < walked.size(); ++i)
         rest.add (walked[i]->getTitle());
     CHECK (rest
-           == juce::StringArray { "Attack",       "Knee",   "Comp",     "Release",     "Auto Release", "Global Bypass", "Style", "Processing Mode",
-                                  "Oversampling", "Saturation", "Output", "UI Scale", "Switch to the Expanded View" });
+           == juce::StringArray { "Attack",       "Knee",   "Comp",       "Release", "Auto Release", "Global Bypass", "Style", "Processing Mode",
+                                  "Oversampling", "Stereo", "Saturation", "Output",  "UI Scale",     "Switch to the Expanded View" });
 }
 
 TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and maximum sizes, the header, the body and the footer don't overlap, nothing in the header or the footer at its widest is clipped, in every Style the body's Compact Slots, Comp and meter are inside it with each control inside its part, in the same rectangles for every Style, and the Preset browser opens inside the window with nothing in it clipped")
@@ -496,6 +496,9 @@ TEST_CASE ("At every UI Scale and at the Compact View's minimum, default and max
         if (group->isVisible())
             CHECK_FALSE (header.wordmarkArea().intersects (group->getBounds()));
     CHECK (host.outputReadout().getWidth() >= host.outputReadout().getIdealWidth());
+    // The Stereo readout at its widest, "Stereo 100%", has room for its whole text: it doesn't shrink to its label.
+    REQUIRE (host.stereoReadout().getButtonText() == "Stereo 100%");
+    CHECK_FALSE (host.stereoReadout().isShrunk());
     // In every Style: the body's Compact Slots, Comp's section and its meter inside it, none overlapping another, each
     // one's controls inside it; the meter as tall as the body. Every Style's rectangles are the same: the parts', the
     // slots' primaries' and Comp's (ADR 0011).

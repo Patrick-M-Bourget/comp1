@@ -57,6 +57,7 @@ target_sources(comp1 PRIVATE
     Sections.cpp
     ShownAutoGain.cpp
     SpectrumDisplay.cpp
+    StereoPopover.cpp
     TimingResponseInset.cpp
     TimingResponseWorker.cpp
     TransferCurveGraph.cpp
