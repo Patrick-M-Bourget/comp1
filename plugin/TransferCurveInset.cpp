@@ -168,7 +168,16 @@ void TransferCurveInset::kneeCueChanged()
     // The Knee drag is vertical.
     h.setMouseCursor (showsKnee() ? juce::MouseCursor::UpDownResizeCursor : juce::MouseCursor::LeftRightResizeCursor);
     h.updateMouseCursor();
+    drawnKneeCue = kneeCue();
     repaint();
+}
+
+TransferCurveInset::KneeCue TransferCurveInset::kneeCue() const
+{
+    if (! showsKnee())
+        return {};
+    const auto card = readout();
+    return { .shading = kneeShading(), .cardAt = handleCentre (card->at), .card = card->value };
 }
 
 void TransferCurveInset::resized()
@@ -360,11 +369,16 @@ void TransferCurveInset::endHeldKey()
 
 void TransferCurveInset::tick (double seconds)
 {
-    // Follows the played curve, whatever moved it.
+    // Follows the played curve, whatever moved it, with the handles and the Knee cue.
     layOutHandles();
     if (bypassFade.step (seconds))
         for (auto& h : handleComponents)
             h->repaint();
+    if (auto cue = kneeCue(); cue != drawnKneeCue)
+    {
+        drawnKneeCue = std::move (cue);
+        repaint();
+    }
     // Tells a screen reader the value changed, when it did.
     const auto now = valueText();
     if (now == announced)

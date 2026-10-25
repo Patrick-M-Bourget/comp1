@@ -840,6 +840,95 @@ TEST_CASE ("While Alt is held over or dragging the Transfer Curve inset's Thresh
     checkNoCue();
 }
 
+namespace
+{
+
+// Gathers the areas a component is asked to repaint, its children's included, and passes them on.
+struct RepaintedAreas final : juce::CachedComponentImage
+{
+    juce::RectangleList<int> areas;
+    juce::Rectangle<int> whole;
+    void paint (juce::Graphics&) override {}
+    bool invalidateAll() override
+    {
+        areas.add (whole);
+        return true;
+    }
+    bool invalidate (const juce::Rectangle<int>& area) override
+    {
+        areas.add (area);
+        return true;
+    }
+    void releaseResources() override {}
+};
+
+// Takes a component's repaints and passes none on to its parent.
+struct SwallowedRepaints final : juce::CachedComponentImage
+{
+    void paint (juce::Graphics&) override {}
+    bool invalidateAll() override { return false; }
+    bool invalidate (const juce::Rectangle<int>&) override { return false; }
+    void releaseResources() override {}
+};
+
+} // namespace
+
+TEST_CASE ("While Alt is held over the Transfer Curve inset's Threshold handle, the knee shading and the Knee card follow Knee and Threshold set elsewhere, repainted on the tick")
+{
+    InsetHost host;
+    host.edit (parameters::thresholdId, -30.0f);
+    host.edit (parameters::ratioId, 4.0f);
+    host.edit (parameters::kneeId, 12.0f);
+    auto& inset = host.inset();
+    host.settle();
+    auto& handle = inset.handle (InsetHandle::threshold);
+    auto& graph = inset.graph();
+    handle.mouseEnter (harness::mouseEvent (handle, centreOf (inset, InsetHandle::threshold), alt));
+    REQUIRE (inset.kneeShading().has_value());
+    host.settle();
+
+    // The inset's own repaints: the graph repaints itself when the curve changes, which mustn't stand in for them.
+    graph.setCachedComponentImage (new SwallowedRepaints());
+    auto* repainted = new RepaintedAreas();
+    repainted->whole = inset.getLocalBounds();
+    inset.setCachedComponentImage (repainted);
+    // Sets a parameter as its knob or the host does, then checks the cue drawn at the played curve's Threshold and
+    // Knee, both where the shading was and where it is now painted again.
+    const auto set = [&] (const juce::String& id, float plain, double thresholdDb, double kneeDb, const juce::String& card) {
+        const auto drawn = *inset.kneeShading();
+        repainted->areas.clear();
+        host.edit (id, plain);
+        REQUIRE (host.settleUntil ([&] {
+            const auto played = host.processor.playedCurve();
+            return std::abs (played.thresholdDb - thresholdDb) < 1.0e-4 && std::abs (played.kneeDb - kneeDb) < 1.0e-4;
+        }));
+        host.settle();
+        REQUIRE (inset.kneeShading().has_value());
+        const auto shading = *inset.kneeShading();
+        const auto left = graph.getPosition().toFloat() + graph.pointAt (thresholdDb - kneeDb / 2.0, 0.0);
+        const auto right = graph.getPosition().toFloat() + graph.pointAt (thresholdDb + kneeDb / 2.0, 0.0);
+        CHECK_THAT (shading.getX(), WithinAbs (left.x, 1.0e-3));
+        CHECK_THAT (shading.getRight(), WithinAbs (right.x, 1.0e-3));
+        REQUIRE (inset.readout().has_value());
+        CHECK (inset.readout()->title == "Knee");
+        CHECK (inset.readout()->value == card);
+        CHECK (repainted->areas.containsRectangle (drawn.getSmallestIntegerContainer()));
+        CHECK (repainted->areas.containsRectangle (shading.getSmallestIntegerContainer()));
+    };
+
+    set (parameters::kneeId, 24.0f, -30.0, 24.0, "24.00 dB");
+    set (parameters::thresholdId, -20.0f, -20.0, 24.0, "24.00 dB");
+
+    // Nothing changed: no repaint.
+    repainted->areas.clear();
+    host.settle (300);
+    CHECK (repainted->areas.isEmpty());
+
+    inset.setCachedComponentImage (nullptr);
+    graph.setCachedComponentImage (nullptr);
+    handle.mouseExit (harness::mouseEvent (handle, centreOf (inset, InsetHandle::threshold) + juce::Point<float> { 30.0f, 0.0f }));
+}
+
 TEST_CASE ("Alt-dragging the Transfer Curve inset's Threshold handle while Comp Follow is on sets Knee and leaves Comp Follow on, and the curve played and drawn takes the new Knee")
 {
     InsetHost host;
