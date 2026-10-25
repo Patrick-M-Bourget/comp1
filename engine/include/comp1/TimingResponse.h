@@ -10,6 +10,8 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <optional>
+#include <utility>
 
 namespace comp1
 {
@@ -38,6 +40,25 @@ struct TimingResponse
     // And after the burst ends.
     std::array<double, points> recovery {};
 
+    // A range a curve can take, as Gain Reduction in dB at each point's time: its fastest edge and its slowest.
+    struct Band
+    {
+        std::array<double, points> fastest {}, slowest {};
+    };
+    // On a Character with Opto's timing, the range the rise can take as the overshoot scales Attack: the rise with the
+    // scale held at each of its ends, Attack x 0.5 the fastest and Attack x 2 the slowest, each one pole at that time
+    // with the Character's loop solved as on the rise. None on the other Characters.
+    std::optional<Band> riseBand;
+    // With Auto Release on, the range the recovery can take as Auto Release scales Release: the recovery at Release, as
+    // after no sustained compression, the fastest, and at 5 x Release, as after a long stretch of it, the slowest; each
+    // from the detector as the burst leaves it, at its Release from the burst's end. The recovery lies between them.
+    // None with Auto Release off.
+    std::optional<Band> recoveryBand;
+    // On a Character with Opto's timing, the times in ms after the burst's end that the slow part of its release takes,
+    // Hold plus its time with no history to Hold plus its time with a full one: Opto's own, which Release doesn't move.
+    // None on the other Characters.
+    std::optional<std::pair<double, double>> slowPartMs;
+
     // The rise and the recovery at any time in ms, read between points along log time, holding at the ends.
     double riseAt (double ms) const { return at (rise, ms); }
     double recoveryAt (double ms) const { return at (recovery, ms); }
@@ -62,9 +83,11 @@ private:
 // its Attack, Release, Auto Release and Hold, and the Transfer Curve it plays (Comp Follow's Threshold and Ratio while
 // it is on, the stored Knee and Range), hearing the burst as an Internal Detection Source does; nothing else of the
 // Engine runs, and no setting glides. So it is the Gain Reduction the Engine applies to the same burst at Detection
-// Source Internal with the Detection EQ off. Never allocates; its cost grows with sampleRate, at most about 15 ms at
-// 48 kHz and 60 ms at 192 kHz on an Apple M3 (Opto, Release 5000 ms), so the editor works it out away from the message
-// thread.
+// Source Internal with the Detection EQ off. The bands run the same detector again: Opto's rise twice more, and with
+// Auto Release on the recovery twice more, from the detector as the burst leaves it. Never allocates; its cost grows
+// with sampleRate, at most about 17 ms at 48 kHz and 70 ms at 192 kHz on an Apple M3 with Auto Release off, and with
+// it on, its two recoveries more, 41 ms and 170 ms (Opto, Release 5000 ms), so the editor works it out away from the
+// message thread.
 TimingResponse timingResponse (const Settings& settings, double sampleRate);
 
 } // namespace comp1
