@@ -106,11 +106,20 @@ public:
 private:
     class Handle;
 
+    // What a drag sets: Threshold or Ratio by its handle, or Knee by the Threshold handle with Alt.
+    enum class DragSetting
+    {
+        threshold,
+        ratio,
+        knee,
+    };
+    static DragSetting settingOf (InsetHandle which, const juce::ModifierKeys& mods);
+    static InsetHandle handleOf (DragSetting setting);
+
     struct Drag
     {
-        InsetHandle handle = InsetHandle::threshold;
+        DragSetting setting = DragSetting::threshold;
         bool fine = false;
-        bool knee = false; // the Threshold handle with Alt: setting Knee
         double from = 0.0; // the dragged setting at the anchor: Threshold in dB, or Ratio or Knee in its parameter's travel
         juce::Point<float> offset; // the drag's offset from its start at the anchor
     };

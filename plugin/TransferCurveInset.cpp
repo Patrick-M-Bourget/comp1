@@ -128,7 +128,7 @@ juce::Point<float> TransferCurveInset::handleCentre (InsetHandle which) const
 handles::Look TransferCurveInset::lookOf (InsetHandle which) const
 {
     return { .radius = handleRadius,
-             .selected = drag.has_value() && drag->handle == which,
+             .selected = drag.has_value() && handleOf (drag->setting) == which,
              .hovered = handleComponents[static_cast<std::size_t> (which)]->hovered,
              .alpha = bypassFade.dim (1.0f) };
 }
@@ -140,7 +140,7 @@ std::optional<TransferCurveInset::Readout> TransferCurveInset::readout() const
         return Readout { "Knee", juce::String (kneeValue.getValue(), 2) + " dB", InsetHandle::threshold };
     if (! drag)
         return std::nullopt;
-    if (drag->handle == InsetHandle::threshold)
+    if (drag->setting == DragSetting::threshold)
         return Readout { "Threshold", controls::spokenValue (threshold, thresholdValue.getValue()), InsetHandle::threshold };
     return Readout { "Ratio", controls::spokenValue (ratio, ratioValue.getValue()), InsetHandle::ratio };
 }
@@ -148,7 +148,7 @@ std::optional<TransferCurveInset::Readout> TransferCurveInset::readout() const
 bool TransferCurveInset::showsKnee() const
 {
     if (drag)
-        return drag->knee;
+        return drag->setting == DragSetting::knee;
     const auto& h = *handleComponents[static_cast<std::size_t> (InsetHandle::threshold)];
     return h.hovered && h.altHeld;
 }
@@ -263,26 +263,43 @@ void TransferCurveInset::setKneeTravel (double travel)
     repaint();
 }
 
+TransferCurveInset::DragSetting TransferCurveInset::settingOf (InsetHandle which, const juce::ModifierKeys& mods)
+{
+    if (which == InsetHandle::ratio)
+        return DragSetting::ratio;
+    return mods.isAltDown() ? DragSetting::knee : DragSetting::threshold;
+}
+
+InsetHandle TransferCurveInset::handleOf (DragSetting setting)
+{
+    return setting == DragSetting::ratio ? InsetHandle::ratio : InsetHandle::threshold;
+}
+
 void TransferCurveInset::anchorAt (const juce::MouseEvent& e)
 {
     // The setting's edit first: Threshold's grab may turn Comp Follow off, and the drag carries on from where that
     // leaves it.
-    if (drag->knee)
+    switch (drag->setting)
     {
-        beginKneeEdit();
-        drag->from = kneeTravel();
-    }
-    else
-    {
-        beginEdit();
-        drag->from = drag->handle == InsetHandle::threshold ? thresholdValue.getValue() : ratioTravel();
+        case DragSetting::threshold:
+            beginEdit();
+            drag->from = thresholdValue.getValue();
+            break;
+        case DragSetting::ratio:
+            beginEdit();
+            drag->from = ratioTravel();
+            break;
+        case DragSetting::knee:
+            beginKneeEdit();
+            drag->from = kneeTravel();
+            break;
     }
     drag->offset = e.getOffsetFromDragStart().toFloat();
 }
 
 void TransferCurveInset::grab (InsetHandle which, const juce::MouseEvent& e)
 {
-    drag = Drag { .handle = which, .fine = e.mods.isShiftDown(), .knee = which == InsetHandle::threshold && e.mods.isAltDown() };
+    drag = Drag { .setting = settingOf (which, e.mods), .fine = e.mods.isShiftDown() };
     anchorAt (e);
     // The grab may have turned Comp Follow off, which leaves the curve where it was.
     layOutHandles();
@@ -294,24 +311,30 @@ void TransferCurveInset::dragTo (const juce::MouseEvent& e)
     if (! drag)
         return;
     // Shift or Alt pressed or let go mid-drag carries on from where the settings are, at the new speed or setting.
-    const bool kneeNow = drag->handle == InsetHandle::threshold && e.mods.isAltDown();
-    if (e.mods.isShiftDown() != drag->fine || kneeNow != drag->knee)
+    const auto settingNow = settingOf (handleOf (drag->setting), e.mods);
+    if (e.mods.isShiftDown() != drag->fine || settingNow != drag->setting)
     {
-        const bool cueChanged = kneeNow != drag->knee;
+        const bool cueChanged = settingNow != drag->setting;
         drag->fine = e.mods.isShiftDown();
-        drag->knee = kneeNow;
+        drag->setting = settingNow;
         anchorAt (e);
         if (cueChanged)
             kneeCueChanged();
     }
     const double speed = drag->fine ? knob::dragPixels / knob::fineDragPixels : 1.0;
     const auto moved = (e.getOffsetFromDragStart().toFloat() - drag->offset);
-    if (drag->knee)
-        setKneeTravel (drag->from - moved.y / knob::dragPixels * speed);
-    else if (drag->handle == InsetHandle::threshold)
-        setThreshold (drag->from + moved.x * TransferCurveGraph::scaleDb / std::max (1, curve.getWidth()) * speed);
-    else
-        setRatioTravel (drag->from + moved.y / knob::dragPixels * speed);
+    switch (drag->setting)
+    {
+        case DragSetting::threshold:
+            setThreshold (drag->from + moved.x * TransferCurveGraph::scaleDb / std::max (1, curve.getWidth()) * speed);
+            break;
+        case DragSetting::ratio:
+            setRatioTravel (drag->from + moved.y / knob::dragPixels * speed);
+            break;
+        case DragSetting::knee:
+            setKneeTravel (drag->from - moved.y / knob::dragPixels * speed);
+            break;
+    }
     repaint();
 }
 
