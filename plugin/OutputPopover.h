@@ -4,12 +4,12 @@
 #include "LevelRing.h"
 #include "PluginProcessor.h"
 #include "Sections.h"
-#include "plugkit/ui/OutputPopoverFrame.h"
+#include "plugkit/ui/FooterPopoverFrame.h"
 
 namespace comp1
 {
 
-// The output popover the footer's Output readout opens, in both views (plugkit::ui::OutputPopoverFrame): above the
+// The output popover the footer's Output readout opens, in both views (plugkit::ui::FooterPopoverFrame): above the
 // readout, right-aligned to it, closed by a second click, Escape or a click outside. It holds the Output section
 // (OutputSection): Output Gain and Ceiling with its ring side by side, then the Dry and Wet sliders, then the A (Auto
 // Gain) and L (Limiter) toggles, each attached to its host parameter, so they follow Host Automation, undo, A/B Compare
@@ -18,7 +18,7 @@ namespace comp1
 //
 // While open it follows the processor on the editor's tick. Its card holds the section, padded; the layout is
 // provisional.
-class OutputPopover final : public plugkit::ui::OutputPopoverFrame
+class OutputPopover final : public plugkit::ui::FooterPopoverFrame
 {
 public:
     OutputPopover (PluginProcessor& processor, LevelHistory& history);

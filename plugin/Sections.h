@@ -5,7 +5,7 @@
 #include "LevelHistory.h"
 #include "LevelRing.h"
 #include "PluginProcessor.h"
-#include "plugkit/ui/OutputPopoverFrame.h"
+#include "plugkit/ui/FooterPopoverFrame.h"
 #include "plugkit/ui/PopoverSlider.h"
 #include "plugkit/ui/staple/controls/IconButton.h"
 #include "plugkit/ui/staple/controls/Tween.h"
