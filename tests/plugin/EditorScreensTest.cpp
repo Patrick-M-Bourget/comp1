@@ -415,3 +415,44 @@ TEST_CASE ("Snapshots: the Timing Response inset on Clean and on FET, the Attack
     REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (inset.curveAlpha(), comp1::GlobalBypassFade::scale); }));
     harness::writeSnapshot (inset, "inset-timing-response-global-bypass", {}, 2.0f);
 }
+
+TEST_CASE ("Layout snapshots: the Expanded View at its default and minimum sizes, the Detection section collapsed and open, and the Compact View at its one size, in High Quality at 4x, with each footer close up in High Quality and in Zero Latency", "[.screens]")
+{
+    host::EditorHost host;
+    openOn (host, juce::AudioChannelSet::stereo());
+    // High Quality at 4x: the Processing Mode chip reads "High Quality" beside the High Quality readout's "HQ 4x".
+    host.edit (comp1::parameters::processingModeId, 1.0f);
+    host.edit (comp1::parameters::oversamplingId, 2.0f);
+    REQUIRE (host.settleUntil ([&] { return host.highQualityReadout().getButtonText() == "HQ 4x"; }));
+    // Close up, at 2x: the whole footer, in High Quality, then in Zero Latency.
+    const auto footerCloseUps = [&host] (const juce::String& name) {
+        auto& footer = host.footer();
+        const auto area = host.editor->getLocalArea (&footer, footer.getLocalBounds());
+        host.settleAnimations();
+        harness::writeSnapshot (*host.editor, "footer-" + name + "-high-quality", area, 2.0f);
+        host.edit (comp1::parameters::processingModeId, 0.0f);
+        host.settleAnimations();
+        harness::writeSnapshot (*host.editor, "footer-" + name + "-zero-latency", area, 2.0f);
+        host.edit (comp1::parameters::processingModeId, 1.0f);
+    };
+    const auto& window = comp1::PluginProcessor::expandedWindow;
+    for (const auto& [size, name] : { std::pair { window.defaultSize, "default" }, std::pair { window.minimum, "minimum" } })
+    {
+        host.editor->setSize (size.x, size.y);
+        host.processor.setDetectionOpen (false);
+        REQUIRE (host.settleUntil ([&] { return ! host.expandedView().detectionSection().isOpen(); }));
+        snapshot (host, juce::String ("layout-expanded-") + name);
+        footerCloseUps (juce::String ("expanded-") + name);
+        host.processor.setDetectionOpen (true);
+        REQUIRE (host.settleUntil ([&] { return host.expandedView().detectionSection().isOpen(); }));
+        snapshot (host, juce::String ("layout-expanded-") + name + "-detection-open");
+    }
+    host.processor.setDetectionOpen (false);
+    REQUIRE (host.settleUntil ([&] { return ! host.expandedView().detectionSection().isOpen(); }));
+
+    // The Compact View opens at its minimum, which is its default too.
+    host::EditorHost::click (host.expandedView().viewSwitch());
+    REQUIRE (host.expandedView().shownView() == comp1::View::compact);
+    snapshot (host, "layout-compact");
+    footerCloseUps ("compact");
+}
