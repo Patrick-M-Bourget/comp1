@@ -327,7 +327,8 @@ void TimingResponseInset::endHeldKey()
 void TimingResponseInset::tick (double seconds)
 {
     const auto before = std::array { handleCentre (TimingHandle::attack), handleCentre (TimingHandle::release) };
-    const bool took = follow();
+    // Hidden (the Spectrum tab, the Compact View), it asks for nothing: it catches up when it shows again.
+    const bool took = isShowing() && follow();
     layOutHandles();
     const bool faded = bypassFade.step (seconds);
     if (faded)

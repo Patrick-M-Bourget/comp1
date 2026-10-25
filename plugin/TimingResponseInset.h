@@ -111,7 +111,7 @@ private:
     };
 
     void tick (double seconds) override;
-    bool isActive() const override { return bypassFade.isMoving() || isWaiting(); }
+    bool isActive() const override { return bypassFade.isMoving() || (isShowing() && isWaiting()); }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
     TimingHandle whichIs (const DragHandle& handle) const;
