@@ -112,6 +112,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/GlobalBypassFadeTest.cpp
         plugin/GlobalBypassParameterTest.cpp
         plugin/HeroCompTest.cpp
+        plugin/HighQualityPopoverTest.cpp
         plugin/LatencyReportTest.cpp
         plugin/LevelGraphTest.cpp
         plugin/LevelHistoryTest.cpp

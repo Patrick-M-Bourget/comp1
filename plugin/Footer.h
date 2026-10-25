@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ChoiceChip.h"
+#include "HighQualityPopover.h"
 #include "LevelHistory.h"
 #include "OutputPopover.h"
 #include "PluginProcessor.h"
@@ -31,9 +32,9 @@ public:
     static constexpr float diameter = 4.0f;
 };
 
-// The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Style,
-// Processing Mode and Oversampling, as chips that open menus; at the right the Output readout, the UI Scale menu and the
-// switch between the views, in that order, which is Tab's order too.
+// The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Style and
+// Processing Mode, as chips that open menus, and the High Quality readout; at the right the Output readout, the UI Scale
+// menu and the switch between the views, in that order, which is Tab's order too.
 //
 // The Style chip reads "Style: " and the Style. Its menu lists the offered Styles (PluginProcessor::offeredStyles) in
 // Style's order, each with the Character it plays in brackets, "Drums (FET)", or alone where the Style is that
@@ -52,9 +53,9 @@ public:
 // A click on it, or Space or Return, opens and closes the output popover (OutputPopover), fill2 behind the readout
 // while it is open. It follows the processor on the editor's tick.
 //
-// Oversampling offers only the factors at or under the cap at the sample rate the processor was prepared at (or the
-// assumed one before it is), comp1/Latency.h's maxOversampling, and shows the factor in force, the cap when the
-// stored one is over it. In Zero Latency, which has no Oversampling, it is disabled.
+// The High Quality readout (HighQualityReadout) reads the Oversampling in force. A click on it, or Space or Return, opens
+// and closes the High Quality popover (HighQualityPopover), which holds Lookahead and Oversampling, fill2 behind the
+// readout while it is open.
 class Footer final : public juce::Component, private plugkit::ui::EditorTick::Client
 {
 public:
@@ -66,6 +67,8 @@ public:
     plugkit::ui::UiScaleMenu& uiScaleMenu() { return uiScale; }
     plugkit::ui::OutputReadout& outputReadout() { return output; }
     OutputPopover& outputPopover() { return popover; }
+    HighQualityReadout& highQualityReadout() { return highQuality; }
+    HighQualityPopover& highQualityPopover() { return highQualityPopup; }
     AutoGainDot& autoGainDot() { return dot; }
 
     // The switch between the views, at the far right after the UI Scale menu, last in Tab's order: Staple icon buttons
@@ -87,10 +90,12 @@ private:
     PluginProcessor& processor;
     staple::IconButton globalBypass { "Global Bypass", staple::Icon::power };
     juce::AudioProcessorValueTreeState::ButtonAttachment globalBypassAttachment;
-    ChoiceChip style, processingMode, oversampling;
+    ChoiceChip style, processingMode;
+    HighQualityReadout highQuality;
     plugkit::ui::OutputReadout output;
     AutoGainDot dot;
     OutputPopover popover;
+    HighQualityPopover highQualityPopup;
     plugkit::ui::UiScaleMenu uiScale;
     staple::IconButton toCompact { "Switch to the Compact View", staple::Icon::collapse },
         toExpanded { "Switch to the Expanded View", staple::Icon::expand };

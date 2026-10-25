@@ -44,6 +44,7 @@ target_sources(comp1 PRIVATE
     GlobalBypassFade.cpp
     HandlePainting.cpp
     HeroComp.cpp
+    HighQualityPopover.cpp
     LevelGraph.cpp
     LevelHistory.cpp
     LevelRing.cpp

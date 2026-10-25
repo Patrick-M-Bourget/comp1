@@ -2,9 +2,7 @@
 
 #include "Parameters.h"
 #include "ShownAutoGain.h"
-#include "comp1/Latency.h"
 #include "comp1/Style.h"
-#include "plugkit/ui/AssumedSampleRate.h"
 #include "plugkit/ui/staple/Tokens.h"
 
 #include <algorithm>
@@ -35,12 +33,6 @@ ChoiceChip::Config styleChip (PluginProcessor& processor, const juce::StringArra
              .choose = [&processor] (int choice) { processor.chooseStyle (static_cast<Style> (choice)); },
              .steps = false };
 }
-
-double sampleRateOf (const PluginProcessor& processor)
-{
-    const double prepared = processor.preparedSampleRateHz();
-    return prepared > 0.0 ? prepared : plugkit::ui::assumedSampleRate;
-}
 } // namespace
 
 AutoGainDot::AutoGainDot()
@@ -62,22 +54,8 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
              p.session().editHistory(),
              styleChip (p, parameters::parameterOf (p.parameterState(), parameters::styleId).getAllValueStrings())),
       processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
-      oversampling (parameters::parameterOf (p.parameterState(), parameters::oversamplingId),
-                    p.session().editHistory(),
-                    { .offered =
-                          [&p] {
-                              std::vector<int> allowed;
-                              for (int i = 0; i <= static_cast<int> (maxOversampling (sampleRateOf (p))); ++i)
-                                  allowed.push_back (i);
-                              return allowed;
-                          },
-                      .shown =
-                          [&p] {
-                              const auto stored = static_cast<Oversampling> (choiceOf (parameters::parameterOf (p.parameterState(), parameters::oversamplingId)));
-                              return static_cast<int> (oversamplingInForce (stored, sampleRateOf (p)));
-                          },
-                      .available = [&p] { return parameters::inHighQuality (p.parameterState()); } }),
-      popover (p, history), uiScale (p.session())
+      highQuality (p),
+      popover (p, history), highQualityPopup (p), uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
     // Its "on" is bypassed, so on it shows Off.
@@ -87,7 +65,7 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
     globalBypass.setTooltip ("Global Bypass (Cmd/Ctrl+B)");
     // Left to right.
     int order = 0;
-    for (juce::Component* child : std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &oversampling, &output, &uiScale })
+    for (juce::Component* child : std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &highQuality, &output, &uiScale })
     {
         addAndMakeVisible (*child);
         child->setExplicitFocusOrder (++order);
@@ -122,6 +100,20 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
         addChildComponent (popover);
     };
     addChildComponent (popover);
+    highQuality.onClick = [this] {
+        if (highQualityPopup.isOpen())
+            highQualityPopup.close();
+        else
+        {
+            highQualityPopup.openFrom (highQuality);
+            highQuality.setOpen (highQualityPopup.isOpen());
+        }
+    };
+    highQualityPopup.onClose = [this] {
+        highQuality.setOpen (false);
+        addChildComponent (highQualityPopup);
+    };
+    addChildComponent (highQualityPopup);
     addChildComponent (dot);
     showOutput();
 }
@@ -130,6 +122,8 @@ Footer::~Footer()
 {
     popover.onClose = nullptr;
     popover.close();
+    highQualityPopup.onClose = nullptr;
+    highQualityPopup.close();
 }
 
 void Footer::showOutput()
@@ -190,11 +184,13 @@ void Footer::resized()
     // The gap left of the UI Scale menu holds the Auto Gain dot, so the readout doesn't move as it shows.
     dot.setBounds (row.removeFromRight (chipGap));
     output.setBounds (row.removeFromRight (std::max (outputWidth, output.getIdealWidth())));
-    for (auto* chip : { &style, &processingMode, &oversampling })
+    for (auto* chip : { &style, &processingMode })
     {
         row.removeFromLeft (chipGap);
         chip->setBounds (row.removeFromLeft (chip->widestIdealWidth()));
     }
+    row.removeFromLeft (chipGap);
+    highQuality.setBounds (row.removeFromLeft (highQuality.widestIdealWidth()));
 }
 
 } // namespace comp1

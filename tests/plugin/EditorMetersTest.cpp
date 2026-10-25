@@ -1,16 +1,12 @@
 // The Expanded View's Gain Reduction meters (the Gate's, the compressor's and the Limiter's), the Detection Level ring on
-// Threshold and the Ceiling ring, which read the editor's level history; and which controls are available on mono, in
-// Zero Latency, and at each sample rate's Oversampling cap.
+// Threshold and the Ceiling ring, which read the editor's level history; and which controls are available on mono.
 
-#include "Footer.h"
 #include "Measure.h"
 #include "Playing.h"
-#include "comp1/Latency.h"
 #include "plugkit/ui/staple/Tokens.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
-#include <catch2/generators/catch_generators_range.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
@@ -310,59 +306,4 @@ TEST_CASE ("On a mono track Stereo Placement and Stereo Link are disabled, their
     CHECK_THAT (link.getValue(), WithinAbs (40.0, 1.0e-4));
     CHECK (host.value (parameters::stereoPlacementId) == 1.0f);
     CHECK_THAT (host.value (parameters::stereoLinkId), WithinAbs (40.0f, 1.0e-4));
-}
-
-TEST_CASE ("In Zero Latency Lookahead and Oversampling are disabled, their values kept; in High Quality they are enabled")
-{
-    host::EditorHost host;
-    host.edit (parameters::lookaheadId, 2.0f);
-    auto& lookahead = host.knob ("Lookahead");
-    auto& oversampling = host.showing<comp1::ChoiceChip> ("Oversampling");
-    const auto enabled = [&] (bool on) { return lookahead.isEnabled() == on && oversampling.isEnabled() == on; };
-    REQUIRE (host.settleUntil ([&] { return enabled (false); }));
-    host.edit (parameters::processingModeId, 1.0f);
-    REQUIRE (host.settleUntil ([&] { return enabled (true); }));
-    host.edit (parameters::processingModeId, 0.0f);
-    REQUIRE (host.settleUntil ([&] { return enabled (false); }));
-    CHECK_THAT (host.value (parameters::lookaheadId), WithinAbs (2.0f, 1.0e-4));
-}
-
-TEST_CASE ("Oversampling offers the factors up to each sample rate's cap and shows the one in force; before a sample rate, the assumed one's")
-{
-    host::EditorHost host;
-    host.edit (parameters::processingModeId, 1.0f);
-    auto& chip = host.showing<comp1::ChoiceChip> ("Oversampling");
-    const auto offered = [&chip] {
-        juce::StringArray items;
-        const auto menu = chip.menu();
-        for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
-            items.add (it.getItem().text);
-        return items;
-    };
-    const juce::StringArray all { "1x", "2x", "4x", "8x" };
-    // Not prepared yet: 48 kHz assumed.
-    CHECK (offered() == all);
-
-    const double sampleRate = GENERATE (from_range (comp1::test::sampleRates()));
-    CAPTURE (sampleRate);
-    host.processor.prepareToPlay (sampleRate, 512);
-    // 1x to 8x at 44.1 and 48 kHz, to 4x at 88.2 and 96 kHz, to 2x at 176.4 and 192 kHz.
-    const int factors = sampleRate <= 48000.0 ? 4 : sampleRate <= 96000.0 ? 3 : 2;
-    juce::StringArray expected;
-    for (int i = 0; i < factors; ++i)
-        expected.add (all[i]);
-    CHECK (offered() == expected);
-
-    // 8x stored: the cap shown, and ticked.
-    host.edit (parameters::oversamplingId, 3.0f);
-    REQUIRE (host.settleUntil ([&] { return chip.getButtonText() == expected[factors - 1]; }));
-    const auto menu = chip.menu();
-    for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
-        CHECK (it.getItem().isTicked == (it.getItem().text == expected[factors - 1]));
-    // Picking one writes it.
-    auto action = harness::actionOf (menu, "1x");
-    REQUIRE (action != nullptr);
-    action();
-    CHECK (host.value (parameters::oversamplingId) == 0.0f);
-    REQUIRE (host.settleUntil ([&] { return chip.getButtonText() == "1x"; }));
 }

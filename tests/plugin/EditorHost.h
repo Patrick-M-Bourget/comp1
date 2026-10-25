@@ -3,6 +3,7 @@
 // The Expanded View as a host opens it, through plugkit's editor harness: what the editor's tests share.
 
 #include "Footer.h"
+#include "HighQualityPopover.h"
 #include "OutputPopover.h"
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
@@ -72,15 +73,24 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
     // The output popover the readout opens.
     comp1::OutputPopover& outputPopover() { return footer().outputPopover(); }
 
+    // The High Quality readout, and the High Quality popover it opens.
+    comp1::HighQualityReadout& highQualityReadout() { return footer().highQualityReadout(); }
+    comp1::HighQualityPopover& highQualityPopover() { return footer().highQualityPopover(); }
+
     // Opens the output popover by a click on the Output readout, as the user opens it, unless it is open, and waits for
     // it to pop in.
-    comp1::OutputPopover& openOutputPopover()
+    comp1::OutputPopover& openOutputPopover() { return openFrom (outputReadout(), outputPopover()); }
+    // Opens the High Quality popover by a click on the High Quality readout, as openOutputPopover does the output's.
+    comp1::HighQualityPopover& openHighQualityPopover() { return openFrom (highQualityReadout(), highQualityPopover()); }
+
+    // Opens popover by a click on readout, unless it is open, and waits for it to pop in.
+    template <typename Popover>
+    Popover& openFrom (juce::Button& readout, Popover& popover)
     {
-        auto& popover = outputPopover();
         if (! popover.isOpen())
         {
-            REQUIRE (outputReadout().onClick != nullptr);
-            outputReadout().onClick();
+            REQUIRE (readout.onClick != nullptr);
+            readout.onClick();
         }
         REQUIRE (popover.isOpen());
         REQUIRE (settleUntil ([&popover] { return ! popover.isTransformed(); }));

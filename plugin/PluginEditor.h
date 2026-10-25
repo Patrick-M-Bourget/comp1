@@ -29,7 +29,7 @@ namespace comp1
 // Reduction, then the Output Meter, each labelled on one line under its bar (GATE, COMP, LIM, OUT; MeterLabel), the
 // meters as tall as the display but for that line. Under that the sections in signal order, in two rows from the left
 // edge on one grid of three columns: Gate, Compressor, and Character and Saturation over Detection, spanning the first
-// two, and Stereo and Lookahead, sharing the third. Each column is as wide as the widest it holds, and each section
+// two, and Stereo, in the third. Each column is as wide as the widest it holds, and each section
 // takes its columns' width (its controls from the left) and its own height, the Detection section's following its
 // slide open or closed (DetectionSection), the display taking up what it gives. The display takes whatever the window
 // grows by, and the section rows its width.
@@ -106,7 +106,6 @@ private:
     CharacterSection character;
     DetectionSection detection;
     StereoSection stereo;
-    LookaheadSection lookahead;
     Footer footer;
     CompactView compactBody;
     View shown = View::expanded;
