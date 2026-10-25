@@ -612,3 +612,253 @@ TEST_CASE ("An editor opened under Global Bypass shows the Transfer Curve inset'
     CHECK_THAT (inset.lookOf (InsetHandle::ratio).alpha, WithinAbs (0.45, 1.0e-6));
     CHECK_THAT (inset.graph().curveAlpha(), WithinAbs (0.45, 1.0e-6));
 }
+
+namespace
+{
+
+const auto alt = juce::ModifierKeys (juce::ModifierKeys::altModifier);
+const auto shiftAlt = juce::ModifierKeys (juce::ModifierKeys::altModifier | juce::ModifierKeys::shiftModifier);
+
+// Knee's place in its parameter's travel, 0 to 1.
+float kneeTravel (host::EditorHost& host) { return host.parameter (parameters::kneeId).getValue(); }
+
+// Every host parameter's plain value but one's.
+std::map<juce::String, float> allValuesBut (host::EditorHost& host, const juce::String& id)
+{
+    auto values = allValues (host);
+    values.erase (id);
+    return values;
+}
+
+// A drag event on the Threshold handle, offset from its press at from, with mods and the left button held.
+void dragThresholdTo (comp1::TransferCurveInset& inset, juce::Point<float> from, juce::Point<float> offset, juce::ModifierKeys mods)
+{
+    auto& handle = inset.handle (InsetHandle::threshold);
+    handle.mouseDrag (harness::mouseEvent (handle, from + offset, mods.withFlags (juce::ModifierKeys::leftButtonModifier), from));
+}
+
+} // namespace
+
+TEST_CASE ("Alt-dragging the Transfer Curve inset's Threshold handle sets Knee instead, vertically by the knobs' travel with up widening it, Shift+Alt a quarter as far, each drag one undo step inside gestures")
+{
+    InsetHost host;
+    host.edit (parameters::thresholdId, -30.0f);
+    host.edit (parameters::ratioId, 4.0f);
+    host.edit (parameters::kneeId, 12.0f);
+    auto& inset = host.inset();
+    host.settle();
+    auto& history = host.processor.session().editHistory();
+    const int start = history.undoSteps();
+    host::GestureRecorder recorder;
+    host.processor.addListener (&recorder);
+
+    // Up and right with Alt: Knee wider by 40 px of the knobs' 200 px travel; Threshold, and everything else, untouched.
+    const float knee = kneeTravel (host);
+    const auto before = allValuesBut (host, parameters::kneeId);
+    dragHandle (inset, InsetHandle::threshold, { 30.0f, -40.0f }, alt);
+    CHECK_THAT (kneeTravel (host), WithinAbs (knee + 0.2f, 1.0e-5));
+    CHECK (host.value (parameters::kneeId) > 12.0f);
+    CHECK (allValuesBut (host, parameters::kneeId) == before);
+    CHECK (history.undoSteps() == start + 1);
+
+    // Down with Shift+Alt: a quarter as far, narrowing it.
+    const float kneeNow = kneeTravel (host);
+    dragHandle (inset, InsetHandle::threshold, { 0.0f, 40.0f }, shiftAlt);
+    CHECK_THAT (kneeTravel (host), WithinAbs (kneeNow - 0.05f, 1.0e-5));
+    CHECK (allValuesBut (host, parameters::kneeId) == before);
+    CHECK (history.undoSteps() == start + 2);
+
+    // Alt on the Ratio handle changes nothing about it: it still drags Ratio.
+    const float ratio = ratioTravel (host);
+    dragHandle (inset, InsetHandle::ratio, { 0.0f, 20.0f }, alt);
+    CHECK_THAT (ratioTravel (host), WithinAbs (ratio + 0.1f, 1.0e-5));
+    CHECK_THAT (kneeTravel (host), WithinAbs (kneeNow - 0.05f, 1.0e-5));
+    host.processor.removeListener (&recorder);
+
+    REQUIRE_FALSE (recorder.changes.empty());
+    for (const auto& [index, inGesture] : recorder.changes)
+    {
+        CAPTURE (index);
+        CHECK (inGesture);
+    }
+    CHECK (recorder.open.empty());
+
+    while (history.undoSteps() > start)
+        history.undo();
+    CHECK_THAT (host.value (parameters::kneeId), WithinAbs (12.0f, 1.0e-4));
+    CHECK_THAT (host.value (parameters::thresholdId), WithinAbs (-30.0f, 1.0e-4));
+}
+
+TEST_CASE ("Pressing or letting go of Alt mid-drag on the Transfer Curve inset's Threshold handle carries on from where Threshold and Knee are, without a jump, the whole drag one undo step")
+{
+    InsetHost host;
+    host.edit (parameters::thresholdId, -30.0f);
+    host.edit (parameters::kneeId, 12.0f);
+    auto& inset = host.inset();
+    host.settle();
+    auto& history = host.processor.session().editHistory();
+    const int start = history.undoSteps();
+    const double dbPerPixel = 60.0 / inset.graph().getWidth();
+    auto& handle = inset.handle (InsetHandle::threshold);
+    const auto from = centreOf (inset, InsetHandle::threshold);
+    const float knee = kneeTravel (host);
+
+    handle.mouseDown (harness::mouseEvent (handle, from, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier)));
+    // Plain: across moves Threshold.
+    dragThresholdTo (inset, from, { 20.0f, 0.0f }, {});
+    const double threshold = -30.0 + 20.0 * dbPerPixel;
+    CHECK_THAT (host.value (parameters::thresholdId), WithinAbs (threshold, 1.0e-3));
+    // Alt pressed where the pointer is: nothing jumps.
+    dragThresholdTo (inset, from, { 20.0f, 0.0f }, alt);
+    CHECK_THAT (host.value (parameters::thresholdId), WithinAbs (threshold, 1.0e-3));
+    CHECK_THAT (kneeTravel (host), WithinAbs (knee, 1.0e-6));
+    // Alt held: up widens Knee from there; across leaves Threshold.
+    dragThresholdTo (inset, from, { 50.0f, -20.0f }, alt);
+    CHECK_THAT (kneeTravel (host), WithinAbs (knee + 0.1f, 1.0e-5));
+    CHECK_THAT (host.value (parameters::thresholdId), WithinAbs (threshold, 1.0e-3));
+    // Alt let go: nothing jumps, and across moves Threshold again from where it was.
+    dragThresholdTo (inset, from, { 50.0f, -20.0f }, {});
+    CHECK_THAT (host.value (parameters::thresholdId), WithinAbs (threshold, 1.0e-3));
+    CHECK_THAT (kneeTravel (host), WithinAbs (knee + 0.1f, 1.0e-5));
+    dragThresholdTo (inset, from, { 60.0f, -40.0f }, {});
+    CHECK_THAT (host.value (parameters::thresholdId), WithinAbs (threshold + 10.0 * dbPerPixel, 1.0e-3));
+    CHECK_THAT (kneeTravel (host), WithinAbs (knee + 0.1f, 1.0e-5));
+    handle.mouseUp (harness::mouseEvent (handle, from + juce::Point<float> { 60.0f, -40.0f }, {}, from));
+
+    CHECK (history.undoSteps() == start + 1);
+    history.undo();
+    CHECK_THAT (host.value (parameters::thresholdId), WithinAbs (-30.0f, 1.0e-4));
+    CHECK_THAT (host.value (parameters::kneeId), WithinAbs (12.0f, 1.0e-4));
+}
+
+TEST_CASE ("Alt+Up and Alt+Down on the focused Transfer Curve inset step Knee by 1% of its travel, 0.2% with Shift, up widening it, a held key one undo step")
+{
+    InsetHost host;
+    host.edit (parameters::thresholdId, -30.0f);
+    host.edit (parameters::ratioId, 4.0f);
+    host.edit (parameters::kneeId, 12.0f);
+    auto& inset = host.inset();
+    inset.grabKeyboardFocus();
+    REQUIRE (inset.hasKeyboardFocus (false));
+    auto& history = host.processor.session().editHistory();
+    const int start = history.undoSteps();
+    const float knee = kneeTravel (host);
+    const auto before = allValuesBut (host, parameters::kneeId);
+    const auto key = [] (int code, juce::ModifierKeys mods) { return juce::KeyPress (code, mods, 0); };
+
+    CHECK (host.press (key (juce::KeyPress::upKey, alt)));
+    CHECK_THAT (kneeTravel (host), WithinAbs (knee + 0.01f, 1.0e-6));
+    CHECK (host.press (key (juce::KeyPress::downKey, shiftAlt)));
+    CHECK_THAT (kneeTravel (host), WithinAbs (knee + 0.008f, 1.0e-6));
+    CHECK (host.press (key (juce::KeyPress::downKey, alt)));
+    CHECK_THAT (kneeTravel (host), WithinAbs (knee - 0.002f, 1.0e-6));
+    CHECK (allValuesBut (host, parameters::kneeId) == before);
+    CHECK (history.undoSteps() == start + 3);
+
+    REQUIRE (host.hold (key (juce::KeyPress::upKey, alt)));
+    REQUIRE (host.hold (key (juce::KeyPress::upKey, alt)));
+    host.release();
+    CHECK_THAT (kneeTravel (host), WithinAbs (knee + 0.018f, 1.0e-6));
+    CHECK (history.undoSteps() == start + 4);
+
+    while (history.undoSteps() > start)
+        history.undo();
+    CHECK_THAT (host.value (parameters::kneeId), WithinAbs (12.0f, 1.0e-4));
+}
+
+TEST_CASE ("While Alt is held over or dragging the Transfer Curve inset's Threshold handle, the inset shades the knee region and shows a Knee readout card, and the handle an up-down cursor; not otherwise")
+{
+    InsetHost host;
+    host.edit (parameters::thresholdId, -30.0f);
+    host.edit (parameters::ratioId, 4.0f);
+    host.edit (parameters::kneeId, 12.0f);
+    auto& inset = host.inset();
+    host.settle();
+    auto& handle = inset.handle (InsetHandle::threshold);
+    auto& ratioHandle = inset.handle (InsetHandle::ratio);
+    const auto centre = centreOf (inset, InsetHandle::threshold);
+    const auto horizontal = juce::MouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+    const auto vertical = juce::MouseCursor (juce::MouseCursor::UpDownResizeCursor);
+    // A pixel inside the knee region, under the curve, clear of the curve, its halo and the grid.
+    auto& graph = inset.graph();
+    const auto inRegion = (graph.getPosition().toFloat() + graph.pointAt (-27.0, -55.0)).roundToInt();
+    const auto pixel = [&] { return inset.createComponentSnapshot (inset.getLocalBounds(), true).getPixelAt (inRegion.x, inRegion.y); };
+    const auto plain = pixel();
+
+    const auto checkNoCue = [&] {
+        CHECK_FALSE (inset.kneeShading().has_value());
+        CHECK_FALSE (inset.readout().has_value());
+        CHECK (handle.getMouseCursor() == horizontal);
+        CHECK (pixel() == plain);
+    };
+    const auto checkCue = [&] {
+        REQUIRE (inset.kneeShading().has_value());
+        // Across Threshold less and plus half the Knee (-36 to -24 dB), the graph's whole height.
+        const auto shading = *inset.kneeShading();
+        const auto topLeft = graph.getPosition().toFloat() + graph.pointAt (-36.0, 0.0);
+        const auto bottomRight = graph.getPosition().toFloat() + graph.pointAt (-24.0, -60.0);
+        CHECK_THAT (shading.getX(), WithinAbs (topLeft.x, 1.0e-3));
+        CHECK_THAT (shading.getRight(), WithinAbs (bottomRight.x, 1.0e-3));
+        CHECK_THAT (shading.getY(), WithinAbs (topLeft.y, 1.0e-3));
+        CHECK_THAT (shading.getBottom(), WithinAbs (bottomRight.y, 1.0e-3));
+        REQUIRE (inset.readout().has_value());
+        CHECK (inset.readout()->title == "Knee");
+        CHECK (inset.readout()->value == "12.00 dB");
+        CHECK (handle.getMouseCursor() == vertical);
+        CHECK (pixel() != plain);
+    };
+
+    // Hovered without Alt: no cue. A test window isn't in front, so the pointer's events are sent to the handle's
+    // handlers directly (CODING_STANDARDS "Editor behaviour").
+    handle.mouseEnter (harness::mouseEvent (handle, centre));
+    checkNoCue();
+    // Alt pressed while over it, and let go.
+    handle.modifierKeysChanged (alt);
+    checkCue();
+    handle.modifierKeysChanged ({});
+    checkNoCue();
+    // Moved over it with Alt held, then out.
+    handle.mouseMove (harness::mouseEvent (handle, centre, alt));
+    checkCue();
+    handle.mouseExit (harness::mouseEvent (handle, centre + juce::Point<float> { 30.0f, 0.0f }, alt));
+    checkNoCue();
+    // Alt over the Ratio handle: no cue.
+    const auto ratioCentre = centreOf (inset, InsetHandle::ratio);
+    ratioHandle.mouseEnter (harness::mouseEvent (ratioHandle, ratioCentre, alt));
+    ratioHandle.modifierKeysChanged (alt);
+    checkNoCue();
+    ratioHandle.mouseExit (harness::mouseEvent (ratioHandle, ratioCentre + juce::Point<float> { -30.0f, 0.0f }));
+
+    // An Alt-drag shows it; letting go of Alt mid-drag hides it for the Threshold card; the release ends the card.
+    pressAndDrag (inset, InsetHandle::threshold, {}, alt);
+    checkCue();
+    dragThresholdTo (inset, centre, {}, {});
+    CHECK_FALSE (inset.kneeShading().has_value());
+    REQUIRE (inset.readout().has_value());
+    CHECK (inset.readout()->title == "Threshold");
+    handle.mouseUp (harness::mouseEvent (handle, centre, {}, centre));
+    checkNoCue();
+}
+
+TEST_CASE ("Alt-dragging the Transfer Curve inset's Threshold handle while Comp Follow is on sets Knee and leaves Comp Follow on, and the curve played and drawn takes the new Knee")
+{
+    InsetHost host;
+    REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+    host.edit (parameters::compId, 80.0f);
+    host.settle();
+    REQUIRE (host.value (parameters::compFollowId) == 1.0f);
+    const auto followed = host.processor.playedCurve();
+    const float knee = kneeTravel (host);
+    auto& history = host.processor.session().editHistory();
+    const int steps = history.undoSteps();
+
+    dragHandle (host.inset(), InsetHandle::threshold, { 0.0f, -40.0f }, alt);
+    CHECK (host.value (parameters::compFollowId) == 1.0f);
+    CHECK_THAT (kneeTravel (host), WithinAbs (knee + 0.2f, 1.0e-5));
+    const auto played = host.processor.playedCurve();
+    CHECK (juce::exactlyEqual (played.thresholdDb, followed.thresholdDb));
+    CHECK (juce::exactlyEqual (played.inverseRatio, followed.inverseRatio));
+    CHECK_THAT (played.kneeDb, WithinAbs (host.value (parameters::kneeId), 1.0e-4));
+    CHECK (host.settleUntil ([&] { return juce::exactlyEqual (host.inset().graph().curve().kneeDb, played.kneeDb); }));
+    CHECK (history.undoSteps() == steps + 1);
+}
