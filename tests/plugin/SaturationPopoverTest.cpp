@@ -176,6 +176,30 @@ TEST_CASE ("The Saturation popover's on switch, Drive and Saturation Position dr
     CHECK (host.settleUntil ([&] { return position.getSelectedItemIndex() == 0; }));
 }
 
+TEST_CASE ("A pick from the Saturation Position menu, a window of its own, leaves the Saturation popover open, in both views")
+{
+    host::EditorHost host;
+    const bool compact = GENERATE (false, true);
+    CAPTURE (compact);
+    showView (host, compact);
+    host.edit (parameters::saturationPositionId, 0.0f);
+    auto& popover = host.openSaturationPopover();
+    auto& position = host.showing<juce::ComboBox> ("Saturation Position");
+    REQUIRE (host.settleUntil ([&] { return position.getSelectedItemIndex() == 0; }));
+
+    position.showPopup();
+    auto& item = host.pressInOpenMenu (popover, position.getItemText (1));
+    CHECK (popover.isOpen());
+    REQUIRE (item.getAccessibilityHandler()->getActions().invoke (juce::AccessibilityActionType::press));
+    harness::deliverModalResults();
+    CHECK (harness::openMenu() == nullptr);
+    // The box tells its listeners, its parameter's attachment among them, from the message loop, which tests don't
+    // run; AsyncUpdater is its private base, which only a C-style cast reaches.
+    ((juce::AsyncUpdater*) &position)->handleUpdateNowIfNeeded();
+    CHECK (host.value (parameters::saturationPositionId) == 1.0f);
+    CHECK (popover.isOpen());
+}
+
 TEST_CASE ("The Expanded View's Character section is titled Character and holds Colour alone: Saturation's controls are in the Saturation popover")
 {
     host::EditorHost host;

@@ -199,21 +199,26 @@ TEST_CASE ("The popover's Oversampling offers the factors up to each sample rate
     REQUIRE (host.settleUntil ([&] { return chip.getButtonText() == "Oversampling: 1x"; }));
 }
 
-TEST_CASE ("A press in the Oversampling chip's menu, a window of its own, leaves the High Quality popover open; a press elsewhere in the editor closes it")
+TEST_CASE ("A pick from the Oversampling chip's menu, a window of its own, leaves the High Quality popover open; a press elsewhere in the editor closes it")
 {
     host::EditorHost host;
     host.edit (parameters::processingModeId, 1.0f);
+    host.edit (parameters::oversamplingId, 0.0f);
     auto& popover = host.openHighQualityPopover();
     auto& chip = host.showing<comp1::ChoiceChip> ("Oversampling");
+    REQUIRE (host.settleUntil ([&] { return chip.getButtonText() == "Oversampling: 1x"; }));
     REQUIRE (chip.onClick != nullptr);
     chip.onClick();
-    REQUIRE (host.settleUntil ([] { return harness::openMenu() != nullptr; }));
-    auto* menu = harness::openMenu();
-    // The press as the global mouse listener the popover is while open hears it.
-    popover.mouseDown (harness::mouseEvent (*menu, { 4.0f, 4.0f }));
+    host.pressInOpenMenu (popover, "2x");
     CHECK (popover.isOpen());
+    // The pick: JUCE posts a menu item's action to the message loop, which tests don't run, so it runs here.
+    auto action = harness::actionOf (chip.menu(), "2x");
+    REQUIRE (action != nullptr);
+    action();
     juce::PopupMenu::dismissAllActiveMenus();
     REQUIRE (host.settleUntil ([] { return harness::openMenu() == nullptr; }));
+    CHECK (host.value (parameters::oversamplingId) == 1.0f);
+    CHECK (popover.isOpen());
 
     auto& display = host.expandedView().display();
     popover.mouseDown (harness::mouseEvent (display, { 4.0f, 4.0f }));
