@@ -26,6 +26,19 @@ inline Curve curveOf (const Settings& settings)
              .rangeDb = settings.rangeDb };
 }
 
+// The gain computer's settings the compressor plays, settled: curveOf's, with Threshold and 1/Ratio from the Comp
+// Curve at Comp while Comp Follow is on (ADR 0004).
+inline Curve playedCurveOf (const Settings& settings)
+{
+    auto curve = curveOf (settings);
+    if (settings.compFollow)
+    {
+        curve.thresholdDb = compThresholdDb (settings.compCurve, settings.comp);
+        curve.inverseRatio = compInverseRatio (settings.compCurve, settings.comp);
+    }
+    return curve;
+}
+
 // The Gain Reduction in dB the Transfer Curve asks for at a Detection Level in dB: Giannoulis, Massberg & Reiss's
 // soft-knee curve (eq. 4; Clean.h names the paper) as the gain it takes off, unity below the Knee, 1/Ratio above it
 // and a quadratic across it, capped at Range. Exactly 0 at 1:1 and below the Knee, -infinity dB (silence) included.
