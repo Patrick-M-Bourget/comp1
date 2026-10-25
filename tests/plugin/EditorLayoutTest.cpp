@@ -61,24 +61,23 @@ TEST_CASE ("At its default size the Expanded View is the header, the display wit
     REQUIRE (host.editor->getWidth() == 1400);
     REQUIRE (host.editor->getHeight() == 860);
 
-    // 14 px padding and 12 px gaps; four 40 px meter rails and the two rows of sections, 164 and 90 px tall (the
-    // first's Threshold ring reaching past its knob, the second's the Lookahead section's with the Detection section
-    // collapsed to its strip).
+    // 14 px padding and 12 px gaps; four 40 px meter rails and the two rows of sections, 164 and 16 px tall (the
+    // first's Threshold ring reaching past its knob, the second the Detection section collapsed to its strip).
     const auto areas = areasOf (*host.editor);
     CHECK (areas.header == juce::Rectangle<int> (14, 14, 1372, 52));
-    CHECK (areas.display == juce::Rectangle<int> (14, 78, 1164, 434));
+    CHECK (areas.display == juce::Rectangle<int> (14, 78, 1164, 508));
     // The Gain Reduction meters in signal order, then the Output Meter, over their labels' 14 px line.
-    CHECK (areas.gateGainReduction == juce::Rectangle<int> (1190, 78, 40, 420));
-    CHECK (areas.gainReduction == juce::Rectangle<int> (1242, 78, 40, 420));
-    CHECK (areas.limiterGainReduction == juce::Rectangle<int> (1294, 78, 40, 420));
-    CHECK (areas.outputMeter == juce::Rectangle<int> (1346, 78, 40, 420));
-    CHECK (areas.sections == juce::Rectangle<int> (14, 524, 1372, 266));
+    CHECK (areas.gateGainReduction == juce::Rectangle<int> (1190, 78, 40, 494));
+    CHECK (areas.gainReduction == juce::Rectangle<int> (1242, 78, 40, 494));
+    CHECK (areas.limiterGainReduction == juce::Rectangle<int> (1294, 78, 40, 494));
+    CHECK (areas.outputMeter == juce::Rectangle<int> (1346, 78, 40, 494));
+    CHECK (areas.sections == juce::Rectangle<int> (14, 598, 1372, 192));
     CHECK (areas.footer == juce::Rectangle<int> (14, 802, 1372, 44));
     // Each tab's content is the display under its tabs.
     CHECK (areas.levelTab == areas.spectrumTab);
-    CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1164, 400));
+    CHECK (areas.levelTab == juce::Rectangle<int> (14, 112, 1164, 474));
 
-    // Open, the Detection section makes the second row 134 px tall, and the display and the meters give up the 44 px.
+    // Open, the Detection section makes the second row 134 px tall, and the display and the meters give up the 118 px.
     host.processor.setDetectionOpen (true);
     REQUIRE (host.settleUntil ([&] { return host.expandedView().detectionSection().isOpen(); }));
     host.settleAnimations();
@@ -155,7 +154,7 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
     const auto& window = comp1::PluginProcessor::expandedWindow;
     host.editor->setSize (window.minimum.x, window.minimum.y);
     auto& sections = named (*host.editor, "Sections");
-    const auto names = { "Gate", "Compressor", "Character", "Detection", "Lookahead" };
+    const auto names = { "Gate", "Compressor", "Character", "Detection" };
     REQUIRE (static_cast<size_t> (sections.getNumChildComponents()) == names.size());
     std::vector<juce::Rectangle<int>> placed;
     for (const auto* name : names)
@@ -188,7 +187,7 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
     }
 }
 
-TEST_CASE ("Both rows of sections start at the left edge on one grid of columns: Detection under Gate and Compressor, Lookahead under Character, with no gap between, the Detection section collapsed or open, at 100% and 200% and the minimum and default sizes")
+TEST_CASE ("Both rows of sections start at the left edge on one grid of columns: Detection under Gate and Compressor, nothing under Character, the Detection section collapsed or open, at 100% and 200% and the minimum and default sizes")
 {
     host::EditorHost host;
     auto* menu = harness::findChild<plugkit::ui::UiScaleMenu> (*host.editor);
@@ -209,27 +208,25 @@ TEST_CASE ("Both rows of sections start at the left edge on one grid of columns:
     auto& sections = named (*host.editor, "Sections");
     const auto at = [&sections] (const char* name) { return named (sections, name).getBounds(); };
     const auto gate = at ("Gate"), compressor = at ("Compressor"), character = at ("Character");
-    const auto detection = at ("Detection"), lookahead = at ("Lookahead");
+    const auto detection = at ("Detection");
     const int gap = compressor.getX() - gate.getRight();
 
     // The first row's columns, from the left edge, a gap apart.
     CHECK (gap > 0);
     CHECK (gate.getX() == 0);
     CHECK (character.getX() - compressor.getRight() == gap);
-    // The second row under them: Detection spans the first two columns, and Lookahead the third.
+    // The second row under them: Detection spans the first two columns; the third column's is empty.
     CHECK (detection.getX() == gate.getX());
     CHECK (detection.getRight() == compressor.getRight());
-    CHECK (lookahead.getX() == character.getX());
-    CHECK (lookahead.getRight() == character.getRight());
     // Each at least as wide as its own content.
-    for (const auto* name : { "Gate", "Compressor", "Character", "Detection", "Lookahead" })
+    for (const auto* name : { "Gate", "Compressor", "Character", "Detection" })
     {
         CAPTURE (name);
         auto& section = dynamic_cast<comp1::Section&> (named (sections, name));
         CHECK (section.getWidth() >= section.idealWidth());
         CHECK (sections.getLocalBounds().contains (section.getBounds()));
     }
-    CHECK_FALSE (detection.intersects (lookahead));
+    CHECK_FALSE (detection.intersects (character));
 }
 
 TEST_CASE ("Each meter is labelled under its bar, GATE, COMP, LIM and OUT, the labels overlapping nothing and the bars giving up only the label's line, at 100% and 200% and the minimum and default sizes")

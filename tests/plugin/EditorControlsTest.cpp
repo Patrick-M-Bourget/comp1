@@ -51,16 +51,18 @@ void openDetection (host::EditorHost& host)
     host.settleAnimations();
 }
 
-// Every control can be: the output popover, the Saturation popover and the stereo popover open (so Output Gain, Auto
-// Gain, the Limiter and Ceiling; Saturation, Saturation Position and Drive; and Stereo Placement and Stereo Link show),
-// the Detection section open (so its controls show), Comp Follow off (so Threshold and Ratio are set directly), High
-// Quality (so Lookahead and Oversampling are), on a stereo track (so Stereo Placement and Stereo Link are).
+// Every control can be: the output popover, the Saturation popover, the stereo popover and the High Quality popover
+// open (so Output Gain, Auto Gain, the Limiter and Ceiling; Saturation, Saturation Position and Drive; Stereo
+// Placement and Stereo Link; and Lookahead and Oversampling show), the Detection section open (so its controls show),
+// Comp Follow off (so Threshold and Ratio are set directly), High Quality (so Lookahead and Oversampling are), on a
+// stereo track (so Stereo Placement and Stereo Link are).
 void everythingAvailable (host::EditorHost& host)
 {
     openDetection (host);
     host.openOutputPopover();
     host.openSaturationPopover();
     host.openStereoPopover();
+    host.openHighQualityPopover();
     host.edit (parameters::processingModeId, 1.0f);
     host.edit (parameters::compFollowId, 0.0f);
     REQUIRE (host.settleUntil ([&] { return host.showing<plugkit::ui::OutputToggle> ("Auto Gain").isEnabled() && host.knob ("Lookahead").isEnabled(); }));
@@ -263,10 +265,11 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     openDetection (host);
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
-    // And the output popover's, the Saturation popover's and the stereo popover's.
+    // And the output popover's, the Saturation popover's, the stereo popover's and the High Quality popover's.
     host.openOutputPopover();
     host.openSaturationPopover();
     host.openStereoPopover();
+    host.openHighQualityPopover();
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
     const auto glossary = readGlossary();
@@ -328,6 +331,7 @@ TEST_CASE ("Every control in the editor has an accessible name, none a word the 
     expected.push_back ("Gate Release");
     expected.push_back ("Gate Threshold");
     expected.push_back ("Global Bypass");
+    expected.push_back ("High Quality");
     expected.push_back ("Hold");
     expected.push_back ("Knee");
     expected.push_back ("Level");
@@ -445,8 +449,8 @@ TEST_CASE ("Tab walks the header, the display's tabs, the Transfer Curve inset a
     else
         for (const auto& title : detection)
             CHECK_FALSE (titles.contains (title));
-    order.addArray (juce::StringArray { "Lookahead", "Global Bypass", "Style", "Processing Mode", "Oversampling", "Stereo", "Saturation",
-                                        "Output", "UI Scale", "Switch to the Compact View" });
+    order.addArray (juce::StringArray { "Global Bypass", "Style", "Processing Mode", "High Quality", "Stereo", "Saturation", "Output",
+                                        "UI Scale", "Switch to the Compact View" });
     int last = -1;
     for (const auto& title : order)
     {
@@ -470,8 +474,9 @@ TEST_CASE ("Tab walks the header, the display's tabs, the Transfer Curve inset a
 TEST_CASE ("A disabled control is skipped by Tab")
 {
     host::EditorHost host;
-    // Zero Latency: Lookahead and Oversampling disabled.
+    // Zero Latency, the High Quality popover open: Lookahead and Oversampling showing, disabled.
     host.edit (parameters::processingModeId, 0.0f);
+    host.openHighQualityPopover();
     REQUIRE (host.settleUntil ([&] { return ! host.knob ("Lookahead").isEnabled(); }));
     juce::Component::unfocusAllComponents();
     for (int i = 0; i < 200; ++i)
@@ -576,7 +581,7 @@ TEST_CASE ("Every section toggle is as wide as the kit's ideal width for its lab
     }
 }
 
-TEST_CASE ("Up and down held on a footer chip step its choice, one undo step with their repeats, as on a choice; left and right don't step it")
+TEST_CASE ("Up and down held on a choice chip (the High Quality popover's Oversampling) step its choice, one undo step with their repeats, as on a choice; left and right don't step it")
 {
     host::EditorHost host;
     everythingAvailable (host);
@@ -611,31 +616,30 @@ TEST_CASE ("Up and down held on a footer chip step its choice, one undo step wit
 namespace
 {
 
-// The Compact View shown, by the footer's switch, in High Quality so Oversampling is enabled.
+// The Compact View shown, by the footer's switch, in High Quality so Lookahead and Oversampling are enabled.
 void showCompactView (host::EditorHost& host)
 {
     host.edit (parameters::processingModeId, 1.0f);
     host::EditorHost::click (host.expandedView().viewSwitch());
-    REQUIRE (host.settleUntil ([&] {
-        return host.expandedView().shownView() == comp1::View::compact && host.showing<juce::Component> ("Oversampling").isEnabled();
-    }));
+    REQUIRE (host.settleUntil ([&] { return host.expandedView().shownView() == comp1::View::compact && ! host.highQualityReadout().isNotApplied(); }));
 }
 
 // The host parameters with a control in the Compact View in Clean, the default Style: its Compact Slots' four and Comp,
-// the footer's, then the output popover's.
+// the footer's, then the output popover's, then the High Quality popover's.
 const std::set<juce::String> compactParameters { "Attack",        "Knee",          "Release",     "Auto Release",
                                                  "Comp",          "Global Bypass", "Style",       "Processing Mode",
-                                                 "Oversampling",  "Output Gain",   "Auto Gain",   "Limiter",
-                                                 "Ceiling",       "Dry",           "Wet" };
+                                                 "Output Gain",   "Auto Gain",     "Limiter",     "Ceiling",
+                                                 "Dry",           "Wet",           "Lookahead",   "Oversampling" };
 
 } // namespace
 
-TEST_CASE ("In the Compact View in Clean, its Compact Slots' four, Comp, the footer's four and the output popover's six each have exactly one showing control, titled with its name, that changes it by mouse and by keys; no other host parameter has one")
+TEST_CASE ("In the Compact View in Clean, its Compact Slots' four, Comp, the footer's three, the output popover's six and the High Quality popover's two each have exactly one showing control, titled with its name, that changes it by mouse and by keys; no other host parameter has one")
 {
     host::EditorHost host;
     showCompactView (host);
     host.edit (parameters::compFollowId, 0.0f);
     host.openOutputPopover();
+    host.openHighQualityPopover();
     std::set<juce::String> found;
     for (auto* each : host.processor.getParameters())
     {
@@ -689,9 +693,10 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
     presets.onClick();
     host.settleAnimations();
     auto names = accessibleNames (*host.editor);
-    // And the output popover's and the Saturation popover's.
+    // And the output popover's, the Saturation popover's and the High Quality popover's.
     host.openOutputPopover();
     host.openSaturationPopover();
+    host.openHighQualityPopover();
     for (const auto& [name, components] : accessibleNames (*host.editor))
         names[name] = components;
 
@@ -721,9 +726,11 @@ TEST_CASE ("Every control in the Compact View has an accessible name, its own ti
                                                "Factory",
                                                "Gain Reduction",
                                                "Global Bypass",
+                                               "High Quality",
                                                "Knee",
                                                "Limiter",
                                                juce::String (juce::CharPointer_UTF8 ("Load Preset File" "\xe2\x80\xa6")),
+                                               "Lookahead",
                                                "Next Preset",
                                                "Output",
                                                "Output Gain",
@@ -781,7 +788,7 @@ TEST_CASE ("Tab walks the Compact View: the header, the Compact Slots and Comp, 
     CHECK_FALSE (titles.contains ("Gain Reduction"));
     // In order: the header's first, then these, the body's five (Clean's) one after another.
     const juce::StringArray order { "Presets", "Attack",        "Knee",  "Comp",            "Release",      "Auto Release",
-                                    "Global Bypass", "Style", "Processing Mode", "Oversampling", "Stereo", "Saturation", "Output", "UI Scale",
+                                    "Global Bypass", "Style", "Processing Mode", "High Quality", "Stereo", "Saturation", "Output", "UI Scale",
                                     "Switch to the Expanded View" };
     int last = -1;
     for (const auto& title : order)

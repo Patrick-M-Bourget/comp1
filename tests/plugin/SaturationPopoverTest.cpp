@@ -57,7 +57,7 @@ TEST_CASE ("The Saturation readout reads SAT and Drive in whole dB, signed, in b
     CHECK (host.settleUntil ([&] { return ! readout.isNotApplied(); }));
 }
 
-TEST_CASE ("The Saturation readout sits just left of the Output readout, and Tab reaches it after Oversampling and the Stereo readout and before Output, in both views")
+TEST_CASE ("The Saturation readout sits just left of the Output readout, and Tab reaches it after the High Quality readout and the Stereo readout and before Output, in both views")
 {
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
@@ -70,14 +70,11 @@ TEST_CASE ("The Saturation readout sits just left of the Output readout, and Tab
     CHECK (sat.getCentreY() == out.getCentreY());
     // Wide enough to read its whole text.
     CHECK_FALSE (saturation.isShrunk());
-    CHECK (sat.getX() > host.inEditor (host.showing<juce::Component> ("Oversampling")).getRight());
+    auto& highQuality = host.highQualityReadout();
+    CHECK (sat.getX() > host.inEditor (highQuality).getRight());
 
-    // In High Quality, where Oversampling is enabled, so Tab stops on it.
-    host.edit (parameters::processingModeId, 1.0f);
-    auto& oversampling = host.showing<juce::Component> ("Oversampling");
-    REQUIRE (host.settleUntil ([&] { return oversampling.isEnabled(); }));
-    oversampling.grabKeyboardFocus();
-    REQUIRE (oversampling.hasKeyboardFocus (false));
+    highQuality.grabKeyboardFocus();
+    REQUIRE (highQuality.hasKeyboardFocus (false));
     REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
     CHECK (focused() == &host.stereoReadout());
     REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));

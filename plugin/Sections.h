@@ -188,10 +188,4 @@ struct StereoSection final : ControlSection
     explicit StereoSection (PluginProcessor& processor);
 };
 
-// Lookahead, available only in High Quality: in Zero Latency it is disabled, its value kept.
-struct LookaheadSection final : ControlSection
-{
-    explicit LookaheadSection (PluginProcessor& processor);
-};
-
 } // namespace comp1

@@ -33,6 +33,7 @@ juce_add_plugin(comp1
 
 target_sources(comp1 PRIVATE
     CachedGradientFill.cpp
+    ChoiceChip.cpp
     CompactView.cpp
     CompFollowAttachment.cpp
     Controls.cpp
@@ -44,6 +45,7 @@ target_sources(comp1 PRIVATE
     GlobalBypassFade.cpp
     HandlePainting.cpp
     HeroComp.cpp
+    HighQualityPopover.cpp
     LevelGraph.cpp
     LevelHistory.cpp
     LevelRing.cpp
