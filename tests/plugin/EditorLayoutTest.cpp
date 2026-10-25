@@ -187,7 +187,7 @@ TEST_CASE ("At the minimum size every section fits in the section rows, none ove
     }
 }
 
-TEST_CASE ("Both rows of sections start at the left edge on one grid of columns: Detection under Gate and Compressor, nothing under Character, the Detection section collapsed or open, at 100% and 200% and the minimum and default sizes")
+TEST_CASE ("Both rows of sections start at the left edge on one grid of columns: Detection under all three, spanning the grid, and Character no wider than it needs, the Detection section collapsed or open, at 100% and 200% and the minimum and default sizes")
 {
     host::EditorHost host;
     auto* menu = harness::findChild<plugkit::ui::UiScaleMenu> (*host.editor);
@@ -215,9 +215,11 @@ TEST_CASE ("Both rows of sections start at the left edge on one grid of columns:
     CHECK (gap > 0);
     CHECK (gate.getX() == 0);
     CHECK (character.getX() - compressor.getRight() == gap);
-    // The second row under them: Detection spans the first two columns; the third column's is empty.
+    // The second row under them: Detection spans all three columns.
     CHECK (detection.getX() == gate.getX());
-    CHECK (detection.getRight() == compressor.getRight());
+    CHECK (detection.getRight() == character.getRight());
+    // Character's column is as wide as Character needs: Detection, under it, doesn't widen it.
+    CHECK (character.getWidth() == dynamic_cast<comp1::Section&> (named (sections, "Character")).idealWidth());
     // Each at least as wide as its own content.
     for (const auto* name : { "Gate", "Compressor", "Character", "Detection" })
     {
