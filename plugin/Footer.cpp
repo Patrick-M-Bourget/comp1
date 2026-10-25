@@ -2,25 +2,17 @@
 
 #include "Parameters.h"
 #include "ShownAutoGain.h"
-#include "comp1/Latency.h"
 #include "comp1/Style.h"
-#include "plugkit/ui/Accessibility.h"
-#include "plugkit/ui/AssumedSampleRate.h"
-#include "plugkit/ui/ShowMenu.h"
-#include "plugkit/ui/staple/LookAndFeel.h"
 #include "plugkit/ui/staple/Tokens.h"
 
 #include <algorithm>
 #include <cmath>
-#include <utility>
 
 namespace comp1
 {
 
 namespace
 {
-int choiceOf (const juce::RangedAudioParameter& parameter) { return juce::roundToInt (parameter.convertFrom0to1 (parameter.getValue())); }
-
 // The Style chip's: the offered Styles' choices, its text and its menu items (Footer).
 ChoiceChip::Config styleChip (PluginProcessor& processor, const juce::StringArray& names)
 {
@@ -41,134 +33,7 @@ ChoiceChip::Config styleChip (PluginProcessor& processor, const juce::StringArra
              .choose = [&processor] (int choice) { processor.chooseStyle (static_cast<Style> (choice)); },
              .steps = false };
 }
-
-double sampleRateOf (const PluginProcessor& processor)
-{
-    const double prepared = processor.preparedSampleRateHz();
-    return prepared > 0.0 ? prepared : plugkit::ui::assumedSampleRate;
-}
 } // namespace
-
-ChoiceChip::ChoiceChip (juce::RangedAudioParameter& p, plugkit::ui::EditHistory& h, Config c)
-    : staple::TextChip ({}, Look::plain), plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), parameter (p), history (h),
-      choices (p.getAllValueStrings()), config (std::move (c))
-{
-    setName (parameter.getName (100));
-    setTitle (parameter.getName (100));
-    setTooltip (parameter.getName (100));
-    setChevron (true);
-    onClick = [this] {
-        plugkit::ui::showMenu (menu(), *this, juce::PopupMenu::Options().withTargetComponent (this));
-    };
-    show();
-}
-
-ChoiceChip::~ChoiceChip() { endStep(); }
-
-std::vector<int> ChoiceChip::offered() const
-{
-    if (config.offered != nullptr)
-        return config.offered();
-    std::vector<int> all (static_cast<size_t> (choices.size()));
-    for (int i = 0; i < choices.size(); ++i)
-        all[static_cast<size_t> (i)] = i;
-    return all;
-}
-
-int ChoiceChip::shownChoice() const { return config.shown != nullptr ? config.shown() : choiceOf (parameter); }
-
-juce::String ChoiceChip::textOf (int choice) const { return config.text != nullptr ? config.text (choice) : choices[choice]; }
-
-juce::String ChoiceChip::itemOf (int choice) const { return config.item != nullptr ? config.item (choice) : choices[choice]; }
-
-std::unique_ptr<juce::AccessibilityHandler> ChoiceChip::createAccessibilityHandler()
-{
-    return plugkit::ui::accessibility::handler (*this, juce::AccessibilityRole::button, [this] { return itemOf (shownChoice()); }, [this] { triggerClick(); });
-}
-
-juce::PopupMenu ChoiceChip::menu()
-{
-    juce::PopupMenu popup;
-    const int shown = shownChoice();
-    for (const int choice : offered())
-        popup.addItem (itemOf (choice), true, choice == shown, [this, choice] { pick (choice); });
-    return popup;
-}
-
-void ChoiceChip::pick (int choice)
-{
-    if (config.choose != nullptr)
-    {
-        config.choose (choice);
-        show();
-        return;
-    }
-    parameter.beginChangeGesture();
-    parameter.setValueNotifyingHost (parameter.convertTo0to1 (static_cast<float> (choice)));
-    parameter.endChangeGesture();
-    show();
-}
-
-bool ChoiceChip::keyPressed (const juce::KeyPress& key)
-{
-    const int code = key.getKeyCode();
-    const int direction = code == juce::KeyPress::downKey ? 1 : code == juce::KeyPress::upKey ? -1 : 0;
-    if (direction == 0 || ! config.steps || key.getModifiers().isAnyModifierKeyDown() || ! isEnabled())
-        return staple::TextChip::keyPressed (key);
-    staple::LookAndFeel::keyUsed (*this);
-    const auto choicesOffered = offered();
-    const auto at = std::find (choicesOffered.begin(), choicesOffered.end(), shownChoice());
-    const auto index = (at == choicesOffered.end() ? 0 : static_cast<int> (at - choicesOffered.begin())) + direction;
-    if (index >= 0 && index < static_cast<int> (choicesOffered.size()))
-    {
-        if (! std::exchange (stepping, true))
-            history.beginTransaction();
-        pick (choicesOffered[static_cast<size_t> (index)]);
-    }
-    return true;
-}
-
-bool ChoiceChip::keyStateChanged (bool isKeyDown)
-{
-    if (! isKeyDown)
-        endStep();
-    return staple::TextChip::keyStateChanged (isKeyDown);
-}
-
-void ChoiceChip::focusLost (FocusChangeType cause)
-{
-    endStep();
-    staple::TextChip::focusLost (cause);
-}
-
-void ChoiceChip::endStep()
-{
-    if (std::exchange (stepping, false))
-        history.endTransaction();
-}
-
-int ChoiceChip::widestIdealWidth()
-{
-    const auto shown = getButtonText();
-    int widest = 0;
-    for (int choice = 0; choice < choices.size(); ++choice)
-    {
-        setButtonText (textOf (choice));
-        widest = std::max (widest, getIdealWidth());
-    }
-    setButtonText (shown);
-    return widest;
-}
-
-void ChoiceChip::show()
-{
-    const auto text = textOf (shownChoice());
-    if (getButtonText() != text)
-        setButtonText (text);
-    const bool available = config.available == nullptr || config.available();
-    if (isEnabled() != available)
-        setEnabled (available);
-}
 
 AutoGainDot::AutoGainDot()
 {
@@ -189,22 +54,8 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
              p.session().editHistory(),
              styleChip (p, parameters::parameterOf (p.parameterState(), parameters::styleId).getAllValueStrings())),
       processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
-      oversampling (parameters::parameterOf (p.parameterState(), parameters::oversamplingId),
-                    p.session().editHistory(),
-                    { .offered =
-                          [&p] {
-                              std::vector<int> allowed;
-                              for (int i = 0; i <= static_cast<int> (maxOversampling (sampleRateOf (p))); ++i)
-                                  allowed.push_back (i);
-                              return allowed;
-                          },
-                      .shown =
-                          [&p] {
-                              const auto stored = static_cast<Oversampling> (choiceOf (parameters::parameterOf (p.parameterState(), parameters::oversamplingId)));
-                              return static_cast<int> (oversamplingInForce (stored, sampleRateOf (p)));
-                          },
-                      .available = [&p] { return parameters::inHighQuality (p.parameterState()); } }),
-      stereoItem (p), saturationItem (p), popover (p, history), uiScale (p.session())
+      highQuality (p),
+      stereoItem (p), saturationItem (p), popover (p, history), highQualityPopup (p), uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
     // Its "on" is bypassed, so on it shows Off.
@@ -215,7 +66,7 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
     // Left to right.
     int order = 0;
     for (juce::Component* child :
-         std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &oversampling, &stereoItem, &saturationItem, &output, &uiScale })
+         std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &highQuality, &stereoItem, &saturationItem, &output, &uiScale })
     {
         addAndMakeVisible (*child);
         child->setExplicitFocusOrder (++order);
@@ -250,6 +101,20 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
         addChildComponent (popover);
     };
     addChildComponent (popover);
+    highQuality.onClick = [this] {
+        if (highQualityPopup.isOpen())
+            highQualityPopup.close();
+        else
+        {
+            highQualityPopup.openFrom (highQuality);
+            highQuality.setOpen (highQualityPopup.isOpen());
+        }
+    };
+    highQualityPopup.onClose = [this] {
+        highQuality.setOpen (false);
+        addChildComponent (highQualityPopup);
+    };
+    addChildComponent (highQualityPopup);
     addChildComponent (dot);
     showOutput();
 }
@@ -258,6 +123,8 @@ Footer::~Footer()
 {
     popover.onClose = nullptr;
     popover.close();
+    highQualityPopup.onClose = nullptr;
+    highQualityPopup.close();
 }
 
 void Footer::showOutput()
@@ -320,11 +187,13 @@ void Footer::resized()
     output.setBounds (row.removeFromRight (std::max (outputWidth, output.getIdealWidth())));
     row.removeFromRight (chipGap);
     saturationItem.setBounds (row.removeFromRight (saturationItem.idealWidth()));
-    for (auto* chip : { &style, &processingMode, &oversampling })
+    for (auto* chip : { &style, &processingMode })
     {
         row.removeFromLeft (chipGap);
         chip->setBounds (row.removeFromLeft (chip->widestIdealWidth()));
     }
+    row.removeFromLeft (chipGap);
+    highQuality.setBounds (row.removeFromLeft (highQuality.widestIdealWidth()));
     // The Stereo readout left of the Saturation readout, shrunk to its label where the chips leave too little room.
     row.removeFromRight (chipGap);
     row.removeFromLeft (chipGap);

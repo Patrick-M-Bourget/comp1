@@ -375,10 +375,4 @@ StereoSection::StereoSection (PluginProcessor& p) : ControlSection ("Stereo", p)
     setAvailability ([&p] { return p.isStereoPlacementAvailable() && p.isStereoLinkAvailable(); });
 }
 
-LookaheadSection::LookaheadSection (PluginProcessor& p) : ControlSection ("Lookahead", p)
-{
-    addKnob (parameters::lookaheadId, knobSize::medium, "Lookahead");
-    setAvailability ([&p] { return parameters::inHighQuality (p.parameterState()); });
-}
-
 } // namespace comp1

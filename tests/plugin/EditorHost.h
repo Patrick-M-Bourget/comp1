@@ -3,6 +3,7 @@
 // The Expanded View as a host opens it, through plugkit's editor harness: what the editor's tests share.
 
 #include "Footer.h"
+#include "HighQualityPopover.h"
 #include "OutputPopover.h"
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
@@ -74,9 +75,15 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
     // The output popover the readout opens.
     comp1::OutputPopover& outputPopover() { return footer().outputPopover(); }
 
+    // The High Quality readout, and the High Quality popover it opens.
+    comp1::HighQualityReadout& highQualityReadout() { return footer().highQualityReadout(); }
+    comp1::HighQualityPopover& highQualityPopover() { return footer().highQualityPopover(); }
+
     // Opens the output popover by a click on the Output readout, as the user opens it, unless it is open, and waits for
     // it to pop in.
     comp1::OutputPopover& openOutputPopover() { return openFooterPopover (outputReadout(), outputPopover()); }
+    // Opens the High Quality popover as openOutputPopover opens the output popover.
+    comp1::HighQualityPopover& openHighQualityPopover() { return openFooterPopover (highQualityReadout(), highQualityPopover()); }
 
     // The footer's Saturation readout, and the Saturation popover it opens.
     plugkit::ui::FooterReadout& saturationReadout() { return footer().saturation().readout(); }

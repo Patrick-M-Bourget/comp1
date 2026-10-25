@@ -56,13 +56,13 @@ TEST_CASE ("The Stereo readout reads Stereo Placement then Stereo Link in whole 
     CHECK (reads ("Stereo 43%"));
 }
 
-TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to its label, ST, still showing and overlapping no chip")
+TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to its label, ST, still showing and overlapping neither the High Quality readout nor the Output readout")
 {
     host::EditorHost host;
     auto& footer = host.footer();
     auto& item = footer.stereo();
     auto& readout = host.stereoReadout();
-    auto& oversampling = host.showing<comp1::ChoiceChip> ("Oversampling");
+    auto& highQuality = host.highQualityReadout();
     REQUIRE_FALSE (readout.isShrunk());
     // Narrower a pixel at a time, until the row between the chips and the Output readout can't hold its text.
     while (! readout.isShrunk() && footer.getWidth() > 0)
@@ -70,7 +70,7 @@ TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to it
     REQUIRE (readout.isShrunk());
     CHECK (readout.isShowing());
     CHECK (readout.getWidth() == readout.getShrunkWidth());
-    CHECK (item.getX() >= oversampling.getRight() + comp1::Footer::chipGap);
+    CHECK (item.getX() >= highQuality.getRight() + comp1::Footer::chipGap);
     CHECK (item.getRight() + comp1::Footer::chipGap <= host.outputReadout().getX());
     // Read whole by a screen reader all the same.
     CHECK (readout.getButtonText() == "Stereo 100%");
