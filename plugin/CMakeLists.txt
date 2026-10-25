@@ -37,6 +37,7 @@ target_sources(comp1 PRIVATE
     CompFollowAttachment.cpp
     Controls.cpp
     Display.cpp
+    DragHandle.cpp
     DisplayFades.cpp
     Footer.cpp
     GainReductionMeter.cpp
