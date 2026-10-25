@@ -329,17 +329,18 @@ TEST_CASE ("Expanded View snapshots: the Transfer Curve inset's handles with sig
 
     // Alt over the Threshold handle: the knee region shaded and the Knee card; then an Alt-drag widening Knee.
     const auto alt = juce::ModifierKeys (juce::ModifierKeys::altModifier);
-    const auto thresholdCentre = inset.handleCentre (comp1::InsetHandle::threshold) - threshold.getPosition().toFloat();
-    threshold.mouseEnter (harness::mouseEvent (threshold, thresholdCentre, alt));
+    // Where the drag above left it.
+    const auto thresholdCentreNow = inset.handleCentre (comp1::InsetHandle::threshold) - threshold.getPosition().toFloat();
+    threshold.mouseEnter (harness::mouseEvent (threshold, thresholdCentreNow, alt));
     host.playFor (0.3, sine (0.5));
     harness::writeSnapshot (inset, "inset-knee-alt-hovered", {}, 2.0f);
     const auto altHeld = alt.withFlags (juce::ModifierKeys::leftButtonModifier);
-    threshold.mouseDown (harness::mouseEvent (threshold, thresholdCentre, altHeld));
-    threshold.mouseDrag (harness::mouseEvent (threshold, thresholdCentre + juce::Point<float> { 0.0f, -30.0f }, altHeld, thresholdCentre));
+    threshold.mouseDown (harness::mouseEvent (threshold, thresholdCentreNow, altHeld));
+    threshold.mouseDrag (harness::mouseEvent (threshold, thresholdCentreNow + juce::Point<float> { 0.0f, -30.0f }, altHeld, thresholdCentreNow));
     host.playFor (0.3, sine (0.5));
     harness::writeSnapshot (inset, "inset-knee-alt-dragged", {}, 2.0f);
-    threshold.mouseUp (harness::mouseEvent (threshold, thresholdCentre + juce::Point<float> { 0.0f, -30.0f }, {}, thresholdCentre));
-    threshold.mouseExit (harness::mouseEvent (threshold, thresholdCentre + juce::Point<float> { 30.0f, 0.0f }));
+    threshold.mouseUp (harness::mouseEvent (threshold, thresholdCentreNow + juce::Point<float> { 0.0f, -30.0f }, {}, thresholdCentreNow));
+    threshold.mouseExit (harness::mouseEvent (threshold, thresholdCentreNow + juce::Point<float> { 30.0f, 0.0f }));
     host.edit (comp1::parameters::kneeId, 6.0f);
 
     // Under Global Bypass, still playing so the dot stays up: the inset's curve, dot and handles dimmed.
