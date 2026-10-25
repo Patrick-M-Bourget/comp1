@@ -32,7 +32,7 @@ struct TimeLabel
     double ms;
     const char* text;
 };
-constexpr TimeLabel timeLabels[] = { { 0.01, "10 \xc2\xb5s" }, { 1.0, "1 ms" }, { 100.0, "100 ms" }, { 10000.0, "10 s" } };
+constexpr TimeLabel timeLabels[] = { { 0.01, "10 \xc2\xb5s" }, { 1.0, "1 ms" }, { 100.0, "0.1 s" }, { 10000.0, "10 s" } };
 constexpr float labelWidth = 34.0f;
 
 double earliestMs() { return TimingResponse::timeMsAt (0); }

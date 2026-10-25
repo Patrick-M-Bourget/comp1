@@ -62,8 +62,9 @@ private:
 // its Attack, Release, Auto Release and Hold, and the Transfer Curve it plays (Comp Follow's Threshold and Ratio while
 // it is on, the stored Knee and Range), hearing the burst as an Internal Detection Source does; nothing else of the
 // Engine runs, and no setting glides. So it is the Gain Reduction the Engine applies to the same burst at Detection
-// Source Internal with the Detection EQ off. Never allocates; its cost grows with sampleRate, a few tens of ms at
-// 48 kHz, so the editor works it out away from the message thread.
+// Source Internal with the Detection EQ off. Never allocates; its cost grows with sampleRate, at most about 15 ms at
+// 48 kHz and 60 ms at 192 kHz on an Apple M3 (Opto, Release 5000 ms), so the editor works it out away from the message
+// thread.
 TimingResponse timingResponse (const Settings& settings, double sampleRate);
 
 } // namespace comp1
