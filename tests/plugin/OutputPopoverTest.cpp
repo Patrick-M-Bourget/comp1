@@ -4,7 +4,7 @@
 
 #include "EditorHost.h"
 #include "comp1/Style.h"
-#include "plugkit/ui/OutputPopoverFrame.h"
+#include "plugkit/ui/FooterPopoverFrame.h"
 #include "plugkit/ui/PopoverSlider.h"
 #include "plugkit/ui/ValueText.h"
 

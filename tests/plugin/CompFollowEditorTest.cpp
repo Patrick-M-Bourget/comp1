@@ -4,7 +4,7 @@
 #include "EditorHost.h"
 #include "Host.h"
 #include "comp1/Style.h"
-#include "plugkit/ui/OutputPopoverFrame.h"
+#include "plugkit/ui/FooterPopoverFrame.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
