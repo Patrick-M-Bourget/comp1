@@ -951,3 +951,33 @@ TEST_CASE ("Alt-dragging the Transfer Curve inset's Threshold handle while Comp 
     CHECK (host.settleUntil ([&] { return juce::exactlyEqual (host.inset().graph().curve().kneeDb, played.kneeDb); }));
     CHECK (history.undoSteps() == steps + 1);
 }
+
+TEST_CASE ("A modifier key pressed over a Transfer Curve inset handle still reaches the inset's ancestors")
+{
+    InsetHost host;
+    auto& inset = host.inset();
+    // An ancestor that hears modifier changes, standing in for the inset's parent while the test runs.
+    struct Ancestor final : juce::Component
+    {
+        std::vector<juce::ModifierKeys> heard;
+        void modifierKeysChanged (const juce::ModifierKeys& mods) override { heard.push_back (mods); }
+    } ancestor;
+    auto* parent = inset.getParentComponent();
+    REQUIRE (parent != nullptr);
+    const int index = parent->getIndexOfChildComponent (&inset);
+    ancestor.addChildComponent (inset);
+
+    for (const auto which : { InsetHandle::threshold, InsetHandle::ratio })
+    {
+        CAPTURE (static_cast<int> (which));
+        auto& handle = inset.handle (which);
+        ancestor.heard.clear();
+        handle.mouseEnter (harness::mouseEvent (handle, centreOf (inset, which)));
+        handle.modifierKeysChanged (alt);
+        REQUIRE (ancestor.heard.size() == 1);
+        CHECK (ancestor.heard.front().isAltDown());
+        handle.mouseExit (harness::mouseEvent (handle, centreOf (inset, which) + juce::Point<float> { 30.0f, 30.0f }));
+    }
+
+    parent->addChildComponent (inset, index);
+}

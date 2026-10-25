@@ -63,6 +63,8 @@ public:
     {
         if (hovered)
             setHovered (true, mods.isAltDown());
+        // Passed on, so the inset's ancestors still hear it.
+        juce::Component::modifierKeysChanged (mods);
     }
     void mouseDown (const juce::MouseEvent& e) override { owner.grab (which, e); }
     void mouseDrag (const juce::MouseEvent& e) override { owner.dragTo (e); }
