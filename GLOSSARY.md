@@ -182,12 +182,16 @@ How the whole plugin trades latency against quality: Zero Latency, or High Quali
 _Avoid_: Phase mode, quality setting
 
 **Oversampling**:
-Running Saturation's and Colour's nonlinear residuals at a multiple of the host's sample rate, in High Quality only: 1x, 2x, 4x or 8x, capped so the internal rate stays at or under about 384 kHz (ADR 0001, ADR 0009).
+Running Saturation's and Colour's nonlinear residuals at a multiple of the host's sample rate, in High Quality only: 1x, 2x, 4x or 8x, capped so the internal rate stays at or under about 384 kHz (ADR 0001, ADR 0009). Set in the High Quality popover.
 _Avoid_: Upsampling, HQ factor
 
 **Lookahead**:
-How far the compressor sees ahead of the audio it processes, in High Quality only.
+How far the compressor sees ahead of the audio it processes, in High Quality only. Set in the High Quality popover.
 _Avoid_: Pre-delay, latency
+
+**High Quality readout**:
+The footer's reading of the Oversampling in force, "HQ 4x", in both views, drawn not applied in Zero Latency; a click opens the High Quality popover, which holds Lookahead and Oversampling, both disabled, not hidden, in Zero Latency.
+_Avoid_: Oversampling readout, quality menu
 
 **Compact View**:
 The editor showing only Comp, two Compact Slots and a Gain Reduction meter, with Style in the footer and Output Gain in the footer's output popover.
