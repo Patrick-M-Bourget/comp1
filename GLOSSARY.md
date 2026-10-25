@@ -214,7 +214,7 @@ The graph of the Transfer Curve the Engine plays, output level over input level 
 _Avoid_: I/O graph, transfer function plot
 
 **Transfer Curve inset**:
-The small Transfer Curve Graph over the top-left corner of the Level and Gain Reduction Graph, on the Level tab: its Threshold handle drags Threshold across and its Ratio handle drags Ratio up and down, and the arrow keys on it move both. It is the display's Transfer Curve view: there is no Transfer Curve tab.
+The small Transfer Curve Graph over the top-left corner of the Level and Gain Reduction Graph, on the Level tab: its Threshold handle drags Threshold across, or Knee up and down with Alt, and its Ratio handle drags Ratio up and down; the arrow keys on it move Threshold and Ratio, and Alt with up and down moves Knee. It is the display's Transfer Curve view: there is no Transfer Curve tab.
 _Avoid_: Mini curve, transfer widget
 
 **Spectrum (display)**:
@@ -222,7 +222,7 @@ The Expanded View's Spectrum tab: the spectrum of the input tap and of the outpu
 _Avoid_: Analyzer (for the whole display), FFT view, spectrogram
 
 **Threshold handle** / **Ratio handle**:
-The Transfer Curve inset's two drag handles: the Threshold handle on the curve at the knee, where the input is Threshold, the Ratio handle at the curve's right end, where the input is 0 dB. Only they take the mouse.
+The Transfer Curve inset's two drag handles: the Threshold handle on the curve at the knee, where the input is Threshold, the Ratio handle at the curve's right end, where the input is 0 dB. Only they take the mouse. With Alt, the Threshold handle sets Knee instead, and the inset shades the knee region while Alt is held over it; it is still the Threshold handle.
 _Avoid_: Knee handle (for the Threshold handle), dot (the Detection Level's)
 
 **Output Gain**:
