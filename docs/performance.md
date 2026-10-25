@@ -120,10 +120,10 @@ The same file's `[.drag-frame]` benchmark (hidden too, and not a `[paint]` test,
 
 | Per frame, Apple M3 | still mean | still p95 | dragging mean | dragging p95 |
 | --- | --- | --- | --- | --- |
-| drag handler | 0 ms | 0 ms | 0.011 ms | 0.030 ms |
-| tick | 0.11 ms | 0.17 ms | 0.13 ms | 0.26 ms |
-| the inset's paint | 0.58 ms | 0.63 ms | 0.88 ms | 0.97 ms |
-| handler + tick + the inset's paint | 0.69 ms | 0.78 ms | 1.02 ms | 1.17 ms |
-| the whole editor's paint | 19.1 ms | 23.2 ms | 20.1 ms | 21.9 ms |
+| drag handler | 0 ms | 0 ms | 0.011 ms | 0.026 ms |
+| tick | 0.09 ms | 0.12 ms | 0.12 ms | 0.26 ms |
+| the inset's paint | 0.75 ms | 0.85 ms | 1.00 ms | 1.10 ms |
+| handler + tick + the inset's paint | 0.84 ms | 0.95 ms | 1.13 ms | 1.27 ms |
+| the whole editor's paint | 18.2 ms | 20.1 ms | 19.5 ms | 21.0 ms |
 
-Measured 2026-10-25 at a 1-minute load average of 62 (other agents building), so every figure is high. The worst dragging frame, handler, tick and the inset's paint, was 2.7 ms of a 60 Hz frame's 16.7 ms; the curve drawn trailed the handle by at most 2 ticks. The whole editor's paint, the existing Level tab's cost, is the same still or dragging. `timingResponse()` itself, on its thread, costs at most about 15 ms at 48 kHz and 60 ms at 192 kHz (Opto, Release 5000 ms, measured at a load average of 30).
+Measured 2026-10-25, the inset at 260 × 160 in its two halves, at a 1-minute load average of 3.9. The worst dragging frame, handler, tick and the inset's paint, was 2.2 ms of a 60 Hz frame's 16.7 ms; the curve drawn trailed the handle by at most 3 ticks. The whole editor's paint, the existing Level tab's cost, is about the same still or dragging. `timingResponse()` itself, on its thread, costs at most about 15 ms at 48 kHz and 60 ms at 192 kHz (Opto, Release 5000 ms, measured at a load average of 30).
