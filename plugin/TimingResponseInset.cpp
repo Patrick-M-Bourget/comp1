@@ -31,8 +31,8 @@ struct TimeLabel
     double ms;
     const char* text;
 };
-constexpr TimeLabel attackLabels[] = { { 0.1, "0.1 ms" }, { 10.0, "10 ms" }, { 1000.0, "1 s" } };
-constexpr TimeLabel releaseLabels[] = { { 10.0, "10 ms" }, { 1000.0, "1 s" }, { 10000.0, "10 s" } };
+constexpr TimeLabel attackLabels[] = { { 0.1, "0.1 ms" }, { 10.0, "10 ms" } };
+constexpr TimeLabel releaseLabels[] = { { 10.0, "10 ms" }, { 1000.0, "1 s" } };
 constexpr float labelWidth = 34.0f, captionWidth = 60.0f;
 
 // A curve's vertices from a response's values: the first of the points that reads each sample, the times between
