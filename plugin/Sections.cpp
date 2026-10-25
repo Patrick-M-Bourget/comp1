@@ -88,9 +88,13 @@ bool CompressorSection::following() const { return isOn (processor, parameters::
 
 void CompressorSection::follow() { compFollow->setToggleState (following(), juce::dontSendNotification); }
 
-CharacterSection::CharacterSection (PluginProcessor& p) : ControlSection ("Character and Saturation", p)
+CharacterSection::CharacterSection (PluginProcessor& p) : ControlSection ("Character", p)
 {
     addKnob (parameters::colourId, knobSize::medium, "Colour");
+}
+
+SaturationSection::SaturationSection (PluginProcessor& p) : ControlSection ("Saturation", p)
+{
     addToggle (parameters::saturationId, "Saturation", true);
     addChoice (parameters::saturationPositionId, 84, false);
     addKnob (parameters::driveId, knobSize::medium, "Drive", Place::underStack);

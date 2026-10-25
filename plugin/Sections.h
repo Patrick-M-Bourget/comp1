@@ -69,10 +69,17 @@ private:
     std::optional<CompFollowAttachment> compAttachment, thresholdAttachment, ratioAttachment;
 };
 
-// Character and Saturation: Colour; Saturation on/off and Saturation Position over Drive.
+// Character: Colour. Saturation's controls are the Saturation popover's (SaturationSection).
 struct CharacterSection final : ControlSection
 {
     explicit CharacterSection (PluginProcessor& processor);
+};
+
+// Saturation, the Saturation popover's (SaturationPopover), in both views: Saturation on/off and Saturation Position
+// over Drive, in that order, which is Tab's order too.
+struct SaturationSection final : ControlSection
+{
+    explicit SaturationSection (PluginProcessor& processor);
 };
 
 // Output, the output popover's (OutputPopover), in both views: Output Gain and Ceiling side by side, Ceiling with its
