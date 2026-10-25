@@ -3,7 +3,7 @@
 #include "LevelHistory.h"
 #include "OutputPopover.h"
 #include "PluginProcessor.h"
-#include "StereoReadout.h"
+#include "StereoPopover.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/OutputReadout.h"
 #include "plugkit/ui/Session.h"
@@ -94,7 +94,7 @@ public:
 };
 
 // The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Style,
-// Processing Mode and Oversampling, as chips that open menus; at the right the Stereo readout (StereoReadout), the
+// Processing Mode and Oversampling, as chips that open menus; at the right the Stereo readout (StereoItem), the
 // Output readout, the UI Scale menu and the switch between the views, in that order, which is Tab's order too. Where
 // the chips leave the row too little room for the Stereo readout's widest text, it shrinks to its label, "ST"; it is
 // never hidden. At the Compact View's narrowest it has room.
@@ -131,7 +131,7 @@ public:
     plugkit::ui::OutputReadout& outputReadout() { return output; }
     OutputPopover& outputPopover() { return popover; }
     AutoGainDot& autoGainDot() { return dot; }
-    StereoReadout& stereoReadout() { return stereo; }
+    StereoItem& stereo() { return stereoItem; }
 
     // The switch between the views, at the far right after the UI Scale menu, last in Tab's order: Staple icon buttons
     // titled by what they do, the collapse arrow "Switch to the Compact View" in the Expanded View, the expand arrow
@@ -153,7 +153,7 @@ private:
     staple::IconButton globalBypass { "Global Bypass", staple::Icon::power };
     juce::AudioProcessorValueTreeState::ButtonAttachment globalBypassAttachment;
     ChoiceChip style, processingMode, oversampling;
-    StereoReadout stereo;
+    StereoItem stereoItem;
     plugkit::ui::OutputReadout output;
     AutoGainDot dot;
     OutputPopover popover;

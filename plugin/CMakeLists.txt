@@ -55,7 +55,7 @@ target_sources(comp1 PRIVATE
     Sections.cpp
     ShownAutoGain.cpp
     SpectrumDisplay.cpp
-    StereoReadout.cpp
+    StereoPopover.cpp
     TransferCurveGraph.cpp
     TransferCurveInset.cpp)
 

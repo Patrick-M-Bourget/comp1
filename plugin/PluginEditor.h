@@ -32,7 +32,7 @@ namespace comp1
 // two, and Lookahead under the third. Each column is as wide as the widest it holds, and each section takes its
 // columns' width (its controls from the left) and its own height, the Detection section's following its slide open or
 // closed (DetectionSection), the display taking up what it gives. The display takes whatever the window grows by, and
-// the section rows its width. Stereo Placement and Stereo Link are in the footer's stereo popover (StereoReadout).
+// the section rows its width. Stereo Placement and Stereo Link are in the footer's stereo popover (StereoItem).
 //
 // The Compact View's body is CompactView, after the header in Tab's order.
 class PluginEditor final : public plugkit::ui::EditorShell

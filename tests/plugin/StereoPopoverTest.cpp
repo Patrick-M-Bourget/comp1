@@ -3,7 +3,8 @@
 // edits; and the Expanded View's body, which has no Stereo section.
 
 #include "EditorHost.h"
-#include "StereoReadout.h"
+#include "StereoPopover.h"
+#include "plugkit/ui/FooterReadout.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -59,6 +60,7 @@ TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to it
 {
     host::EditorHost host;
     auto& footer = host.footer();
+    auto& item = footer.stereo();
     auto& readout = host.stereoReadout();
     auto& oversampling = host.showing<comp1::ChoiceChip> ("Oversampling");
     REQUIRE_FALSE (readout.isShrunk());
@@ -68,8 +70,8 @@ TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to it
     REQUIRE (readout.isShrunk());
     CHECK (readout.isShowing());
     CHECK (readout.getWidth() == readout.getShrunkWidth());
-    CHECK (readout.getX() >= oversampling.getRight() + comp1::Footer::chipGap);
-    CHECK (readout.getRight() + comp1::Footer::chipGap <= host.outputReadout().getX());
+    CHECK (item.getX() >= oversampling.getRight() + comp1::Footer::chipGap);
+    CHECK (item.getRight() + comp1::Footer::chipGap <= host.outputReadout().getX());
     // Read whole by a screen reader all the same.
     CHECK (readout.getButtonText() == "Stereo 100%");
 }
@@ -106,7 +108,7 @@ TEST_CASE ("The Stereo readout opens the stereo popover above it by a click, and
     CAPTURE (compact);
     showView (host, compact);
     auto& readout = host.stereoReadout();
-    auto& popover = readout.popover();
+    auto& popover = host.stereoPopover();
     REQUIRE_FALSE (popover.isOpen());
     REQUIRE_FALSE (popover.isShowing());
 
