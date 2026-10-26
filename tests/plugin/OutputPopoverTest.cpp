@@ -12,6 +12,7 @@
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <tuple>
@@ -84,15 +85,30 @@ TEST_CASE ("The Output readout reads Output Gain, plus Auto Gain's estimate whil
     CHECK (reads (minus + "2.0 dB"));
 }
 
-TEST_CASE ("Under Global Bypass the Output readout is drawn not applied, in text4, and applied again once it is off")
+TEST_CASE ("Under Global Bypass the Output, Stereo and Saturation readouts are drawn not applied, in text4, and applied again once it is off, in both views")
 {
     host::EditorHost host;
-    auto& readout = host.outputReadout();
-    CHECK_FALSE (readout.isNotApplied());
+    const bool compact = GENERATE (false, true);
+    CAPTURE (compact);
+    if (compact)
+        host::EditorHost::click (host.expandedView().viewSwitch());
+    REQUIRE (host.expandedView().shownView() == (compact ? comp1::View::compact : comp1::View::expanded));
+    // Saturation on, on a stereo track: each applied but for Global Bypass.
+    host.edit (parameters::saturationId, 1.0f);
+    const std::vector<plugkit::ui::FooterReadout*> readouts { &host.outputReadout(), &host.stereoReadout(), &host.saturationReadout() };
+    const auto allNotApplied = [&readouts] (bool notApplied) {
+        return std::all_of (readouts.begin(), readouts.end(), [notApplied] (auto* readout) { return readout->isNotApplied() == notApplied; });
+    };
+    CHECK (host.settleUntil ([&] { return allNotApplied (false); }));
     host.edit (parameters::globalBypassId, 1.0f);
-    CHECK (host.settleUntil ([&] { return readout.isNotApplied(); }));
+    CHECK (host.settleUntil ([&] { return allNotApplied (true); }));
+    for (auto* readout : readouts)
+    {
+        CAPTURE (readout->getTitle());
+        CHECK (readout->isNotApplied());
+    }
     host.edit (parameters::globalBypassId, 0.0f);
-    CHECK (host.settleUntil ([&] { return ! readout.isNotApplied(); }));
+    CHECK (host.settleUntil ([&] { return allNotApplied (false); }));
 }
 
 namespace

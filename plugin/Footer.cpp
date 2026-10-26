@@ -55,7 +55,8 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
              styleChip (p, parameters::parameterOf (p.parameterState(), parameters::styleId).getAllValueStrings())),
       processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
       highQuality (p),
-      stereoItem (p), saturationItem (p), popover (p, history), highQualityPopup (p), uiScale (p.session())
+      stereoItem (p), saturationItem (p), popover (p, history), highQualityPopup (p), opensOutput (output, popover, *this),
+      opensHighQuality (highQuality, highQualityPopup, *this), uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
     // Its "on" is bypassed, so on it shows Off.
@@ -86,46 +87,11 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
     }
     showSwitchFor (p.view());
 
-    output.onClick = [this] {
-        if (popover.isOpen())
-            popover.close();
-        else
-        {
-            popover.openFrom (output);
-            output.setOpen (popover.isOpen());
-        }
-    };
-    // Back in the footer once closed, hidden, so it stays on the editor's tick.
-    popover.onClose = [this] {
-        output.setOpen (false);
-        addChildComponent (popover);
-    };
-    addChildComponent (popover);
-    highQuality.onClick = [this] {
-        if (highQualityPopup.isOpen())
-            highQualityPopup.close();
-        else
-        {
-            highQualityPopup.openFrom (highQuality);
-            highQuality.setOpen (highQualityPopup.isOpen());
-        }
-    };
-    highQualityPopup.onClose = [this] {
-        highQuality.setOpen (false);
-        addChildComponent (highQualityPopup);
-    };
-    addChildComponent (highQualityPopup);
     addChildComponent (dot);
     showOutput();
 }
 
-Footer::~Footer()
-{
-    popover.onClose = nullptr;
-    popover.close();
-    highQualityPopup.onClose = nullptr;
-    highQualityPopup.close();
-}
+Footer::~Footer() = default;
 
 void Footer::showOutput()
 {
@@ -186,7 +152,6 @@ void Footer::resized()
     dot.setBounds (row.removeFromRight (chipGap));
     output.setBounds (row.removeFromRight (std::max (outputWidth, output.getIdealWidth())));
     row.removeFromRight (chipGap);
-    saturationItem.setBounds (row.removeFromRight (saturationItem.idealWidth()));
     for (auto* chip : { &style, &processingMode })
     {
         row.removeFromLeft (chipGap);
@@ -194,11 +159,15 @@ void Footer::resized()
     }
     row.removeFromLeft (chipGap);
     highQuality.setBounds (row.removeFromLeft (highQuality.widestIdealWidth()));
-    // The Stereo readout left of the Saturation readout, shrunk to its label where the chips leave too little room.
-    row.removeFromRight (chipGap);
     row.removeFromLeft (chipGap);
-    const int fullWidth = stereoItem.idealWidth();
-    stereoItem.setBounds (row.removeFromRight (row.getWidth() >= fullWidth ? fullWidth : stereoItem.shrunkWidth()));
+    // What the chips leave holds the Stereo readout then the Saturation readout, a gap apart: at full length where it
+    // can, else Stereo shrunk to its label, else both.
+    const int fullStereo = stereoItem.idealWidth(), fullSaturation = saturationItem.idealWidth();
+    const int stereoWidth = row.getWidth() >= fullStereo + chipGap + fullSaturation ? fullStereo : stereoItem.shrunkWidth();
+    const int saturationWidth = row.getWidth() >= stereoWidth + chipGap + fullSaturation ? fullSaturation : saturationItem.shrunkWidth();
+    saturationItem.setBounds (row.removeFromRight (saturationWidth));
+    row.removeFromRight (chipGap);
+    stereoItem.setBounds (row.removeFromRight (stereoWidth));
 }
 
 } // namespace comp1

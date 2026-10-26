@@ -27,31 +27,10 @@ void SaturationPopover::resized() { saturation.setBounds (getCardBounds().reduce
 SaturationItem::SaturationItem (PluginProcessor& p)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),
       shown ("Saturation", "SAT", "Saturation: its Drive, dimmed while Saturation is off. Click for Saturation's controls"),
-      saturationPopover (p)
+      saturationPopover (p), opens (shown, saturationPopover, *this)
 {
     addAndMakeVisible (shown);
-    shown.onClick = [this] {
-        if (saturationPopover.isOpen())
-            saturationPopover.close();
-        else
-        {
-            saturationPopover.openFrom (shown);
-            shown.setOpen (saturationPopover.isOpen());
-        }
-    };
-    // Back in the item once closed, hidden, so it stays on the editor's tick.
-    saturationPopover.onClose = [this] {
-        shown.setOpen (false);
-        addChildComponent (saturationPopover);
-    };
-    addChildComponent (saturationPopover);
     show();
-}
-
-SaturationItem::~SaturationItem()
-{
-    saturationPopover.onClose = nullptr;
-    saturationPopover.close();
 }
 
 int SaturationItem::idealWidth()
@@ -69,8 +48,9 @@ void SaturationItem::show()
     const double driveDb = state.getRawParameterValue (parameters::driveId)->load (std::memory_order_relaxed);
     if (const auto text = saturationReadoutText (driveDb); text != shown.getButtonText())
         shown.setButtonText (text);
-    if (const bool off = ! parameters::isOn (*state.getRawParameterValue (parameters::saturationId)); off != shown.isNotApplied())
-        shown.setNotApplied (off);
+    const bool off = ! parameters::isOn (*state.getRawParameterValue (parameters::saturationId));
+    if (const bool notApplied = off || parameters::isOn (*state.getRawParameterValue (parameters::globalBypassId)); notApplied != shown.isNotApplied())
+        shown.setNotApplied (notApplied);
 }
 
 void SaturationItem::resized() { shown.setBounds (getLocalBounds()); }
