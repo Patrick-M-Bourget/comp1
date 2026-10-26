@@ -263,7 +263,7 @@ TEST_CASE ("The Timing Response inset's Attack handle sits on the rise at Attack
                 WithinAbs (std::log10 (2.0) * pixelsPerDecade (inset, TimingHandle::attack), 0.05));
 }
 
-TEST_CASE ("A Timing Response inset handle's readout card sits beside it, inside the inset, never over it")
+TEST_CASE ("A Timing Response inset handle's readout card sits beside it, inside the inset, never over it or the captions and time labels")
 {
     TimingHost host;
     auto& inset = host.inset();
@@ -288,6 +288,11 @@ TEST_CASE ("A Timing Response inset handle's readout card sits beside it, inside
                                   .withCentre (inset.handleCentre (which));
             CHECK_FALSE (card->intersects (disc));
             CHECK (inside.contains (*card));
+            // Level with the plots, so clear of the captions over them and the time labels under them ("10 ms" under
+            // FET's quick Attack, at the plot's foot).
+            const auto plot = inset.plot (which);
+            CHECK (card->getY() >= plot.getY());
+            CHECK (card->getBottom() <= plot.getBottom());
             handle.mouseUp (harness::mouseEvent (handle, from, {}, from));
         }
 }

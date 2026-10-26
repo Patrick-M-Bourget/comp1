@@ -56,8 +56,8 @@ enum class TimingHandle
 //   so they follow Attack, Release and Hold from any route; every Attack, and every Hold plus Release, lies on
 //   its half's axis. Drawn as the Transfer Curve inset's are (DragHandle, at its
 //   handleRadius), lit while hovered, with a left-right resize cursor, and the selected ring and a readout card
-//   ("Attack 10.000 ms", "Release 100.0 ms") while dragged, beside the handle, never over it
-//   (handles::readoutBeside).
+//   ("Attack 10.000 ms", "Release 100.0 ms") while dragged, beside the handle, never over it, and level with the
+//   plots, never over the captions or time labels (handles::readoutBeside).
 // - **Global Bypass:** the curves and the handles show the compressor's work, so they dim to a share of their alphas
 //   (GlobalBypassFade), gliding on the tick, and still follow and take edits; the slab, grid and labels stay.
 // - **Mouse:** only the handles take a press, within TransferCurveInset::handleHitRadius of their centres: a press

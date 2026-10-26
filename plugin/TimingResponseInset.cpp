@@ -210,8 +210,10 @@ std::optional<juce::Rectangle<float>> TimingResponseInset::readoutBounds() const
     const auto card = readout();
     if (! card)
         return std::nullopt;
-    return handles::readoutBeside (handleCentre (card->at), handleRadius, getLocalBounds().toFloat().reduced (static_cast<float> (padding)),
-                                   card->title, card->value);
+    // Across the whole inset, but level with the plots, clear of the captions over them and the time labels under them.
+    const auto plots = plot (card->at);
+    const auto area = getLocalBounds().toFloat().reduced (static_cast<float> (padding)).withY (plots.getY()).withBottom (plots.getBottom());
+    return handles::readoutBeside (handleCentre (card->at), handleRadius, area, card->title, card->value);
 }
 
 std::optional<TimingResponseInset::Readout> TimingResponseInset::readout() const
