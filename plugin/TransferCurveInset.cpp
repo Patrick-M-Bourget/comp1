@@ -15,9 +15,6 @@ namespace
 namespace colour = staple::tokens::colour;
 namespace size = staple::tokens::size;
 namespace knob = staple::tokens::knob;
-
-// An arrow's step, in a parameter's travel, as the knobs' (KeyboardSlider): 1%, or 0.2% with Shift.
-constexpr double keyStep = 0.01, fineKeyStep = 0.002;
 } // namespace
 
 TransferCurveInset::TransferCurveInset (PluginProcessor& p, LevelHistory& history)
@@ -45,12 +42,12 @@ TransferCurveInset::TransferCurveInset (PluginProcessor& p, LevelHistory& histor
         addAndMakeVisible (*h);
     }
 
-    auto& edits = processor.session().editHistory();
+    auto& editHistory = processor.session().editHistory();
     controls::showRangeOf (thresholdValue, threshold);
     controls::showRangeOf (ratioValue, ratio);
     controls::showRangeOf (kneeValue, knee);
-    thresholdAttachment.emplace (thresholdValue, threshold, edits, [this] { processor.stopFollowingComp(); });
-    ratioAttachment.emplace (ratioValue, ratio, edits, [this] { processor.stopFollowingComp(); });
+    thresholdAttachment.emplace (thresholdValue, threshold, editHistory, [this] { processor.stopFollowingComp(); });
+    ratioAttachment.emplace (ratioValue, ratio, editHistory, [this] { processor.stopFollowingComp(); });
     kneeAttachment = std::make_unique<juce::SliderParameterAttachment> (knee, kneeValue);
     setSize (side, side);
 }
@@ -245,7 +242,8 @@ void TransferCurveInset::anchorAt (const juce::MouseEvent& e)
 
 void TransferCurveInset::grab (DragHandle& handle, const juce::MouseEvent& e)
 {
-    drag = Drag { .setting = settingOf (whichIs (handle), e.mods), .fine = e.mods.isShiftDown() };
+    drag = Drag { .setting = settingOf (whichIs (handle), e.mods) };
+    edits.grab (e.mods);
     anchorAt (e);
     // The grab may have turned Comp Follow off, which leaves the curve where it was.
     layOutHandles();
@@ -258,16 +256,15 @@ void TransferCurveInset::dragTo (const juce::MouseEvent& e)
         return;
     // Shift or Alt pressed or let go mid-drag carries on from where the settings are, at the new speed or setting.
     const auto settingNow = settingOf (handleOf (drag->setting), e.mods);
-    if (e.mods.isShiftDown() != drag->fine || settingNow != drag->setting)
+    if (edits.shiftChanged (e.mods) || settingNow != drag->setting)
     {
         const bool cueChanged = settingNow != drag->setting;
-        drag->fine = e.mods.isShiftDown();
         drag->setting = settingNow;
         anchorAt (e);
         if (cueChanged)
             kneeCueChanged();
     }
-    const double speed = drag->fine ? knob::dragPixels / knob::fineDragPixels : 1.0;
+    const double speed = edits.dragSpeed();
     const auto moved = (e.getOffsetFromDragStart().toFloat() - drag->offset);
     switch (drag->setting)
     {
@@ -289,54 +286,42 @@ void TransferCurveInset::letGo()
     if (! drag)
         return;
     drag.reset();
-    if (! heldKey)
-        endEdit();
+    edits.letGo();
     kneeCueChanged();
 }
 
 bool TransferCurveInset::keyPressed (const juce::KeyPress& key)
 {
-    const int code = key.getKeyCode();
-    const bool horizontal = code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey;
-    const bool vertical = code == juce::KeyPress::upKey || code == juce::KeyPress::downKey;
-    if (! horizontal && ! vertical)
+    const auto arrow = InsetEdit::arrowOf (key);
+    if (! arrow)
         return false;
-    const double step = key.getModifiers().isShiftDown() ? fineKeyStep : keyStep;
-    const bool kneeKey = vertical && key.getModifiers().isAltDown();
+    const bool kneeKey = ! arrow->horizontal && key.getModifiers().isAltDown();
     // Right raises Threshold, up raises Ratio and up widens Knee, as the knobs' arrows do.
-    const int direction = code == juce::KeyPress::rightKey || code == juce::KeyPress::upKey ? 1 : -1;
-    // A press and its repeats are one edit, ended by the key's release or by losing focus.
+    const double by = arrow->direction * arrow->step;
     if (kneeKey)
         beginKneeEdit();
     else
         beginEdit();
-    heldKey = true;
+    edits.keyHeld();
     if (kneeKey)
-        setKneeTravel (kneeTravel() + direction * step);
-    else if (horizontal)
+        setKneeTravel (kneeTravel() + by);
+    else if (arrow->horizontal)
     {
-        const double travel = threshold.convertTo0to1 (static_cast<float> (thresholdValue.getValue())) + direction * step;
+        const double travel = threshold.convertTo0to1 (static_cast<float> (thresholdValue.getValue())) + by;
         setThreshold (threshold.convertFrom0to1 (static_cast<float> (std::clamp (travel, 0.0, 1.0))));
     }
     else
-        setRatioTravel (ratioTravel() + direction * step);
+        setRatioTravel (ratioTravel() + by);
     return true;
 }
 
 bool TransferCurveInset::keyStateChanged (bool isKeyDown)
 {
-    if (! isKeyDown)
-        endHeldKey();
+    edits.keyStateChanged (isKeyDown);
     return false;
 }
 
-void TransferCurveInset::focusLost (FocusChangeType) { endHeldKey(); }
-
-void TransferCurveInset::endHeldKey()
-{
-    if (std::exchange (heldKey, false) && ! drag)
-        endEdit();
-}
+void TransferCurveInset::focusLost (FocusChangeType) { edits.focusLost(); }
 
 void TransferCurveInset::tick (double seconds)
 {
@@ -350,13 +335,7 @@ void TransferCurveInset::tick (double seconds)
         drawnKneeCue = std::move (cue);
         repaint();
     }
-    // Tells a screen reader the value changed, when it did.
-    const auto now = valueText();
-    if (now == announced)
-        return;
-    announced = now;
-    if (auto* handler = getAccessibilityHandler())
-        handler->notifyAccessibilityEvent (juce::AccessibilityEvent::valueChanged);
+    edits.announce (*this, valueText());
 }
 
 std::unique_ptr<juce::AccessibilityHandler> TransferCurveInset::createAccessibilityHandler()

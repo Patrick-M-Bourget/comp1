@@ -18,11 +18,8 @@ namespace
 {
 namespace colour = staple::tokens::colour;
 namespace size = staple::tokens::size;
-namespace knob = staple::tokens::knob;
 namespace display = plugkit::ui::display;
 
-// An arrow's step, in a parameter's travel, as the knobs' (KeyboardSlider): 1%, or 0.2% with Shift.
-constexpr double keyStep = 0.01, fineKeyStep = 0.002;
 constexpr float curveLineWidth = 1.5f;
 // A band's fill, over the Gain Reduction's shading, and its edges' lines where they aren't the curve.
 constexpr float bandAlpha = 0.22f, bandEdgeWidth = 1.0f, bandEdgeAlpha = 0.6f;
@@ -391,7 +388,8 @@ void TimingResponseInset::anchorAt (const juce::MouseEvent& e)
 
 void TimingResponseInset::grab (DragHandle& h, const juce::MouseEvent& e)
 {
-    drag = Drag { .which = whichIs (h), .fine = e.mods.isShiftDown() };
+    drag = Drag { .which = whichIs (h) };
+    edits.grab (e.mods);
     anchorAt (e);
     repaint();
 }
@@ -401,12 +399,9 @@ void TimingResponseInset::dragTo (const juce::MouseEvent& e)
     if (! drag)
         return;
     // Shift pressed or let go mid-drag carries on from where the handle is, at the new speed.
-    if (e.mods.isShiftDown() != drag->fine)
-    {
-        drag->fine = e.mods.isShiftDown();
+    if (edits.shiftChanged (e.mods))
         anchorAt (e);
-    }
-    const double speed = drag->fine ? knob::dragPixels / knob::fineDragPixels : 1.0;
+    const double speed = edits.dragSpeed();
     const double ms = timeAt (drag->which, drag->fromX + static_cast<float> ((static_cast<float> (e.getDistanceFromDragStartX()) - drag->offset) * speed));
     // The Release handle sits at Hold plus Release.
     setTime (drag->which, drag->which == TimingHandle::attack ? ms : ms - processor.heldSettings().holdMs);
@@ -418,26 +413,20 @@ void TimingResponseInset::letGo()
     if (! drag)
         return;
     drag.reset();
-    if (! heldKey)
-        endEdit();
+    edits.letGo();
     repaint();
 }
 
 bool TimingResponseInset::keyPressed (const juce::KeyPress& key)
 {
-    const int code = key.getKeyCode();
-    const bool horizontal = code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey;
-    const bool vertical = code == juce::KeyPress::upKey || code == juce::KeyPress::downKey;
-    if (! horizontal && ! vertical)
+    const auto arrow = InsetEdit::arrowOf (key);
+    if (! arrow)
         return false;
-    const auto which = horizontal ? TimingHandle::attack : TimingHandle::release;
-    const double step = key.getModifiers().isShiftDown() ? fineKeyStep : keyStep;
-    const int direction = code == juce::KeyPress::rightKey || code == juce::KeyPress::upKey ? 1 : -1;
-    // A press and its repeats are one edit, ended by the key's release or by losing focus.
+    const auto which = arrow->horizontal ? TimingHandle::attack : TimingHandle::release;
     beginEdit (which);
-    heldKey = true;
+    edits.keyHeld();
     auto& parameter = parameterOf (which);
-    const double travel = parameter.convertTo0to1 (static_cast<float> (valueOf (which).getValue())) + direction * step;
+    const double travel = parameter.convertTo0to1 (static_cast<float> (valueOf (which).getValue())) + arrow->direction * arrow->step;
     setTime (which, parameter.convertFrom0to1 (static_cast<float> (std::clamp (travel, 0.0, 1.0))));
     repaint();
     return true;
@@ -445,18 +434,11 @@ bool TimingResponseInset::keyPressed (const juce::KeyPress& key)
 
 bool TimingResponseInset::keyStateChanged (bool isKeyDown)
 {
-    if (! isKeyDown)
-        endHeldKey();
+    edits.keyStateChanged (isKeyDown);
     return false;
 }
 
-void TimingResponseInset::focusLost (FocusChangeType) { endHeldKey(); }
-
-void TimingResponseInset::endHeldKey()
-{
-    if (std::exchange (heldKey, false) && ! drag)
-        endEdit();
-}
+void TimingResponseInset::focusLost (FocusChangeType) { edits.focusLost(); }
 
 void TimingResponseInset::tick (double seconds)
 {
@@ -471,13 +453,7 @@ void TimingResponseInset::tick (double seconds)
     const bool moved = before != std::array { handleCentre (TimingHandle::attack), handleCentre (TimingHandle::release) };
     if (took || faded || (moved && drag))
         repaint();
-    // Tells a screen reader the value changed, when it did.
-    const auto now = valueText();
-    if (now == announced)
-        return;
-    announced = now;
-    if (auto* handler = getAccessibilityHandler())
-        handler->notifyAccessibilityEvent (juce::AccessibilityEvent::valueChanged);
+    edits.announce (*this, valueText());
 }
 
 std::unique_ptr<juce::AccessibilityHandler> TimingResponseInset::createAccessibilityHandler()

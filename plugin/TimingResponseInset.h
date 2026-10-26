@@ -3,6 +3,7 @@
 #include "DragHandle.h"
 #include "GlobalBypassFade.h"
 #include "HandlePainting.h"
+#include "InsetEdit.h"
 #include "PluginProcessor.h"
 #include "TimingResponseWorker.h"
 #include "TransferCurveInset.h"
@@ -143,7 +144,6 @@ private:
     struct Drag
     {
         TimingHandle which = TimingHandle::attack;
-        bool fine = false;
         float fromX = 0.0f; // the handle's x at the anchor
         float offset = 0.0f; // the drag's offset across from its start at the anchor
     };
@@ -163,7 +163,6 @@ private:
     juce::RangedAudioParameter& parameterOf (TimingHandle which) { return which == TimingHandle::attack ? attack : release; }
     void beginEdit (TimingHandle which);
     void endEdit();
-    void endHeldKey();
     // Sets which's setting to ms, within its range.
     void setTime (TimingHandle which, double ms);
     // Asks the worker for the response at the settings held, when they changed, and takes any finished one: whether it
@@ -181,7 +180,7 @@ private:
     std::unique_ptr<juce::SliderParameterAttachment> attackAttachment, releaseAttachment;
     std::optional<juce::Slider::ScopedDragNotification> attackEdit, releaseEdit;
     std::optional<Drag> drag;
-    bool heldKey = false;
+    InsetEdit edits { [this] { endEdit(); } };
     TimingResponseWorker worker;
     std::optional<TimingResponseWorker::Request> asked; // the last request the worker took
     std::optional<TimingResponseWorker::Result> shown;
@@ -189,7 +188,6 @@ private:
     // The shown response's curves and bands, as curve() and band() give them.
     std::vector<juce::Point<double>> riseCurve, recoveryCurve;
     std::optional<Band> riseBand, recoveryBand;
-    juce::String announced;
     GlobalBypassFade bypassFade;
     plugkit::ui::display::CachedLabels labels;
 };

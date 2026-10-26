@@ -46,6 +46,7 @@ target_sources(comp1 PRIVATE
     HandlePainting.cpp
     HeroComp.cpp
     HighQualityPopover.cpp
+    InsetEdit.cpp
     LevelGraph.cpp
     LevelHistory.cpp
     LevelRing.cpp

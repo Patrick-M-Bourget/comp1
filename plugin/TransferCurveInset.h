@@ -4,6 +4,7 @@
 #include "DragHandle.h"
 #include "GlobalBypassFade.h"
 #include "HandlePainting.h"
+#include "InsetEdit.h"
 #include "LevelHistory.h"
 #include "PluginProcessor.h"
 #include "TransferCurveGraph.h"
@@ -120,7 +121,6 @@ private:
     struct Drag
     {
         DragSetting setting = DragSetting::threshold;
-        bool fine = false;
         double from = 0.0; // the dragged setting at the anchor: Threshold in dB, or Ratio or Knee in its parameter's travel
         juce::Point<float> offset; // the drag's offset from its start at the anchor
     };
@@ -134,7 +134,6 @@ private:
     // Opens Knee's edit alone, leaving Comp Follow as it is.
     void beginKneeEdit();
     void endEdit();
-    void endHeldKey();
     InsetHandle whichIs (const DragHandle& handle) const;
     handles::Look lookOf (const DragHandle& handle) const override;
     void grab (DragHandle& handle, const juce::MouseEvent& e) override;
@@ -174,10 +173,9 @@ private:
     std::unique_ptr<juce::SliderParameterAttachment> kneeAttachment;
     std::optional<juce::Slider::ScopedDragNotification> thresholdEdit, ratioEdit, kneeEdit;
     std::optional<Drag> drag;
-    bool heldKey = false;
+    InsetEdit edits { [this] { endEdit(); } };
     // The Knee cue as last drawn: the tick repaints the inset when Knee or Threshold, from any route, changes it.
     KneeCue drawnKneeCue;
-    juce::String announced;
     GlobalBypassFade bypassFade;
 };
 
