@@ -42,7 +42,7 @@ struct TimingHost : host::Playing
     {
         return settleUntil ([&] {
             const auto& drawn = inset().drawn();
-            return drawn.has_value() && drawn->request.settings == comp1::TimingResponseWorker::shaping (processor.heldSettings());
+            return drawn.has_value() && drawn->request.settings == comp1::timingResponseShaping (processor.heldSettings());
         });
     }
 };
@@ -139,7 +139,7 @@ TEST_CASE ("The Timing Response inset draws the response at the settings held an
     REQUIRE (host.drawsWhatIsHeld());
     const auto& drawn = *inset.drawn();
     CHECK (drawn.workedOn != messageThread);
-    const auto expected = comp1::timingResponse (comp1::TimingResponseWorker::shaping (host.processor.heldSettings()), drawn.request.sampleRate);
+    const auto expected = comp1::timingResponse (comp1::timingResponseShaping (host.processor.heldSettings()), drawn.request.sampleRate);
     CHECK (drawn.response.rise == expected.rise);
     CHECK (drawn.response.recovery == expected.recovery);
     CHECK (drawn.response.burstLevelDb == expected.burstLevelDb);

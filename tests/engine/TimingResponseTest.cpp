@@ -248,3 +248,31 @@ TEST_CASE ("On Opto the Timing Response marks the slow part's times, Hold plus 5
         }
     }
 }
+
+TEST_CASE ("The settings that shape the Timing Response keep the Character, the timing and the Transfer Curve and leave the rest at their defaults, and the response at them is the response")
+{
+    Settings shaping { .character = Character::FET,
+                       .comp = 70.0,
+                       .compFollow = true,
+                       .compCurve = { { CompPoint { 0.0, -6.0, 1.5 }, CompPoint { 50.0, -24.0, 6.0 }, CompPoint { 100.0, -42.0, 12.0 } } },
+                       .thresholdDb = -30.0,
+                       .ratio = 8.0,
+                       .kneeDb = 3.0,
+                       .attackMs = 2.0,
+                       .releaseMs = 300.0,
+                       .autoRelease = true,
+                       .holdMs = 15.0,
+                       .rangeDb = 20.0 };
+    auto settings = shaping;
+    settings.colour = 30.0;
+    settings.saturation = true;
+    settings.driveDb = 9.0;
+    settings.outputGainDb = 6.0;
+    settings.processingMode = ProcessingMode::HighQuality;
+    settings.stereoLink = 50.0;
+    CHECK (timingResponseShaping (settings) == shaping);
+
+    const auto response = timingResponse (settings, 48000.0), shaped = timingResponse (shaping, 48000.0);
+    CHECK (shaped.rise == response.rise);
+    CHECK (shaped.recovery == response.recovery);
+}

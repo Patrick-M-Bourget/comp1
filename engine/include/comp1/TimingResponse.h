@@ -95,4 +95,9 @@ TimingResponse timingResponse (const Settings& settings, double sampleRate);
 // barely changes with the rate, and its cost grows with it.
 inline constexpr double drawnSampleRate = 48000.0;
 
+// Only the settings that shape the Timing Response, the rest at their defaults: the Character, Attack, Release, Auto
+// Release and Hold, and the Transfer Curve with Comp Follow's settings. Two settings that differ only elsewhere have the
+// same response.
+Settings timingResponseShaping (const Settings& settings);
+
 } // namespace comp1

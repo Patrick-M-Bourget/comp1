@@ -34,24 +34,6 @@ std::optional<TimingResponseWorker::Result> TimingResponseWorker::take()
     return std::exchange (finished, std::nullopt);
 }
 
-Settings TimingResponseWorker::shaping (const Settings& settings)
-{
-    Settings shaped;
-    shaped.character = settings.character;
-    shaped.comp = settings.comp;
-    shaped.compFollow = settings.compFollow;
-    shaped.compCurve = settings.compCurve;
-    shaped.thresholdDb = settings.thresholdDb;
-    shaped.ratio = settings.ratio;
-    shaped.kneeDb = settings.kneeDb;
-    shaped.attackMs = settings.attackMs;
-    shaped.releaseMs = settings.releaseMs;
-    shaped.autoRelease = settings.autoRelease;
-    shaped.holdMs = settings.holdMs;
-    shaped.rangeDb = settings.rangeDb;
-    return shaped;
-}
-
 void TimingResponseWorker::run()
 {
     std::unique_lock lock (handOff);

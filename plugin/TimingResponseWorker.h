@@ -57,11 +57,6 @@ public:
     // handing over. Never waits.
     std::optional<Result> take();
 
-    // Only the settings that shape the Timing Response, the rest at their defaults: the Character, Attack, Release,
-    // Auto Release and Hold, and the Transfer Curve with Comp Follow's settings. Two settings that differ only
-    // elsewhere ask for the same response.
-    static Settings shaping (const Settings& settings);
-
 private:
     void run();
 

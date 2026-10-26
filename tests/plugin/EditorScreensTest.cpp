@@ -380,7 +380,7 @@ TEST_CASE ("Snapshots: the Timing Response inset on Clean, FET and Opto (its att
     auto& inset = host.expandedView().display().timingResponseInset();
     const auto drawsWhatIsHeld = [&] {
         return host.settleUntil ([&] {
-            return inset.drawn().has_value() && inset.drawn()->request.settings == comp1::TimingResponseWorker::shaping (host.processor.heldSettings());
+            return inset.drawn().has_value() && inset.drawn()->request.settings == comp1::timingResponseShaping (host.processor.heldSettings());
         });
     };
     for (const auto style : { comp1::Style::Clean, comp1::Style::FET, comp1::Style::Opto })

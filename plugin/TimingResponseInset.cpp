@@ -326,7 +326,7 @@ void TimingResponseInset::paintOverChildren (juce::Graphics& g)
 
 bool TimingResponseInset::follow()
 {
-    const TimingResponseWorker::Request now { TimingResponseWorker::shaping (processor.heldSettings()),
+    const TimingResponseWorker::Request now { timingResponseShaping (processor.heldSettings()),
                                               plugkit::ui::sampleRateOrAssumed (processor) };
     if (asked != now && worker.ask (now))
         asked = now;

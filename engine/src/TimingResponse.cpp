@@ -115,4 +115,22 @@ TimingResponse timingResponse (const Settings& settings, double sampleRate)
     return response;
 }
 
+Settings timingResponseShaping (const Settings& settings)
+{
+    Settings shaped;
+    shaped.character = settings.character;
+    shaped.comp = settings.comp;
+    shaped.compFollow = settings.compFollow;
+    shaped.compCurve = settings.compCurve;
+    shaped.thresholdDb = settings.thresholdDb;
+    shaped.ratio = settings.ratio;
+    shaped.kneeDb = settings.kneeDb;
+    shaped.attackMs = settings.attackMs;
+    shaped.releaseMs = settings.releaseMs;
+    shaped.autoRelease = settings.autoRelease;
+    shaped.holdMs = settings.holdMs;
+    shaped.rangeDb = settings.rangeDb;
+    return shaped;
+}
+
 } // namespace comp1
