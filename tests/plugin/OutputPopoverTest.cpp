@@ -641,9 +641,10 @@ TEST_CASE ("The Auto Gain dot sits just right of the Output readout, centred dow
 
     // In the gap between the readout and the UI Scale menu, centred down the readout.
     const auto bounds = dot.getBounds();
-    CHECK (bounds.getX() >= readout.getRight());
+    const auto output = footer.output().getBounds();
+    CHECK (bounds.getX() >= output.getRight());
     CHECK (bounds.getRight() <= footer.uiScaleMenu().getX());
-    CHECK (bounds.getCentreY() == readout.getBounds().getCentreY());
+    CHECK (bounds.getCentreY() == output.getCentreY());
     CHECK (bounds.getWidth() >= static_cast<int> (comp1::AutoGainDot::diameter));
     // An area for its tooltip, but no stop for the keys or a screen reader: the readout's description says it.
     CHECK_FALSE (dot.getWantsKeyboardFocus());

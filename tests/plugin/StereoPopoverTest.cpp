@@ -53,7 +53,7 @@ TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to it
     auto& footer = host.footer();
     auto& item = footer.stereo();
     auto& readout = host.stereoReadout();
-    auto& highQuality = host.highQualityReadout();
+    auto& highQuality = footer.highQuality();
     REQUIRE_FALSE (readout.isShrunk());
     // Narrower a pixel at a time, until the row between the chips and the Output readout can't hold its text.
     while (! readout.isShrunk() && footer.getWidth() > 0)
@@ -62,7 +62,7 @@ TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to it
     CHECK (readout.isShowing());
     CHECK (readout.getWidth() == readout.getShrunkWidth());
     CHECK (item.getX() >= highQuality.getRight() + comp1::Footer::chipGap);
-    CHECK (item.getRight() + comp1::Footer::chipGap <= host.outputReadout().getX());
+    CHECK (item.getRight() + comp1::Footer::chipGap <= footer.output().getX());
     // Read whole by a screen reader all the same.
     CHECK (readout.getButtonText() == "Stereo 100%");
 }

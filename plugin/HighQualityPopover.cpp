@@ -1,6 +1,5 @@
 #include "HighQualityPopover.h"
 
-#include "ChipWidth.h"
 #include "Parameters.h"
 #include "Sections.h"
 #include "comp1/Latency.h"
@@ -34,27 +33,23 @@ int oversamplingInForceOf (PluginProcessor& processor)
 juce::String readoutText (PluginProcessor& processor, int choice) { return "HQ " + oversamplingOf (processor).getAllValueStrings()[choice]; }
 } // namespace
 
-HighQualityReadout::HighQualityReadout (PluginProcessor& p)
-    : FooterReadout ("High Quality", "HQ", "High Quality: the Oversampling in force. Click for Oversampling and Lookahead"),
-      plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p)
+FooterReading highQualityReading (PluginProcessor& processor)
 {
-    show();
-}
-
-int HighQualityReadout::widestIdealWidth()
-{
-    juce::StringArray texts;
-    for (int choice = 0; choice < oversamplingOf (processor).getAllValueStrings().size(); ++choice)
-        texts.add (readoutText (processor, choice));
-    return comp1::widestIdealWidth (*this, texts);
-}
-
-void HighQualityReadout::show()
-{
-    if (const auto text = readoutText (processor, oversamplingInForceOf (processor)); text != getButtonText())
-        setButtonText (text);
-    if (const bool zeroLatency = ! parameters::inHighQuality (processor.parameterState()); zeroLatency != isNotApplied())
-        setNotApplied (zeroLatency);
+    return { .readout = std::make_unique<plugkit::ui::FooterReadout> (
+                 "High Quality", "HQ", "High Quality: the Oversampling in force. Click for Oversampling and Lookahead"),
+             .show =
+                 [&processor] (plugkit::ui::FooterReadout& readout) {
+                     if (const auto text = readoutText (processor, oversamplingInForceOf (processor)); text != readout.getButtonText())
+                         readout.setButtonText (text);
+                     if (const bool zeroLatency = ! parameters::inHighQuality (processor.parameterState()); zeroLatency != readout.isNotApplied())
+                         readout.setNotApplied (zeroLatency);
+                 },
+             .widestTexts = [&processor] (const plugkit::ui::FooterReadout&) {
+                 juce::StringArray texts;
+                 for (int choice = 0; choice < oversamplingOf (processor).getAllValueStrings().size(); ++choice)
+                     texts.add (readoutText (processor, choice));
+                 return texts;
+             } };
 }
 
 HighQualitySection::HighQualitySection (PluginProcessor& p)

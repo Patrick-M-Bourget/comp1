@@ -6,7 +6,6 @@
 #include "plugkit/ui/staple/Tokens.h"
 
 #include <algorithm>
-#include <cmath>
 
 namespace comp1
 {
@@ -54,9 +53,8 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
              p.session().editHistory(),
              styleChip (p, parameters::parameterOf (p.parameterState(), parameters::styleId).getAllValueStrings())),
       processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
-      highQuality (p),
-      stereoItem (p), saturationItem (p), popover (p, history), highQualityPopup (p), opensOutput (output, popover, *this),
-      opensHighQuality (highQuality, highQualityPopup, *this), uiScale (p.session())
+      highQualityItem (highQualityReading (p), p), stereoItem (stereoReading (p), p), saturationItem (saturationReading (p), p),
+      outputItem (outputReading (p), p, history), uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
     // Its "on" is bypassed, so on it shows Off.
@@ -67,7 +65,7 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
     // Left to right.
     int order = 0;
     for (juce::Component* child :
-         std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &highQuality, &stereoItem, &saturationItem, &output, &uiScale })
+         std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &highQualityItem, &stereoItem, &saturationItem, &outputItem, &uiScale })
     {
         addAndMakeVisible (*child);
         child->setExplicitFocusOrder (++order);
@@ -88,35 +86,15 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
     showSwitchFor (p.view());
 
     addChildComponent (dot);
-    showOutput();
+    outputItem.onTextChanged = [this] { resized(); };
+    tick (0.0);
 }
 
 Footer::~Footer() = default;
 
-void Footer::showOutput()
+void Footer::tick (double)
 {
-    auto& state = processor.parameterState();
-    const double autoGainDb = processor.appliedAutoGainDb();
-    const double db = state.getRawParameterValue (parameters::outputGainId)->load (std::memory_order_relaxed) + autoGainDb;
-    const bool parallel = ! std::isinf (state.getRawParameterValue (parameters::dryId)->load (std::memory_order_relaxed));
-    // Two bars, as Manrope, the readout's font, has no U+2225 (parallel to).
-    static const juce::String mark = "|| ";
-    if (const auto text = (parallel ? mark : juce::String()) + plugkit::ui::outputReadoutText (db); text != output.getButtonText())
-    {
-        output.setButtonText (text);
-        resized();
-    }
     const auto amount = shownAutoGain (processor);
-    juce::StringArray description;
-    if (parallel)
-        description.add ("Parallel compression on: Dry is mixed in");
-    if (amount.has_value())
-        description.add ("Includes Auto Gain: " + *amount);
-    if (const auto said = description.joinIntoString (". "); said != output.getDescription())
-        output.setDescription (said);
-    if (const bool bypassed = globalBypass.getToggleState(); bypassed != output.isNotApplied())
-        output.setNotApplied (bypassed);
-
     if (amount.has_value())
         if (const auto tooltip = "Auto Gain: " + *amount; tooltip != dot.getTooltip())
             dot.setTooltip (tooltip);
@@ -150,7 +128,7 @@ void Footer::resized()
     uiScale.setBounds (row.removeFromRight (buttonSize));
     // The gap left of the UI Scale menu holds the Auto Gain dot, so the readout doesn't move as it shows.
     dot.setBounds (row.removeFromRight (chipGap));
-    output.setBounds (row.removeFromRight (std::max (outputWidth, output.getIdealWidth())));
+    outputItem.setBounds (row.removeFromRight (std::max (outputWidth, outputItem.idealWidth())));
     row.removeFromRight (chipGap);
     for (auto* chip : { &style, &processingMode })
     {
@@ -158,7 +136,7 @@ void Footer::resized()
         chip->setBounds (row.removeFromLeft (chip->widestIdealWidth()));
     }
     row.removeFromLeft (chipGap);
-    highQuality.setBounds (row.removeFromLeft (highQuality.widestIdealWidth()));
+    highQualityItem.setBounds (row.removeFromLeft (highQualityItem.idealWidth()));
     row.removeFromLeft (chipGap);
     // What the chips leave holds the Stereo readout then the Saturation readout, a gap apart: at full length where it
     // can, else Stereo shrunk to its label, else both.

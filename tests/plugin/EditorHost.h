@@ -82,13 +82,13 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
         REQUIRE (found != nullptr);
         return *found;
     }
-    plugkit::ui::OutputReadout& outputReadout() { return footer().outputReadout(); }
+    plugkit::ui::FooterReadout& outputReadout() { return footer().output().readout(); }
     // The output popover the readout opens.
-    comp1::OutputPopover& outputPopover() { return footer().outputPopover(); }
+    comp1::OutputPopover& outputPopover() { return footer().output().popover(); }
 
     // The High Quality readout, and the High Quality popover it opens.
-    comp1::HighQualityReadout& highQualityReadout() { return footer().highQualityReadout(); }
-    comp1::HighQualityPopover& highQualityPopover() { return footer().highQualityPopover(); }
+    plugkit::ui::FooterReadout& highQualityReadout() { return footer().highQuality().readout(); }
+    comp1::HighQualityPopover& highQualityPopover() { return footer().highQuality().popover(); }
 
     // Opens the output popover by a click on the Output readout, as the user opens it, unless it is open, and waits for
     // it to pop in.
