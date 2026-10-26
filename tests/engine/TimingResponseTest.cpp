@@ -11,6 +11,7 @@
 #include <catch2/generators/catch_generators_range.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -62,6 +63,14 @@ std::vector<Settings> settingsFor (Character character)
     return all;
 }
 
+// The lowest and the highest of the sample rates comp1 supports: the response's samples are coarsest at the one and
+// most numerous at the other.
+std::vector<double> lowestAndHighestRates()
+{
+    const auto& all = test::sampleRates();
+    return { *std::min_element (all.begin(), all.end()), *std::max_element (all.begin(), all.end()) };
+}
+
 } // namespace
 
 TEST_CASE ("The Timing Response's times run on a log axis from 5 us to about 10 s")
@@ -75,14 +84,16 @@ TEST_CASE ("The Timing Response's times run on a log axis from 5 us to about 10 
 
 TEST_CASE ("The Timing Response is the Gain Reduction the whole Engine applies to its test burst and after it, on every Character, within 0.001 dB", "[response]")
 {
-    const double sampleRate = GENERATE (44100.0, 192000.0);
+    const double sampleRate = GENERATE (from_range (lowestAndHighestRates()));
     const auto character = GENERATE (from_range (test::characters())).character;
     for (const auto& settings : settingsFor (character))
     {
         CAPTURE (sampleRate, static_cast<int> (character), settings.attackMs, settings.releaseMs, settings.holdMs, settings.autoRelease, settings.compFollow);
         const auto response = timingResponse (settings, sampleRate);
 
-        // The burst: Threshold + 20 dB, the played Threshold's, as the Transfer Curve Graph draws it.
+        // The burst: Threshold + 20 dB, the played Threshold's, as the Transfer Curve Graph draws it. The played
+        // Threshold is worked out here apart from clean::playedCurveOf, which the response reads it from, so a wrong one
+        // there shows.
         const double threshold = settings.compFollow ? compThresholdDb (settings.compCurve, settings.comp) : settings.thresholdDb;
         CHECK_THAT (response.burstLevelDb, WithinAbs (std::min (threshold + 20.0, 0.0), 1.0e-12));
 
@@ -136,7 +147,7 @@ TEST_CASE ("Working out the Timing Response never allocates")
 
 TEST_CASE ("With Auto Release on, the Timing Response's recovery band runs from the recovery at Release to the recovery at 5 x Release, and the recovery played lies within it; with it off there is none", "[response]")
 {
-    const double sampleRate = GENERATE (44100.0, 192000.0);
+    const double sampleRate = GENERATE (from_range (lowestAndHighestRates()));
     const auto character = GENERATE (from_range (test::characters())).character;
     for (auto settings : settingsFor (character))
     {
@@ -180,7 +191,7 @@ TEST_CASE ("On Clean the Timing Response's recovery band's edges are 1/e of the 
 
 TEST_CASE ("On Opto the Timing Response's rise band runs from the rise at 0.5 x Attack to the rise at 2 x Attack, the overshoot's scale held at each end, and the rise lies within it; on the other Characters there is none", "[response]")
 {
-    const double sampleRate = GENERATE (44100.0, 192000.0);
+    const double sampleRate = GENERATE (from_range (lowestAndHighestRates()));
     for (const auto& style : test::characters())
     {
         if (style.character != Character::Opto)
