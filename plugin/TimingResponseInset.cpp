@@ -124,8 +124,9 @@ juce::Range<double> TimingResponseInset::axisMs (TimingHandle half) const
 {
     if (half == TimingHandle::release)
         return { recoveryFromMs, TimingResponse::timeMsAt (TimingResponse::points - 1) };
-    // From one sample's time: under it the response has only the first sample's Gain Reduction.
-    return { 1000.0 / drawnSampleRate, TimingResponse::burstSeconds * 1000.0 };
+    // From Attack's shortest, so every Attack has a place of its own; under one sample's time the curve holds the first
+    // sample's Gain Reduction.
+    return { parameterRanges::attack.low, TimingResponse::burstSeconds * 1000.0 };
 }
 
 float TimingResponseInset::xAt (TimingHandle half, double ms) const

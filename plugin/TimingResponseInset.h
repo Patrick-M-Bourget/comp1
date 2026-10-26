@@ -33,8 +33,8 @@ enum class TimingHandle
 //
 // - **Drawing:** on the Transfer Curve inset's slab, width by its height (TransferCurveInset::side) at 100% UI Scale,
 //   in two halves side by side, each captioned and with a log time axis of its own, a line every decade and labels
-//   under it: Attack's on the left (attackShare of the width), the rise from the burst's start, from one sample's time
-//   at drawnSampleRate to the burst's end (TimingResponse::burstSeconds); Release's on
+//   under it: Attack's on the left (attackShare of the width), the rise from the burst's start, from Attack's shortest
+//   (5 us) to the burst's end (TimingResponse::burstSeconds); Release's on
 //   the right, the recovery from the burst's end, from 1 ms to about 10 s. In both the Gain Reduction hangs from the
 //   top, as on the Level and Gain Reduction Graph, scaled so the burst's most reaches the bottom of the plot, a
 //   dyn-range line with its area shaded up to the top. Each curve runs through the first of the response's times that
@@ -53,8 +53,8 @@ enum class TimingHandle
 //   it asks for nothing, and catches up when it shows again.
 // - **Handles:** the Attack handle sits on the rise at Attack, the Release handle on the recovery at Hold plus Release
 //   (Release starts once Hold is over), each on the curve drawn, laid out again on the tick and at once after an edit,
-//   so they follow Attack, Release and Hold from any route; a time off its half's axis (an Attack under one sample's
-//   time) puts the handle at the axis's end. Drawn as the Transfer Curve inset's are (DragHandle, at its
+//   so they follow Attack, Release and Hold from any route; every Attack, and every Hold plus Release, lies on
+//   its half's axis. Drawn as the Transfer Curve inset's are (DragHandle, at its
 //   handleRadius), lit while hovered, with a left-right resize cursor, and the selected ring and a readout card
 //   ("Attack 10.000 ms", "Release 100.0 ms") while dragged, beside the handle, never over it
 //   (handles::readoutBeside).

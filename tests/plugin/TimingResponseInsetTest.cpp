@@ -75,12 +75,12 @@ std::map<juce::String, float> allValues (host::EditorHost& host)
     return values;
 }
 
-// The times a half's axis spans, in ms, worked out apart from the inset: Attack's from one sample's time at 48 kHz, the rate
-// the response was worked out at to the burst's end, Release's from 1 ms to the response's last time.
+// The times a half's axis spans, in ms, worked out apart from the inset: Attack's from Attack's shortest, 5 us, to the
+// burst's end, Release's from 1 ms to the response's last time.
 std::pair<double, double> axisOf (TimingHandle half)
 {
     if (half == TimingHandle::attack)
-        return { 1000.0 / 48000.0, 1000.0 };
+        return { 0.005, 1000.0 };
     return { 1.0, comp1::TimingResponse::timeMsAt (comp1::TimingResponse::points - 1) };
 }
 
@@ -164,7 +164,7 @@ TEST_CASE ("Dragging a Timing Response inset handle never works the response out
     CHECK (juce::exactlyEqual (inset.drawn()->request.settings.attackMs, static_cast<double> (host.value (parameters::attackId))));
 }
 
-TEST_CASE ("The Timing Response inset's two halves side by side, Attack's on the left from one sample's time to 1 s and Release's on the right from 1 ms to about 10 s, each on a log time axis")
+TEST_CASE ("The Timing Response inset's two halves side by side, Attack's on the left from 5 us to 1 s and Release's on the right from 1 ms to about 10 s, each on a log time axis")
 {
     TimingHost host;
     auto& inset = host.inset();
@@ -250,11 +250,17 @@ TEST_CASE ("The Timing Response inset's Attack handle sits on the rise at Attack
     host.edit (parameters::holdId, 20.0f);
     check();
 
-    // An Attack under one sample's time: the handle at the axis's start.
+    // Attack's shortest at the axis's start, and an Attack under one sample's time at 48 kHz (about 21 us) right of it,
+    // where it lies on the axis.
     host.edit (parameters::attackId, 0.005f);
     REQUIRE (host.drawsWhatIsHeld());
     host.settle();
     CHECK_THAT (inset.handleCentre (TimingHandle::attack).x, WithinAbs (inset.plot (TimingHandle::attack).getX(), 1.0e-3));
+    host.edit (parameters::attackId, 0.01f);
+    REQUIRE (host.drawsWhatIsHeld());
+    host.settle();
+    CHECK_THAT (inset.handleCentre (TimingHandle::attack).x - inset.plot (TimingHandle::attack).getX(),
+                WithinAbs (std::log10 (2.0) * pixelsPerDecade (inset, TimingHandle::attack), 0.05));
 }
 
 TEST_CASE ("A Timing Response inset handle's readout card sits beside it, inside the inset, never over it")
