@@ -374,7 +374,7 @@ TEST_CASE ("Expanded View snapshots: the Transfer Curve inset's handles with sig
     harness::writeSnapshot (inset, "inset-handles-global-bypass", {}, 2.0f);
 }
 
-TEST_CASE ("Snapshots: the Timing Response inset on Clean and on FET, the Attack handle dragged with its readout card, Auto Release on, and the Expanded View with both insets while signal plays", "[.screens]")
+TEST_CASE ("Snapshots: the Timing Response inset on Clean, FET and Opto (its attack band and slow part), the Attack handle dragged with its readout card, Auto Release on (its band), and the Expanded View with both insets while signal plays", "[.screens]")
 {
     host::Playing host;
     auto& inset = host.expandedView().display().timingResponseInset();
@@ -383,10 +383,10 @@ TEST_CASE ("Snapshots: the Timing Response inset on Clean and on FET, the Attack
             return inset.drawn().has_value() && inset.drawn()->request.settings == comp1::TimingResponseWorker::shaping (host.processor.heldSettings());
         });
     };
-    for (const auto style : { comp1::Style::Clean, comp1::Style::FET })
+    for (const auto style : { comp1::Style::Clean, comp1::Style::FET, comp1::Style::Opto })
     {
         REQUIRE (host.processor.chooseStyle (style));
-        const juce::String name = style == comp1::Style::Clean ? "clean" : "fet";
+        const juce::String name = style == comp1::Style::Clean ? "clean" : style == comp1::Style::FET ? "fet" : "opto";
         REQUIRE (drawsWhatIsHeld());
         host.settleAnimations();
         harness::writeSnapshot (inset, "inset-timing-response-" + name, {}, 2.0f);

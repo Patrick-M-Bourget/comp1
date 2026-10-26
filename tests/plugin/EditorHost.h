@@ -149,6 +149,23 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
         FAIL (box.getTitle() << " doesn't offer " << item);
     }
 
+    // A press on item in the popup menu a control inside popover opens, once the menu is open, as popover hears it: the
+    // menu is a window of its own, and the press reaches popover as the global mouse listener it is while open. Returns
+    // the item, whose press (its accessibility action) picks it.
+    juce::Component& pressInOpenMenu (juce::Component& popover, const juce::String& item)
+    {
+        juce::Component* menu = nullptr;
+        REQUIRE (settleUntil ([&menu] { return (menu = harness::openMenu()) != nullptr; }));
+        juce::Component* found = nullptr;
+        for (auto* child : menu->getChildren())
+            if (auto* handler = child->getAccessibilityHandler(); handler != nullptr && handler->getTitle() == item)
+                found = child;
+        REQUIRE (found != nullptr);
+        const auto centre = found->getLocalBounds().toFloat().getCentre();
+        popover.mouseDown (harness::mouseEvent (*found, centre, juce::ModifierKeys::leftButtonModifier, centre));
+        return *found;
+    }
+
     // What a block played sounds like: the processor's buffer as it leaves it, the main bus's output in its first
     // channels.
     using Heard = std::function<void (const juce::AudioBuffer<float>&)>;

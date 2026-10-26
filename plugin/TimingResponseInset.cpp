@@ -25,6 +25,11 @@ namespace display = plugkit::ui::display;
 // An arrow's step, in a parameter's travel, as the knobs' (KeyboardSlider): 1%, or 0.2% with Shift.
 constexpr double keyStep = 0.01, fineKeyStep = 0.002;
 constexpr float curveLineWidth = 1.5f;
+// A band's fill, over the Gain Reduction's shading, and its edges' lines where they aren't the curve.
+constexpr float bandAlpha = 0.22f, bandEdgeWidth = 1.0f, bandEdgeAlpha = 0.6f;
+// The label under Opto's slow part's shaded times, and its width.
+constexpr const char* slowPartText = "slow, fixed";
+constexpr float slowPartLabelWidth = 56.0f;
 // The labelled times on each half's axis, in ms, and their labels.
 struct TimeLabel
 {
@@ -51,6 +56,28 @@ std::vector<juce::Point<double>> verticesOf (const std::array<double, TimingResp
         previous = sample;
     }
     return vertices;
+}
+
+// A curve's Gain Reduction at ms, from its vertices: straight between them in log time, held past its ends.
+double along (const std::vector<juce::Point<double>>& vertices, double ms)
+{
+    if (ms <= vertices.front().x)
+        return vertices.front().y;
+    if (ms >= vertices.back().x)
+        return vertices.back().y;
+    const auto after = std::upper_bound (vertices.begin(), vertices.end(), ms, [] (double t, const juce::Point<double>& v) { return t < v.x; });
+    const auto& b = *after;
+    const auto& a = *(after - 1);
+    return a.y + std::log (ms / a.x) / std::log (b.x / a.x) * (b.y - a.y);
+}
+
+juce::Path pathThrough (std::span<const juce::Point<float>> points)
+{
+    juce::Path path;
+    path.startNewSubPath (points.front());
+    for (const auto& p : points.subspan (1))
+        path.lineTo (p);
+    return path;
 }
 } // namespace
 
@@ -133,17 +160,28 @@ const std::vector<juce::Point<double>>& TimingResponseInset::curve (TimingHandle
 double TimingResponseInset::curveAt (TimingHandle half, double ms) const
 {
     const auto& vertices = curve (half);
-    if (vertices.empty())
-        return 0.0;
-    if (ms <= vertices.front().x)
-        return vertices.front().y;
-    if (ms >= vertices.back().x)
-        return vertices.back().y;
-    const auto after = std::upper_bound (vertices.begin(), vertices.end(), ms, [] (double t, const juce::Point<double>& v) { return t < v.x; });
-    const auto& b = *after;
-    const auto& a = *(after - 1);
-    const double between = std::log (ms / a.x) / std::log (b.x / a.x);
-    return a.y + between * (b.y - a.y);
+    return vertices.empty() ? 0.0 : along (vertices, ms);
+}
+
+std::optional<juce::Range<double>> TimingResponseInset::slowPartMs() const
+{
+    if (! shown || ! shown->response.slowPartMs)
+        return std::nullopt;
+    return juce::Range<double> { shown->response.slowPartMs->first, shown->response.slowPartMs->second };
+}
+
+std::vector<juce::Point<float>> TimingResponseInset::pointsThrough (TimingHandle half, const std::vector<juce::Point<double>>& vertices) const
+{
+    const auto area = plot (half);
+    const auto axis = axisMs (half);
+    std::vector<juce::Point<float>> points;
+    points.reserve (vertices.size() + 2);
+    points.push_back ({ area.getX(), yAt (along (vertices, axis.getStart())) });
+    for (const auto& v : vertices)
+        if (v.x > axis.getStart() && v.x <= axis.getEnd())
+            points.push_back ({ xAt (half, v.x), yAt (v.y) });
+    points.push_back ({ area.getRight(), yAt (along (vertices, axis.getEnd())) });
+    return points;
 }
 
 juce::Component& TimingResponseInset::handle (TimingHandle which) { return *handleComponents[static_cast<std::size_t> (which)]; }
@@ -224,23 +262,45 @@ void TimingResponseInset::paint (juce::Graphics& g)
             lines.zeroY = 0.0f;
             display::paintGrid (g, lines, { juce::roundToInt (area.getWidth()), juce::roundToInt (area.getHeight()) });
         }
-        // The curve, from the axis's start, with its area up to the top shaded as the Level and Gain Reduction Graph
-        // shades its Gain Reduction.
+        // On Opto, Release's half shades its slow part's times under the curve, labelled at the plot's foot.
+        if (const auto span = slowPartMs(); span && half == TimingHandle::release)
+        {
+            const float from = std::clamp (xAt (half, span->getStart()), area.getX(), area.getRight());
+            const float to = std::clamp (xAt (half, span->getEnd()), area.getX(), area.getRight());
+            g.setColour (colour::fill1);
+            g.fillRect (juce::Rectangle<float> (from, area.getY(), to - from, area.getHeight()));
+            const float x = std::clamp ((from + to) / 2.0f, area.getX() + slowPartLabelWidth / 2.0f, area.getRight() - slowPartLabelWidth / 2.0f);
+            texts.push_back ({ slowPartText, { x - slowPartLabelWidth / 2.0f, area.getBottom() - labelHeight, slowPartLabelWidth, labelHeight },
+                               juce::Justification::centred, colour::text3, size::fs1 });
+        }
+        // The curve, from the axis's start to its end, with its area up to the top shaded as the Level and Gain
+        // Reduction Graph shades its Gain Reduction; and a band, filled between its edges over the shading, its edges
+        // drawn thinner where they aren't the curve.
         const auto& vertices = curve (half);
         if (! vertices.empty())
         {
-            juce::Path line;
-            line.startNewSubPath (area.getX(), yAt (curveAt (half, axis.getStart())));
-            for (const auto& v : vertices)
-                if (v.x > axis.getStart() && v.x <= axis.getEnd())
-                    line.lineTo (xAt (half, v.x), yAt (v.y));
-            line.lineTo (area.getRight(), yAt (curveAt (half, axis.getEnd())));
+            const auto line = pathThrough (pointsThrough (half, vertices));
             auto shaded = line;
             shaded.lineTo (area.getRight(), area.getY());
             shaded.lineTo (area.getX(), area.getY());
             shaded.closeSubPath();
             g.setColour (colour::dynRange.withMultipliedAlpha (gainReductionShadingAlpha * alpha));
             g.fillPath (shaded);
+            if (const auto& edges = band (half))
+            {
+                const auto fastest = pointsThrough (half, edges->fastest), slowest = pointsThrough (half, edges->slowest);
+                auto between = pathThrough (fastest);
+                for (auto p = slowest.rbegin(); p != slowest.rend(); ++p)
+                    between.lineTo (*p);
+                between.closeSubPath();
+                g.setColour (colour::dynRange.withMultipliedAlpha (bandAlpha * alpha));
+                g.fillPath (between);
+                g.setColour (colour::dynRange.withMultipliedAlpha (bandEdgeAlpha * alpha));
+                g.strokePath (pathThrough (slowest), juce::PathStrokeType (bandEdgeWidth));
+                // Release's band's fastest edge is its curve, drawn next.
+                if (half == TimingHandle::attack)
+                    g.strokePath (pathThrough (fastest), juce::PathStrokeType (bandEdgeWidth));
+            }
             g.setColour (colour::dynRange.withMultipliedAlpha (alpha));
             g.strokePath (line, juce::PathStrokeType (curveLineWidth));
         }
@@ -274,11 +334,28 @@ bool TimingResponseInset::follow()
     if (! finished)
         return false;
     shown = std::move (finished);
-    riseCurve = verticesOf (shown->response.rise, shown->request.sampleRate);
-    recoveryCurve = verticesOf (shown->response.recovery, shown->request.sampleRate);
+    const auto& response = shown->response;
+    const double rate = shown->request.sampleRate;
+    const auto bandOf = [rate] (const std::optional<TimingResponse::Band>& values) -> std::optional<Band> {
+        if (! values)
+            return std::nullopt;
+        return Band { verticesOf (values->fastest, rate), verticesOf (values->slowest, rate) };
+    };
+    riseBand = bandOf (response.riseBand);
+    recoveryBand = bandOf (response.recoveryBand);
+    riseCurve = verticesOf (response.rise, rate);
+    // With Auto Release on, the recovery drawn is its band's fastest edge, at Release, where the Release handle sits.
+    recoveryCurve = recoveryBand ? recoveryBand->fastest : verticesOf (response.recovery, rate);
     double most = 0.0;
-    for (const auto* values : { &shown->response.rise, &shown->response.recovery })
-        most = std::max (most, *std::max_element (values->begin(), values->end()));
+    const auto reach = [&most] (const std::array<double, TimingResponse::points>& values) { most = std::max (most, *std::max_element (values.begin(), values.end())); };
+    reach (response.rise);
+    reach (response.recovery);
+    for (const auto* values : { &response.riseBand, &response.recoveryBand })
+        if (values->has_value())
+        {
+            reach ((*values)->fastest);
+            reach ((*values)->slowest);
+        }
     // At least a dB, so a response with next to no Gain Reduction draws next to the top rather than filling the plot.
     scaleDb = std::max (most, 1.0);
     return true;

@@ -7,6 +7,7 @@
 #include "TimingResponseInset.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -156,6 +157,14 @@ TEST_CASE ("Editor CPU: the editor's tick and the display's paint per tick, on t
 TEST_CASE ("Editor CPU: a frame of a drag on the Timing Response inset's handles, the Expanded View at its default size", "[.editor-cpu][.drag-frame]")
 {
     EditorCpuHost host;
+    // Clean, one curve a half; and Opto with Auto Release, the costliest response, with both bands and the slow part.
+    const bool bands = GENERATE (false, true);
+    if (bands)
+    {
+        REQUIRE (host.processor.chooseStyle (comp1::Style::Opto));
+        host.edit (parameters::thresholdId, -30.0f);
+        host.edit (parameters::autoReleaseId, 1.0f);
+    }
     host.show (DisplayTab::level);
     auto& editor = *host.editor;
     const auto size = comp1::PluginProcessor::expandedWindow.defaultSize;
@@ -186,6 +195,9 @@ TEST_CASE ("Editor CPU: a frame of a drag on the Timing Response inset's handles
         std::vector<double> drag, tick, insetPaint, editorPaint, frame, wholeFrame;
     };
     int behind = 0, mostBehind = 0; // ticks in a row the curve drawn trailed the settings held
+    // Ticks in a row, while a drag waits on a response, with no new curve drawn: how often the curve moves along.
+    int unchanged = 0, mostUnchanged = 0;
+    auto lastDrawn = inset.drawn()->request;
     const auto runFrame = [&] (Frames& frames, const std::function<void()>& move) {
         const double start = comp1::test::threadSeconds();
         if (move)
@@ -199,6 +211,9 @@ TEST_CASE ("Editor CPU: a frame of a drag on the Timing Response inset's handles
         frames.tick.push_back ((comp1::test::threadSeconds() - tickStart) / (host.editorTick().count() - before));
         behind = inset.isWaiting() ? behind + 1 : 0;
         mostBehind = std::max (mostBehind, behind);
+        unchanged = inset.isWaiting() && inset.drawn()->request == lastDrawn ? unchanged + 1 : 0;
+        mostUnchanged = std::max (mostUnchanged, unchanged);
+        lastDrawn = inset.drawn()->request;
         frames.insetPaint.push_back (paintTime (inset));
         frames.editorPaint.push_back (paintTime (editor));
         frames.frame.push_back (frames.drag.back() + frames.tick.back() + frames.insetPaint.back());
@@ -224,8 +239,8 @@ TEST_CASE ("Editor CPU: a frame of a drag on the Timing Response inset's handles
         handle.mouseUp (harness::mouseEvent (handle, from, {}, from));
     }
     const auto worst = [] (const std::vector<double>& xs) { return *std::max_element (xs.begin(), xs.end()); };
-    std::printf ("Timing Response inset drag, %zu frames, the editor at %d x %d, 1/60 s ticks, painted at %.0fx, message thread CPU:\n",
-                 dragged.frame.size(), size.x, size.y, static_cast<double> (paintScale));
+    std::printf ("Timing Response inset drag, %s, %zu frames, the editor at %d x %d, 1/60 s ticks, painted at %.0fx, message thread CPU:\n",
+                 bands ? "Opto with Auto Release" : "Clean", dragged.frame.size(), size.x, size.y, static_cast<double> (paintScale));
     for (auto [name, frames] : { std::pair { "still", &still }, std::pair { "drag", &dragged } })
     {
         print (name, "handler", frames->drag);
@@ -238,5 +253,6 @@ TEST_CASE ("Editor CPU: a frame of a drag on the Timing Response inset's handles
     std::printf ("  frame: handler + tick + the inset's paint, what a drag dirties; whole frame: with the whole editor painted, an upper bound\n");
     std::printf ("  worst drag frame %.2f ms, worst whole frame %.2f ms still and %.2f ms dragging (a 60 Hz frame is 16.67 ms)\n",
                  1.0e3 * worst (dragged.frame), 1.0e3 * worst (still.wholeFrame), 1.0e3 * worst (dragged.wholeFrame));
-    std::printf ("  the curve drawn trails the handle by at most %d ticks\n", mostBehind);
+    std::printf ("  the curve drawn trails the handle by at most %d ticks, and draws a newer response at least every %d ticks\n", mostBehind,
+                 mostUnchanged + 1);
 }
