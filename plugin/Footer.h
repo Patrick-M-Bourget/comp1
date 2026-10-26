@@ -1,16 +1,16 @@
 #pragma once
 
 #include "ChoiceChip.h"
-#include "HighQualityPopover.h"
 #include "LevelHistory.h"
 #include "OutputPopover.h"
 #include "PluginProcessor.h"
-#include "SaturationPopover.h"
-#include "StereoPopover.h"
 #include "plugkit/ui/EditorTick.h"
 #include "plugkit/ui/Session.h"
-#include "plugkit/ui/UiScaleMenu.h"
 #include "plugkit/ui/staple/controls/IconButton.h"
+#include "plugkit/ui/UiScaleMenu.h"
+#include "ProcessingModePopover.h"
+#include "SaturationPopover.h"
+#include "StereoPopover.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 

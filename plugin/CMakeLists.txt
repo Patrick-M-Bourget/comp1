@@ -38,14 +38,13 @@ target_sources(comp1 PRIVATE
     CompFollowAttachment.cpp
     Controls.cpp
     Display.cpp
-    DragHandle.cpp
     DisplayFades.cpp
+    DragHandle.cpp
     Footer.cpp
     GainReductionMeter.cpp
     GlobalBypassFade.cpp
     HandlePainting.cpp
     HeroComp.cpp
-    HighQualityPopover.cpp
     InsetEdit.cpp
     LevelGraph.cpp
     LevelHistory.cpp
@@ -55,6 +54,7 @@ target_sources(comp1 PRIVATE
     Parameters.cpp
     PluginEditor.cpp
     PluginProcessor.cpp
+    ProcessingModePopover.cpp
     ReadoutPopover.cpp
     SaturationPopover.cpp
     Section.cpp

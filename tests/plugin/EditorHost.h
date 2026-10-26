@@ -3,15 +3,15 @@
 // The Expanded View as a host opens it, through plugkit's editor harness: what the editor's tests share.
 
 #include "Footer.h"
-#include "HighQualityPopover.h"
 #include "OutputPopover.h"
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "plugkit/test/EditorHarness.h"
+#include "plugkit/ui/staple/controls/Knob.h"
+#include "ProcessingModePopover.h"
 #include "SaturationPopover.h"
 #include "SessionHost.h"
 #include "StereoPopover.h"
-#include "plugkit/test/EditorHarness.h"
-#include "plugkit/ui/staple/controls/Knob.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -1,4 +1,4 @@
-#include "HighQualityPopover.h"
+#include "ProcessingModePopover.h"
 
 #include "Parameters.h"
 #include "Sections.h"
