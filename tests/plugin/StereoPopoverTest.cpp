@@ -19,15 +19,6 @@ namespace
 // The stereo popover's controls, in Tab's order: each titled with its host parameter's name.
 const juce::StringArray popoverControls { "Stereo Placement", "Stereo Link" };
 
-juce::Component* focused() { return juce::Component::getCurrentlyFocusedComponent(); }
-
-// The Compact View shown, by the footer's switch, when compact.
-void showView (host::EditorHost& host, bool compact)
-{
-    if (compact)
-        host::EditorHost::click (host.expandedView().viewSwitch());
-}
-
 } // namespace
 
 TEST_CASE ("The Stereo readout reads Stereo Placement then Stereo Link in whole percent, in both views")
@@ -35,7 +26,7 @@ TEST_CASE ("The Stereo readout reads Stereo Placement then Stereo Link in whole 
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
     CAPTURE (compact);
-    showView (host, compact);
+    host.showView (compact);
     auto& readout = host.stereoReadout();
     REQUIRE (readout.isShowing());
     CHECK (readout.getTitle() == "Stereo");
@@ -106,7 +97,7 @@ TEST_CASE ("The Stereo readout opens the stereo popover above it by a click, and
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
     CAPTURE (compact);
-    showView (host, compact);
+    host.showView (compact);
     auto& readout = host.stereoReadout();
     auto& popover = host.stereoPopover();
     REQUIRE_FALSE (popover.isOpen());
@@ -137,14 +128,14 @@ TEST_CASE ("The Stereo readout opens the stereo popover above it by a click, and
     REQUIRE (readout.hasKeyboardFocus (false));
     CHECK (host.press (key));
     REQUIRE (popover.isOpen());
-    REQUIRE (focused() != nullptr);
-    juce::StringArray walked { focused()->getTitle() };
+    REQUIRE (host.focused() != nullptr);
+    juce::StringArray walked { host.focused()->getTitle() };
     for (int i = 1; i < popoverControls.size(); ++i)
     {
         REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
-        REQUIRE (focused() != nullptr);
-        CHECK (popover.isParentOf (focused()));
-        walked.add (focused()->getTitle());
+        REQUIRE (host.focused() != nullptr);
+        CHECK (popover.isParentOf (host.focused()));
+        walked.add (host.focused()->getTitle());
     }
     CHECK (walked == popoverControls);
     // Escape closes it, focus back on the readout.

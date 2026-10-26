@@ -17,8 +17,6 @@ namespace parameters = comp1::parameters;
 namespace
 {
 
-juce::Component* focused() { return juce::Component::getCurrentlyFocusedComponent(); }
-
 // The choices' texts the Oversampling chip's menu offers.
 juce::StringArray offered (comp1::ChoiceChip& chip)
 {
@@ -104,12 +102,12 @@ TEST_CASE ("The High Quality readout opens the High Quality popover above it by 
     REQUIRE (readout.hasKeyboardFocus (false));
     CHECK (host.press (key));
     REQUIRE (popover.isOpen());
-    REQUIRE (focused() != nullptr);
-    CHECK (focused()->getTitle() == "Lookahead");
+    REQUIRE (host.focused() != nullptr);
+    CHECK (host.focused()->getTitle() == "Lookahead");
     REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
-    REQUIRE (focused() != nullptr);
-    CHECK (focused()->getTitle() == "Oversampling");
-    CHECK (popover.isParentOf (focused()));
+    REQUIRE (host.focused() != nullptr);
+    CHECK (host.focused()->getTitle() == "Oversampling");
+    CHECK (popover.isParentOf (host.focused()));
     // Escape closes it, focus back on the readout.
     CHECK (host.press (juce::KeyPress (juce::KeyPress::escapeKey)));
     CHECK_FALSE (popover.isOpen());

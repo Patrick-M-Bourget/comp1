@@ -14,15 +14,6 @@ namespace parameters = comp1::parameters;
 namespace
 {
 
-// Shows the Compact View when compact, through the view switch.
-void showView (host::EditorHost& host, bool compact)
-{
-    if (compact)
-        host::EditorHost::click (host.expandedView().viewSwitch());
-}
-
-juce::Component* focused() { return juce::Component::getCurrentlyFocusedComponent(); }
-
 // The Saturation popover's controls, in Tab's order: each titled with its host parameter's name.
 const juce::StringArray popoverControls { "Saturation", "Saturation Position", "Drive" };
 
@@ -33,7 +24,7 @@ TEST_CASE ("The Saturation readout reads SAT and Drive in whole dB, signed, in b
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
     CAPTURE (compact);
-    showView (host, compact);
+    host.showView (compact);
     auto& readout = host.saturationReadout();
     REQUIRE (readout.isShowing());
     CHECK (readout.getTitle() == "Saturation");
@@ -62,7 +53,7 @@ TEST_CASE ("The Saturation readout sits just left of the Output readout, and Tab
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
     CAPTURE (compact);
-    showView (host, compact);
+    host.showView (compact);
     auto& saturation = host.saturationReadout();
     auto& output = host.outputReadout();
     const auto sat = host.inEditor (saturation), out = host.inEditor (output);
@@ -76,11 +67,11 @@ TEST_CASE ("The Saturation readout sits just left of the Output readout, and Tab
     highQuality.grabKeyboardFocus();
     REQUIRE (highQuality.hasKeyboardFocus (false));
     REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
-    CHECK (focused() == &host.stereoReadout());
+    CHECK (host.focused() == &host.stereoReadout());
     REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
-    CHECK (focused() == &saturation);
+    CHECK (host.focused() == &saturation);
     REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
-    CHECK (focused() == &output);
+    CHECK (host.focused() == &output);
 }
 
 TEST_CASE ("The Saturation readout opens the Saturation popover above it by a click, and by Space or Return, in both views; Tab reaches its controls, and Escape closes it, focus back on the readout")
@@ -88,7 +79,7 @@ TEST_CASE ("The Saturation readout opens the Saturation popover above it by a cl
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
     CAPTURE (compact);
-    showView (host, compact);
+    host.showView (compact);
     auto& readout = host.saturationReadout();
     auto& popover = host.saturationPopover();
     REQUIRE_FALSE (popover.isOpen());
@@ -119,15 +110,15 @@ TEST_CASE ("The Saturation readout opens the Saturation popover above it by a cl
     REQUIRE (readout.hasKeyboardFocus (false));
     CHECK (host.press (key));
     REQUIRE (popover.isOpen());
-    REQUIRE (focused() != nullptr);
-    CHECK (popover.isParentOf (focused()));
-    juce::StringArray walked { focused()->getTitle() };
+    REQUIRE (host.focused() != nullptr);
+    CHECK (popover.isParentOf (host.focused()));
+    juce::StringArray walked { host.focused()->getTitle() };
     for (int i = 1; i < popoverControls.size(); ++i)
     {
         REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
-        REQUIRE (focused() != nullptr);
-        CHECK (popover.isParentOf (focused()));
-        walked.add (focused()->getTitle());
+        REQUIRE (host.focused() != nullptr);
+        CHECK (popover.isParentOf (host.focused()));
+        walked.add (host.focused()->getTitle());
     }
     CHECK (walked == popoverControls);
     CHECK (host.press (juce::KeyPress (juce::KeyPress::escapeKey)));
@@ -141,7 +132,7 @@ TEST_CASE ("The Saturation popover's on switch, Drive and Saturation Position dr
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
     CAPTURE (compact);
-    showView (host, compact);
+    host.showView (compact);
     auto& popover = host.openSaturationPopover();
     auto& history = host.processor.session().editHistory();
     const auto in = [&popover] (auto& c) { return popover.isParentOf (&c); };
@@ -181,7 +172,7 @@ TEST_CASE ("A pick from the Saturation Position menu, a window of its own, leave
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
     CAPTURE (compact);
-    showView (host, compact);
+    host.showView (compact);
     host.edit (parameters::saturationPositionId, 0.0f);
     auto& popover = host.openSaturationPopover();
     auto& position = host.showing<juce::ComboBox> ("Saturation Position");

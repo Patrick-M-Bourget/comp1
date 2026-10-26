@@ -61,6 +61,17 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
         p.endChangeGesture();
     }
 
+    // Shows the Compact View, by a click on the switch between the views, when compact; else leaves the Expanded View,
+    // which opens first.
+    void showView (bool compact)
+    {
+        if (compact)
+            click (expandedView().viewSwitch());
+    }
+
+    // The component with keyboard focus, if any.
+    static juce::Component* focused() { return juce::Component::getCurrentlyFocusedComponent(); }
+
     // The knob titled title, showing.
     staple::Knob& knob (const juce::String& title) { return showing<staple::Knob> (title); }
 

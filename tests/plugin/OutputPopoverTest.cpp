@@ -117,8 +117,6 @@ namespace
 // The output popover's controls, in Tab's order: each titled with its host parameter's name.
 const juce::StringArray popoverControls { "Output Gain", "Ceiling", "Dry", "Wet", "Auto Gain", "Limiter" };
 
-juce::Component* focused() { return juce::Component::getCurrentlyFocusedComponent(); }
-
 } // namespace
 
 TEST_CASE ("The Output readout opens the output popover above it by a click, and by Space or Return, in both views; Tab reaches its controls, and Escape closes it, focus back on the readout")
@@ -158,16 +156,16 @@ TEST_CASE ("The Output readout opens the output popover above it by a click, and
     REQUIRE (readout.hasKeyboardFocus (false));
     CHECK (host.press (key));
     REQUIRE (popover.isOpen());
-    REQUIRE (focused() != nullptr);
-    CHECK (focused()->getTitle() == "Output Gain");
-    juce::StringArray walked { focused()->getTitle() };
+    REQUIRE (host.focused() != nullptr);
+    CHECK (host.focused()->getTitle() == "Output Gain");
+    juce::StringArray walked { host.focused()->getTitle() };
     for (int i = 1; i < popoverControls.size(); ++i)
     {
         REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
-        REQUIRE (focused() != nullptr);
-        CHECK (popover.isParentOf (focused()));
-        CHECK (focused()->hasFocusOutline());
-        walked.add (focused()->getTitle());
+        REQUIRE (host.focused() != nullptr);
+        CHECK (popover.isParentOf (host.focused()));
+        CHECK (host.focused()->hasFocusOutline());
+        walked.add (host.focused()->getTitle());
     }
     CHECK (walked == popoverControls);
     // Escape closes it, focus back on the readout.
