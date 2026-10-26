@@ -133,3 +133,101 @@ TEST_CASE ("Working out the Timing Response never allocates")
     }
     CHECK (response.rise.back() > 0.0);
 }
+
+TEST_CASE ("With Auto Release on, the Timing Response's recovery band runs from the recovery at Release to the recovery at 5 x Release, and the recovery played lies within it; with it off there is none", "[response]")
+{
+    const double sampleRate = GENERATE (44100.0, 192000.0);
+    const auto character = GENERATE (from_range (test::characters())).character;
+    for (auto settings : settingsFor (character))
+    {
+        settings.autoRelease = false;
+        CAPTURE (sampleRate, static_cast<int> (character), settings.attackMs, settings.releaseMs, settings.holdMs);
+        CHECK_FALSE (timingResponse (settings, sampleRate).recoveryBand.has_value());
+
+        const auto atRelease = timingResponse (settings, sampleRate);
+        auto longest = settings;
+        longest.releaseMs = 5.0 * settings.releaseMs;
+        const auto atLongest = timingResponse (longest, sampleRate);
+        settings.autoRelease = true;
+        const auto response = timingResponse (settings, sampleRate);
+        REQUIRE (response.recoveryBand.has_value());
+        const auto& band = *response.recoveryBand;
+        for (std::size_t i = 0; i < TimingResponse::points; ++i)
+        {
+            CAPTURE (i, TimingResponse::timeMsAt (static_cast<int> (i)));
+            CHECK_THAT (band.fastest[i], WithinAbs (atRelease.recovery[i], toleranceDb));
+            CHECK_THAT (band.slowest[i], WithinAbs (atLongest.recovery[i], toleranceDb));
+            CHECK (band.fastest[i] <= response.recovery[i] + toleranceDb);
+            CHECK (response.recovery[i] <= band.slowest[i] + toleranceDb);
+        }
+    }
+}
+
+TEST_CASE ("On Clean the Timing Response's recovery band's edges are 1/e of the way back at Hold plus Release and at Hold plus 5 x Release")
+{
+    const Settings settings { .character = Character::Clean, .releaseMs = 80.0, .autoRelease = true, .holdMs = 30.0 };
+    const auto response = timingResponse (settings, 48000.0);
+    REQUIRE (response.recoveryBand.has_value());
+    const double most = response.rise.back();
+    const auto edgeAt = [] (const std::array<double, TimingResponse::points>& values, double ms) {
+        TimingResponse r;
+        r.recovery = values;
+        return r.recoveryAt (ms);
+    };
+    CHECK_THAT (edgeAt (response.recoveryBand->fastest, 30.0 + 80.0) / most, WithinAbs (std::exp (-1.0), 0.01));
+    CHECK_THAT (edgeAt (response.recoveryBand->slowest, 30.0 + 400.0) / most, WithinAbs (std::exp (-1.0), 0.01));
+}
+
+TEST_CASE ("On Opto the Timing Response's rise band runs from the rise at 0.5 x Attack to the rise at 2 x Attack, the overshoot's scale held at each end, and the rise lies within it; on the other Characters there is none", "[response]")
+{
+    const double sampleRate = GENERATE (44100.0, 192000.0);
+    for (const auto& style : test::characters())
+    {
+        if (style.character != Character::Opto)
+        {
+            CHECK_FALSE (timingResponse ({ .character = style.character }, sampleRate).riseBand.has_value());
+            continue;
+        }
+        for (const auto& settings : settingsFor (Character::Opto))
+        {
+            CAPTURE (sampleRate, settings.attackMs, settings.releaseMs, settings.autoRelease, settings.compFollow);
+            const auto response = timingResponse (settings, sampleRate);
+            REQUIRE (response.riseBand.has_value());
+            // With the scale held, Opto attacks as FET does: its loop, both parts at one pole (Opto.h).
+            auto held = settings;
+            held.character = Character::FET;
+            held.attackMs = 0.5 * settings.attackMs;
+            const auto fastest = timingResponse (held, sampleRate);
+            held.attackMs = 2.0 * settings.attackMs;
+            const auto slowest = timingResponse (held, sampleRate);
+            for (std::size_t i = 0; i < TimingResponse::points; ++i)
+            {
+                CAPTURE (i, TimingResponse::timeMsAt (static_cast<int> (i)));
+                CHECK_THAT (response.riseBand->fastest[i], WithinAbs (fastest.rise[i], toleranceDb));
+                CHECK_THAT (response.riseBand->slowest[i], WithinAbs (slowest.rise[i], toleranceDb));
+                CHECK (response.riseBand->slowest[i] <= response.rise[i] + toleranceDb);
+                CHECK (response.rise[i] <= response.riseBand->fastest[i] + toleranceDb);
+            }
+        }
+    }
+}
+
+TEST_CASE ("On Opto the Timing Response marks the slow part's times, Hold plus 500 ms to Hold plus 5000 ms, which Release doesn't move; on the other Characters none")
+{
+    for (const auto& style : test::characters())
+    {
+        CAPTURE (static_cast<int> (style.character));
+        for (const double releaseMs : { 20.0, 2000.0 })
+        {
+            const auto response = timingResponse ({ .character = style.character, .releaseMs = releaseMs, .holdMs = 40.0 }, 48000.0);
+            if (style.character != Character::Opto)
+            {
+                CHECK_FALSE (response.slowPartMs.has_value());
+                continue;
+            }
+            REQUIRE (response.slowPartMs.has_value());
+            CHECK_THAT (response.slowPartMs->first, WithinAbs (540.0, 1.0e-9));
+            CHECK_THAT (response.slowPartMs->second, WithinAbs (5040.0, 1.0e-9));
+        }
+    }
+}

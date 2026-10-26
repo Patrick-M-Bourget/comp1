@@ -504,3 +504,59 @@ TEST_CASE ("Under Global Bypass the Timing Response inset dims its curves and ha
     host.edit (parameters::globalBypassId, 0.0f);
     REQUIRE (host.settleUntil ([&] { return juce::exactlyEqual (inset.curveAlpha(), 1.0f); }));
 }
+
+TEST_CASE ("The Timing Response inset draws Auto Release's recovery as a band from Release to 5 x Release with the Release handle on its fast edge, and on Opto the rise over a band from 0.5 x to 2 x Attack and the slow part's times shaded as fixed")
+{
+    TimingHost host;
+    auto& inset = host.inset();
+    // Each vertex drawn at one of the response's times, with the value worked out there.
+    const auto drawsValues = [] (const std::vector<juce::Point<double>>& vertices, const std::array<double, comp1::TimingResponse::points>& values) {
+        REQUIRE (vertices.size() > 10);
+        for (const auto& v : vertices)
+        {
+            const auto i = static_cast<std::size_t> (std::lround (std::log10 (v.x / comp1::TimingResponse::earliestMs) * comp1::TimingResponse::pointsPerDecade));
+            CHECK (juce::exactlyEqual (v.y, values[i]));
+        }
+    };
+    for (const auto style : { comp1::Style::Clean, comp1::Style::VCA, comp1::Style::FET, comp1::Style::Opto })
+        for (const bool autoRelease : { false, true })
+        {
+            REQUIRE (host.processor.chooseStyle (style));
+            host.edit (parameters::autoReleaseId, autoRelease ? 1.0f : 0.0f);
+            host.edit (parameters::holdId, 25.0f);
+            const bool opto = style == comp1::Style::Opto;
+            CAPTURE (static_cast<int> (style), autoRelease);
+            REQUIRE (host.drawsWhatIsHeld());
+            host.settle();
+            const auto& response = inset.drawn()->response;
+
+            REQUIRE (inset.band (TimingHandle::release).has_value() == autoRelease);
+            if (autoRelease)
+            {
+                const auto& band = *inset.band (TimingHandle::release);
+                drawsValues (band.fastest, response.recoveryBand->fastest);
+                drawsValues (band.slowest, response.recoveryBand->slowest);
+                // The band's fast edge is the recovery drawn, and the Release handle sits on it.
+                CHECK (inset.curve (TimingHandle::release) == band.fastest);
+                const double releaseFromMs = host.value (parameters::holdId) + host.value (parameters::releaseId);
+                CHECK_THAT (inset.handleCentre (TimingHandle::release).y, WithinAbs (inset.yAt (inset.curveAt (TimingHandle::release, releaseFromMs)), 1.0e-3));
+            }
+            else
+                drawsValues (inset.curve (TimingHandle::release), response.recovery);
+
+            REQUIRE (inset.band (TimingHandle::attack).has_value() == opto);
+            drawsValues (inset.curve (TimingHandle::attack), response.rise);
+            if (opto)
+            {
+                drawsValues (inset.band (TimingHandle::attack)->fastest, response.riseBand->fastest);
+                drawsValues (inset.band (TimingHandle::attack)->slowest, response.riseBand->slowest);
+            }
+
+            REQUIRE (inset.slowPartMs().has_value() == opto);
+            if (opto)
+            {
+                CHECK_THAT (inset.slowPartMs()->getStart(), WithinAbs (25.0 + 500.0, 1.0e-3));
+                CHECK_THAT (inset.slowPartMs()->getEnd(), WithinAbs (25.0 + 5000.0, 1.0e-3));
+            }
+        }
+}
