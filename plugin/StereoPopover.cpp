@@ -1,5 +1,6 @@
 #include "StereoPopover.h"
 
+#include "ChipWidth.h"
 #include "Parameters.h"
 #include "plugkit/ui/staple/Tokens.h"
 
@@ -31,14 +32,7 @@ StereoItem::StereoItem (PluginProcessor& p)
     show();
 }
 
-int StereoItem::idealWidth()
-{
-    const auto text = shown.getButtonText();
-    shown.setButtonText (stereoReadoutText ("Stereo", 100.0));
-    const int widest = shown.getIdealWidth();
-    shown.setButtonText (text);
-    return widest;
-}
+int StereoItem::idealWidth() { return widestIdealWidth (shown, { stereoReadoutText ("Stereo", 100.0) }); }
 
 void StereoItem::show()
 {

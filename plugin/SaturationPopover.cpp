@@ -1,5 +1,6 @@
 #include "SaturationPopover.h"
 
+#include "ChipWidth.h"
 #include "Parameters.h"
 #include "plugkit/ui/ValueText.h"
 #include "plugkit/ui/staple/Tokens.h"
@@ -35,11 +36,8 @@ SaturationItem::SaturationItem (PluginProcessor& p)
 
 int SaturationItem::idealWidth()
 {
-    const auto text = shown.getButtonText();
-    shown.setButtonText (saturationReadoutText (parameters::parameterOf (processor.parameterState(), parameters::driveId).getNormalisableRange().end));
-    const int widest = shown.getIdealWidth();
-    shown.setButtonText (text);
-    return widest;
+    const auto topDb = parameters::parameterOf (processor.parameterState(), parameters::driveId).getNormalisableRange().end;
+    return widestIdealWidth (shown, { saturationReadoutText (topDb) });
 }
 
 void SaturationItem::show()

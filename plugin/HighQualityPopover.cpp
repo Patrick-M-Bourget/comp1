@@ -1,5 +1,6 @@
 #include "HighQualityPopover.h"
 
+#include "ChipWidth.h"
 #include "Parameters.h"
 #include "Sections.h"
 #include "comp1/Latency.h"
@@ -45,15 +46,10 @@ HighQualityReadout::HighQualityReadout (PluginProcessor& p)
 
 int HighQualityReadout::widestIdealWidth()
 {
-    const auto shown = getButtonText();
-    int widest = 0;
+    juce::StringArray texts;
     for (int choice = 0; choice < oversamplingOf (processor).getAllValueStrings().size(); ++choice)
-    {
-        setButtonText (readoutText (processor, choice));
-        widest = std::max (widest, getIdealWidth());
-    }
-    setButtonText (shown);
-    return widest;
+        texts.add (readoutText (processor, choice));
+    return comp1::widestIdealWidth (*this, texts);
 }
 
 void HighQualityReadout::show()
