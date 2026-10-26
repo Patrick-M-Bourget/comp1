@@ -19,7 +19,7 @@ const juce::StringArray popoverControls { "Saturation", "Saturation Position", "
 
 } // namespace
 
-TEST_CASE ("The Saturation readout reads SAT and Drive in whole dB, signed, in both views, dimmed while Saturation is off")
+TEST_CASE ("The Saturation readout reads SAT and Drive in whole dB, signed, in both views, dimmed while Saturation is off or Global Bypass on, as its tooltip says")
 {
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
@@ -46,6 +46,11 @@ TEST_CASE ("The Saturation readout reads SAT and Drive in whole dB, signed, in b
     CHECK (host.settleUntil ([&] { return readout.isNotApplied(); }));
     host.edit (parameters::saturationId, 1.0f);
     CHECK (host.settleUntil ([&] { return ! readout.isNotApplied(); }));
+    host.edit (parameters::globalBypassId, 1.0f);
+    CHECK (host.settleUntil ([&] { return readout.isNotApplied(); }));
+    host.edit (parameters::globalBypassId, 0.0f);
+    CHECK (host.settleUntil ([&] { return ! readout.isNotApplied(); }));
+    CHECK (readout.getTooltip() == "Saturation: its Drive, dimmed while Saturation is off or Global Bypass on. Click for Saturation's controls");
 }
 
 TEST_CASE ("The Saturation readout sits just left of the Output readout, and Tab reaches it after the Processing Mode readout and the Stereo readout and before Output, in both views")

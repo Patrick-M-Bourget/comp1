@@ -12,7 +12,7 @@ FooterReading saturationReading (PluginProcessor& processor)
 {
     auto& state = processor.parameterState();
     return { .readout = std::make_unique<plugkit::ui::FooterReadout> (
-                 "Saturation", "SAT", "Saturation: its Drive, dimmed while Saturation is off. Click for Saturation's controls"),
+                 "Saturation", "SAT", "Saturation: its Drive, dimmed while Saturation is off or Global Bypass on. Click for Saturation's controls"),
              .show =
                  [&state] (plugkit::ui::FooterReadout& readout) {
                      const double driveDb = state.getRawParameterValue (parameters::driveId)->load (std::memory_order_relaxed);
