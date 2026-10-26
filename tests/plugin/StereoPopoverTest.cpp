@@ -19,15 +19,6 @@ namespace
 // The stereo popover's controls, in Tab's order: each titled with its host parameter's name.
 const juce::StringArray popoverControls { "Stereo Placement", "Stereo Link" };
 
-juce::Component* focused() { return juce::Component::getCurrentlyFocusedComponent(); }
-
-// The Compact View shown, by the footer's switch, when compact.
-void showView (host::EditorHost& host, bool compact)
-{
-    if (compact)
-        host::EditorHost::click (host.expandedView().viewSwitch());
-}
-
 } // namespace
 
 TEST_CASE ("The Stereo readout reads Stereo Placement then Stereo Link in whole percent, in both views")
@@ -35,7 +26,7 @@ TEST_CASE ("The Stereo readout reads Stereo Placement then Stereo Link in whole 
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
     CAPTURE (compact);
-    showView (host, compact);
+    host.showView (compact);
     auto& readout = host.stereoReadout();
     REQUIRE (readout.isShowing());
     CHECK (readout.getTitle() == "Stereo");
@@ -56,13 +47,13 @@ TEST_CASE ("The Stereo readout reads Stereo Placement then Stereo Link in whole 
     CHECK (reads ("Stereo 43%"));
 }
 
-TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to its label, ST, still showing and overlapping neither the High Quality readout nor the Output readout")
+TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to its label, ST, still showing and overlapping neither the Processing Mode readout nor the Output readout")
 {
     host::EditorHost host;
     auto& footer = host.footer();
     auto& item = footer.stereo();
     auto& readout = host.stereoReadout();
-    auto& highQuality = host.highQualityReadout();
+    auto& highQuality = footer.processingMode();
     REQUIRE_FALSE (readout.isShrunk());
     // Narrower a pixel at a time, until the row between the chips and the Output readout can't hold its text.
     while (! readout.isShrunk() && footer.getWidth() > 0)
@@ -71,12 +62,12 @@ TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to it
     CHECK (readout.isShowing());
     CHECK (readout.getWidth() == readout.getShrunkWidth());
     CHECK (item.getX() >= highQuality.getRight() + comp1::Footer::chipGap);
-    CHECK (item.getRight() + comp1::Footer::chipGap <= host.outputReadout().getX());
+    CHECK (item.getRight() + comp1::Footer::chipGap <= footer.output().getX());
     // Read whole by a screen reader all the same.
     CHECK (readout.getButtonText() == "Stereo 100%");
 }
 
-TEST_CASE ("On a mono track the Stereo readout is drawn not applied and the stereo popover's controls are disabled, their values kept; on stereo they are applied and enabled")
+TEST_CASE ("On a mono track the Stereo readout is drawn not applied, its description saying why, and the stereo popover's controls are disabled, their values kept; on stereo they are applied and enabled, with no description")
 {
     host::EditorHost host;
     host.edit (parameters::stereoPlacementId, 1.0f);
@@ -90,6 +81,10 @@ TEST_CASE ("On a mono track the Stereo readout is drawn not applied and the ster
     auto& readout = host.stereoReadout();
     REQUIRE (host.settleUntil ([&] { return readout.isNotApplied() == ! stereo; }));
     CHECK (readout.getButtonText() == "Mid 40%");
+    // What a screen reader is told beside its value.
+    auto* handler = readout.getAccessibilityHandler();
+    REQUIRE (handler != nullptr);
+    CHECK (handler->getDescription() == (stereo ? juce::String() : juce::String ("Mono track: Stereo Placement and Stereo Link change nothing")));
 
     host.openStereoPopover();
     auto& placement = host.showing<juce::ComboBox> ("Stereo Placement");
@@ -106,7 +101,7 @@ TEST_CASE ("The Stereo readout opens the stereo popover above it by a click, and
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
     CAPTURE (compact);
-    showView (host, compact);
+    host.showView (compact);
     auto& readout = host.stereoReadout();
     auto& popover = host.stereoPopover();
     REQUIRE_FALSE (popover.isOpen());
@@ -137,14 +132,14 @@ TEST_CASE ("The Stereo readout opens the stereo popover above it by a click, and
     REQUIRE (readout.hasKeyboardFocus (false));
     CHECK (host.press (key));
     REQUIRE (popover.isOpen());
-    REQUIRE (focused() != nullptr);
-    juce::StringArray walked { focused()->getTitle() };
+    REQUIRE (host.focused() != nullptr);
+    juce::StringArray walked { host.focused()->getTitle() };
     for (int i = 1; i < popoverControls.size(); ++i)
     {
         REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
-        REQUIRE (focused() != nullptr);
-        CHECK (popover.isParentOf (focused()));
-        walked.add (focused()->getTitle());
+        REQUIRE (host.focused() != nullptr);
+        CHECK (popover.isParentOf (host.focused()));
+        walked.add (host.focused()->getTitle());
     }
     CHECK (walked == popoverControls);
     // Escape closes it, focus back on the readout.

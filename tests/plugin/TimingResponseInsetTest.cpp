@@ -9,8 +9,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <map>
+#include <optional>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -26,7 +28,7 @@ namespace
 
 struct TimingHost : host::Playing
 {
-    TimingHost() { showTab (DisplayTab::level); }
+    explicit TimingHost (double sampleRate = 48000.0) : host::Playing (sampleRate) { showTab (DisplayTab::level); }
 
     comp1::Display& display() { return expandedView().display(); }
     comp1::TimingResponseInset& inset() { return display().timingResponseInset(); }
@@ -42,7 +44,7 @@ struct TimingHost : host::Playing
     {
         return settleUntil ([&] {
             const auto& drawn = inset().drawn();
-            return drawn.has_value() && drawn->request.settings == comp1::TimingResponseWorker::shaping (processor.heldSettings());
+            return drawn.has_value() && drawn->request.settings == comp1::timingResponseShaping (processor.heldSettings());
         });
     }
 };
@@ -75,19 +77,19 @@ std::map<juce::String, float> allValues (host::EditorHost& host)
     return values;
 }
 
-// The times a half's axis spans, in ms, worked out apart from the inset: Attack's from one sample's time at the rate
-// the response was worked out at to the burst's end, Release's from 1 ms to the response's last time.
-std::pair<double, double> axisOf (comp1::TimingResponseInset& inset, TimingHandle half)
+// The times a half's axis spans, in ms, worked out apart from the inset: Attack's from Attack's shortest, 5 us, to the
+// burst's end, Release's from 1 ms to the response's last time.
+std::pair<double, double> axisOf (TimingHandle half)
 {
     if (half == TimingHandle::attack)
-        return { 1000.0 / inset.drawn()->request.sampleRate, 1000.0 };
+        return { 0.005, 1000.0 };
     return { 1.0, comp1::TimingResponse::timeMsAt (comp1::TimingResponse::points - 1) };
 }
 
 // How many pixels a decade of time spans on a half's axis: its plot's width over the axis's decades.
 double pixelsPerDecade (comp1::TimingResponseInset& inset, TimingHandle half)
 {
-    const auto [from, to] = axisOf (inset, half);
+    const auto [from, to] = axisOf (half);
     return inset.plot (half).getWidth() / std::log10 (to / from);
 }
 
@@ -101,7 +103,7 @@ TEST_CASE ("The Timing Response inset shows beside the Transfer Curve inset, 260
     auto& graph = host.display().levelGraph();
     CHECK (inset.isShowing());
     CHECK (inset.getWidth() == 260);
-    CHECK (inset.getHeight() == comp1::TransferCurveInset::side);
+    CHECK (inset.getHeight() == comp1::insets::side);
     // insetGap to the right of the Transfer Curve inset, level with it, inside the graph.
     CHECK (inset.getX() == curveInset.getRight() + comp1::Display::insetGap);
     CHECK (inset.getY() == curveInset.getY());
@@ -119,15 +121,14 @@ TEST_CASE ("The Timing Response inset shows beside the Transfer Curve inset, 260
     CHECK (inset.isShowing());
 }
 
-TEST_CASE ("The Timing Response inset draws the response at the settings held and the Engine's sample rate, worked out on a thread other than the message thread")
+TEST_CASE ("The Timing Response inset draws the response at the settings held, worked out at 48 kHz whatever the host plays at, on a thread other than the message thread")
 {
-    TimingHost host;
+    TimingHost host (192000.0);
     auto& inset = host.inset();
     REQUIRE (host.drawsWhatIsHeld());
     const auto messageThread = std::this_thread::get_id();
     REQUIRE (juce::MessageManager::getInstance()->isThisTheMessageThread());
     CHECK (inset.drawn()->workedOn != messageThread);
-    CHECK (inset.drawn()->request.sampleRate == plugkit::ui::sampleRateOrAssumed (host.processor));
 
     // Every setting that shapes it, Comp Follow's Threshold among them: a Style turns Comp Follow on.
     REQUIRE (host.processor.chooseStyle (comp1::Style::FET));
@@ -139,7 +140,7 @@ TEST_CASE ("The Timing Response inset draws the response at the settings held an
     REQUIRE (host.drawsWhatIsHeld());
     const auto& drawn = *inset.drawn();
     CHECK (drawn.workedOn != messageThread);
-    const auto expected = comp1::timingResponse (comp1::TimingResponseWorker::shaping (host.processor.heldSettings()), drawn.request.sampleRate);
+    const auto expected = comp1::timingResponse (comp1::timingResponseShaping (host.processor.heldSettings()), 48000.0);
     CHECK (drawn.response.rise == expected.rise);
     CHECK (drawn.response.recovery == expected.recovery);
     CHECK (drawn.response.burstLevelDb == expected.burstLevelDb);
@@ -165,7 +166,7 @@ TEST_CASE ("Dragging a Timing Response inset handle never works the response out
     CHECK (juce::exactlyEqual (inset.drawn()->request.settings.attackMs, static_cast<double> (host.value (parameters::attackId))));
 }
 
-TEST_CASE ("The Timing Response inset's two halves side by side, Attack's on the left from one sample's time to 1 s and Release's on the right from 1 ms to about 10 s, each on a log time axis")
+TEST_CASE ("The Timing Response inset's two halves side by side, Attack's on the left from 5 us to 1 s and Release's on the right from 1 ms to about 10 s, each on a log time axis")
 {
     TimingHost host;
     auto& inset = host.inset();
@@ -181,7 +182,7 @@ TEST_CASE ("The Timing Response inset's two halves side by side, Attack's on the
     {
         CAPTURE (half == TimingHandle::attack ? "Attack" : "Release");
         const auto plot = inset.plot (half);
-        const auto [from, to] = axisOf (inset, half);
+        const auto [from, to] = axisOf (half);
         CHECK_THAT (inset.xAt (half, from), WithinAbs (plot.getX(), 1.0e-3));
         CHECK_THAT (inset.xAt (half, to), WithinAbs (plot.getRight(), 1.0e-3));
         // Each decade the same width.
@@ -251,14 +252,20 @@ TEST_CASE ("The Timing Response inset's Attack handle sits on the rise at Attack
     host.edit (parameters::holdId, 20.0f);
     check();
 
-    // An Attack under one sample's time: the handle at the axis's start.
+    // Attack's shortest at the axis's start, and an Attack under one sample's time at 48 kHz (about 21 us) right of it,
+    // where it lies on the axis.
     host.edit (parameters::attackId, 0.005f);
     REQUIRE (host.drawsWhatIsHeld());
     host.settle();
     CHECK_THAT (inset.handleCentre (TimingHandle::attack).x, WithinAbs (inset.plot (TimingHandle::attack).getX(), 1.0e-3));
+    host.edit (parameters::attackId, 0.01f);
+    REQUIRE (host.drawsWhatIsHeld());
+    host.settle();
+    CHECK_THAT (inset.handleCentre (TimingHandle::attack).x - inset.plot (TimingHandle::attack).getX(),
+                WithinAbs (std::log10 (2.0) * pixelsPerDecade (inset, TimingHandle::attack), 0.05));
 }
 
-TEST_CASE ("A Timing Response inset handle's readout card sits beside it, inside the inset, never over it")
+TEST_CASE ("A Timing Response inset handle's readout card sits beside it, inside the inset, never over it or the captions and time labels")
 {
     TimingHost host;
     auto& inset = host.inset();
@@ -279,10 +286,15 @@ TEST_CASE ("A Timing Response inset handle's readout card sits beside it, inside
             handle.mouseDown (harness::mouseEvent (handle, from, held));
             const auto card = inset.readoutBounds();
             REQUIRE (card.has_value());
-            const auto disc = juce::Rectangle<float> (2.0f * comp1::TimingResponseInset::handleRadius, 2.0f * comp1::TimingResponseInset::handleRadius)
+            const auto disc = juce::Rectangle<float> (2.0f * comp1::insets::handleRadius, 2.0f * comp1::insets::handleRadius)
                                   .withCentre (inset.handleCentre (which));
             CHECK_FALSE (card->intersects (disc));
             CHECK (inside.contains (*card));
+            // Level with the plots, so clear of the captions over them and the time labels under them ("10 ms" under
+            // FET's quick Attack, at the plot's foot).
+            const auto plot = inset.plot (which);
+            CHECK (card->getY() >= plot.getY());
+            CHECK (card->getBottom() <= plot.getBottom());
             handle.mouseUp (harness::mouseEvent (handle, from, {}, from));
         }
 }
@@ -372,8 +384,8 @@ TEST_CASE ("Only the Timing Response inset's handles take a press: elsewhere in 
         for (float x = 2.0f; x < static_cast<float> (inset.getWidth()); x += 6.0f)
         {
             const juce::Point<float> at { x, y };
-            if (at.getDistanceFrom (inset.handleCentre (TimingHandle::attack)) <= comp1::TimingResponseInset::handleHitRadius + 1.5f
-                || at.getDistanceFrom (inset.handleCentre (TimingHandle::release)) <= comp1::TimingResponseInset::handleHitRadius + 1.5f)
+            if (at.getDistanceFrom (inset.handleCentre (TimingHandle::attack)) <= comp1::insets::handleHitRadius + 1.5f
+                || at.getDistanceFrom (inset.handleCentre (TimingHandle::release)) <= comp1::insets::handleHitRadius + 1.5f)
                 continue;
             CAPTURE (x, y);
             auto* target = pressedAt (at);
@@ -559,4 +571,28 @@ TEST_CASE ("The Timing Response inset draws Auto Release's recovery as a band fr
                 CHECK_THAT (inset.slowPartMs()->getEnd(), WithinAbs (25.0 + 5000.0, 1.0e-3));
             }
         }
+}
+
+TEST_CASE ("Destroyed while it works a response out, the Timing Response worker stops it rather than waiting for it to finish")
+{
+    using clock = std::chrono::steady_clock;
+    // The slowest response to work out: Opto, Auto Release, Release's longest.
+    const comp1::Settings slowest { .character = comp1::Character::Opto, .releaseMs = 5000.0, .autoRelease = true };
+    const auto start = clock::now();
+    const auto response = comp1::timingResponse (slowest, comp1::drawnSampleRate);
+    const auto workingOut = clock::now() - start;
+    REQUIRE (response.rise.back() > 0.0);
+
+    std::optional<comp1::TimingResponseWorker> worker;
+    worker.emplace();
+    REQUIRE (worker->ask ({ slowest }));
+    // Let the worker take the request and start on it.
+    std::this_thread::sleep_for (workingOut / 8);
+    const auto destroying = clock::now();
+    worker.reset();
+    const auto stopping = clock::now() - destroying;
+    const double workingOutMs = std::chrono::duration<double, std::milli> (workingOut).count();
+    const double stoppingMs = std::chrono::duration<double, std::milli> (stopping).count();
+    CAPTURE (workingOutMs, stoppingMs);
+    CHECK (stopping < workingOut / 2);
 }

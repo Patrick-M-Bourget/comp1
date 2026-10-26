@@ -275,7 +275,7 @@ TEST_CASE ("Each meter is labelled under its bar, GATE, COMP, LIM and OUT, the l
 }
 
 
-TEST_CASE ("At the Compact View's 780 px and at the Expanded View's minimum and default widths, in Zero Latency and in High Quality, the footer holds the Stereo and the Saturation readouts at full length, between the High Quality readout and the Output readout")
+TEST_CASE ("At the Compact View's 780 px and at the Expanded View's minimum and default widths, in Zero Latency and in High Quality, the footer holds the Stereo and the Saturation readouts at full length, between the Processing Mode readout and the Output readout")
 {
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
@@ -299,20 +299,20 @@ TEST_CASE ("At the Compact View's 780 px and at the Expanded View's minimum and 
 
     CHECK_FALSE (stereo.isShrunk());
     CHECK_FALSE (saturation.isShrunk());
-    const auto hq = host.inEditor (host.highQualityReadout()), st = host.inEditor (stereo), sat = host.inEditor (saturation),
+    const auto hq = host.inEditor (host.processingModeReadout()), st = host.inEditor (stereo), sat = host.inEditor (saturation),
                out = host.inEditor (host.outputReadout());
     CHECK (st.getX() >= hq.getRight() + comp1::Footer::chipGap);
     CHECK (sat.getX() == st.getRight() + comp1::Footer::chipGap);
     CHECK (sat.getRight() + comp1::Footer::chipGap == out.getX());
 }
 
-TEST_CASE ("Narrowed a pixel at a time, the footer shrinks the Stereo readout to ST, then the Saturation readout to SAT, each staying shrunk once shrunk, both showing between the High Quality readout and the Output readout, overlapping neither")
+TEST_CASE ("Narrowed a pixel at a time, the footer shrinks the Stereo readout to ST, then the Saturation readout to SAT, each staying shrunk once shrunk, both showing between the Processing Mode readout and the Output readout, overlapping neither")
 {
     host::EditorHost host;
     auto& footer = host.footer();
     auto& stereo = host.stereoReadout();
     auto& saturation = host.saturationReadout();
-    auto& highQuality = host.highQualityReadout();
+    auto& highQuality = host.processingModeReadout();
     auto& output = host.outputReadout();
     // Placed in the footer: the readouts fill their items.
     const auto in = [&footer] (juce::Component& c) { return footer.getLocalArea (c.getParentComponent(), c.getBounds()); };

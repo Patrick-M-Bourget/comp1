@@ -57,7 +57,7 @@ TEST_CASE ("Expanded View snapshots: default at 100% and 200%, on mono, with Com
     host.processor.session().editHistory().undo();
     host.processor.session().editHistory().undo();
 
-    // High Quality: the High Quality readout applied.
+    // High Quality: the Processing Mode readout reads it.
     host.edit (comp1::parameters::processingModeId, 1.0f);
     snapshot (host, "expanded-high-quality");
     host.processor.session().editHistory().undo();
@@ -227,25 +227,25 @@ TEST_CASE ("Compact View snapshots: each Style's Compact Slots, at 100%", "[.scr
     }
 }
 
-TEST_CASE ("High Quality popover snapshots: open in the Expanded View and the Compact View, in High Quality and in Zero Latency", "[.screens]")
+TEST_CASE ("Processing Mode popover snapshots: open in the Expanded View and the Compact View, in High Quality and in Zero Latency", "[.screens]")
 {
     host::EditorHost host;
     openOn (host, juce::AudioChannelSet::stereo());
     host.edit (comp1::parameters::processingModeId, 1.0f);
     host.edit (comp1::parameters::oversamplingId, 2.0f);
     host.edit (comp1::parameters::lookaheadId, 2.0f);
-    host.openHighQualityPopover();
-    snapshot (host, "expanded-high-quality-popover");
+    host.openProcessingModePopover();
+    snapshot (host, "expanded-processing-mode-popover");
     host.edit (comp1::parameters::processingModeId, 0.0f);
-    snapshot (host, "expanded-high-quality-popover-zero-latency");
+    snapshot (host, "expanded-processing-mode-popover-zero-latency");
 
-    host.highQualityPopover().close();
+    host.processingModePopover().close();
     host::EditorHost::click (host.expandedView().viewSwitch());
     REQUIRE (host.expandedView().shownView() == comp1::View::compact);
     host.edit (comp1::parameters::processingModeId, 1.0f);
-    host.openHighQualityPopover();
-    snapshot (host, "compact-high-quality-popover");
-    host.highQualityPopover().close();
+    host.openProcessingModePopover();
+    snapshot (host, "compact-processing-mode-popover");
+    host.processingModePopover().close();
     host::EditorHost::click (host.expandedView().viewSwitch());
 }
 
@@ -303,7 +303,7 @@ TEST_CASE ("Footer snapshots: the Output readout with Auto Gain off, then on wit
         snapshot (host, "expanded-" + name);
         // Close up, at 3x: the footer's right end, from just left of the readout, over the window's background.
         auto& footer = host.footer();
-        const auto right = host.editor->getLocalArea (&footer, footer.getLocalBounds().withLeft (host.outputReadout().getX() - 24));
+        const auto right = host.editor->getLocalArea (&footer, footer.getLocalBounds().withLeft (footer.output().getX() - 24));
         harness::writeSnapshot (*host.editor, "footer-" + name, right, 3.0f);
     }
 }
@@ -380,7 +380,7 @@ TEST_CASE ("Snapshots: the Timing Response inset on Clean, FET and Opto (its att
     auto& inset = host.expandedView().display().timingResponseInset();
     const auto drawsWhatIsHeld = [&] {
         return host.settleUntil ([&] {
-            return inset.drawn().has_value() && inset.drawn()->request.settings == comp1::TimingResponseWorker::shaping (host.processor.heldSettings());
+            return inset.drawn().has_value() && inset.drawn()->request.settings == comp1::timingResponseShaping (host.processor.heldSettings());
         });
     };
     for (const auto style : { comp1::Style::Clean, comp1::Style::FET, comp1::Style::Opto })
@@ -420,10 +420,10 @@ TEST_CASE ("Layout snapshots: the Expanded View at its default and minimum sizes
 {
     host::EditorHost host;
     openOn (host, juce::AudioChannelSet::stereo());
-    // High Quality at 4x: the Processing Mode chip reads "High Quality" beside the High Quality readout's "HQ 4x".
+    // High Quality at 4x: the Processing Mode readout reads "High Quality 4x".
     host.edit (comp1::parameters::processingModeId, 1.0f);
     host.edit (comp1::parameters::oversamplingId, 2.0f);
-    REQUIRE (host.settleUntil ([&] { return host.highQualityReadout().getButtonText() == "HQ 4x"; }));
+    REQUIRE (host.settleUntil ([&] { return host.processingModeReadout().getButtonText() == "High Quality 4x"; }));
     // Close up, at 2x: the whole footer, in High Quality, then in Zero Latency.
     const auto footerCloseUps = [&host] (const juce::String& name) {
         auto& footer = host.footer();

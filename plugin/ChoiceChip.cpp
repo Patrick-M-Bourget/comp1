@@ -1,5 +1,6 @@
 #include "ChoiceChip.h"
 
+#include "ChipWidth.h"
 #include "plugkit/ui/Accessibility.h"
 #include "plugkit/ui/ShowMenu.h"
 #include "plugkit/ui/staple/LookAndFeel.h"
@@ -112,15 +113,10 @@ void ChoiceChip::endStep()
 
 int ChoiceChip::widestIdealWidth()
 {
-    const auto shown = getButtonText();
-    int widest = 0;
+    juce::StringArray texts;
     for (int choice = 0; choice < choices.size(); ++choice)
-    {
-        setButtonText (textOf (choice));
-        widest = std::max (widest, getIdealWidth());
-    }
-    setButtonText (shown);
-    return widest;
+        texts.add (textOf (choice));
+    return comp1::widestIdealWidth (*this, texts);
 }
 
 void ChoiceChip::show()

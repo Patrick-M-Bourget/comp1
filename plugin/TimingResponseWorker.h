@@ -3,6 +3,7 @@
 #include "comp1/Settings.h"
 #include "comp1/TimingResponse.h"
 
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
@@ -23,20 +24,13 @@ namespace comp1
 class TimingResponseWorker
 {
 public:
-    // What a response is worked out from: the settings that shape it, and the sample rate the Engine plays at.
+    // What a response is worked out from: the settings that shape it. It is worked out at drawnSampleRate, whatever the
+    // host plays at.
     struct Request
     {
         Settings settings;
-        double sampleRate = 0.0;
 
-#if defined(__GNUC__)
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wfloat-equal" // exactly equal: a request that changed nothing is not asked again
-#endif
         bool operator== (const Request&) const = default;
-#if defined(__GNUC__)
-    #pragma GCC diagnostic pop
-#endif
     };
 
     // A finished response, the request it answers, and the thread it was worked out on.
@@ -48,7 +42,7 @@ public:
     };
 
     TimingResponseWorker();
-    // Stops the thread, waiting for the response it is working out, if any, to finish.
+    // Stops the thread, and the response it is working out, if any, rather than waiting for it to finish.
     ~TimingResponseWorker();
 
     // Asks for the response at request; true once the worker has it. Never waits.
@@ -57,11 +51,6 @@ public:
     // handing over. Never waits.
     std::optional<Result> take();
 
-    // Only the settings that shape the Timing Response, the rest at their defaults: the Character, Attack, Release,
-    // Auto Release and Hold, and the Transfer Curve with Comp Follow's settings. Two settings that differ only
-    // elsewhere ask for the same response.
-    static Settings shaping (const Settings& settings);
-
 private:
     void run();
 
@@ -69,7 +58,8 @@ private:
     std::condition_variable asked;
     std::optional<Request> waiting;
     std::optional<Result> finished;
-    bool stopping = false;
+    // Set once, as it is destroyed: the thread stops, and so does the response it is working out.
+    std::atomic<bool> stopping { false };
     std::thread thread;
 };
 

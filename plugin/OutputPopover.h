@@ -1,38 +1,29 @@
 #pragma once
 
+#include "FooterItem.h"
 #include "LevelHistory.h"
 #include "LevelRing.h"
 #include "PluginProcessor.h"
+#include "SectionPopover.h"
 #include "Sections.h"
-#include "plugkit/ui/FooterPopoverFrame.h"
 
 namespace comp1
 {
 
-// The output popover the footer's Output readout opens, in both views (plugkit::ui::FooterPopoverFrame): above the
-// readout, right-aligned to it, closed by a second click, Escape or a click outside. It holds the Output section
-// (OutputSection): Output Gain and Ceiling with its ring side by side, then the Dry and Wet sliders, then the A (Auto
-// Gain) and L (Limiter) toggles, each attached to its host parameter, so they follow Host Automation, undo, A/B Compare
-// and Presets, and each edit is one undo step. Opened from the keys, focus moves to Output Gain, and Tab walks the six
-// in that order; closed, focus inside it goes back to the readout.
-//
-// While open it follows the processor on the editor's tick. Its card holds the section, padded; the layout is
-// provisional.
-class OutputPopover final : public plugkit::ui::FooterPopoverFrame
-{
-public:
-    OutputPopover (PluginProcessor& processor, LevelHistory& history);
+// The output popover the footer's Output readout opens (SectionPopover): the Output section (OutputSection), Output
+// Gain and Ceiling with its ring side by side, then the Dry and Wet sliders, then the A (Auto Gain) and L (Limiter)
+// toggles. Opened from the keys, focus moves to Output Gain. The layout is provisional.
+using OutputPopover = SectionPopover<OutputSection>;
 
-    LevelRing& ceilingRing() { return output.ceilingRing(); }
+// The footer's Output readout and the output popover it opens: one footer item (FooterItem), in both views.
+using OutputItem = FooterItem<OutputPopover>;
 
-    void resized() override;
-
-    static constexpr int padding = 12;
-
-private:
-    void followProcessor() override { output.followProcessor(); }
-
-    OutputSection output;
-};
+// The Output readout (plugkit::ui::OutputReadout, titled "Output", shrinking to "OUT"): Output Gain plus Auto Gain's
+// estimate while Auto Gain is on (PluginProcessor::appliedAutoGainDb), signed to one decimal; Output Gain's range has
+// no silent bottom, so it always reads as a level. While Dry is above Off (parallel compression) a "||" mark leads it,
+// in its ink, and a screen reader is told so by its description. It is drawn in text4, not applied, while Global
+// Bypass is on. While there is an Auto Gain amount to show (shownAutoGain), its description says so, "Includes Auto
+// Gain: -4.2 dB", after the parallel mark's. The footer gives it room for what it reads now.
+FooterReading outputReading (PluginProcessor& processor);
 
 } // namespace comp1

@@ -113,7 +113,6 @@ if(COMP1_BUILD_PLUGIN)
         plugin/GlobalBypassFadeTest.cpp
         plugin/GlobalBypassParameterTest.cpp
         plugin/HeroCompTest.cpp
-        plugin/HighQualityPopoverTest.cpp
         plugin/LatencyReportTest.cpp
         plugin/LevelGraphTest.cpp
         plugin/LevelHistoryTest.cpp
@@ -123,6 +122,7 @@ if(COMP1_BUILD_PLUGIN)
         plugin/OutputPopoverTest.cpp
         plugin/OversamplingParameterTest.cpp
         plugin/PluginShellTest.cpp
+        plugin/ProcessingModePopoverTest.cpp
         plugin/SaturationParameterTest.cpp
         plugin/SaturationPopoverTest.cpp
         plugin/SessionTest.cpp

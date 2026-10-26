@@ -11,6 +11,8 @@
 #include <catch2/generators/catch_generators_range.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -62,6 +64,14 @@ std::vector<Settings> settingsFor (Character character)
     return all;
 }
 
+// The lowest and the highest of the sample rates comp1 supports: the response's samples are coarsest at the one and
+// most numerous at the other.
+std::vector<double> lowestAndHighestRates()
+{
+    const auto& all = test::sampleRates();
+    return { *std::min_element (all.begin(), all.end()), *std::max_element (all.begin(), all.end()) };
+}
+
 } // namespace
 
 TEST_CASE ("The Timing Response's times run on a log axis from 5 us to about 10 s")
@@ -73,16 +83,18 @@ TEST_CASE ("The Timing Response's times run on a log axis from 5 us to about 10 
         CHECK_THAT (TimingResponse::timeMsAt (i) / TimingResponse::timeMsAt (i - 1), WithinAbs (std::pow (10.0, 1.0 / TimingResponse::pointsPerDecade), 1.0e-9));
 }
 
-TEST_CASE ("The Timing Response is the Gain Reduction the whole Engine applies to its test burst and after it, on every Character, within 0.001 dB", "[response]")
+TEST_CASE ("The Timing Response is the Gain Reduction the whole Engine applies to its test burst and after it, on every Character, within 0.001 dB; with Auto Release on, the recovery the Engine plays lies within its band", "[response]")
 {
-    const double sampleRate = GENERATE (44100.0, 192000.0);
+    const double sampleRate = GENERATE (from_range (lowestAndHighestRates()));
     const auto character = GENERATE (from_range (test::characters())).character;
     for (const auto& settings : settingsFor (character))
     {
         CAPTURE (sampleRate, static_cast<int> (character), settings.attackMs, settings.releaseMs, settings.holdMs, settings.autoRelease, settings.compFollow);
         const auto response = timingResponse (settings, sampleRate);
 
-        // The burst: Threshold + 20 dB, the played Threshold's, as the Transfer Curve Graph draws it.
+        // The burst: Threshold + 20 dB, the played Threshold's, as the Transfer Curve Graph draws it. The played
+        // Threshold is worked out here apart from clean::playedCurveOf, which the response reads it from, so a wrong one
+        // there shows.
         const double threshold = settings.compFollow ? compThresholdDb (settings.compCurve, settings.comp) : settings.thresholdDb;
         CHECK_THAT (response.burstLevelDb, WithinAbs (std::min (threshold + 20.0, 0.0), 1.0e-12));
 
@@ -100,7 +112,14 @@ TEST_CASE ("The Timing Response is the Gain Reduction the whole Engine applies t
             const auto n = static_cast<std::size_t> (std::min<long> (TimingResponse::sampleAt (i, sampleRate), burstSamples - 1));
             CHECK_THAT (response.rise[static_cast<std::size_t> (i)], WithinAbs (reduction[n], toleranceDb));
             const auto m = static_cast<std::size_t> (burstSamples + TimingResponse::sampleAt (i, sampleRate));
-            CHECK_THAT (response.recovery[static_cast<std::size_t> (i)], WithinAbs (reduction[m], toleranceDb));
+            if (! settings.autoRelease)
+                CHECK_THAT (response.recovery[static_cast<std::size_t> (i)], WithinAbs (reduction[m], toleranceDb));
+            else
+            {
+                REQUIRE (response.recoveryBand.has_value());
+                CHECK (response.recoveryBand->fastest[static_cast<std::size_t> (i)] <= reduction[m] + toleranceDb);
+                CHECK (reduction[m] <= response.recoveryBand->slowest[static_cast<std::size_t> (i)] + toleranceDb);
+            }
         }
     }
 }
@@ -134,9 +153,9 @@ TEST_CASE ("Working out the Timing Response never allocates")
     CHECK (response.rise.back() > 0.0);
 }
 
-TEST_CASE ("With Auto Release on, the Timing Response's recovery band runs from the recovery at Release to the recovery at 5 x Release, and the recovery played lies within it; with it off there is none", "[response]")
+TEST_CASE ("With Auto Release on, the Timing Response's recovery band runs from the recovery at Release to the recovery at 5 x Release, and its recovery is the band's fastest edge; with it off there is none", "[response]")
 {
-    const double sampleRate = GENERATE (44100.0, 192000.0);
+    const double sampleRate = GENERATE (from_range (lowestAndHighestRates()));
     const auto character = GENERATE (from_range (test::characters())).character;
     for (auto settings : settingsFor (character))
     {
@@ -157,8 +176,7 @@ TEST_CASE ("With Auto Release on, the Timing Response's recovery band runs from 
             CAPTURE (i, TimingResponse::timeMsAt (static_cast<int> (i)));
             CHECK_THAT (band.fastest[i], WithinAbs (atRelease.recovery[i], toleranceDb));
             CHECK_THAT (band.slowest[i], WithinAbs (atLongest.recovery[i], toleranceDb));
-            CHECK (band.fastest[i] <= response.recovery[i] + toleranceDb);
-            CHECK (response.recovery[i] <= band.slowest[i] + toleranceDb);
+            CHECK (response.recovery[i] == band.fastest[i]);
         }
     }
 }
@@ -180,7 +198,7 @@ TEST_CASE ("On Clean the Timing Response's recovery band's edges are 1/e of the 
 
 TEST_CASE ("On Opto the Timing Response's rise band runs from the rise at 0.5 x Attack to the rise at 2 x Attack, the overshoot's scale held at each end, and the rise lies within it; on the other Characters there is none", "[response]")
 {
-    const double sampleRate = GENERATE (44100.0, 192000.0);
+    const double sampleRate = GENERATE (from_range (lowestAndHighestRates()));
     for (const auto& style : test::characters())
     {
         if (style.character != Character::Opto)
@@ -230,4 +248,46 @@ TEST_CASE ("On Opto the Timing Response marks the slow part's times, Hold plus 5
             CHECK_THAT (response.slowPartMs->second, WithinAbs (5040.0, 1.0e-9));
         }
     }
+}
+
+TEST_CASE ("The settings that shape the Timing Response keep the Character, the timing and the Transfer Curve and leave the rest at their defaults, and the response at them is the response")
+{
+    Settings shaping { .character = Character::FET,
+                       .comp = 70.0,
+                       .compFollow = true,
+                       .compCurve = { { CompPoint { 0.0, -6.0, 1.5 }, CompPoint { 50.0, -24.0, 6.0 }, CompPoint { 100.0, -42.0, 12.0 } } },
+                       .thresholdDb = -30.0,
+                       .ratio = 8.0,
+                       .kneeDb = 3.0,
+                       .attackMs = 2.0,
+                       .releaseMs = 300.0,
+                       .autoRelease = true,
+                       .holdMs = 15.0,
+                       .rangeDb = 20.0 };
+    auto settings = shaping;
+    settings.colour = 30.0;
+    settings.saturation = true;
+    settings.driveDb = 9.0;
+    settings.outputGainDb = 6.0;
+    settings.processingMode = ProcessingMode::HighQuality;
+    settings.stereoLink = 50.0;
+    CHECK (timingResponseShaping (settings) == shaping);
+
+    const auto response = timingResponse (settings, 48000.0), shaped = timingResponse (shaping, 48000.0);
+    CHECK (shaped.rise == response.rise);
+    CHECK (shaped.recovery == response.recovery);
+}
+
+TEST_CASE ("Told to stop before it finishes, working out the Timing Response gives none; never told, it gives the response")
+{
+    const Settings slowest { .character = Character::Opto, .releaseMs = 5000.0, .autoRelease = true };
+    std::atomic<bool> stop { false };
+    const auto response = timingResponse (slowest, 48000.0, stop);
+    REQUIRE (response.has_value());
+    const auto plain = timingResponse (slowest, 48000.0);
+    CHECK (response->rise == plain.rise);
+    CHECK (response->recovery == plain.recovery);
+
+    stop = true;
+    CHECK_FALSE (timingResponse (slowest, 48000.0, stop).has_value());
 }

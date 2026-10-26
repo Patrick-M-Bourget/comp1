@@ -5,7 +5,6 @@
 #include "GainReductionShading.h"
 #include "Parameters.h"
 #include "plugkit/ui/Accessibility.h"
-#include "plugkit/ui/AssumedSampleRate.h"
 #include "plugkit/ui/staple/Tokens.h"
 
 #include <algorithm>
@@ -19,11 +18,8 @@ namespace
 {
 namespace colour = staple::tokens::colour;
 namespace size = staple::tokens::size;
-namespace knob = staple::tokens::knob;
 namespace display = plugkit::ui::display;
 
-// An arrow's step, in a parameter's travel, as the knobs' (KeyboardSlider): 1%, or 0.2% with Shift.
-constexpr double keyStep = 0.01, fineKeyStep = 0.002;
 constexpr float curveLineWidth = 1.5f;
 // A band's fill, over the Gain Reduction's shading, and its edges' lines where they aren't the curve.
 constexpr float bandAlpha = 0.22f, bandEdgeWidth = 1.0f, bandEdgeAlpha = 0.6f;
@@ -42,15 +38,15 @@ constexpr float labelWidth = 34.0f, captionWidth = 60.0f;
 
 // A curve's vertices from a response's values: the first of the points that reads each sample, the times between
 // those holding the sample's Gain Reduction, so the curve is straight between samples rather than a step; and the
-// last point, so it reaches the axis's end.
-std::vector<juce::Point<double>> verticesOf (const std::array<double, TimingResponse::points>& values, double sampleRate)
+// last point, so it reaches the axis's end. The response is worked out at drawnSampleRate.
+std::vector<juce::Point<double>> verticesOf (const std::array<double, TimingResponse::points>& values)
 {
     std::vector<juce::Point<double>> vertices;
     vertices.reserve (values.size());
     long previous = -1;
     for (int i = 0; i < TimingResponse::points; ++i)
     {
-        const long sample = TimingResponse::sampleAt (i, sampleRate);
+        const long sample = TimingResponse::sampleAt (i, drawnSampleRate);
         if (sample != previous || i == TimingResponse::points - 1)
             vertices.push_back ({ TimingResponse::timeMsAt (i), values[static_cast<std::size_t> (i)] });
         previous = sample;
@@ -97,14 +93,14 @@ TimingResponseInset::TimingResponseInset (PluginProcessor& p)
     {
         auto& h = handleComponents[static_cast<std::size_t> (which)];
         h = std::make_unique<DragHandle> (static_cast<DragHandle::Owner&> (*this), which == TimingHandle::attack ? "Attack handle" : "Release handle",
-                                          handleHitRadius, juce::MouseCursor::LeftRightResizeCursor);
+                                          insets::handleHitRadius, juce::MouseCursor::LeftRightResizeCursor);
         addAndMakeVisible (*h);
     }
     controls::showRangeOf (attackValue, attack);
     controls::showRangeOf (releaseValue, release);
     attackAttachment = std::make_unique<juce::SliderParameterAttachment> (attack, attackValue);
     releaseAttachment = std::make_unique<juce::SliderParameterAttachment> (release, releaseValue);
-    setSize (width, height);
+    setSize (width, insets::side);
     follow();
 }
 
@@ -114,7 +110,7 @@ bool TimingResponseInset::isWaiting() const { return asked.has_value() && ! (sho
 
 juce::Rectangle<float> TimingResponseInset::plot (TimingHandle half) const
 {
-    auto area = getLocalBounds().toFloat().reduced (static_cast<float> (padding)).withTrimmedTop (captionHeight).withTrimmedBottom (labelHeight);
+    auto area = getLocalBounds().toFloat().reduced (static_cast<float> (insets::padding)).withTrimmedTop (captionHeight).withTrimmedBottom (labelHeight);
     const float attackWidth = (area.getWidth() - halfGap) * attackShare;
     if (half == TimingHandle::attack)
         return area.withWidth (attackWidth);
@@ -125,9 +121,9 @@ juce::Range<double> TimingResponseInset::axisMs (TimingHandle half) const
 {
     if (half == TimingHandle::release)
         return { recoveryFromMs, TimingResponse::timeMsAt (TimingResponse::points - 1) };
-    // From one sample's time: under it the response has only the first sample's Gain Reduction.
-    const double rate = shown ? shown->request.sampleRate : plugkit::ui::sampleRateOrAssumed (processor);
-    return { 1000.0 / rate, TimingResponse::burstSeconds * 1000.0 };
+    // From Attack's shortest, so every Attack has a place of its own; under one sample's time the curve holds the first
+    // sample's Gain Reduction.
+    return { parameterRanges::attack.low, TimingResponse::burstSeconds * 1000.0 };
 }
 
 float TimingResponseInset::xAt (TimingHandle half, double ms) const
@@ -200,7 +196,7 @@ handles::Look TimingResponseInset::lookOf (const DragHandle& h) const { return l
 
 handles::Look TimingResponseInset::lookOf (TimingHandle which) const
 {
-    return { .radius = handleRadius,
+    return { .radius = insets::handleRadius,
              .selected = drag.has_value() && drag->which == which,
              .hovered = handleComponents[static_cast<std::size_t> (which)]->hovered,
              .alpha = curveAlpha() };
@@ -211,8 +207,10 @@ std::optional<juce::Rectangle<float>> TimingResponseInset::readoutBounds() const
     const auto card = readout();
     if (! card)
         return std::nullopt;
-    return handles::readoutBeside (handleCentre (card->at), handleRadius, getLocalBounds().toFloat().reduced (static_cast<float> (padding)),
-                                   card->title, card->value);
+    // Across the whole inset, but level with the plots, clear of the captions over them and the time labels under them.
+    const auto plots = plot (card->at);
+    const auto area = getLocalBounds().toFloat().reduced (static_cast<float> (insets::padding)).withY (plots.getY()).withBottom (plots.getBottom());
+    return handles::readoutBeside (handleCentre (card->at), insets::handleRadius, area, card->title, card->value);
 }
 
 std::optional<TimingResponseInset::Readout> TimingResponseInset::readout() const
@@ -326,8 +324,7 @@ void TimingResponseInset::paintOverChildren (juce::Graphics& g)
 
 bool TimingResponseInset::follow()
 {
-    const TimingResponseWorker::Request now { TimingResponseWorker::shaping (processor.heldSettings()),
-                                              plugkit::ui::sampleRateOrAssumed (processor) };
+    const TimingResponseWorker::Request now { timingResponseShaping (processor.heldSettings()) };
     if (asked != now && worker.ask (now))
         asked = now;
     auto finished = worker.take();
@@ -335,17 +332,16 @@ bool TimingResponseInset::follow()
         return false;
     shown = std::move (finished);
     const auto& response = shown->response;
-    const double rate = shown->request.sampleRate;
-    const auto bandOf = [rate] (const std::optional<TimingResponse::Band>& values) -> std::optional<Band> {
+    const auto bandOf = [] (const std::optional<TimingResponse::Band>& values) -> std::optional<Band> {
         if (! values)
             return std::nullopt;
-        return Band { verticesOf (values->fastest, rate), verticesOf (values->slowest, rate) };
+        return Band { verticesOf (values->fastest), verticesOf (values->slowest) };
     };
     riseBand = bandOf (response.riseBand);
     recoveryBand = bandOf (response.recoveryBand);
-    riseCurve = verticesOf (response.rise, rate);
-    // With Auto Release on, the recovery drawn is its band's fastest edge, at Release, where the Release handle sits.
-    recoveryCurve = recoveryBand ? recoveryBand->fastest : verticesOf (response.recovery, rate);
+    riseCurve = verticesOf (response.rise);
+    // With Auto Release on, the recovery is its band's fastest edge, at Release, where the Release handle sits.
+    recoveryCurve = verticesOf (response.recovery);
     double most = 0.0;
     const auto reach = [&most] (const std::array<double, TimingResponse::points>& values) { most = std::max (most, *std::max_element (values.begin(), values.end())); };
     reach (response.rise);
@@ -392,7 +388,8 @@ void TimingResponseInset::anchorAt (const juce::MouseEvent& e)
 
 void TimingResponseInset::grab (DragHandle& h, const juce::MouseEvent& e)
 {
-    drag = Drag { .which = whichIs (h), .fine = e.mods.isShiftDown() };
+    drag = Drag { .which = whichIs (h) };
+    edits.grab (e.mods);
     anchorAt (e);
     repaint();
 }
@@ -402,12 +399,9 @@ void TimingResponseInset::dragTo (const juce::MouseEvent& e)
     if (! drag)
         return;
     // Shift pressed or let go mid-drag carries on from where the handle is, at the new speed.
-    if (e.mods.isShiftDown() != drag->fine)
-    {
-        drag->fine = e.mods.isShiftDown();
+    if (edits.shiftChanged (e.mods))
         anchorAt (e);
-    }
-    const double speed = drag->fine ? knob::dragPixels / knob::fineDragPixels : 1.0;
+    const double speed = edits.dragSpeed();
     const double ms = timeAt (drag->which, drag->fromX + static_cast<float> ((static_cast<float> (e.getDistanceFromDragStartX()) - drag->offset) * speed));
     // The Release handle sits at Hold plus Release.
     setTime (drag->which, drag->which == TimingHandle::attack ? ms : ms - processor.heldSettings().holdMs);
@@ -419,26 +413,20 @@ void TimingResponseInset::letGo()
     if (! drag)
         return;
     drag.reset();
-    if (! heldKey)
-        endEdit();
+    edits.letGo();
     repaint();
 }
 
 bool TimingResponseInset::keyPressed (const juce::KeyPress& key)
 {
-    const int code = key.getKeyCode();
-    const bool horizontal = code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey;
-    const bool vertical = code == juce::KeyPress::upKey || code == juce::KeyPress::downKey;
-    if (! horizontal && ! vertical)
+    const auto arrow = InsetEdit::arrowOf (key);
+    if (! arrow)
         return false;
-    const auto which = horizontal ? TimingHandle::attack : TimingHandle::release;
-    const double step = key.getModifiers().isShiftDown() ? fineKeyStep : keyStep;
-    const int direction = code == juce::KeyPress::rightKey || code == juce::KeyPress::upKey ? 1 : -1;
-    // A press and its repeats are one edit, ended by the key's release or by losing focus.
+    const auto which = arrow->horizontal ? TimingHandle::attack : TimingHandle::release;
     beginEdit (which);
-    heldKey = true;
+    edits.keyHeld();
     auto& parameter = parameterOf (which);
-    const double travel = parameter.convertTo0to1 (static_cast<float> (valueOf (which).getValue())) + direction * step;
+    const double travel = parameter.convertTo0to1 (static_cast<float> (valueOf (which).getValue())) + arrow->direction * arrow->step;
     setTime (which, parameter.convertFrom0to1 (static_cast<float> (std::clamp (travel, 0.0, 1.0))));
     repaint();
     return true;
@@ -446,18 +434,11 @@ bool TimingResponseInset::keyPressed (const juce::KeyPress& key)
 
 bool TimingResponseInset::keyStateChanged (bool isKeyDown)
 {
-    if (! isKeyDown)
-        endHeldKey();
+    edits.keyStateChanged (isKeyDown);
     return false;
 }
 
-void TimingResponseInset::focusLost (FocusChangeType) { endHeldKey(); }
-
-void TimingResponseInset::endHeldKey()
-{
-    if (std::exchange (heldKey, false) && ! drag)
-        endEdit();
-}
+void TimingResponseInset::focusLost (FocusChangeType) { edits.focusLost(); }
 
 void TimingResponseInset::tick (double seconds)
 {
@@ -472,13 +453,7 @@ void TimingResponseInset::tick (double seconds)
     const bool moved = before != std::array { handleCentre (TimingHandle::attack), handleCentre (TimingHandle::release) };
     if (took || faded || (moved && drag))
         repaint();
-    // Tells a screen reader the value changed, when it did.
-    const auto now = valueText();
-    if (now == announced)
-        return;
-    announced = now;
-    if (auto* handler = getAccessibilityHandler())
-        handler->notifyAccessibilityEvent (juce::AccessibilityEvent::valueChanged);
+    edits.announce (*this, valueText());
 }
 
 std::unique_ptr<juce::AccessibilityHandler> TimingResponseInset::createAccessibilityHandler()

@@ -43,9 +43,9 @@ TEST_CASE ("The Transfer Curve inset shows in the Level graph's top-left corner 
     auto& inset = host.inset();
     auto& graph = host.display().levelGraph();
     CHECK (inset.isShowing());
-    CHECK (inset.getWidth() == comp1::TransferCurveInset::side);
-    CHECK (inset.getHeight() == comp1::TransferCurveInset::side);
-    CHECK (comp1::TransferCurveInset::side == 160);
+    CHECK (inset.getWidth() == comp1::insets::side);
+    CHECK (inset.getHeight() == comp1::insets::side);
+    CHECK (comp1::insets::side == 160);
     // Over the graph's top-left corner, inside it.
     const auto inGraph = graph.getLocalArea (&inset, inset.getLocalBounds());
     CHECK (graph.getLocalBounds().contains (inGraph));
@@ -68,7 +68,7 @@ TEST_CASE ("The Transfer Curve inset shows in the Level graph's top-left corner 
     // At 200%, twice as big on screen.
     host.showing<plugkit::ui::UiScaleMenu> ("UI Scale").pick (200);
     host.settle();
-    CHECK (host.inset().getScreenBounds().getWidth() == 2 * comp1::TransferCurveInset::side);
+    CHECK (host.inset().getScreenBounds().getWidth() == 2 * comp1::insets::side);
 }
 
 namespace
@@ -173,20 +173,20 @@ TEST_CASE ("The Transfer Curve inset's handles are 6 px discs at 100% UI Scale, 
     host.edit (parameters::ratioId, 4.0f);
     auto& inset = host.inset();
     host.settle();
-    CHECK (comp1::TransferCurveInset::handleRadius == 6.0f);
-    CHECK (comp1::TransferCurveInset::handleHitRadius > comp1::TransferCurveInset::handleRadius);
-    CHECK (comp1::TransferCurveInset::handleHitRadius <= 2.0f * comp1::TransferCurveInset::handleRadius);
+    CHECK (comp1::insets::handleRadius == 6.0f);
+    CHECK (comp1::insets::handleHitRadius > comp1::insets::handleRadius);
+    CHECK (comp1::insets::handleHitRadius <= 2.0f * comp1::insets::handleRadius);
     for (const auto which : { InsetHandle::threshold, InsetHandle::ratio })
     {
-        CHECK (inset.lookOf (which).radius == comp1::TransferCurveInset::handleRadius);
+        CHECK (inset.lookOf (which).radius == comp1::insets::handleRadius);
         auto& handle = inset.handle (which);
         const auto centre = centreOf (inset, which);
         // A press on the disc's edge, and a little beyond it, grabs it; one well beyond doesn't.
         const auto hits = [&] (float dx) { return handle.hitTest (juce::roundToInt (centre.x + dx - 0.5f), juce::roundToInt (centre.y - 0.5f)); };
         CHECK (hits (0.0f));
-        CHECK (hits (comp1::TransferCurveInset::handleRadius));
-        CHECK (hits (comp1::TransferCurveInset::handleHitRadius - 1.0f));
-        CHECK_FALSE (hits (comp1::TransferCurveInset::handleHitRadius + 1.0f));
+        CHECK (hits (comp1::insets::handleRadius));
+        CHECK (hits (comp1::insets::handleHitRadius - 1.0f));
+        CHECK_FALSE (hits (comp1::insets::handleHitRadius + 1.0f));
     }
     const int atFull = inset.handle (InsetHandle::threshold).getScreenBounds().getWidth();
     host.showing<plugkit::ui::UiScaleMenu> ("UI Scale").pick (200);
@@ -205,7 +205,7 @@ TEST_CASE ("Dragging the Transfer Curve inset's Threshold handle moves only Thre
     auto& history = host.processor.session().editHistory();
     const int start = history.undoSteps();
     // The curve's width spans the 60 dB input axis.
-    REQUIRE (inset.graph().getWidth() == comp1::TransferCurveInset::side - 2 * comp1::TransferCurveInset::padding);
+    REQUIRE (inset.graph().getWidth() == comp1::insets::side - 2 * comp1::insets::padding);
     const double dbPerPixel = 60.0 / inset.graph().getWidth();
 
     host::GestureRecorder recorder;
@@ -286,8 +286,8 @@ TEST_CASE ("Only the Transfer Curve inset's handles take a press: elsewhere in t
         for (float x = 2.0f; x < static_cast<float> (inset.getWidth()); x += 6.0f)
         {
             const juce::Point<float> at { x, y };
-            if (at.getDistanceFrom (inset.handleCentre (InsetHandle::threshold)) <= comp1::TransferCurveInset::handleHitRadius + 1.5f
-                || at.getDistanceFrom (inset.handleCentre (InsetHandle::ratio)) <= comp1::TransferCurveInset::handleHitRadius + 1.5f)
+            if (at.getDistanceFrom (inset.handleCentre (InsetHandle::threshold)) <= comp1::insets::handleHitRadius + 1.5f
+                || at.getDistanceFrom (inset.handleCentre (InsetHandle::ratio)) <= comp1::insets::handleHitRadius + 1.5f)
                 continue;
             CAPTURE (x, y);
             auto* target = pressedAt (at);

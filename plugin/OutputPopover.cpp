@@ -1,26 +1,38 @@
 #include "OutputPopover.h"
 
-#include "plugkit/ui/staple/Tokens.h"
+#include "Parameters.h"
+#include "ShownAutoGain.h"
+#include "plugkit/ui/OutputReadout.h"
+
+#include <cmath>
 
 namespace comp1
 {
 
-namespace
+FooterReading outputReading (PluginProcessor& processor)
 {
-constexpr int edge = staple::tokens::popover::edge;
-} // namespace
-
-OutputPopover::OutputPopover (PluginProcessor& processor, LevelHistory& history) : output (processor, history)
-{
-    addAndMakeVisible (output);
-    const int inset = 2 * (edge + padding);
-    setCardSize (output.idealWidth() + inset, output.idealHeight() + inset);
-    followProcessor();
-}
-
-void OutputPopover::resized()
-{
-    output.setBounds (getCardBounds().reduced (edge + padding));
+    return { .readout = std::make_unique<plugkit::ui::OutputReadout>(),
+             .show =
+                 [&processor] (plugkit::ui::FooterReadout& readout) {
+                     auto& state = processor.parameterState();
+                     const double db = state.getRawParameterValue (parameters::outputGainId)->load (std::memory_order_relaxed)
+                                       + processor.appliedAutoGainDb();
+                     const bool parallel = ! std::isinf (state.getRawParameterValue (parameters::dryId)->load (std::memory_order_relaxed));
+                     // Two bars, as Manrope, the readout's font, has no U+2225 (parallel to).
+                     static const juce::String mark = "|| ";
+                     if (const auto text = (parallel ? mark : juce::String()) + plugkit::ui::outputReadoutText (db); text != readout.getButtonText())
+                         readout.setButtonText (text);
+                     juce::StringArray description;
+                     if (parallel)
+                         description.add ("Parallel compression on: Dry is mixed in");
+                     if (const auto amount = shownAutoGain (processor))
+                         description.add ("Includes Auto Gain: " + *amount);
+                     if (const auto said = description.joinIntoString (". "); said != readout.getDescription())
+                         readout.setDescription (said);
+                     if (const bool bypassed = parameters::isOn (*state.getRawParameterValue (parameters::globalBypassId)); bypassed != readout.isNotApplied())
+                         readout.setNotApplied (bypassed);
+                 },
+             .widestTexts = [] (const plugkit::ui::FooterReadout& readout) -> juce::StringArray { return { readout.getButtonText() }; } };
 }
 
 } // namespace comp1
