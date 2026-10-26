@@ -3,8 +3,8 @@
 #include "ChoiceChip.h"
 #include "Controls.h"
 #include "PluginProcessor.h"
+#include "SectionPopover.h"
 #include "plugkit/ui/EditorTick.h"
-#include "plugkit/ui/FooterPopoverFrame.h"
 #include "plugkit/ui/FooterReadout.h"
 
 namespace comp1
@@ -51,24 +51,8 @@ private:
     int chipWidth = 0;
 };
 
-// The High Quality popover the footer's High Quality readout opens, in both views (plugkit::ui::FooterPopoverFrame):
-// above the readout, right-aligned to it, closed by a second click, Escape or a click outside. It holds the High
-// Quality section (HighQualitySection), its controls attached to their host parameters, so they follow Host Automation,
-// undo, A/B Compare and Presets, and each edit is one undo step. Opened from the keys, focus moves to Lookahead;
-// closed, focus inside it goes back to the readout.
-class HighQualityPopover final : public plugkit::ui::FooterPopoverFrame
-{
-public:
-    explicit HighQualityPopover (PluginProcessor& processor);
-
-    void resized() override;
-
-    static constexpr int padding = 12;
-
-private:
-    void followProcessor() override { section.followProcessor(); }
-
-    HighQualitySection section;
-};
+// The High Quality popover the footer's High Quality readout opens (SectionPopover): the High Quality section
+// (HighQualitySection). Opened from the keys, focus moves to Lookahead.
+using HighQualityPopover = SectionPopover<HighQualitySection>;
 
 } // namespace comp1

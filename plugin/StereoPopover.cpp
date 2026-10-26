@@ -2,27 +2,11 @@
 
 #include "ChipWidth.h"
 #include "Parameters.h"
-#include "plugkit/ui/staple/Tokens.h"
 
 namespace comp1
 {
 
-namespace
-{
-constexpr int edge = staple::tokens::popover::edge;
-} // namespace
-
 juce::String stereoReadoutText (const juce::String& placement, double linkPercent) { return placement + " " + juce::String (juce::roundToInt (linkPercent)) + "%"; }
-
-StereoPopover::StereoPopover (PluginProcessor& processor) : stereo (processor)
-{
-    addAndMakeVisible (stereo);
-    const int inset = 2 * (edge + padding);
-    setCardSize (stereo.idealWidth() + inset, stereo.idealHeight() + inset);
-    followProcessor();
-}
-
-void StereoPopover::resized() { stereo.setBounds (getCardBounds().reduced (edge + padding)); }
 
 StereoItem::StereoItem (PluginProcessor& p)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),

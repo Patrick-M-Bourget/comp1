@@ -48,7 +48,7 @@ public:
     GainReductionMeter& gateGainReductionMeter() { return gateGainReduction; }
     GainReductionMeter& limiterGainReductionMeter() { return limiterGainReduction; }
     LevelRing& detectionLevelRing() { return compressor.detectionLevelRing(); }
-    LevelRing& ceilingRing() { return footer.outputPopover().ceilingRing(); }
+    LevelRing& ceilingRing() { return footer.outputPopover().section().ceilingRing(); }
     DetectionSection& detectionSection() { return detection; }
 
     // The view shown, which follows the processor's View on the tick, as after a restore. The hidden view's

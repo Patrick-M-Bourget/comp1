@@ -2,34 +2,18 @@
 
 #include "PluginProcessor.h"
 #include "ReadoutPopover.h"
+#include "SectionPopover.h"
 #include "Sections.h"
 #include "plugkit/ui/EditorTick.h"
-#include "plugkit/ui/FooterPopoverFrame.h"
 #include "plugkit/ui/FooterReadout.h"
 
 namespace comp1
 {
 
-// The Saturation popover the footer's Saturation readout opens, in both views (plugkit::ui::FooterPopoverFrame): above
-// the readout, right-aligned to it, closed by a second click, Escape or a click outside. It holds the Saturation section
-// (SaturationSection): Saturation on/off and Saturation Position over Drive, each attached to its host parameter, so
-// they follow Host Automation, undo, A/B Compare and Presets, and each edit is one undo step. Opened from the keys,
-// focus moves to the on switch, and Tab walks the three in that order; closed, focus inside it goes back to the
-// readout.
-class SaturationPopover final : public plugkit::ui::FooterPopoverFrame
-{
-public:
-    explicit SaturationPopover (PluginProcessor& processor);
-
-    void resized() override;
-
-    static constexpr int padding = 12;
-
-private:
-    void followProcessor() override { saturation.followProcessor(); }
-
-    SaturationSection saturation;
-};
+// The Saturation popover the footer's Saturation readout opens (SectionPopover): the Saturation section
+// (SaturationSection), Saturation on/off and Saturation Position over Drive. Opened from the keys, focus moves to the
+// on switch.
+using SaturationPopover = SectionPopover<SaturationSection>;
 
 // The footer's Saturation readout and the Saturation popover it opens: one footer item, in both views. The readout
 // (plugkit::ui::FooterReadout, titled "Saturation", shrinking to "SAT") reads "SAT" and Drive in whole dB, signed

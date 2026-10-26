@@ -3,27 +3,11 @@
 #include "ChipWidth.h"
 #include "Parameters.h"
 #include "plugkit/ui/ValueText.h"
-#include "plugkit/ui/staple/Tokens.h"
 
 namespace comp1
 {
 
-namespace
-{
-constexpr int edge = staple::tokens::popover::edge;
-} // namespace
-
 juce::String saturationReadoutText (double driveDb) { return "SAT " + plugkit::ui::valueText::signedDb (driveDb, { .decimals = 0 }); }
-
-SaturationPopover::SaturationPopover (PluginProcessor& processor) : saturation (processor)
-{
-    addAndMakeVisible (saturation);
-    const int inset = 2 * (edge + padding);
-    setCardSize (saturation.idealWidth() + inset, saturation.idealHeight() + inset);
-    followProcessor();
-}
-
-void SaturationPopover::resized() { saturation.setBounds (getCardBounds().reduced (edge + padding)); }
 
 SaturationItem::SaturationItem (PluginProcessor& p)
     : plugkit::ui::EditorTick::Client (static_cast<juce::Component&> (*this)), processor (p),

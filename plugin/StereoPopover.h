@@ -2,34 +2,18 @@
 
 #include "PluginProcessor.h"
 #include "ReadoutPopover.h"
+#include "SectionPopover.h"
 #include "Sections.h"
 #include "plugkit/ui/EditorTick.h"
-#include "plugkit/ui/FooterPopoverFrame.h"
 #include "plugkit/ui/FooterReadout.h"
 
 namespace comp1
 {
 
-// The stereo popover the footer's Stereo readout opens, in both views (plugkit::ui::FooterPopoverFrame): above the
-// readout, right-aligned to it, closed by a second click, Escape or a click outside. It holds the Stereo section
-// (StereoSection), Stereo Placement then Stereo Link, each attached to its host parameter, so they follow Host
-// Automation, undo, A/B Compare and Presets, and each edit is one undo step. Opened from the keys, focus moves to Stereo
-// Placement, and Tab reaches Stereo Link; closed, focus inside it goes back to the readout. On a mono track both are
-// disabled, their values kept.
-class StereoPopover final : public plugkit::ui::FooterPopoverFrame
-{
-public:
-    explicit StereoPopover (PluginProcessor& processor);
-
-    void resized() override;
-
-    static constexpr int padding = 12;
-
-private:
-    void followProcessor() override { stereo.followProcessor(); }
-
-    StereoSection stereo;
-};
+// The stereo popover the footer's Stereo readout opens (SectionPopover): the Stereo section (StereoSection), Stereo
+// Placement then Stereo Link. Opened from the keys, focus moves to Stereo Placement. On a mono track both are disabled,
+// their values kept.
+using StereoPopover = SectionPopover<StereoSection>;
 
 // The footer's Stereo readout and the stereo popover it opens: one footer item, in both views. The readout
 // (plugkit::ui::FooterReadout, titled "Stereo", shrinking to "ST") reads Stereo Placement then Stereo Link in whole

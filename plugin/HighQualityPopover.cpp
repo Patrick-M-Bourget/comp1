@@ -5,7 +5,6 @@
 #include "Sections.h"
 #include "comp1/Latency.h"
 #include "plugkit/ui/AssumedSampleRate.h"
-#include "plugkit/ui/staple/Tokens.h"
 
 #include <algorithm>
 
@@ -14,8 +13,6 @@ namespace comp1
 
 namespace
 {
-constexpr int edge = staple::tokens::popover::edge;
-
 double sampleRateOf (const PluginProcessor& processor)
 {
     const double prepared = processor.preparedSampleRateHz();
@@ -90,15 +87,5 @@ void HighQualitySection::resized()
     ControlSection::resized();
     oversampling.setBounds (controlArea().removeFromBottom (chipHeight).withWidth (chipWidth));
 }
-
-HighQualityPopover::HighQualityPopover (PluginProcessor& processor) : section (processor)
-{
-    addAndMakeVisible (section);
-    const int inset = 2 * (edge + padding);
-    setCardSize (section.idealWidth() + inset, section.idealHeight() + inset);
-    followProcessor();
-}
-
-void HighQualityPopover::resized() { section.setBounds (getCardBounds().reduced (edge + padding)); }
 
 } // namespace comp1
