@@ -5,7 +5,6 @@
 #include "GainReductionShading.h"
 #include "Parameters.h"
 #include "plugkit/ui/Accessibility.h"
-#include "plugkit/ui/AssumedSampleRate.h"
 #include "plugkit/ui/staple/Tokens.h"
 
 #include <algorithm>
@@ -42,15 +41,15 @@ constexpr float labelWidth = 34.0f, captionWidth = 60.0f;
 
 // A curve's vertices from a response's values: the first of the points that reads each sample, the times between
 // those holding the sample's Gain Reduction, so the curve is straight between samples rather than a step; and the
-// last point, so it reaches the axis's end.
-std::vector<juce::Point<double>> verticesOf (const std::array<double, TimingResponse::points>& values, double sampleRate)
+// last point, so it reaches the axis's end. The response is worked out at drawnSampleRate.
+std::vector<juce::Point<double>> verticesOf (const std::array<double, TimingResponse::points>& values)
 {
     std::vector<juce::Point<double>> vertices;
     vertices.reserve (values.size());
     long previous = -1;
     for (int i = 0; i < TimingResponse::points; ++i)
     {
-        const long sample = TimingResponse::sampleAt (i, sampleRate);
+        const long sample = TimingResponse::sampleAt (i, drawnSampleRate);
         if (sample != previous || i == TimingResponse::points - 1)
             vertices.push_back ({ TimingResponse::timeMsAt (i), values[static_cast<std::size_t> (i)] });
         previous = sample;
@@ -126,8 +125,7 @@ juce::Range<double> TimingResponseInset::axisMs (TimingHandle half) const
     if (half == TimingHandle::release)
         return { recoveryFromMs, TimingResponse::timeMsAt (TimingResponse::points - 1) };
     // From one sample's time: under it the response has only the first sample's Gain Reduction.
-    const double rate = shown ? shown->request.sampleRate : plugkit::ui::sampleRateOrAssumed (processor);
-    return { 1000.0 / rate, TimingResponse::burstSeconds * 1000.0 };
+    return { 1000.0 / drawnSampleRate, TimingResponse::burstSeconds * 1000.0 };
 }
 
 float TimingResponseInset::xAt (TimingHandle half, double ms) const
@@ -326,8 +324,7 @@ void TimingResponseInset::paintOverChildren (juce::Graphics& g)
 
 bool TimingResponseInset::follow()
 {
-    const TimingResponseWorker::Request now { timingResponseShaping (processor.heldSettings()),
-                                              plugkit::ui::sampleRateOrAssumed (processor) };
+    const TimingResponseWorker::Request now { timingResponseShaping (processor.heldSettings()) };
     if (asked != now && worker.ask (now))
         asked = now;
     auto finished = worker.take();
@@ -335,17 +332,16 @@ bool TimingResponseInset::follow()
         return false;
     shown = std::move (finished);
     const auto& response = shown->response;
-    const double rate = shown->request.sampleRate;
-    const auto bandOf = [rate] (const std::optional<TimingResponse::Band>& values) -> std::optional<Band> {
+    const auto bandOf = [] (const std::optional<TimingResponse::Band>& values) -> std::optional<Band> {
         if (! values)
             return std::nullopt;
-        return Band { verticesOf (values->fastest, rate), verticesOf (values->slowest, rate) };
+        return Band { verticesOf (values->fastest), verticesOf (values->slowest) };
     };
     riseBand = bandOf (response.riseBand);
     recoveryBand = bandOf (response.recoveryBand);
-    riseCurve = verticesOf (response.rise, rate);
-    // With Auto Release on, the recovery drawn is its band's fastest edge, at Release, where the Release handle sits.
-    recoveryCurve = recoveryBand ? recoveryBand->fastest : verticesOf (response.recovery, rate);
+    riseCurve = verticesOf (response.rise);
+    // With Auto Release on, the recovery is its band's fastest edge, at Release, where the Release handle sits.
+    recoveryCurve = verticesOf (response.recovery);
     double most = 0.0;
     const auto reach = [&most] (const std::array<double, TimingResponse::points>& values) { most = std::max (most, *std::max_element (values.begin(), values.end())); };
     reach (response.rise);

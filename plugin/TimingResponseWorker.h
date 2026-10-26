@@ -23,20 +23,13 @@ namespace comp1
 class TimingResponseWorker
 {
 public:
-    // What a response is worked out from: the settings that shape it, and the sample rate the Engine plays at.
+    // What a response is worked out from: the settings that shape it. It is worked out at drawnSampleRate, whatever the
+    // host plays at.
     struct Request
     {
         Settings settings;
-        double sampleRate = 0.0;
 
-#if defined(__GNUC__)
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wfloat-equal" // exactly equal: a request that changed nothing is not asked again
-#endif
         bool operator== (const Request&) const = default;
-#if defined(__GNUC__)
-    #pragma GCC diagnostic pop
-#endif
     };
 
     // A finished response, the request it answers, and the thread it was worked out on.

@@ -34,7 +34,7 @@ enum class TimingHandle
 // - **Drawing:** on the Transfer Curve inset's slab, width by its height (TransferCurveInset::side) at 100% UI Scale,
 //   in two halves side by side, each captioned and with a log time axis of its own, a line every decade and labels
 //   under it: Attack's on the left (attackShare of the width), the rise from the burst's start, from one sample's time
-//   at the sample rate the response was worked out at to the burst's end (TimingResponse::burstSeconds); Release's on
+//   at drawnSampleRate to the burst's end (TimingResponse::burstSeconds); Release's on
 //   the right, the recovery from the burst's end, from 1 ms to about 10 s. In both the Gain Reduction hangs from the
 //   top, as on the Level and Gain Reduction Graph, scaled so the burst's most reaches the bottom of the plot, a
 //   dyn-range line with its area shaded up to the top. Each curve runs through the first of the response's times that
@@ -46,8 +46,9 @@ enum class TimingHandle
 //   overshoot scales it, behind the rise, and Release's half shades the slow part's times, which Release doesn't
 //   move, labelled "slow, fixed" (slowPartMs).
 // - **The response:** worked out on TimingResponseWorker's thread, never the message thread. Each tick it asks for
-//   the response at the settings the host parameters hold (only those that shape it) and the sample rate the Engine
-//   plays at, when they changed, and draws the newest finished one: so the curve follows a drag a response or two
+//   the response at the settings the host parameters hold (only those that shape it), when they changed, worked out
+//   at drawnSampleRate whatever the host plays at, as the response's shape barely changes with the rate and its cost
+//   grows with it; and it draws the newest finished one: so the curve follows a drag a response or two
 //   behind, while the handles follow the pointer at once. Until the first response finishes it draws no curve. Hidden,
 //   it asks for nothing, and catches up when it shows again.
 // - **Handles:** the Attack handle sits on the rise at Attack, the Release handle on the recovery at Hold plus Release

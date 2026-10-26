@@ -26,7 +26,7 @@ namespace
 
 struct TimingHost : host::Playing
 {
-    TimingHost() { showTab (DisplayTab::level); }
+    explicit TimingHost (double sampleRate = 48000.0) : host::Playing (sampleRate) { showTab (DisplayTab::level); }
 
     comp1::Display& display() { return expandedView().display(); }
     comp1::TimingResponseInset& inset() { return display().timingResponseInset(); }
@@ -75,19 +75,19 @@ std::map<juce::String, float> allValues (host::EditorHost& host)
     return values;
 }
 
-// The times a half's axis spans, in ms, worked out apart from the inset: Attack's from one sample's time at the rate
+// The times a half's axis spans, in ms, worked out apart from the inset: Attack's from one sample's time at 48 kHz, the rate
 // the response was worked out at to the burst's end, Release's from 1 ms to the response's last time.
-std::pair<double, double> axisOf (comp1::TimingResponseInset& inset, TimingHandle half)
+std::pair<double, double> axisOf (TimingHandle half)
 {
     if (half == TimingHandle::attack)
-        return { 1000.0 / inset.drawn()->request.sampleRate, 1000.0 };
+        return { 1000.0 / 48000.0, 1000.0 };
     return { 1.0, comp1::TimingResponse::timeMsAt (comp1::TimingResponse::points - 1) };
 }
 
 // How many pixels a decade of time spans on a half's axis: its plot's width over the axis's decades.
 double pixelsPerDecade (comp1::TimingResponseInset& inset, TimingHandle half)
 {
-    const auto [from, to] = axisOf (inset, half);
+    const auto [from, to] = axisOf (half);
     return inset.plot (half).getWidth() / std::log10 (to / from);
 }
 
@@ -119,15 +119,14 @@ TEST_CASE ("The Timing Response inset shows beside the Transfer Curve inset, 260
     CHECK (inset.isShowing());
 }
 
-TEST_CASE ("The Timing Response inset draws the response at the settings held and the Engine's sample rate, worked out on a thread other than the message thread")
+TEST_CASE ("The Timing Response inset draws the response at the settings held, worked out at 48 kHz whatever the host plays at, on a thread other than the message thread")
 {
-    TimingHost host;
+    TimingHost host (192000.0);
     auto& inset = host.inset();
     REQUIRE (host.drawsWhatIsHeld());
     const auto messageThread = std::this_thread::get_id();
     REQUIRE (juce::MessageManager::getInstance()->isThisTheMessageThread());
     CHECK (inset.drawn()->workedOn != messageThread);
-    CHECK (inset.drawn()->request.sampleRate == plugkit::ui::sampleRateOrAssumed (host.processor));
 
     // Every setting that shapes it, Comp Follow's Threshold among them: a Style turns Comp Follow on.
     REQUIRE (host.processor.chooseStyle (comp1::Style::FET));
@@ -139,7 +138,7 @@ TEST_CASE ("The Timing Response inset draws the response at the settings held an
     REQUIRE (host.drawsWhatIsHeld());
     const auto& drawn = *inset.drawn();
     CHECK (drawn.workedOn != messageThread);
-    const auto expected = comp1::timingResponse (comp1::timingResponseShaping (host.processor.heldSettings()), drawn.request.sampleRate);
+    const auto expected = comp1::timingResponse (comp1::timingResponseShaping (host.processor.heldSettings()), 48000.0);
     CHECK (drawn.response.rise == expected.rise);
     CHECK (drawn.response.recovery == expected.recovery);
     CHECK (drawn.response.burstLevelDb == expected.burstLevelDb);
@@ -181,7 +180,7 @@ TEST_CASE ("The Timing Response inset's two halves side by side, Attack's on the
     {
         CAPTURE (half == TimingHandle::attack ? "Attack" : "Release");
         const auto plot = inset.plot (half);
-        const auto [from, to] = axisOf (inset, half);
+        const auto [from, to] = axisOf (half);
         CHECK_THAT (inset.xAt (half, from), WithinAbs (plot.getX(), 1.0e-3));
         CHECK_THAT (inset.xAt (half, to), WithinAbs (plot.getRight(), 1.0e-3));
         // Each decade the same width.

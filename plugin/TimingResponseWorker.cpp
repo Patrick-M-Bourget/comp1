@@ -44,7 +44,7 @@ void TimingResponseWorker::run()
             return;
         const auto request = *std::exchange (waiting, std::nullopt);
         lock.unlock();
-        Result result { .response = timingResponse (request.settings, request.sampleRate), .request = request, .workedOn = std::this_thread::get_id() };
+        Result result { .response = timingResponse (request.settings, drawnSampleRate), .request = request, .workedOn = std::this_thread::get_id() };
         lock.lock();
         finished = std::move (result);
     }
