@@ -67,7 +67,7 @@ TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to it
     CHECK (readout.getButtonText() == "Stereo 100%");
 }
 
-TEST_CASE ("On a mono track the Stereo readout is drawn not applied and the stereo popover's controls are disabled, their values kept; on stereo they are applied and enabled")
+TEST_CASE ("On a mono track the Stereo readout is drawn not applied, its description saying why, and the stereo popover's controls are disabled, their values kept; on stereo they are applied and enabled, with no description")
 {
     host::EditorHost host;
     host.edit (parameters::stereoPlacementId, 1.0f);
@@ -81,6 +81,10 @@ TEST_CASE ("On a mono track the Stereo readout is drawn not applied and the ster
     auto& readout = host.stereoReadout();
     REQUIRE (host.settleUntil ([&] { return readout.isNotApplied() == ! stereo; }));
     CHECK (readout.getButtonText() == "Mid 40%");
+    // What a screen reader is told beside its value.
+    auto* handler = readout.getAccessibilityHandler();
+    REQUIRE (handler != nullptr);
+    CHECK (handler->getDescription() == (stereo ? juce::String() : juce::String ("Mono track: Stereo Placement and Stereo Link change nothing")));
 
     host.openStereoPopover();
     auto& placement = host.showing<juce::ComboBox> ("Stereo Placement");
