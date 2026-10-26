@@ -33,13 +33,13 @@ public:
     static constexpr float diameter = 4.0f;
 };
 
-// The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Style and
-// Processing Mode, as chips that open menus, and the High Quality readout (HighQualityItem); at the right the Stereo
-// readout (StereoItem), the Saturation readout (SaturationItem), the Output readout (OutputItem), the UI Scale menu and
-// the switch between the views, in that order, which is Tab's order too. Each readout opens its popover
-// (FooterItem). Where the chips leave the row too little room for the Stereo and
-// the Saturation readouts' widest texts, the Stereo readout shrinks to its label, "ST", and where that is not enough,
-// the Saturation readout to "SAT" too; neither is ever hidden.
+// The footer both views share: Global Bypass at the far left, the power button showing Off while on; then Style, a chip
+// that opens a menu, and the Processing Mode readout (ProcessingModeItem); at the right the Stereo readout
+// (StereoItem), the Saturation readout (SaturationItem), the Output readout (OutputItem), the UI Scale menu and the
+// switch between the views, in that order, which is Tab's order too. Each readout opens its popover (FooterItem).
+// Where the chip and the Processing Mode readout leave the row too little room for the Stereo and the Saturation
+// readouts' widest texts, the Stereo readout shrinks to its label, "ST", and where that is not enough, the Saturation
+// readout to "SAT" too; neither is ever hidden.
 //
 // The Style chip reads "Style: " and the Style. Its menu lists the offered Styles (PluginProcessor::offeredStyles) in
 // Style's order, each with the Character it plays in brackets, "Drums (FET)", or alone where the Style is that
@@ -62,7 +62,7 @@ public:
 
     plugkit::ui::UiScaleMenu& uiScaleMenu() { return uiScale; }
     OutputItem& output() { return outputItem; }
-    HighQualityItem& highQuality() { return highQualityItem; }
+    ProcessingModeItem& processingMode() { return processingModeItem; }
     SaturationItem& saturation() { return saturationItem; }
     StereoItem& stereo() { return stereoItem; }
     AutoGainDot& autoGainDot() { return dot; }
@@ -84,8 +84,8 @@ private:
     PluginProcessor& processor;
     staple::IconButton globalBypass { "Global Bypass", staple::Icon::power };
     juce::AudioProcessorValueTreeState::ButtonAttachment globalBypassAttachment;
-    ChoiceChip style, processingMode;
-    HighQualityItem highQualityItem;
+    ChoiceChip style;
+    ProcessingModeItem processingModeItem;
     StereoItem stereoItem;
     SaturationItem saturationItem;
     OutputItem outputItem;

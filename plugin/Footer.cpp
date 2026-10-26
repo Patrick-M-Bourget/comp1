@@ -52,8 +52,7 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
       style (parameters::parameterOf (p.parameterState(), parameters::styleId),
              p.session().editHistory(),
              styleChip (p, parameters::parameterOf (p.parameterState(), parameters::styleId).getAllValueStrings())),
-      processingMode (parameters::parameterOf (p.parameterState(), parameters::processingModeId), p.session().editHistory(), {}),
-      highQualityItem (highQualityReading (p), p), stereoItem (stereoReading (p), p), saturationItem (saturationReading (p), p),
+      processingModeItem (processingModeReading (p), p), stereoItem (stereoReading (p), p), saturationItem (saturationReading (p), p),
       outputItem (outputReading (p), p, history), uiScale (p.session())
 {
     globalBypass.setClickingTogglesState (true);
@@ -65,7 +64,7 @@ Footer::Footer (PluginProcessor& p, LevelHistory& history)
     // Left to right.
     int order = 0;
     for (juce::Component* child :
-         std::initializer_list<juce::Component*> { &globalBypass, &style, &processingMode, &highQualityItem, &stereoItem, &saturationItem, &outputItem, &uiScale })
+         std::initializer_list<juce::Component*> { &globalBypass, &style, &processingModeItem, &stereoItem, &saturationItem, &outputItem, &uiScale })
     {
         addAndMakeVisible (*child);
         child->setExplicitFocusOrder (++order);
@@ -130,15 +129,12 @@ void Footer::resized()
     dot.setBounds (row.removeFromRight (chipGap));
     outputItem.setBounds (row.removeFromRight (std::max (outputWidth, outputItem.idealWidth())));
     row.removeFromRight (chipGap);
-    for (auto* chip : { &style, &processingMode })
-    {
-        row.removeFromLeft (chipGap);
-        chip->setBounds (row.removeFromLeft (chip->widestIdealWidth()));
-    }
     row.removeFromLeft (chipGap);
-    highQualityItem.setBounds (row.removeFromLeft (highQualityItem.idealWidth()));
+    style.setBounds (row.removeFromLeft (style.widestIdealWidth()));
     row.removeFromLeft (chipGap);
-    // What the chips leave holds the Stereo readout then the Saturation readout, a gap apart: at full length where it
+    processingModeItem.setBounds (row.removeFromLeft (processingModeItem.idealWidth()));
+    row.removeFromLeft (chipGap);
+    // What the chip and the Processing Mode readout leave holds the Stereo readout then the Saturation readout, a gap apart: at full length where it
     // can, else Stereo shrunk to its label, else both.
     const int fullStereo = stereoItem.idealWidth(), fullSaturation = saturationItem.idealWidth();
     const int stereoWidth = row.getWidth() >= fullStereo + chipGap + fullSaturation ? fullStereo : stereoItem.shrunkWidth();

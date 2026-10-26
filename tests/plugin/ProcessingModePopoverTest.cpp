@@ -1,7 +1,8 @@
-// The footer's High Quality readout, in both views: what it reads, the Oversampling in force, and how it is drawn in
-// Zero Latency; and the High Quality popover it opens, holding Lookahead and Oversampling: opening and closing by mouse
-// and keys, its controls' edits, undo steps and availability, and a pick from Oversampling's menu leaving it open. The
-// Expanded View's body has no Lookahead of its own.
+// The footer's Processing Mode readout, in both views: what it reads, High Quality with the Oversampling in force or
+// Zero Latency, and how it is drawn under Global Bypass; and the Processing Mode popover it opens, holding Processing
+// Mode, Lookahead and Oversampling: opening and closing by mouse and keys, its controls' edits, undo steps and
+// availability, and a pick from Oversampling's menu leaving it open. The footer has no Processing Mode chip of its own,
+// and the Expanded View's body no Lookahead.
 
 #include "EditorHost.h"
 #include "Measure.h"
@@ -29,85 +30,117 @@ juce::StringArray offered (comp1::ChoiceChip& chip)
 
 } // namespace
 
-TEST_CASE ("The High Quality readout reads HQ and the Oversampling in force, in both views, and shrinks to HQ")
+TEST_CASE ("The Processing Mode readout reads High Quality and the Oversampling in force, or Zero Latency, in both views, never shrunk")
 {
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
     CAPTURE (compact);
-    if (compact)
-        host::EditorHost::click (host.expandedView().viewSwitch());
+    host.showView (compact);
     host.edit (parameters::processingModeId, 1.0f);
-    auto& readout = host.highQualityReadout();
+    auto& readout = host.processingModeReadout();
     REQUIRE (readout.isShowing());
-    CHECK (readout.getTitle() == "High Quality");
+    CHECK (readout.getTitle() == "Processing Mode");
     const auto reads = [&] (const juce::String& text) { return host.settleUntil ([&] { return readout.getButtonText() == text; }); };
 
     host.edit (parameters::oversamplingId, 1.0f);
-    CHECK (reads ("HQ 2x"));
+    CHECK (reads ("High Quality 2x"));
     host.edit (parameters::oversamplingId, 3.0f);
-    CHECK (reads ("HQ 8x"));
+    CHECK (reads ("High Quality 8x"));
+    CHECK_FALSE (readout.isShrunk());
+    // A screen reader reads it as a button titled Processing Mode whose value is its text.
+    auto* handler = readout.getAccessibilityHandler();
+    REQUIRE (handler != nullptr);
+    CHECK (handler->getRole() == juce::AccessibilityRole::button);
+    REQUIRE (handler->getValueInterface() != nullptr);
+    CHECK (handler->getValueInterface()->getCurrentValueAsString() == "High Quality 8x");
+    host.edit (parameters::processingModeId, 0.0f);
+    CHECK (reads ("Zero Latency"));
+    CHECK_FALSE (readout.isShrunk());
     // 8x stored at 192 kHz: 2x, the cap, in force.
+    host.edit (parameters::processingModeId, 1.0f);
     host.processor.prepareToPlay (192000.0, 512);
-    CHECK (reads ("HQ 2x"));
-    // Given only its label's width, it shows its label.
-    CHECK (readout.getShrunkWidth() < readout.getIdealWidth());
+    CHECK (reads ("High Quality 2x"));
 }
 
-TEST_CASE ("In Zero Latency the High Quality readout is drawn not applied, in text4, and applied again in High Quality")
+TEST_CASE ("The Processing Mode readout is drawn not applied, in text4, while Global Bypass is on, in either Processing Mode, and applied otherwise, in Zero Latency too")
 {
     host::EditorHost host;
-    auto& readout = host.highQualityReadout();
-    host.edit (parameters::processingModeId, 0.0f);
-    CHECK (host.settleUntil ([&] { return readout.isNotApplied(); }));
-    host.edit (parameters::processingModeId, 1.0f);
-    CHECK (host.settleUntil ([&] { return ! readout.isNotApplied(); }));
+    auto& readout = host.processingModeReadout();
+    for (const float mode : { 0.0f, 1.0f })
+    {
+        CAPTURE (mode);
+        host.edit (parameters::processingModeId, mode);
+        host.edit (parameters::globalBypassId, 1.0f);
+        CHECK (host.settleUntil ([&] { return readout.isNotApplied(); }));
+        host.edit (parameters::globalBypassId, 0.0f);
+        CHECK (host.settleUntil ([&] { return ! readout.isNotApplied(); }));
+    }
 }
 
-TEST_CASE ("The High Quality readout opens the High Quality popover above it by a click, and by Space or Return, in both views; Tab walks Lookahead then Oversampling, and Escape closes it, focus back on the readout")
+TEST_CASE ("The footer has no Processing Mode chip: the Processing Mode readout follows the Style chip, in place and in Tab's order")
 {
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
     CAPTURE (compact);
-    if (compact)
-        host::EditorHost::click (host.expandedView().viewSwitch());
+    host.showView (compact);
+    auto& footer = host.footer();
+    CHECK (host.findAll<comp1::ChoiceChip> ([&] (comp1::ChoiceChip& c) { return c.isShowing() && footer.isParentOf (&c) && c.getTitle() == "Processing Mode"; }).empty());
+    auto& style = host.showing<comp1::ChoiceChip> ("Style");
+    auto& item = footer.processingMode();
+    CHECK (style.getRight() + comp1::Footer::chipGap == item.getX());
+    CHECK (style.getExplicitFocusOrder() + 1 == item.getExplicitFocusOrder());
+}
+
+TEST_CASE ("The Processing Mode readout opens the Processing Mode popover above it by a click, and by Space or Return, in both views; Tab walks Processing Mode, Lookahead then Oversampling, and Escape closes it, focus back on the readout")
+{
+    host::EditorHost host;
+    const bool compact = GENERATE (false, true);
+    CAPTURE (compact);
+    host.showView (compact);
     host.edit (parameters::processingModeId, 1.0f);
-    auto& readout = host.highQualityReadout();
-    auto& popover = host.highQualityPopover();
+    auto& readout = host.processingModeReadout();
+    auto& popover = host.processingModePopover();
     REQUIRE_FALSE (popover.isOpen());
     REQUIRE_FALSE (popover.isShowing());
+    const juce::StringArray popoverControls { "Processing Mode", "Lookahead", "Oversampling" };
 
-    // By a click: above the readout, right-aligned to it, holding Lookahead and Oversampling inside the window.
-    host.openHighQualityPopover();
+    // By a click: above the readout, right-aligned to it, holding its three controls inside the window.
+    host.openProcessingModePopover();
     CHECK (readout.isOpen());
     const auto card = host.editor->getLocalArea (&popover, popover.getCardBounds());
     const auto anchor = host.inEditor (readout);
     CHECK (card.getBottom() < anchor.getY());
     CHECK (card.getRight() == anchor.getRight());
-    for (const juce::String title : { "Lookahead", "Oversampling" })
+    for (const auto& title : popoverControls)
     {
         CAPTURE (title);
-        auto& control = host.showing<juce::Component> (title);
-        CHECK (popover.isParentOf (&control));
-        CHECK (popover.getCardBounds().contains (popover.getLocalArea (&control, control.getLocalBounds())));
-        CHECK (host.editor->getLocalBounds().contains (host.inEditor (control)));
+        const auto inPopover = host.findAll<juce::Component> ([&] (juce::Component& c) { return c.getTitle() == title && c.isShowing() && popover.isParentOf (&c); });
+        REQUIRE (inPopover.size() == 1);
+        CHECK (popover.getCardBounds().contains (popover.getLocalArea (inPopover.front(), inPopover.front()->getLocalBounds())));
+        CHECK (host.editor->getLocalBounds().contains (host.inEditor (*inPopover.front())));
     }
     // A second click closes it.
     readout.onClick();
     CHECK_FALSE (popover.isOpen());
     CHECK_FALSE (readout.isOpen());
 
-    // By the keys, from the readout: focus moves to Lookahead, and Tab to Oversampling.
+    // By the keys, from the readout: focus moves to Processing Mode, and Tab walks the rest in order.
     const auto key = GENERATE (juce::KeyPress (juce::KeyPress::spaceKey), juce::KeyPress (juce::KeyPress::returnKey));
     readout.grabKeyboardFocus();
     REQUIRE (readout.hasKeyboardFocus (false));
     CHECK (host.press (key));
     REQUIRE (popover.isOpen());
     REQUIRE (host.focused() != nullptr);
-    CHECK (host.focused()->getTitle() == "Lookahead");
-    REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
-    REQUIRE (host.focused() != nullptr);
-    CHECK (host.focused()->getTitle() == "Oversampling");
     CHECK (popover.isParentOf (host.focused()));
+    juce::StringArray walked { host.focused()->getTitle() };
+    for (int i = 1; i < popoverControls.size(); ++i)
+    {
+        REQUIRE (host.press (juce::KeyPress (juce::KeyPress::tabKey)));
+        REQUIRE (host.focused() != nullptr);
+        CHECK (popover.isParentOf (host.focused()));
+        walked.add (host.focused()->getTitle());
+    }
+    CHECK (walked == popoverControls);
     // Escape closes it, focus back on the readout.
     CHECK (host.press (juce::KeyPress (juce::KeyPress::escapeKey)));
     CHECK_FALSE (popover.isOpen());
@@ -115,13 +148,33 @@ TEST_CASE ("The High Quality readout opens the High Quality popover above it by 
     CHECK (readout.hasKeyboardFocus (false));
 }
 
-TEST_CASE ("The High Quality popover's Lookahead and Oversampling set their host parameters, each edit one undo step")
+TEST_CASE ("The Processing Mode popover's Processing Mode chip reads and picks the Processing Mode, one undo step, and the readout follows")
+{
+    host::EditorHost host;
+    host.edit (parameters::processingModeId, 0.0f);
+    host.edit (parameters::oversamplingId, 2.0f);
+    auto& popover = host.openProcessingModePopover();
+    auto& chip = host.showing<comp1::ChoiceChip> ("Processing Mode");
+    REQUIRE (popover.isParentOf (&chip));
+    REQUIRE (host.settleUntil ([&] { return chip.getButtonText() == "Zero Latency"; }));
+    auto& history = host.processor.session().editHistory();
+    const int steps = history.undoSteps();
+    auto action = harness::actionOf (chip.menu(), "High Quality");
+    REQUIRE (action != nullptr);
+    action();
+    CHECK (host.value (parameters::processingModeId) == 1.0f);
+    CHECK (history.undoSteps() == steps + 1);
+    CHECK (host.settleUntil ([&] { return chip.getButtonText() == "High Quality" && host.processingModeReadout().getButtonText() == "High Quality 4x"; }));
+    CHECK (popover.isOpen());
+}
+
+TEST_CASE ("The Processing Mode popover's Lookahead and Oversampling set their host parameters, each edit one undo step")
 {
     host::EditorHost host;
     host.edit (parameters::processingModeId, 1.0f);
     host.edit (parameters::lookaheadId, 0.0f);
     host.edit (parameters::oversamplingId, 0.0f);
-    host.openHighQualityPopover();
+    host.openProcessingModePopover();
     auto& history = host.processor.session().editHistory();
     REQUIRE (host.settleUntil ([&] { return host.knob ("Lookahead").isEnabled(); }));
 
@@ -136,7 +189,7 @@ TEST_CASE ("The High Quality popover's Lookahead and Oversampling set their host
     action();
     CHECK (host.value (parameters::oversamplingId) == 2.0f);
     CHECK (history.undoSteps() == ++steps);
-    CHECK (host.settleUntil ([&] { return chip.getButtonText() == "Oversampling: 4x" && host.highQualityReadout().getButtonText() == "HQ 4x"; }));
+    CHECK (host.settleUntil ([&] { return chip.getButtonText() == "Oversampling: 4x" && host.processingModeReadout().getButtonText() == "High Quality 4x"; }));
 
     history.undo();
     history.undo();
@@ -144,14 +197,15 @@ TEST_CASE ("The High Quality popover's Lookahead and Oversampling set their host
     CHECK (host.value (parameters::lookaheadId) == 0.0f);
 }
 
-TEST_CASE ("In Zero Latency the High Quality popover's Lookahead and Oversampling are disabled, not hidden, their values kept; in High Quality they are enabled")
+TEST_CASE ("In Zero Latency the Processing Mode popover's Lookahead and Oversampling are disabled, not hidden, their values kept; in High Quality they are enabled; Processing Mode is enabled in both")
 {
     host::EditorHost host;
     host.edit (parameters::lookaheadId, 2.0f);
-    host.openHighQualityPopover();
+    host.openProcessingModePopover();
     auto& lookahead = host.knob ("Lookahead");
     auto& oversampling = host.showing<comp1::ChoiceChip> ("Oversampling");
-    const auto enabled = [&] (bool on) { return lookahead.isEnabled() == on && oversampling.isEnabled() == on; };
+    auto& processingMode = host.showing<comp1::ChoiceChip> ("Processing Mode");
+    const auto enabled = [&] (bool on) { return lookahead.isEnabled() == on && oversampling.isEnabled() == on && processingMode.isEnabled(); };
     REQUIRE (host.settleUntil ([&] { return enabled (false); }));
     CHECK (lookahead.isShowing());
     CHECK (oversampling.isShowing());
@@ -159,7 +213,7 @@ TEST_CASE ("In Zero Latency the High Quality popover's Lookahead and Oversamplin
     REQUIRE (host.settleUntil ([&] { return enabled (true); }));
     host.edit (parameters::processingModeId, 0.0f);
     REQUIRE (host.settleUntil ([&] { return enabled (false); }));
-    CHECK (host.highQualityPopover().isOpen());
+    CHECK (host.processingModePopover().isOpen());
     CHECK_THAT (host.value (parameters::lookaheadId), WithinAbs (2.0f, 1.0e-4));
 }
 
@@ -167,7 +221,7 @@ TEST_CASE ("The popover's Oversampling offers the factors up to each sample rate
 {
     host::EditorHost host;
     host.edit (parameters::processingModeId, 1.0f);
-    host.openHighQualityPopover();
+    host.openProcessingModePopover();
     auto& chip = host.showing<comp1::ChoiceChip> ("Oversampling");
     const juce::StringArray all { "1x", "2x", "4x", "8x" };
     // Not prepared yet: 48 kHz assumed.
@@ -197,12 +251,12 @@ TEST_CASE ("The popover's Oversampling offers the factors up to each sample rate
     REQUIRE (host.settleUntil ([&] { return chip.getButtonText() == "Oversampling: 1x"; }));
 }
 
-TEST_CASE ("A pick from the Oversampling chip's menu, a window of its own, leaves the High Quality popover open; a press elsewhere in the editor closes it")
+TEST_CASE ("A pick from the Oversampling chip's menu, a window of its own, leaves the Processing Mode popover open; a press elsewhere in the editor closes it")
 {
     host::EditorHost host;
     host.edit (parameters::processingModeId, 1.0f);
     host.edit (parameters::oversamplingId, 0.0f);
-    auto& popover = host.openHighQualityPopover();
+    auto& popover = host.openProcessingModePopover();
     auto& chip = host.showing<comp1::ChoiceChip> ("Oversampling");
     REQUIRE (host.settleUntil ([&] { return chip.getButtonText() == "Oversampling: 1x"; }));
     REQUIRE (chip.onClick != nullptr);
@@ -223,7 +277,7 @@ TEST_CASE ("A pick from the Oversampling chip's menu, a window of its own, leave
     CHECK_FALSE (popover.isOpen());
 }
 
-TEST_CASE ("The Expanded View's body has no Lookahead: its only Lookahead control is the High Quality popover's")
+TEST_CASE ("The Expanded View's body has no Lookahead: its only Lookahead control is the Processing Mode popover's")
 {
     host::EditorHost host;
     host.edit (parameters::processingModeId, 1.0f);
@@ -232,8 +286,8 @@ TEST_CASE ("The Expanded View's body has no Lookahead: its only Lookahead contro
     for (auto* section : sections->getChildren())
         CHECK (section->getName() != "Lookahead");
     CHECK (host.findAll<staple::Knob> ([] (staple::Knob& k) { return k.getTitle() == "Lookahead" && k.isShowing(); }).empty());
-    host.openHighQualityPopover();
+    host.openProcessingModePopover();
     const auto knobs = host.findAll<staple::Knob> ([] (staple::Knob& k) { return k.getTitle() == "Lookahead" && k.isShowing(); });
     REQUIRE (knobs.size() == 1);
-    CHECK (host.highQualityPopover().isParentOf (knobs.front()));
+    CHECK (host.processingModePopover().isParentOf (knobs.front()));
 }

@@ -57,7 +57,7 @@ TEST_CASE ("Expanded View snapshots: default at 100% and 200%, on mono, with Com
     host.processor.session().editHistory().undo();
     host.processor.session().editHistory().undo();
 
-    // High Quality: the High Quality readout applied.
+    // High Quality: the Processing Mode readout reads it.
     host.edit (comp1::parameters::processingModeId, 1.0f);
     snapshot (host, "expanded-high-quality");
     host.processor.session().editHistory().undo();
@@ -227,25 +227,25 @@ TEST_CASE ("Compact View snapshots: each Style's Compact Slots, at 100%", "[.scr
     }
 }
 
-TEST_CASE ("High Quality popover snapshots: open in the Expanded View and the Compact View, in High Quality and in Zero Latency", "[.screens]")
+TEST_CASE ("Processing Mode popover snapshots: open in the Expanded View and the Compact View, in High Quality and in Zero Latency", "[.screens]")
 {
     host::EditorHost host;
     openOn (host, juce::AudioChannelSet::stereo());
     host.edit (comp1::parameters::processingModeId, 1.0f);
     host.edit (comp1::parameters::oversamplingId, 2.0f);
     host.edit (comp1::parameters::lookaheadId, 2.0f);
-    host.openHighQualityPopover();
+    host.openProcessingModePopover();
     snapshot (host, "expanded-high-quality-popover");
     host.edit (comp1::parameters::processingModeId, 0.0f);
     snapshot (host, "expanded-high-quality-popover-zero-latency");
 
-    host.highQualityPopover().close();
+    host.processingModePopover().close();
     host::EditorHost::click (host.expandedView().viewSwitch());
     REQUIRE (host.expandedView().shownView() == comp1::View::compact);
     host.edit (comp1::parameters::processingModeId, 1.0f);
-    host.openHighQualityPopover();
+    host.openProcessingModePopover();
     snapshot (host, "compact-high-quality-popover");
-    host.highQualityPopover().close();
+    host.processingModePopover().close();
     host::EditorHost::click (host.expandedView().viewSwitch());
 }
 
@@ -420,10 +420,10 @@ TEST_CASE ("Layout snapshots: the Expanded View at its default and minimum sizes
 {
     host::EditorHost host;
     openOn (host, juce::AudioChannelSet::stereo());
-    // High Quality at 4x: the Processing Mode chip reads "High Quality" beside the High Quality readout's "HQ 4x".
+    // High Quality at 4x: the Processing Mode readout reads "High Quality 4x".
     host.edit (comp1::parameters::processingModeId, 1.0f);
     host.edit (comp1::parameters::oversamplingId, 2.0f);
-    REQUIRE (host.settleUntil ([&] { return host.highQualityReadout().getButtonText() == "HQ 4x"; }));
+    REQUIRE (host.settleUntil ([&] { return host.processingModeReadout().getButtonText() == "High Quality 4x"; }));
     // Close up, at 2x: the whole footer, in High Quality, then in Zero Latency.
     const auto footerCloseUps = [&host] (const juce::String& name) {
         auto& footer = host.footer();

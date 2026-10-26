@@ -32,7 +32,7 @@ namespace comp1
 // (its controls from the left) and its own height, the Detection section's following its slide open or closed
 // (DetectionSection), the display taking up what it gives. The display takes whatever the window grows by, and the
 // section rows its width. Stereo Placement and Stereo Link are in the footer's stereo popover (StereoItem), Lookahead
-// and Oversampling in its High Quality popover (HighQualityPopover).
+// and Oversampling in its Processing Mode popover (ProcessingModePopover).
 //
 // The Compact View's body is CompactView, after the header in Tab's order.
 class PluginEditor final : public plugkit::ui::EditorShell

@@ -156,7 +156,7 @@ TEST_CASE ("The Style chip follows a Style changed by undo, a restored session, 
     REQUIRE (host.settleUntil ([&] { return shownStyle (host) == "Style: Vocal"; }));
 }
 
-TEST_CASE ("The Style chip is in the footer of both views, after Global Bypass and before Processing Mode, and neither view has a Style section")
+TEST_CASE ("The Style chip is in the footer of both views, after Global Bypass and before the Processing Mode readout, and neither view has a Style section")
 {
     host::EditorHost host;
     const auto view = GENERATE (comp1::View::expanded, comp1::View::compact);
@@ -170,7 +170,7 @@ TEST_CASE ("The Style chip is in the footer of both views, after Global Bypass a
     auto& chip = styleChip (host);
     CHECK (footer.isParentOf (&chip));
     auto& bypass = host.showing<juce::Button> ("Global Bypass");
-    auto& processingMode = host.showing<comp1::ChoiceChip> ("Processing Mode");
+    auto& processingMode = footer.processingMode();
     CHECK (bypass.getRight() < chip.getX());
     CHECK (chip.getRight() < processingMode.getX());
     CHECK (bypass.getExplicitFocusOrder() < chip.getExplicitFocusOrder());

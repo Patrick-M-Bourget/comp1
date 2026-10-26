@@ -86,15 +86,15 @@ struct EditorHost : harness::OpenEditor<TemporaryPluginProcessor>
     // The output popover the readout opens.
     comp1::OutputPopover& outputPopover() { return footer().output().popover(); }
 
-    // The High Quality readout, and the High Quality popover it opens.
-    plugkit::ui::FooterReadout& highQualityReadout() { return footer().highQuality().readout(); }
-    comp1::HighQualityPopover& highQualityPopover() { return footer().highQuality().popover(); }
+    // The Processing Mode readout, and the Processing Mode popover it opens.
+    plugkit::ui::FooterReadout& processingModeReadout() { return footer().processingMode().readout(); }
+    comp1::ProcessingModePopover& processingModePopover() { return footer().processingMode().popover(); }
 
     // Opens the output popover by a click on the Output readout, as the user opens it, unless it is open, and waits for
     // it to pop in.
     comp1::OutputPopover& openOutputPopover() { return openFooterPopover (outputReadout(), outputPopover()); }
-    // Opens the High Quality popover as openOutputPopover opens the output popover.
-    comp1::HighQualityPopover& openHighQualityPopover() { return openFooterPopover (highQualityReadout(), highQualityPopover()); }
+    // Opens the Processing Mode popover as openOutputPopover opens the output popover.
+    comp1::ProcessingModePopover& openProcessingModePopover() { return openFooterPopover (processingModeReadout(), processingModePopover()); }
 
     // The footer's Saturation readout, and the Saturation popover it opens.
     plugkit::ui::FooterReadout& saturationReadout() { return footer().saturation().readout(); }

@@ -47,13 +47,13 @@ TEST_CASE ("The Stereo readout reads Stereo Placement then Stereo Link in whole 
     CHECK (reads ("Stereo 43%"));
 }
 
-TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to its label, ST, still showing and overlapping neither the High Quality readout nor the Output readout")
+TEST_CASE ("Given too little room for its text, the Stereo readout shrinks to its label, ST, still showing and overlapping neither the Processing Mode readout nor the Output readout")
 {
     host::EditorHost host;
     auto& footer = host.footer();
     auto& item = footer.stereo();
     auto& readout = host.stereoReadout();
-    auto& highQuality = footer.highQuality();
+    auto& highQuality = footer.processingMode();
     REQUIRE_FALSE (readout.isShrunk());
     // Narrower a pixel at a time, until the row between the chips and the Output readout can't hold its text.
     while (! readout.isShrunk() && footer.getWidth() > 0)

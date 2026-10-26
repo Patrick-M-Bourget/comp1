@@ -48,7 +48,7 @@ TEST_CASE ("The Saturation readout reads SAT and Drive in whole dB, signed, in b
     CHECK (host.settleUntil ([&] { return ! readout.isNotApplied(); }));
 }
 
-TEST_CASE ("The Saturation readout sits just left of the Output readout, and Tab reaches it after the High Quality readout and the Stereo readout and before Output, in both views")
+TEST_CASE ("The Saturation readout sits just left of the Output readout, and Tab reaches it after the Processing Mode readout and the Stereo readout and before Output, in both views")
 {
     host::EditorHost host;
     const bool compact = GENERATE (false, true);
@@ -61,7 +61,7 @@ TEST_CASE ("The Saturation readout sits just left of the Output readout, and Tab
     CHECK (sat.getCentreY() == out.getCentreY());
     // Wide enough to read its whole text.
     CHECK_FALSE (saturation.isShrunk());
-    auto& highQuality = host.highQualityReadout();
+    auto& highQuality = host.processingModeReadout();
     CHECK (sat.getX() > host.inEditor (highQuality).getRight());
 
     highQuality.grabKeyboardFocus();
