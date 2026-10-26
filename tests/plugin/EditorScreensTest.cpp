@@ -235,16 +235,16 @@ TEST_CASE ("Processing Mode popover snapshots: open in the Expanded View and the
     host.edit (comp1::parameters::oversamplingId, 2.0f);
     host.edit (comp1::parameters::lookaheadId, 2.0f);
     host.openProcessingModePopover();
-    snapshot (host, "expanded-high-quality-popover");
+    snapshot (host, "expanded-processing-mode-popover");
     host.edit (comp1::parameters::processingModeId, 0.0f);
-    snapshot (host, "expanded-high-quality-popover-zero-latency");
+    snapshot (host, "expanded-processing-mode-popover-zero-latency");
 
     host.processingModePopover().close();
     host::EditorHost::click (host.expandedView().viewSwitch());
     REQUIRE (host.expandedView().shownView() == comp1::View::compact);
     host.edit (comp1::parameters::processingModeId, 1.0f);
     host.openProcessingModePopover();
-    snapshot (host, "compact-high-quality-popover");
+    snapshot (host, "compact-processing-mode-popover");
     host.processingModePopover().close();
     host::EditorHost::click (host.expandedView().viewSwitch());
 }
@@ -303,7 +303,7 @@ TEST_CASE ("Footer snapshots: the Output readout with Auto Gain off, then on wit
         snapshot (host, "expanded-" + name);
         // Close up, at 3x: the footer's right end, from just left of the readout, over the window's background.
         auto& footer = host.footer();
-        const auto right = host.editor->getLocalArea (&footer, footer.getLocalBounds().withLeft (host.outputReadout().getX() - 24));
+        const auto right = host.editor->getLocalArea (&footer, footer.getLocalBounds().withLeft (footer.output().getX() - 24));
         harness::writeSnapshot (*host.editor, "footer-" + name, right, 3.0f);
     }
 }
