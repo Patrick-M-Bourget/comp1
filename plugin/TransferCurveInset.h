@@ -31,17 +31,17 @@ enum class InsetHandle
 // that moves Threshold and Ratio there.
 //
 // - **Drawing:** a TransferCurveGraph, the curve, the dot and their following, on a raised slab with stock Staple
-//   tokens (provisional). side px square at 100% UI Scale.
+//   tokens (provisional). insets::side px square at 100% UI Scale.
 // - **Handles:** the Threshold handle sits on the curve at the knee (input = Threshold), the Ratio handle at the curve's
 //   right end (input 0 dB), both where the Transfer Curve the Engine plays puts them (PluginProcessor::playedCurve),
 //   laid out again on the editor's tick and at once after an edit, so they follow Threshold, Ratio and Knee from any
-//   route. Each is drawn by the editor's handle look (handles::paint) at handleRadius, lit while the pointer is
+//   route. Each is drawn by the editor's handle look (handles::paint) at insets::handleRadius, lit while the pointer is
 //   over it, with a resize cursor of its direction, and the selected ring and a readout card ("Threshold −18.00 dB",
 //   "Ratio 4:1") while dragged. The Threshold handle is drawn over the Ratio handle, so at 0 dB Threshold, where they
 //   meet, the one that changes the curve is the one grabbed.
 // - **Global Bypass:** the curve, the dot and the handles show the compressor's work, so they dim to a share of their
 //   alphas (GlobalBypassFade), gliding on the tick, and still follow and take edits; the slab and a readout card stay.
-// - **Mouse:** only the handles take a press, within handleHitRadius of their centres: a press anywhere else in the
+// - **Mouse:** only the handles take a press, within insets::handleHitRadius of their centres: a press anywhere else in the
 //   inset passes through it to what lies under it. The Threshold handle drags Threshold horizontally, at the input
 //   axis's own scale (scaleDb over the curve's width per pixel); the Ratio handle drags Ratio vertically, by the knobs'
 //   travel (staple::tokens::knob::dragPixels for the whole of Ratio's range): up lowers it, straightening the curve's
@@ -68,10 +68,6 @@ class TransferCurveInset final : public juce::Component, private plugkit::ui::Ed
 public:
     TransferCurveInset (PluginProcessor& processor, LevelHistory& history);
     ~TransferCurveInset() override;
-
-    static constexpr int side = 160, padding = 6;
-    // A handle's disc and the circle a press grabs it in, in px at 100% UI Scale.
-    static constexpr float handleRadius = 6.0f, handleHitRadius = 10.0f;
 
     // What it draws.
     TransferCurveGraph& graph() { return curve; }

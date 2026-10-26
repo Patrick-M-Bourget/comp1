@@ -32,7 +32,7 @@ enum class TimingHandle
 // (Display), of the compressor's Gain Reduction over time for a test burst (comp1/TimingResponse.h), and a control that
 // moves Attack and Release there.
 //
-// - **Drawing:** on the Transfer Curve inset's slab, width by its height (TransferCurveInset::side) at 100% UI Scale,
+// - **Drawing:** on the Transfer Curve inset's slab, width by its height (insets::side) at 100% UI Scale,
 //   in two halves side by side, each captioned and with a log time axis of its own, a line every decade and labels
 //   under it: Attack's on the left (attackShare of the width), the rise from the burst's start, from Attack's shortest
 //   (5 us) to the burst's end (TimingResponse::burstSeconds); Release's on
@@ -55,13 +55,13 @@ enum class TimingHandle
 // - **Handles:** the Attack handle sits on the rise at Attack, the Release handle on the recovery at Hold plus Release
 //   (Release starts once Hold is over), each on the curve drawn, laid out again on the tick and at once after an edit,
 //   so they follow Attack, Release and Hold from any route; every Attack, and every Hold plus Release, lies on
-//   its half's axis. Drawn as the Transfer Curve inset's are (DragHandle, at its
-//   handleRadius), lit while hovered, with a left-right resize cursor, and the selected ring and a readout card
+//   its half's axis. Drawn as the Transfer Curve inset's are (DragHandle, at
+//   insets::handleRadius), lit while hovered, with a left-right resize cursor, and the selected ring and a readout card
 //   ("Attack 10.000 ms", "Release 100.0 ms") while dragged, beside the handle, never over it, and level with the
 //   plots, never over the captions or time labels (handles::readoutBeside).
 // - **Global Bypass:** the curves and the handles show the compressor's work, so they dim to a share of their alphas
 //   (GlobalBypassFade), gliding on the tick, and still follow and take edits; the slab, grid and labels stay.
-// - **Mouse:** only the handles take a press, within TransferCurveInset::handleHitRadius of their centres: a press
+// - **Mouse:** only the handles take a press, within insets::handleHitRadius of their centres: a press
 //   anywhere else passes through. Each drags its setting horizontally at its half's axis's scale, right longer,
 //   Shift finely, by the knobs' proportion. A drag is one undo step, inside gestures the host sees.
 // - **Keys:** while focused, left and right step Attack, up and down Release, each 1% of its parameter's travel (0.2%
@@ -76,9 +76,8 @@ public:
     explicit TimingResponseInset (PluginProcessor& processor);
     ~TimingResponseInset() override;
 
-    // Its size at 100% UI Scale: as tall as the Transfer Curve inset.
-    static constexpr int width = 260, height = TransferCurveInset::side, padding = TransferCurveInset::padding;
-    static constexpr float handleRadius = TransferCurveInset::handleRadius, handleHitRadius = TransferCurveInset::handleHitRadius;
+    // Its width at 100% UI Scale; it is as tall as the Transfer Curve inset (insets::side).
+    static constexpr int width = 260;
     // The captions' height, over the plots, the time labels', under them, and the gap between the halves.
     static constexpr float captionHeight = 14.0f, labelHeight = 12.0f, halfGap = 10.0f;
     // Attack's half's share of the width the two halves have.

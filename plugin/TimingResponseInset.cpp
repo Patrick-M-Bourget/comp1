@@ -93,14 +93,14 @@ TimingResponseInset::TimingResponseInset (PluginProcessor& p)
     {
         auto& h = handleComponents[static_cast<std::size_t> (which)];
         h = std::make_unique<DragHandle> (static_cast<DragHandle::Owner&> (*this), which == TimingHandle::attack ? "Attack handle" : "Release handle",
-                                          handleHitRadius, juce::MouseCursor::LeftRightResizeCursor);
+                                          insets::handleHitRadius, juce::MouseCursor::LeftRightResizeCursor);
         addAndMakeVisible (*h);
     }
     controls::showRangeOf (attackValue, attack);
     controls::showRangeOf (releaseValue, release);
     attackAttachment = std::make_unique<juce::SliderParameterAttachment> (attack, attackValue);
     releaseAttachment = std::make_unique<juce::SliderParameterAttachment> (release, releaseValue);
-    setSize (width, height);
+    setSize (width, insets::side);
     follow();
 }
 
@@ -110,7 +110,7 @@ bool TimingResponseInset::isWaiting() const { return asked.has_value() && ! (sho
 
 juce::Rectangle<float> TimingResponseInset::plot (TimingHandle half) const
 {
-    auto area = getLocalBounds().toFloat().reduced (static_cast<float> (padding)).withTrimmedTop (captionHeight).withTrimmedBottom (labelHeight);
+    auto area = getLocalBounds().toFloat().reduced (static_cast<float> (insets::padding)).withTrimmedTop (captionHeight).withTrimmedBottom (labelHeight);
     const float attackWidth = (area.getWidth() - halfGap) * attackShare;
     if (half == TimingHandle::attack)
         return area.withWidth (attackWidth);
@@ -196,7 +196,7 @@ handles::Look TimingResponseInset::lookOf (const DragHandle& h) const { return l
 
 handles::Look TimingResponseInset::lookOf (TimingHandle which) const
 {
-    return { .radius = handleRadius,
+    return { .radius = insets::handleRadius,
              .selected = drag.has_value() && drag->which == which,
              .hovered = handleComponents[static_cast<std::size_t> (which)]->hovered,
              .alpha = curveAlpha() };
@@ -209,8 +209,8 @@ std::optional<juce::Rectangle<float>> TimingResponseInset::readoutBounds() const
         return std::nullopt;
     // Across the whole inset, but level with the plots, clear of the captions over them and the time labels under them.
     const auto plots = plot (card->at);
-    const auto area = getLocalBounds().toFloat().reduced (static_cast<float> (padding)).withY (plots.getY()).withBottom (plots.getBottom());
-    return handles::readoutBeside (handleCentre (card->at), handleRadius, area, card->title, card->value);
+    const auto area = getLocalBounds().toFloat().reduced (static_cast<float> (insets::padding)).withY (plots.getY()).withBottom (plots.getBottom());
+    return handles::readoutBeside (handleCentre (card->at), insets::handleRadius, area, card->title, card->value);
 }
 
 std::optional<TimingResponseInset::Readout> TimingResponseInset::readout() const

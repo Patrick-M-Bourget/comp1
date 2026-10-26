@@ -8,6 +8,14 @@
 namespace comp1
 {
 
+// What the display's insets share, in px at 100% UI Scale: the Transfer Curve inset's side, which the Timing Response
+// inset is as tall as, the padding inside their slabs, and their handles' disc and the circle a press grabs one in.
+namespace insets
+{
+inline constexpr int side = 160, padding = 6;
+inline constexpr float handleRadius = 6.0f, handleHitRadius = 10.0f;
+} // namespace insets
+
 // The edit half the display's insets share (the Transfer Curve inset's, the Timing Response inset's), beside the drag
 // handles (DragHandle) they move their settings with.
 //

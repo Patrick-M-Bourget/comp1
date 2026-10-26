@@ -103,7 +103,7 @@ TEST_CASE ("The Timing Response inset shows beside the Transfer Curve inset, 260
     auto& graph = host.display().levelGraph();
     CHECK (inset.isShowing());
     CHECK (inset.getWidth() == 260);
-    CHECK (inset.getHeight() == comp1::TransferCurveInset::side);
+    CHECK (inset.getHeight() == comp1::insets::side);
     // insetGap to the right of the Transfer Curve inset, level with it, inside the graph.
     CHECK (inset.getX() == curveInset.getRight() + comp1::Display::insetGap);
     CHECK (inset.getY() == curveInset.getY());
@@ -286,7 +286,7 @@ TEST_CASE ("A Timing Response inset handle's readout card sits beside it, inside
             handle.mouseDown (harness::mouseEvent (handle, from, held));
             const auto card = inset.readoutBounds();
             REQUIRE (card.has_value());
-            const auto disc = juce::Rectangle<float> (2.0f * comp1::TimingResponseInset::handleRadius, 2.0f * comp1::TimingResponseInset::handleRadius)
+            const auto disc = juce::Rectangle<float> (2.0f * comp1::insets::handleRadius, 2.0f * comp1::insets::handleRadius)
                                   .withCentre (inset.handleCentre (which));
             CHECK_FALSE (card->intersects (disc));
             CHECK (inside.contains (*card));
@@ -384,8 +384,8 @@ TEST_CASE ("Only the Timing Response inset's handles take a press: elsewhere in 
         for (float x = 2.0f; x < static_cast<float> (inset.getWidth()); x += 6.0f)
         {
             const juce::Point<float> at { x, y };
-            if (at.getDistanceFrom (inset.handleCentre (TimingHandle::attack)) <= comp1::TimingResponseInset::handleHitRadius + 1.5f
-                || at.getDistanceFrom (inset.handleCentre (TimingHandle::release)) <= comp1::TimingResponseInset::handleHitRadius + 1.5f)
+            if (at.getDistanceFrom (inset.handleCentre (TimingHandle::attack)) <= comp1::insets::handleHitRadius + 1.5f
+                || at.getDistanceFrom (inset.handleCentre (TimingHandle::release)) <= comp1::insets::handleHitRadius + 1.5f)
                 continue;
             CAPTURE (x, y);
             auto* target = pressedAt (at);

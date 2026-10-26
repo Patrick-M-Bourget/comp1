@@ -36,7 +36,7 @@ TransferCurveInset::TransferCurveInset (PluginProcessor& p, LevelHistory& histor
     for (const auto which : { InsetHandle::ratio, InsetHandle::threshold })
     {
         auto& h = handleComponents[static_cast<std::size_t> (which)];
-        h = std::make_unique<DragHandle> (static_cast<DragHandle::Owner&> (*this), which == InsetHandle::threshold ? "Threshold handle" : "Ratio handle", handleHitRadius,
+        h = std::make_unique<DragHandle> (static_cast<DragHandle::Owner&> (*this), which == InsetHandle::threshold ? "Threshold handle" : "Ratio handle", insets::handleHitRadius,
                                           which == InsetHandle::threshold ? juce::MouseCursor::LeftRightResizeCursor
                                                                           : juce::MouseCursor::UpDownResizeCursor);
         addAndMakeVisible (*h);
@@ -49,7 +49,7 @@ TransferCurveInset::TransferCurveInset (PluginProcessor& p, LevelHistory& histor
     thresholdAttachment.emplace (thresholdValue, threshold, editHistory, [this] { processor.stopFollowingComp(); });
     ratioAttachment.emplace (ratioValue, ratio, editHistory, [this] { processor.stopFollowingComp(); });
     kneeAttachment = std::make_unique<juce::SliderParameterAttachment> (knee, kneeValue);
-    setSize (side, side);
+    setSize (insets::side, insets::side);
 }
 
 TransferCurveInset::~TransferCurveInset() { endEdit(); }
@@ -70,7 +70,7 @@ handles::Look TransferCurveInset::lookOf (const DragHandle& handle) const { retu
 
 handles::Look TransferCurveInset::lookOf (InsetHandle which) const
 {
-    return { .radius = handleRadius,
+    return { .radius = insets::handleRadius,
              .selected = drag.has_value() && handleOf (drag->setting) == which,
              .hovered = handleComponents[static_cast<std::size_t> (which)]->hovered,
              .alpha = bypassFade.dim (1.0f) };
@@ -127,7 +127,7 @@ TransferCurveInset::KneeCue TransferCurveInset::kneeCue() const
 
 void TransferCurveInset::resized()
 {
-    curve.setBounds (getLocalBounds().reduced (padding));
+    curve.setBounds (getLocalBounds().reduced (insets::padding));
     layOutHandles();
 }
 
@@ -156,7 +156,7 @@ void TransferCurveInset::paint (juce::Graphics& g)
 void TransferCurveInset::paintOverChildren (juce::Graphics& g)
 {
     if (const auto card = readout())
-        handles::paintReadout (g, handleCentre (card->at), handleRadius, static_cast<float> (getWidth()), card->title, card->value);
+        handles::paintReadout (g, handleCentre (card->at), insets::handleRadius, static_cast<float> (getWidth()), card->title, card->value);
 }
 
 void TransferCurveInset::beginEdit()
