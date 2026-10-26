@@ -9,8 +9,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <map>
+#include <optional>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -569,4 +571,28 @@ TEST_CASE ("The Timing Response inset draws Auto Release's recovery as a band fr
                 CHECK_THAT (inset.slowPartMs()->getEnd(), WithinAbs (25.0 + 5000.0, 1.0e-3));
             }
         }
+}
+
+TEST_CASE ("Destroyed while it works a response out, the Timing Response worker stops it rather than waiting for it to finish")
+{
+    using clock = std::chrono::steady_clock;
+    // The slowest response to work out: Opto, Auto Release, Release's longest.
+    const comp1::Settings slowest { .character = comp1::Character::Opto, .releaseMs = 5000.0, .autoRelease = true };
+    const auto start = clock::now();
+    const auto response = comp1::timingResponse (slowest, comp1::drawnSampleRate);
+    const auto workingOut = clock::now() - start;
+    REQUIRE (response.rise.back() > 0.0);
+
+    std::optional<comp1::TimingResponseWorker> worker;
+    worker.emplace();
+    REQUIRE (worker->ask ({ slowest }));
+    // Let the worker take the request and start on it.
+    std::this_thread::sleep_for (workingOut / 8);
+    const auto destroying = clock::now();
+    worker.reset();
+    const auto stopping = clock::now() - destroying;
+    const double workingOutMs = std::chrono::duration<double, std::milli> (workingOut).count();
+    const double stoppingMs = std::chrono::duration<double, std::milli> (stopping).count();
+    CAPTURE (workingOutMs, stoppingMs);
+    CHECK (stopping < workingOut / 2);
 }

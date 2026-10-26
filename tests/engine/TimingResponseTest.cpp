@@ -12,6 +12,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -275,4 +276,18 @@ TEST_CASE ("The settings that shape the Timing Response keep the Character, the 
     const auto response = timingResponse (settings, 48000.0), shaped = timingResponse (shaping, 48000.0);
     CHECK (shaped.rise == response.rise);
     CHECK (shaped.recovery == response.recovery);
+}
+
+TEST_CASE ("Told to stop before it finishes, working out the Timing Response gives none; never told, it gives the response")
+{
+    const Settings slowest { .character = Character::Opto, .releaseMs = 5000.0, .autoRelease = true };
+    std::atomic<bool> stop { false };
+    const auto response = timingResponse (slowest, 48000.0, stop);
+    REQUIRE (response.has_value());
+    const auto plain = timingResponse (slowest, 48000.0);
+    CHECK (response->rise == plain.rise);
+    CHECK (response->recovery == plain.recovery);
+
+    stop = true;
+    CHECK_FALSE (timingResponse (slowest, 48000.0, stop).has_value());
 }

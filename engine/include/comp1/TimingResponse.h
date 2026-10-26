@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <optional>
@@ -90,6 +91,9 @@ private:
 // 5000 ms) and four times that at 192 kHz, so the editor works it out away from the message thread, and always at
 // drawnSampleRate.
 TimingResponse timingResponse (const Settings& settings, double sampleRate);
+// As timingResponse, but it looks every so often whether stop is set, and once it is gives none at once: so the thread
+// working it out can be stopped without waiting for it to finish.
+std::optional<TimingResponse> timingResponse (const Settings& settings, double sampleRate, const std::atomic<bool>& stop);
 
 // The sample rate the editor works the Timing Response out at, whatever the host plays at: the shape of the response
 // barely changes with the rate, and its cost grows with it.

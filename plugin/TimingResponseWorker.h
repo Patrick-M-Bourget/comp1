@@ -3,6 +3,7 @@
 #include "comp1/Settings.h"
 #include "comp1/TimingResponse.h"
 
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
@@ -41,7 +42,7 @@ public:
     };
 
     TimingResponseWorker();
-    // Stops the thread, waiting for the response it is working out, if any, to finish.
+    // Stops the thread, and the response it is working out, if any, rather than waiting for it to finish.
     ~TimingResponseWorker();
 
     // Asks for the response at request; true once the worker has it. Never waits.
@@ -57,7 +58,8 @@ private:
     std::condition_variable asked;
     std::optional<Request> waiting;
     std::optional<Result> finished;
-    bool stopping = false;
+    // Set once, as it is destroyed: the thread stops, and so does the response it is working out.
+    std::atomic<bool> stopping { false };
     std::thread thread;
 };
 

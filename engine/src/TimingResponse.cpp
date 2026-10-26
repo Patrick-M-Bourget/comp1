@@ -19,9 +19,17 @@ namespace
 {
 // Under this, in dB, the recovery is over: the rest of it reads 0.
 constexpr double recoveredDb = 1.0e-6;
+// How often, in samples played, it looks whether it was told to stop: about 21 ms at 48 kHz.
+constexpr long stopCheckSamples = 1024;
 } // namespace
 
 TimingResponse timingResponse (const Settings& settings, double sampleRate)
+{
+    const std::atomic<bool> never { false };
+    return *timingResponse (settings, sampleRate, never);
+}
+
+std::optional<TimingResponse> timingResponse (const Settings& settings, double sampleRate, const std::atomic<bool>& stop)
 {
     TimingResponse response;
     const auto curve = clean::playedCurveOf (settings);
@@ -50,6 +58,8 @@ TimingResponse timingResponse (const Settings& settings, double sampleRate)
         long next = TimingResponse::sampleAt (point, sampleRate); // the next point's sample
         for (long n = 0; n < count && point < TimingResponse::points; ++n, ++playing.played)
         {
+            if (n % stopCheckSamples == 0 && stop.load (std::memory_order_relaxed))
+                return false;
             if (playing.played % plugkit::runSamples == 0 || (startsRun && n == 0))
                 playing.detector.startRun (playing.releaseMs, playing.autoRelease);
             const float sample = n % 2 == 0 ? level : -level;
@@ -67,6 +77,7 @@ TimingResponse timingResponse (const Settings& settings, double sampleRate)
         }
         for (; point < TimingResponse::points; ++point)
             values[static_cast<std::size_t> (point)] = reductionDb;
+        return true;
     };
     const long silenceSamples = TimingResponse::sampleAt (TimingResponse::points - 1, sampleRate) + 1;
 
@@ -77,9 +88,13 @@ TimingResponse timingResponse (const Settings& settings, double sampleRate)
                       .autoRelease = settings.autoRelease };
     playing.detector.prepare (sampleRate);
     auto fromRest = playing;
-    play (playing, response.rise, burstSamples, false, false);
+    if (! play (playing, response.rise, burstSamples, false, false))
+        return std::nullopt;
     if (! settings.autoRelease)
-        play (playing, response.recovery, silenceSamples, true, false);
+    {
+        if (! play (playing, response.recovery, silenceSamples, true, false))
+            return std::nullopt;
+    }
     else
     {
         const auto atBurstEnd = playing;
@@ -91,7 +106,8 @@ TimingResponse timingResponse (const Settings& settings, double sampleRate)
             from.releaseMs = scale * settings.releaseMs;
             from.timing = clean::timing (settings.attackMs, from.releaseMs, settings.holdMs, sampleRate);
             from.autoRelease = false;
-            play (from, *edge, silenceSamples, true, true);
+            if (! play (from, *edge, silenceSamples, true, true))
+                return std::nullopt;
         }
         response.recovery = band.fastest;
     }
@@ -108,7 +124,8 @@ TimingResponse timingResponse (const Settings& settings, double sampleRate)
         {
             auto from = fromRest;
             from.timing = clean::timing (scale * settings.attackMs, settings.releaseMs, settings.holdMs, sampleRate);
-            play (from, *edge, burstSamples, false, false);
+            if (! play (from, *edge, burstSamples, false, false))
+                return std::nullopt;
         }
         response.slowPartMs = std::pair { settings.holdMs + opto::slowFreshMs, settings.holdMs + opto::slowSeasonedMs };
     }
