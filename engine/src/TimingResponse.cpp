@@ -78,11 +78,11 @@ TimingResponse timingResponse (const Settings& settings, double sampleRate)
     playing.detector.prepare (sampleRate);
     auto fromRest = playing;
     play (playing, response.rise, burstSamples, false, false);
-    const auto atBurstEnd = playing;
-    play (playing, response.recovery, silenceSamples, true, false);
-
-    if (settings.autoRelease)
+    if (! settings.autoRelease)
+        play (playing, response.recovery, silenceSamples, true, false);
+    else
     {
+        const auto atBurstEnd = playing;
         // Each edge from the detector as the burst leaves it, Auto Release off and Release fixed at the edge's.
         auto& band = response.recoveryBand.emplace();
         for (const auto& [edge, scale] : { std::pair { &band.fastest, 1.0 }, std::pair { &band.slowest, AutoRelease::multiplier } })
@@ -93,6 +93,7 @@ TimingResponse timingResponse (const Settings& settings, double sampleRate)
             from.autoRelease = false;
             play (from, *edge, silenceSamples, true, true);
         }
+        response.recovery = band.fastest;
     }
 
     if (character.opticalTiming)

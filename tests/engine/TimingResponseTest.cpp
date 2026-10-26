@@ -82,7 +82,7 @@ TEST_CASE ("The Timing Response's times run on a log axis from 5 us to about 10 
         CHECK_THAT (TimingResponse::timeMsAt (i) / TimingResponse::timeMsAt (i - 1), WithinAbs (std::pow (10.0, 1.0 / TimingResponse::pointsPerDecade), 1.0e-9));
 }
 
-TEST_CASE ("The Timing Response is the Gain Reduction the whole Engine applies to its test burst and after it, on every Character, within 0.001 dB", "[response]")
+TEST_CASE ("The Timing Response is the Gain Reduction the whole Engine applies to its test burst and after it, on every Character, within 0.001 dB; with Auto Release on, the recovery the Engine plays lies within its band", "[response]")
 {
     const double sampleRate = GENERATE (from_range (lowestAndHighestRates()));
     const auto character = GENERATE (from_range (test::characters())).character;
@@ -111,7 +111,14 @@ TEST_CASE ("The Timing Response is the Gain Reduction the whole Engine applies t
             const auto n = static_cast<std::size_t> (std::min<long> (TimingResponse::sampleAt (i, sampleRate), burstSamples - 1));
             CHECK_THAT (response.rise[static_cast<std::size_t> (i)], WithinAbs (reduction[n], toleranceDb));
             const auto m = static_cast<std::size_t> (burstSamples + TimingResponse::sampleAt (i, sampleRate));
-            CHECK_THAT (response.recovery[static_cast<std::size_t> (i)], WithinAbs (reduction[m], toleranceDb));
+            if (! settings.autoRelease)
+                CHECK_THAT (response.recovery[static_cast<std::size_t> (i)], WithinAbs (reduction[m], toleranceDb));
+            else
+            {
+                REQUIRE (response.recoveryBand.has_value());
+                CHECK (response.recoveryBand->fastest[static_cast<std::size_t> (i)] <= reduction[m] + toleranceDb);
+                CHECK (reduction[m] <= response.recoveryBand->slowest[static_cast<std::size_t> (i)] + toleranceDb);
+            }
         }
     }
 }
@@ -145,7 +152,7 @@ TEST_CASE ("Working out the Timing Response never allocates")
     CHECK (response.rise.back() > 0.0);
 }
 
-TEST_CASE ("With Auto Release on, the Timing Response's recovery band runs from the recovery at Release to the recovery at 5 x Release, and the recovery played lies within it; with it off there is none", "[response]")
+TEST_CASE ("With Auto Release on, the Timing Response's recovery band runs from the recovery at Release to the recovery at 5 x Release, and its recovery is the band's fastest edge; with it off there is none", "[response]")
 {
     const double sampleRate = GENERATE (from_range (lowestAndHighestRates()));
     const auto character = GENERATE (from_range (test::characters())).character;
@@ -168,8 +175,7 @@ TEST_CASE ("With Auto Release on, the Timing Response's recovery band runs from 
             CAPTURE (i, TimingResponse::timeMsAt (static_cast<int> (i)));
             CHECK_THAT (band.fastest[i], WithinAbs (atRelease.recovery[i], toleranceDb));
             CHECK_THAT (band.slowest[i], WithinAbs (atLongest.recovery[i], toleranceDb));
-            CHECK (band.fastest[i] <= response.recovery[i] + toleranceDb);
-            CHECK (response.recovery[i] <= band.slowest[i] + toleranceDb);
+            CHECK (response.recovery[i] == band.fastest[i]);
         }
     }
 }

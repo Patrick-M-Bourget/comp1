@@ -37,7 +37,8 @@ struct TimingResponse
     // The Gain Reduction in dB at each point's time after the burst starts; from burstSeconds on, the Gain Reduction at
     // the burst's end.
     std::array<double, points> rise {};
-    // And after the burst ends.
+    // And after the burst ends. With Auto Release on, its band's fastest edge, the recovery at Release: the recovery
+    // Auto Release plays depends on what came before the burst, so the band is what is drawn, and it isn't worked out.
     std::array<double, points> recovery {};
 
     // A range a curve can take, as Gain Reduction in dB at each point's time: its fastest edge and its slowest.
@@ -51,8 +52,8 @@ struct TimingResponse
     std::optional<Band> riseBand;
     // With Auto Release on, the range the recovery can take as Auto Release scales Release: the recovery at Release, as
     // after no sustained compression, the fastest, and at 5 x Release, as after a long stretch of it, the slowest; each
-    // from the detector as the burst leaves it, at its Release from the burst's end. The recovery lies between them.
-    // None with Auto Release off.
+    // from the detector as the burst leaves it, at its Release from the burst's end. The recovery the Engine plays lies
+    // between them. None with Auto Release off.
     std::optional<Band> recoveryBand;
     // On a Character with Opto's timing, the times in ms after the burst's end that the slow part of its release takes,
     // Hold plus its time with no history to Hold plus its time with a full one: Opto's own, which Release doesn't move.
@@ -84,10 +85,14 @@ private:
 // it is on, the stored Knee and Range), hearing the burst as an Internal Detection Source does; nothing else of the
 // Engine runs, and no setting glides. So it is the Gain Reduction the Engine applies to the same burst at Detection
 // Source Internal with the Detection EQ off. The bands run the same detector again: Opto's rise twice more, and with
-// Auto Release on the recovery twice more, from the detector as the burst leaves it. Never allocates; its cost grows
-// with sampleRate, at most about 17 ms at 48 kHz and 70 ms at 192 kHz on an Apple M3 with Auto Release off, and with
-// it on, its two recoveries more, 41 ms and 170 ms (Opto, Release 5000 ms), so the editor works it out away from the
-// message thread.
+// Auto Release on the recovery's two edges in place of the recovery, from the detector as the burst leaves it. Never
+// allocates; its cost grows with sampleRate, at most about 29 ms at 48 kHz on an Apple M3 (Opto, Auto Release, Release
+// 5000 ms) and four times that at 192 kHz, so the editor works it out away from the message thread, and always at
+// drawnSampleRate.
 TimingResponse timingResponse (const Settings& settings, double sampleRate);
+
+// The sample rate the editor works the Timing Response out at, whatever the host plays at: the shape of the response
+// barely changes with the rate, and its cost grows with it.
+inline constexpr double drawnSampleRate = 48000.0;
 
 } // namespace comp1
